@@ -52,6 +52,10 @@ for f in testkit examples internal/testmodules; do
   check_rule "$prod" "cmd" "$f" "cmd must not import $f"
 done
 
+for f in module testkit examples internal/testmodules; do
+  check_rule "$prod" "internal/cli" "$f" "internal/cli must not import $f"
+done
+
 # HARD rule: no production package imports testkit (test imports are fine).
 bad=$(awk -v m="$MOD" '
   {

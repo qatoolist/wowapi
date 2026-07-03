@@ -53,11 +53,13 @@ type Secret struct{ /* unexported */ }
 
 // Loader: files + env + secret resolution, strict by default (unknown keys are errors).
 func Load[T any](opts Options) (T, Fingerprint, error)
-type Options struct {
-    BaseFile, EnvFile string   // configs/base.yaml, configs/<env>.yaml
-    EnvPrefix         string   // "ACME__" → ACME__DB__MAX_CONNS=32
+func LoadDetailed[T any](opts Options) (Loaded[T], error) // + per-key provenance & warnings (doctor)
+type Options struct {                                     // final shape per D-0014/D-0016
+    BaseFile, EnvFile string            // configs/base.yaml, configs/<env>.yaml
+    EnvPrefix         string            // "ACME__" → ACME__DB__MAX_CONNS=32
+    Environ           []string          // env pairs; nil = os.Environ() (hermetic tests)
     Secrets           secrets.Provider
-    AllowFlags        bool     // local tooling only; refused when Environment == prod
+    Flags             map[string]string // local tooling only; refused when environment=prod
 }
 
 // ModuleView: the ONLY config surface modules see (returned by module.Context.Config()).
@@ -99,6 +101,10 @@ Effective config is computed once at boot, in exactly this order (later wins):
 Production allows layers 1–5 only. Overlays are committed and reviewed; env vars are for
 platform-injected values (region, replica counts, endpoints), not for smuggling business values.
 Provenance is tracked per key (which layer set it) and shown by `wowapi config doctor`.
+Two keys have narrowed layer rules: `environment` follows the trust rules in §4 (never from
+flags; env var only when files are silent), and `modules.*` values come from config files only
+until module decoding learns string coercion (D-0018 — env/flag strings would fail the modules'
+strict typed decode confusingly).
 
 ## 4. Fail-fast boot & production safety
 
@@ -121,6 +127,12 @@ supports (or older than its supported floor), and any **production safety violat
   loader errors when it is absent from every layer. The compiled default (`local`) exists only for
   `Defaults()` in tests and local tooling; a production deploy can never silently validate under
   `local` rules because a missing/typoed env var left the field unset (phase-00 review finding SEC-1).
+- **Environment is not downgradable (D-0017):** `environment` may never be set by CLI flags, and
+  an environment variable may only *supply* it when no config file does — a mismatch with a
+  committed file value is an error, not an override. Prod checks and the flag refusal key off the
+  file-layer value, so a lower-trust layer cannot lower the gate it is checked against
+  (phase-01 review finding SEC-5). Unsafe-knob refusal is evaluated against the **final bound
+  values** — compiled defaults and non-scalar knobs included (findings SEC-3/SEC-4, D-0019).
 
 ## 5. Secrets: references, not values
 

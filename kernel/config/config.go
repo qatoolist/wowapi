@@ -52,24 +52,27 @@ const SchemaVersion = 1
 // values, never stores. Fields grow phase by phase with the components that
 // consume them (DB in Phase 2, Auth in Phase 4, …).
 type Framework struct {
-	Environment   Env  `json:"environment"`
-	SchemaVersion int  `json:"schema_version"`
-	HTTP          HTTP `json:"http"`
-	Log           Log  `json:"log"`
+	// Environment carries NO default tag: it is fail-closed (D-0010/SEC-1) —
+	// the loader errors when it is absent from every layer. The compiled
+	// `local` value exists only through Defaults() for tests/local tooling.
+	Environment   Env  `conf:"environment" json:"environment" doc:"deployment environment (local|dev|stage|prod); must be set explicitly in deployed processes"`
+	SchemaVersion int  `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
+	HTTP          HTTP `conf:"http" json:"http"`
+	Log           Log  `conf:"log" json:"log"`
 }
 
 // HTTP holds server guardrails. Zero values are replaced by Defaults.
 type HTTP struct {
-	Addr              string        `json:"addr"`
-	ReadHeaderTimeout time.Duration `json:"read_header_timeout"`
-	RequestTimeout    time.Duration `json:"request_timeout"`
-	MaxBodyBytes      int64         `json:"max_body_bytes"`
+	Addr              string        `conf:"addr" default:":8080" json:"addr" doc:"HTTP listen address"`
+	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"5s" json:"read_header_timeout" doc:"maximum time to read request headers"`
+	RequestTimeout    time.Duration `conf:"request_timeout" default:"30s" json:"request_timeout" doc:"per-request handler timeout"`
+	MaxBodyBytes      int64         `conf:"max_body_bytes" default:"1048576" json:"max_body_bytes" doc:"maximum request body size in bytes"`
 }
 
 // Log configures structured logging.
 type Log struct {
-	Level  string `json:"level"`  // debug|info|warn|error
-	Format string `json:"format"` // json|text
+	Level  string `conf:"level" default:"info" json:"level" doc:"log level: debug|info|warn|error"`
+	Format string `conf:"format" default:"json" json:"format" doc:"log output format: json|text (prod requires json)"`
 }
 
 // Defaults returns the compiled framework defaults — the always-present,

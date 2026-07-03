@@ -14,6 +14,10 @@ COPY . .
 # Toolbox used by deployments/compose.yaml `tools` service:
 #   docker compose -f deployments/compose.yaml run --rm tools make ci
 FROM base AS dev
+# `go test -race` needs cgo, and alpine ships no C toolchain by default —
+# without these the containerized CI gate cannot run the race suite.
+RUN apk add --no-cache gcc musl-dev
+ENV CGO_ENABLED=1
 CMD ["sleep", "infinity"]
 
 FROM base AS build

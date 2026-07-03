@@ -42,6 +42,10 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Decision:** graph remains acyclic: `kernel/secrets` (stdlib only) ← `kernel/config` ←
   other `kernel/*` (receive sub-structs by value; no config imports needed) ← `module` ← `app`;
   `adapters` → `kernel/*` only. Encoded in `scripts/lint_boundaries.sh` from Phase 0.
+- **Amendment (Phase 1, ARCH-13):** "receive sub-structs by value" still requires importing
+  `kernel/config` for the *types* (e.g. `kernel/logging` imports `config.Log`/`config.Fingerprint`).
+  That is a types-only kernel→kernel edge, cycle-free and consistent with 04 §2; what stays
+  forbidden is other packages *loading* config or reading stores at runtime.
 
 ## D-0006 — Phase 0: walking-skeleton scope for `module.Context`
 - **Context:** the full Context interface (06 §2) references many kernel packages that don't exist
@@ -79,3 +83,96 @@ Blueprint deviations MUST land here before the code that implements them.
   compiled `local` default serves only `Defaults()` in tests/local tooling. Blueprint 12 §4
   updated; Phase 1 exit criteria include a test for this.
 - **Affected:** docs/blueprint/12 §4; kernel/config loader (Phase 1).
+
+## D-0011 — Phase 1: first third-party dependency, `gopkg.in/yaml.v3`
+- **Context:** the layered loader must parse `configs/*.yaml`; blueprint 12 §2 already assumes YAML
+  (product `Modules map[string]yaml.Node` example). Repo had zero deps.
+- **Options:** (a) hand-rolled YAML subset (rejected: config parsing is exactly where correctness
+  bugs hide); (b) `gopkg.in/yaml.v3` (stable, no transitive deps); (c) JSON-only config (rejected:
+  blueprint mandates YAML overlays).
+- **Decision:** (b). The "kernel/config imports only stdlib + kernel/secrets" rule in 12 §2 governs
+  the *internal package graph* (acyclicity), not third-party libs; yaml.v3 keeps the graph acyclic.
+- **Affected:** go.mod, kernel/config loader.
+
+## D-0012 — Phase 1: binder scope — `conf`/`default`/`required` tags + `Validate()` hook
+- **Context:** blueprint 12 §2 shows a full tag DSL (`conf`, `default`, `validate:"min=…,max=…"`,
+  `unsafe`, `redact`, `doc`); Phase 0 shipped hand-written `Framework.Validate()` with accumulated
+  errors; risk R5 warns against a reflection-heavy config system.
+- **Decision:** ONE audited binder implementing: `conf` key mapping (embedded structs flatten),
+  `default:"…"` tags, `required:"true"`, strict unknown-key rejection, scalar conversion
+  (string/bool/ints/floats/duration/Env/Secret/slices), `unsafe:"true"` prod refusal (stage warns),
+  and `doc` tags (feed `config schema`). Range/cross-field/enum checks stay in code via a
+  `Validate() error` hook (already accumulates all errors) — no min/max tag mini-language.
+  A drift-guard test asserts tag defaults reproduce `Defaults()`.
+- **Tradeoffs:** two places express constraints (tags for shape, code for ranges); in exchange the
+  binder stays small enough to audit and R5 stays contained.
+- **Affected:** kernel/config (bind/load/schema), config_test.go.
+
+## D-0013 — Phase 1: env secret provider lives at `adapters/secrets/envprovider`
+- **Context:** D-0001 put the `Provider` port in `kernel/secrets` with implementations in adapters;
+  blueprint 04 §1 lists `adapters/secrets/`.
+- **Decision:** first provider is `adapters/secrets/envprovider` (`secretref://env/<VAR>` →
+  process environment), with an injectable lookup func for tests. Cloud providers follow the same
+  layout later (`adapters/secrets/<name>provider`).
+- **Affected:** adapters/secrets/envprovider, app boot wiring, CLI config commands.
+
+## D-0014 — Phase 1: loader API is `Load[T]` (blueprint signature) + `LoadDetailed[T]`
+- **Context:** blueprint 12 §2 fixes `Load[T any](opts Options) (T, Fingerprint, error)`, but
+  `config doctor` needs per-key provenance and stage-unsafe warnings need a channel out.
+- **Decision:** keep the blueprint signature as the primary API; add
+  `LoadDetailed[T any](opts Options) (Loaded[T], error)` where `Loaded` carries Config,
+  Fingerprint, Provenance (key → layer) and Warnings. `Load` delegates to `LoadDetailed`.
+  Fingerprint = SHA-256 of the canonical *redacted* effective config JSON (structural `Secret`
+  redaction makes this safe by construction).
+- **Affected:** kernel/config/load.go, internal/cli (validate/print/doctor), app views.
+
+## D-0015 — Phase 1: `unsafe` knob mechanism ships now; first framework knob later
+- **Context:** 12 §4 requires a per-knob prod-refusal matrix, but every listed dev convenience
+  (fake token issuer, SQL echo, public pprof, permissive CORS) belongs to a later-phase component;
+  adding a dead config field now would be a partial implementation (banned by preflight rule 3).
+- **Decision:** the binder's `unsafe:"true"` handling (prod=error, stage=warning) is implemented
+  and matrix-tested in Phase 1 against test-local structs (the binder is generic, so the tests are
+  real end-to-end loader tests); `AllowFlags`-style CLI flags refused in prod is the one live
+  production rule now. Each later phase adds its real knobs with `unsafe:"true"` + a matrix entry.
+- **Affected:** kernel/config loader + tests; later phases' config sections.
+
+## D-0016 — Phase 1 review: `config.Options` final shape (supersedes blueprint 12 §2 sketch)
+- **Context:** review finding ARCH-12 — the implemented Options diverged from the blueprint sketch
+  (`AllowFlags bool` dropped; `Environ []string` and `Flags map[string]string` added).
+- **Decision:** keep the implemented shape. `Flags` presence + the prod refusal rule subsumes
+  `AllowFlags` (an empty map IS "flags not allowed"); `Environ` makes the env layer hermetic in
+  tests instead of mutating the process environment. Blueprint 12 §2 updated to match.
+- **Affected:** kernel/config/load.go, docs/blueprint/12 §2.
+
+## D-0017 — Phase 1 review: the environment gate is not overridable downward (SEC-5)
+- **Context:** security review reproduced two downgrades: an env var could flip a committed
+  `environment: prod` to `local` (disabling every prod check), and a flag setting `environment`
+  escaped the flags-refused-in-prod guard by lowering the value the guard reads.
+- **Decision:** trust rules in the loader: (1) `environment` may never come from the flag layer;
+  (2) an env var may *supply* `environment` only when no config file sets it — any mismatch with a
+  file value is an error, not an override; (3) prod checks and the flag guard key off the
+  file-layer value when present. The blueprint §1 table's "env vars set `environment`" reading is
+  narrowed accordingly (12 §4 updated).
+- **Tradeoffs:** a platform can no longer "promote" an image whose files say `dev` by env var —
+  intentional; environment changes ship as config changes.
+- **Affected:** kernel/config/load.go; tests TestLoadEnvironmentNotDowngradableByEnvVar,
+  TestLoadEnvironmentNeverFromFlags, TestLoadFlagDowngradeStillRefusedInProd; docs/blueprint/12 §4.
+
+## D-0018 — Phase 1 review: module namespaces are file-layer only (for now) (ARCH-8)
+- **Context:** env-var/flag values reach the tree as strings; a module's strict typed Decode would
+  fail with a confusing per-module JSON error at boot (`"4"` into an int field).
+- **Decision:** the loader rejects `modules.*` keys sourced from the env-var or flag layers with a
+  clear error at load time. Lifted when module config decoding learns scalar string coercion
+  (revisit at Phase 5 with the module SDK).
+- **Affected:** kernel/config/bind.go (namespaces case); TestLoadModuleNamespaceViaEnvVarRejected;
+  docs/blueprint/12 §3.
+
+## D-0019 — Phase 1 review: unsafe knobs are judged on final bound values (SEC-3/SEC-4)
+- **Context:** security review reproduced two fail-open holes: an unsafe knob whose unsafe value
+  is its compiled default was never checked (check lived on the "value present in tree" path), and
+  unsafe tags on struct/Secret/slice/pointer fields were silently unenforced.
+- **Decision:** enforcement moved to a post-bind pass over the fully bound struct: any
+  `unsafe:"true"` field with a non-zero final value refuses prod / warns stage, regardless of
+  which layer (or default tag) produced the value and regardless of field kind.
+- **Affected:** kernel/config/bind.go (enforceUnsafe), load.go; tests
+  TestLoadUnsafeDefaultRefusedInProd, TestLoadUnsafeStructKnobRefusedInProd.

@@ -21,7 +21,6 @@ var planned = map[string]string{
 	"seed":       "Phase 10",
 	"openapi":    "Phase 10",
 	"lint":       "Phase 10",
-	"config":     "Phase 1 (validate/print/schema for framework config), Phase 10 (product repos)",
 	"deploy":     "Phase 10",
 }
 
@@ -37,6 +36,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
+	case "config":
+		return runConfig(args[1:], stdout, stderr)
 	default:
 		if phase, ok := planned[cmd]; ok {
 			fmt.Fprintf(stderr, "wowapi %s: not implemented yet — planned in %s.\n", cmd, phase)
@@ -82,6 +83,7 @@ Usage:
 Available commands:
   version      print CLI version and check the go.mod dependency version
   help         this help
+  config       validate|print|schema|doctor  (run `+"`wowapi config`"+` for details)
 
 Planned commands (see docs/implementation/phase-plan.md):
   init         scaffold a product repository            (%s)
@@ -91,9 +93,8 @@ Planned commands (see docs/implementation/phase-plan.md):
   seed         seed validation                          (%s)
   openapi      merge/check OpenAPI fragments            (%s)
   lint         boundary lint                            (%s)
-  config       config init/validate/doctor/print/diff/schema (%s)
   deploy       render deployment manifests              (%s)
 `, buildinfo.ModulePath,
 		planned["init"], planned["new-module"], planned["gen"], planned["migrate"],
-		planned["seed"], planned["openapi"], planned["lint"], planned["config"], planned["deploy"])
+		planned["seed"], planned["openapi"], planned["lint"], planned["deploy"])
 }
