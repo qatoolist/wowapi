@@ -23,6 +23,7 @@ var expectedFiles = []string{
 	"00008_rules.sql",
 	"00009_workflow.sql",
 	"00010_documents.sql",
+	"00011_notify_webhook_integration.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

@@ -293,6 +293,39 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0056 — Phase 9: notify / webhook / integration framework + review fixes
+- **Context:** Phase 9 delivers the notification, webhook, and integration subsystems (migration 00011,
+  blueprint 07 §5/§6). Two parallel review agents reproduced 13 defects (evidence/phase-09/review-findings.md).
+- **Decisions:**
+  - **Config tables are app_platform-written (SEC-13):** notification_templates, integration_providers,
+    and webhook_endpoints are behavior-changing config (which channels/endpoints fire, which credentials
+    sign) — app_rt SELECT-only. notifications is module-written in a business tx; notification_deliveries
+    and webhook_events are append-only to app_rt with status advanced by the app_platform sender/relay.
+  - **Notifications:** template registry (module-declared, allowlisted vars, `text/template` — but
+    `html/template` for the email channel to auto-escape, SEC-51); `Send` writes the notification + one
+    delivery per resolved channel in the caller's tenant tx and dry-run-renders each body so a missing
+    var fails synchronously (ARCH-77); `SendPending` (app_platform) claims + delivers with a
+    `next_attempt_at` backoff and a maxAttempts dead-letter (ARCH-75).
+  - **Webhooks:** inbound `HandleInbound` verifies the provider signature (constant-time HMAC), enforces
+    replay via a synthesized-or-provided dedup id over a PARTIAL unique index (SEC-49) and a ±5m window;
+    a signature-failure audit row carries a NULL dedup id so it cannot block a real event (SEC-50);
+    outbound signing covers `timestamp + "." + body` (SEC-52). `RetryOutbound` (app_platform) is the
+    worker that actually drives outbound backoff/DLQ — DispatchOutbound alone gave one attempt (ARCH-70).
+    A per-endpoint circuit breaker opens after N failures, half-opens after a cooldown, and clears the
+    persisted `degraded` status on recovery (ARCH-72).
+  - **Integrations:** a provider-adapter registry (anti-corruption boundary) + a store that resolves
+    per-tenant/platform config and a credential from a secret REFERENCE (plaintext rejected); `Upsert`
+    uses `RETURNING id` so the conflict path returns the real row id (ARCH-71); `HealthChecks` probes
+    configured providers for readiness.
+  - **Hybrid RLS backstop (SEC-53):** a RESTRICTIVE policy on the platform+tenant hybrid tables forbids
+    a tenant-bound session from writing a NULL-tenant (platform) row.
+  - **events_outbox INSERT for app_platform:** granted in 00011 so tenant-bound workers (inbound
+    handlers, the delivery sender) can emit events; the relay's WITH CHECK admits it, the outbox Writer
+    stamps the tenant.
+- **Affected:** kernel/notify, kernel/webhook, kernel/integration,
+  migrations/00011_notify_webhook_integration.sql, kernel/kernel.go, module/module.go,
+  app/{context,boot}.go; evidence/phase-09/.
+
 ## D-0055 — Phase 8: document/file framework (storage port, append-only versions, grant RLS) + review fixes
 - **Context:** Phase 8 delivers documents/versions/grants/comments/attachments (migration 00010,
   blueprint 07 §4). Two parallel review agents reproduced 13 defects (evidence/phase-08/review-findings.md).

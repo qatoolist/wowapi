@@ -72,6 +72,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			rules: k.Rules, resolver: k.RulesResolver, wfReg: k.Workflows, wfRT: k.WorkflowRuntime,
 			docClass: k.DocumentClasses, docHooks: k.DocumentHooks, docs: k.Documents,
 			comments: k.Comments, attaches: k.Attachments,
+			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,
+			intReg: k.IntegrationProviders, intStore: k.Integrations,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
@@ -138,6 +140,12 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	// loudly rather than hand modules a nil Documents() at runtime.
 	if len(k.DocumentClasses.Keys()) > 0 && k.Documents == nil {
 		regErrs = append(regErrs, fmt.Errorf("document classes are registered (%v) but no storage adapter is wired: pass kernel.Deps.Storage", k.DocumentClasses.Keys()))
+	}
+	if err := k.NotifyTemplates.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
+	if err := k.IntegrationProviders.Err(); err != nil {
+		regErrs = append(regErrs, err)
 	}
 	// Every route's permission must be a registered permission (deny-by-default
 	// depends on the registry knowing it; an unknown permission is a boot bug).

@@ -25,12 +25,15 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
@@ -145,8 +148,17 @@ type Context interface {
 	Comments() *comment.Service
 	Attachments() *attachment.Service
 
-	// Later phases add, alongside the capability they deliver:
-	//   Notify() notify.Sender / Webhooks() webhook.Service    (Phase 9)
+	// Notification / webhook / integration framework (Phase 9, blueprint 07 §5/§6).
+	// NotifyTemplates is the registry a module declares notification templates into
+	// during Register; Notify is the runtime send service. Webhooks registers
+	// inbound verifiers/handlers and drives inbound/outbound delivery.
+	// IntegrationProviders is the provider-adapter registry; Integrations resolves
+	// provider config + credentials.
+	NotifyTemplates() *notify.Registry
+	Notify() *notify.Service
+	Webhooks() *webhook.Service
+	IntegrationProviders() *integration.Registry
+	Integrations() *integration.Store
 }
 
 // nameRE constrains module names; ValidName is used by app.Validate.

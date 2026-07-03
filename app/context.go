@@ -21,12 +21,15 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 	"github.com/qatoolist/wowapi/module"
 )
@@ -56,54 +59,64 @@ func newBootState() *bootState {
 // moduleContext implements module.Context. Unexported; callers receive the
 // interface value.
 type moduleContext struct {
-	name     string
-	logger   *slog.Logger
-	view     config.ModuleView
-	router   *httpx.Router
-	val      *validation.Validator
-	perms    *authz.Registry
-	rtypes   *resource.Registry
-	eval     authz.Evaluator
-	tx       database.TxManager
-	idgen    model.IDGen
-	events   *outbox.HandlerRegistry
-	writer   outbox.Writer
-	jobs     *jobs.Registry
-	rules    *rules.Registry
-	resolver *rules.Resolver
-	wfReg    *workflow.Registry
-	wfRT     *workflow.Runtime
-	docClass *document.Registry
-	docHooks *document.Hooks
-	docs     *document.Service
-	comments *comment.Service
-	attaches *attachment.Service
-	boot     *bootState
+	name      string
+	logger    *slog.Logger
+	view      config.ModuleView
+	router    *httpx.Router
+	val       *validation.Validator
+	perms     *authz.Registry
+	rtypes    *resource.Registry
+	eval      authz.Evaluator
+	tx        database.TxManager
+	idgen     model.IDGen
+	events    *outbox.HandlerRegistry
+	writer    outbox.Writer
+	jobs      *jobs.Registry
+	rules     *rules.Registry
+	resolver  *rules.Resolver
+	wfReg     *workflow.Registry
+	wfRT      *workflow.Runtime
+	docClass  *document.Registry
+	docHooks  *document.Hooks
+	docs      *document.Service
+	comments  *comment.Service
+	attaches  *attachment.Service
+	notifyReg *notify.Registry
+	notifySvc *notify.Service
+	webhooks  *webhook.Service
+	intReg    *integration.Registry
+	intStore  *integration.Store
+	boot      *bootState
 }
 
 // moduleDeps bundles the shared registries/services the app injects into every
 // module context, keeping the constructor signature stable as capabilities grow.
 type moduleDeps struct {
-	router   *httpx.Router
-	val      *validation.Validator
-	perms    *authz.Registry
-	rtypes   *resource.Registry
-	eval     authz.Evaluator
-	tx       database.TxManager
-	idgen    model.IDGen
-	events   *outbox.HandlerRegistry
-	writer   outbox.Writer
-	jobs     *jobs.Registry
-	rules    *rules.Registry
-	resolver *rules.Resolver
-	wfReg    *workflow.Registry
-	wfRT     *workflow.Runtime
-	docClass *document.Registry
-	docHooks *document.Hooks
-	docs     *document.Service
-	comments *comment.Service
-	attaches *attachment.Service
-	boot     *bootState
+	router    *httpx.Router
+	val       *validation.Validator
+	perms     *authz.Registry
+	rtypes    *resource.Registry
+	eval      authz.Evaluator
+	tx        database.TxManager
+	idgen     model.IDGen
+	events    *outbox.HandlerRegistry
+	writer    outbox.Writer
+	jobs      *jobs.Registry
+	rules     *rules.Registry
+	resolver  *rules.Resolver
+	wfReg     *workflow.Registry
+	wfRT      *workflow.Runtime
+	docClass  *document.Registry
+	docHooks  *document.Hooks
+	docs      *document.Service
+	comments  *comment.Service
+	attaches  *attachment.Service
+	notifyReg *notify.Registry
+	notifySvc *notify.Service
+	webhooks  *webhook.Service
+	intReg    *integration.Registry
+	intStore  *integration.Store
+	boot      *bootState
 }
 
 func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, deps moduleDeps) module.Context {
@@ -118,6 +131,8 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		rules: deps.rules, resolver: deps.resolver, wfReg: deps.wfReg, wfRT: deps.wfRT,
 		docClass: deps.docClass, docHooks: deps.docHooks, docs: deps.docs,
 		comments: deps.comments, attaches: deps.attaches,
+		notifyReg: deps.notifyReg, notifySvc: deps.notifySvc, webhooks: deps.webhooks,
+		intReg: deps.intReg, intStore: deps.intStore,
 		boot: deps.boot,
 	}
 }
@@ -204,6 +219,14 @@ func (c *moduleContext) DocumentHooks() *document.Hooks      { return c.docHooks
 func (c *moduleContext) Documents() *document.Service        { return c.docs }
 func (c *moduleContext) Comments() *comment.Service          { return c.comments }
 func (c *moduleContext) Attachments() *attachment.Service    { return c.attaches }
+
+// NotifyTemplates/Notify/Webhooks/IntegrationProviders/Integrations expose the
+// Phase 9 notification, webhook, and integration framework.
+func (c *moduleContext) NotifyTemplates() *notify.Registry           { return c.notifyReg }
+func (c *moduleContext) Notify() *notify.Service                     { return c.notifySvc }
+func (c *moduleContext) Webhooks() *webhook.Service                  { return c.webhooks }
+func (c *moduleContext) IntegrationProviders() *integration.Registry { return c.intReg }
+func (c *moduleContext) Integrations() *integration.Store            { return c.intStore }
 
 func (c *moduleContext) Migrations(fsys fs.FS) { c.boot.migrations[c.name] = fsys }
 func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }

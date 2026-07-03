@@ -14,6 +14,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -25,13 +26,17 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
+	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/relationship"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/secrets"
 	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
@@ -61,6 +66,15 @@ type Kernel struct {
 	Comments        *comment.Service
 	Attachments     *attachment.Service
 
+	// Notification / webhook / integration framework (Phase 9). NotifyTemplates
+	// and IntegrationProviders are the shared registration pointers modules write
+	// into during Register; Notify/Webhooks/Integrations are the runtime services.
+	NotifyTemplates      *notify.Registry
+	Notify               *notify.Service
+	Webhooks             *webhook.Service
+	IntegrationProviders *integration.Registry
+	Integrations         *integration.Store
+
 	audit authz.AuditSink
 }
 
@@ -75,6 +89,11 @@ type Deps struct {
 	// Optional: when nil, Kernel.Documents is nil and modules that require it fail
 	// boot only if they actually register a document class (checked by app.Boot).
 	Storage storage.Adapter
+	// Secrets resolves secret references (webhook signing secrets, integration
+	// credentials). Optional; when nil, resolving a ref errors at use time.
+	Secrets secrets.Provider
+	// WebhookSender delivers outbound webhooks. Optional; nil → the real HTTP sender.
+	WebhookSender webhook.Sender
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -125,26 +144,64 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	commentSvc := comment.New(idgen, writer)
 	attachmentSvc := attachment.New(idgen, writer)
 
+	// Notifications: template registry (module-declared) + service. Channel sender
+	// adapters (smtp/sms/…) are infra registered by the product on Notify.
+	notifyReg := notify.NewRegistry()
+	notifySvc := notify.New(notifyReg, idgen)
+
+	// Webhooks: a service over a Sender (real HTTP by default) and a secret-ref
+	// resolver adapting the kernel secrets provider. Modules register verifiers +
+	// inbound handlers on it during Register.
+	sender := deps.WebhookSender
+	if sender == nil {
+		sender = webhook.NewHTTPSender()
+	}
+	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen)
+
+	// Integrations: provider adapter registry + config/credential store.
+	intReg := integration.NewRegistry()
+	intStore := integration.NewStore(intReg, deps.Secrets, idgen)
+
 	return &Kernel{
-		Cfg:             cfg,
-		Log:             log,
-		Pool:            deps.Pool,
-		Platform:        deps.Platform,
-		Tx:              deps.Tx,
-		Authz:           eval,
-		Perms:           perms,
-		Resources:       resources,
-		Rules:           ruleReg,
-		RulesResolver:   ruleResolver,
-		Workflows:       wfReg,
-		WorkflowRuntime: wfRuntime,
-		DocumentClasses: docClasses,
-		DocumentHooks:   docHooks,
-		Documents:       docSvc,
-		Comments:        commentSvc,
-		Attachments:     attachmentSvc,
-		audit:           audit,
+		Cfg:                  cfg,
+		Log:                  log,
+		Pool:                 deps.Pool,
+		Platform:             deps.Platform,
+		Tx:                   deps.Tx,
+		Authz:                eval,
+		Perms:                perms,
+		Resources:            resources,
+		Rules:                ruleReg,
+		RulesResolver:        ruleResolver,
+		Workflows:            wfReg,
+		WorkflowRuntime:      wfRuntime,
+		DocumentClasses:      docClasses,
+		DocumentHooks:        docHooks,
+		Documents:            docSvc,
+		Comments:             commentSvc,
+		Attachments:          attachmentSvc,
+		NotifyTemplates:      notifyReg,
+		Notify:               notifySvc,
+		Webhooks:             webhookSvc,
+		IntegrationProviders: intReg,
+		Integrations:         intStore,
+		audit:                audit,
 	}, nil
+}
+
+// secretRefResolver adapts the kernel secrets.Provider to the webhook package's
+// string-ref SecretResolver port (an endpoint's secret_ref → the signing secret).
+type secretRefResolver struct{ p secrets.Provider }
+
+func (r secretRefResolver) Resolve(ctx context.Context, ref string) (string, error) {
+	if r.p == nil {
+		return "", fmt.Errorf("kernel: no secrets provider wired to resolve %q", ref)
+	}
+	parsed, err := secrets.ParseRef(ref)
+	if err != nil {
+		return "", err
+	}
+	return r.p.Resolve(ctx, parsed)
 }
 
 // loggingAudit is the Phase 5 AuditSink: it logs authorization denials at WARN.
