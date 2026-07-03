@@ -76,6 +76,64 @@ Blueprint deviations MUST land here before the code that implements them.
   are covered by code review until the Phase 5 AST-based lint can check identifiers only.
 - **Affected:** scripts/lint_boundaries.sh; revisit at Phase 5.
 
+## D-0035 — Phase 4: migration numbering maps blueprint 002–004 to on-disk 00004–00006
+- **Context:** blueprint 03 §5 numbers the identity/resource/authz migrations 002/003/004, but
+  on-disk 00003 was taken by idempotency (D-0031). goose numbers are per-source and only need to be
+  monotonic.
+- **Decision:** 00004_org_party_capacity.sql (blueprint 002: organizations, parties, persons,
+  legal_entities, party_contacts, acting_capacities), 00005_resource_relationship.sql (003:
+  resource_types, resources, relationship_types, relationships), 00006_authz.sql (004: permissions,
+  roles, role_permissions, actor_assignments, policies, policy_conditions). All tenant-scoped tables
+  get ENABLE+FORCE RLS + app_rt grants; global registries (resource_types, relationship_types,
+  permissions) get app_platform grants (kernel-service access, per SEC-13/D-0026).
+- **Affected:** migrations/00004–00006; docs/blueprint/03 §5 note.
+
+## D-0036 — Phase 4: authz evaluator is deny-by-default with a Store port; registry validated at boot
+- **Context:** 01 §3 specifies the layered Evaluate algorithm (RBAC → ReBAC → ABAC, deny-first) and
+  a permission registry where an unknown permission is a boot error, not a runtime 403.
+- **Decision:** `kernel/authz` defines Actor/Target/Decision/Evaluator + a `Store` port (loads
+  active assignments, role permissions, relationship grants, policies for an actor/target) so the
+  evaluator is pure and unit-testable with a fake store; the pg-backed store lands beside it. The
+  permission registry is a validated set built from module route permissions + seeded permissions;
+  Evaluate on an unregistered permission returns an error (surfaced at boot when routes register,
+  not per request). Filter returns a structured `ListFilter` (org/resource id constraints) the
+  store translates to SQL — never load-then-filter.
+- **Affected:** kernel/authz, kernel/policy, kernel/relationship, kernel/resource.
+
+## D-0037 — Phase 4: OIDC verifier with an injectable JWKS source + local test issuer
+- **Context:** 01 §3 / auth middleware needs an OIDC token verifier, but tests must mint tokens the
+  verifier accepts without an external IdP.
+- **Decision:** `kernel/auth` verifies JWTs against a `KeySource` port (JWKS by key id); production
+  wires a caching JWKS-over-HTTPS adapter, tests wire a local RSA signer (`testkit.IssueToken`).
+  The verifier maps validated claims → `authz.Actor` (user id, tenant, capacity) after resolving
+  the user's active capacity in the tenant. Break-glass/impersonation carry explicit ctx markers
+  and are audited.
+- **Affected:** kernel/auth, testkit/auth.go, adapters/oidc (JWKS adapter, later).
+
+## D-0038 — Phase 4 review: closed verb set extended with `ingest` and `activate` (ARCH-41)
+- **Context:** the 01 §3 closed action verb set is `create|read|list|update|deactivate|restore|approve|
+  reject|assign|export|admin`, but the blueprint's own matrix uses `payments.callback.ingest`
+  (webhook ingest) and break-glass needs an `activate` verb.
+- **Decision:** extend the closed set with `ingest` (inbound webhook/event ingestion) and `activate`
+  (break-glass / feature activation). The set stays closed and small; both have concrete blueprint
+  usages. 01 §3's list is updated to match so code and blueprint agree.
+- **Affected:** kernel/authz/registry.go, docs/blueprint/01 §3.
+
+## D-0039 — Phase 4 review: evaluator runs in the caller's tenant tx (ARCH-36); caching + list-ReBAC deferred
+- **Context:** the pg Store/Checker each opened their own `WithTenantRO` tx per method, so one
+  Evaluate spanned ~5 separate transactions — a different MVCC snapshot from the request's business
+  tx (a just-written resources mirror row would be invisible), N round-trips, and second-connection
+  deadlock risk on the hot path.
+- **Decision:** the Store/Checker/Evaluator methods take the caller's `database.TenantDB` and run
+  their reads on it — one snapshot, one connection, consistent with the request's writes. The pure
+  evaluator is unchanged; only the seam moves. Per-request memoization and the 30s assignment
+  snapshot cache (01 §3) are deferred to Phase 5/6 with the live wiring (a TODO on the evaluator);
+  ReBAC list visibility (`ListFilter` from relationship-derived resource ids) needs a
+  `Store.RelationshipResourceIDs` seam and is completed in Phase 5 when list endpoints ship
+  (ARCH-37) — until then `Filter` covers RBAC scopes only, documented in code.
+- **Affected:** kernel/authz (store.go, evaluator.go, store_pg.go), kernel/relationship,
+  kernel/resource/registrar; phase-plan rows 4/5.
+
 ## D-0010 — Phase 0→1: `environment` is fail-closed in deployed processes (SEC-1)
 - **Context:** security review: `Defaults()` sets `environment=local`; a prod deploy that forgets
   to set it would silently validate under local (lenient) rules.

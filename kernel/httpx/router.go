@@ -5,14 +5,15 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/qatoolist/wowapi/kernel/authz"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // ScopeExtractor derives the authorization target (org/resource id) from a
-// request. Phase 4 defines authz.Target; until then the extractor is an opaque
-// function the router stores and the auth middleware will consume. Returning
-// an error fails the request as a client error.
-type ScopeExtractor func(r *http.Request) (any, error)
+// request; the auth middleware (Phase 5) passes it to authz.Evaluate. Returning
+// an error fails the request as a client error (review finding ARCH-43 — now
+// typed to authz.Target).
+type ScopeExtractor func(r *http.Request) (authz.Target, error)
 
 // RouteMeta is mandatory metadata for every route. There is deliberately no
 // registration path without it: a route is either guarded by a Permission or

@@ -92,7 +92,7 @@ test-race: ## Unit tests with the race detector
 
 .PHONY: test-integration
 test-integration: ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
-	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Integration' -count=1 ./testkit/... ./kernel/database/...
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Integration' -count=1 $(PKGS)
 
 .PHONY: test-contract test-security
 test-contract test-security:

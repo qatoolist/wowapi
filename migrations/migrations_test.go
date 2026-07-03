@@ -16,6 +16,9 @@ var expectedFiles = []string{
 	"00001_bootstrap.sql",
 	"00002_core_identity.sql",
 	"00003_idempotency.sql",
+	"00004_org_party_capacity.sql",
+	"00005_resource_relationship.sql",
+	"00006_authz.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

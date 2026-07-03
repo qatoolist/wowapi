@@ -16,8 +16,10 @@ import (
 	"log/slog"
 	"regexp"
 
+	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/validation"
 )
 
@@ -60,9 +62,21 @@ type Context interface {
 	// httpx.BindAndValidate (Phase 3).
 	Validator() *validation.Validator
 
+	// Permissions returns the authorization permission registry the module
+	// declares its permissions into; an unregistered permission can never be
+	// authorized (deny-by-default, boot-validated — Phase 4, blueprint 01 §3).
+	Permissions() *authz.Registry
+
+	// Resources returns the resource-type registry the module declares its
+	// resource types into (Phase 4).
+	Resources() *resource.Registry
+
+	// Authz returns the authorization evaluator for record-level checks and
+	// list filtering (Phase 4). Nil until the app wires it at boot.
+	Authz() authz.Evaluator
+
 	// Later phases add, alongside the capability they deliver:
 	//   Tx() database.TxManager                (Phase 2)
-	//   Authz() authz.Evaluator                (Phase 4)
 	//   Migrations(fs fs.FS) / Seeds(fs fs.FS) (Phase 5)
 	//   Events() outbox.HandlerRegistry / Jobs() jobs.Registry (Phase 6)
 	//   Rules() rules.Registry / Workflows() workflow.Registry (Phase 7)

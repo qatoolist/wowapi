@@ -1,0 +1,137 @@
+package relationship_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/relationship"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/testkit"
+)
+
+// TestIntegrationRelationshipHas proves the ReBAC checker: an edge present at a
+// time answers true, a different object/relation answers false, and an expired
+// edge (valid_to in the past) answers false.
+func TestIntegrationRelationshipHas(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := uuid.New()
+
+	relType := "core.owner_of"
+	seedTenant(t, h, ctx, tenant)
+	seedResourceType(t, h, ctx, "requests.request")
+	mustExec(t, h, ctx, `INSERT INTO relationship_types (key, module, subject_kind, object_kind, description)
+		VALUES ($1,$2,$3,$4,$5)`, relType, "core", "capacity", "resource", "owner")
+
+	cap1 := seedCapacity(t, h, ctx, tenant)
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	other := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+
+	// Edges are seeded via the Admin pool: app_rt has no INSERT on relationships
+	// (SEC-24 — edge creation is a kernel/platform capability), which mirrors
+	// how a real edge-management service (app_platform) or a migration writes
+	// them. Live edge: cap1 owner_of obj.
+	mustExec(t, h, ctx, `INSERT INTO relationships
+		(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, version, created_by)
+		VALUES ($1,$2,$3,'capacity',$4,'resource',$5, now(), 1, $6)`,
+		gen.New(), tenant, relType, cap1, obj.ID, uuid.Nil)
+
+	checker := relationship.NewChecker()
+	actor := authz.Actor{Kind: authz.ActorUser, CapacityID: cap1, TenantID: tenant}
+	// Check slightly in the future: the edge's valid_from is the DB clock's
+	// now(), which can be marginally ahead of the host's time.Now() (container
+	// clock skew). An open-ended edge is active at any later instant, so this
+	// is skew-immune without weakening the production query.
+	now := time.Now().Add(time.Minute)
+
+	// has runs Checker.Has on the caller's tenant tx (app_rt, SELECT-only).
+	has := func(a authz.Actor, ref resource.Ref, at time.Time) bool {
+		t.Helper()
+		var ok bool
+		err := h.TxM.WithTenantRO(database.WithTenantID(ctx, tenant),
+			func(ctx context.Context, db database.TenantDB) error {
+				var e error
+				ok, e = checker.Has(ctx, db, a, relType, ref, at)
+				return e
+			})
+		if err != nil {
+			t.Fatalf("Has: %v", err)
+		}
+		return ok
+	}
+
+	if !has(actor, obj, now) {
+		t.Fatal("Has(live edge) = false; want true")
+	}
+	if has(actor, other, now) {
+		t.Fatal("Has(other object) = true; want false")
+	}
+
+	// Expired edge on a fresh object: valid_to in the past ⇒ not active now.
+	expObj := seedResource(t, h, ctx, tenant, "requests.request")
+	mustExec(t, h, ctx, `INSERT INTO relationships
+		(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, valid_to, version, created_by)
+		VALUES ($1,$2,$3,'capacity',$4,'resource',$5, now() - interval '2 days', now() - interval '1 day', 1, $6)`,
+		gen.New(), tenant, relType, cap1, expObj.ID, uuid.Nil)
+
+	if has(actor, expObj, now) {
+		t.Fatal("Has(expired edge) = true; want false")
+	}
+	// But it WAS active in the past.
+	if !has(actor, expObj, time.Now().Add(-36*time.Hour)) {
+		t.Fatal("Has(expired edge, past instant) = false; want true")
+	}
+
+	// A system actor (no capacity) never holds an edge.
+	sys := authz.Actor{Kind: authz.ActorSystem, System: "relay", TenantID: tenant}
+	if has(sys, obj, now) {
+		t.Fatal("Has(system actor) = true; want false")
+	}
+}
+
+// --- seed helpers (Admin pool bypasses RLS as the superuser login) ---
+
+func seedTenant(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant uuid.UUID) {
+	t.Helper()
+	mustExec(t, h, ctx, `INSERT INTO tenants (id, slug, display_name, created_by) VALUES ($1,$2,$3,$4)`,
+		tenant, "t-"+uuid.New().String()[:8], "Tenant", uuid.Nil)
+}
+
+func seedResourceType(t *testing.T, h *testkit.DBHandle, ctx context.Context, key string) {
+	t.Helper()
+	mustExec(t, h, ctx, `INSERT INTO resource_types (key, module, description) VALUES ($1,$2,$3)
+		ON CONFLICT (key) DO NOTHING`, key, "requests", "request")
+}
+
+func seedResource(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant uuid.UUID, rt string) resource.Ref {
+	t.Helper()
+	id := uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO resources (id, tenant_id, resource_type, label, status, created_by)
+		VALUES ($1,$2,$3,$4,'active',$5)`, id, tenant, rt, "res", uuid.Nil)
+	return resource.Ref{Type: rt, ID: id}
+}
+
+func seedCapacity(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant uuid.UUID) uuid.UUID {
+	t.Helper()
+	userID := uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO users (id, idp_subject, email, created_by) VALUES ($1,$2,$3,$4)`,
+		userID, "idp-"+uuid.New().String()[:8], uuid.New().String()[:8]+"@example.test", uuid.Nil)
+	capID := uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO acting_capacities (id, tenant_id, user_id, label, created_by)
+		VALUES ($1,$2,$3,$4,$5)`, capID, tenant, userID, "member", uuid.Nil)
+	return capID
+}
+
+func mustExec(t *testing.T, h *testkit.DBHandle, ctx context.Context, sql string, args ...any) {
+	t.Helper()
+	if _, err := h.Admin.Exec(ctx, sql, args...); err != nil {
+		t.Fatalf("seed exec: %v\n%s", err, sql)
+	}
+}

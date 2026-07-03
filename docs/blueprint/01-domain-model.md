@@ -217,7 +217,8 @@ constraints (`org IN (…)`, `resource.id IN (SELECT … relationships …)`) th
 
 ### Naming conventions
 - Permission: `module.resource.action`, lower snake dot; actions from the closed verb set
-  `create|read|list|update|deactivate|restore|approve|reject|assign|export|admin`.
+  `create|read|list|update|deactivate|restore|approve|reject|assign|export|admin|ingest|activate`
+  (`ingest` = inbound webhook/event ingestion, `activate` = break-glass/feature activation; D-0038).
 - Role: `module.audience.function` (`core.tenant.admin`, `core.org.auditor`, `requests.org.approver`).
 - Relationship type: `module.verb_phrase` (`core.owner_of`, `core.member_of`, `requests.assigned_to`).
 
