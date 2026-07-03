@@ -59,6 +59,26 @@ type Framework struct {
 	SchemaVersion int  `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
 	HTTP          HTTP `conf:"http" json:"http"`
 	Log           Log  `conf:"log" json:"log"`
+	DB            DB   `conf:"db" json:"db"`
+}
+
+// DB configures the Postgres pools. DSNs are optional at load time and
+// validated at process-view narrowing instead: api/worker require DSN,
+// migrate requires MigrateDSN (D-0021) — the framework repo's config tooling
+// and DB-less tests must stay loadable.
+type DB struct {
+	DSN        Secret `conf:"dsn" json:"dsn" doc:"runtime database DSN (app_rt role) as a secretref:// reference"`
+	MigrateDSN Secret `conf:"migrate_dsn" json:"migrate_dsn" doc:"migration DSN (app_migrate role) as a secretref:// reference; only the migrate process receives it"`
+	Pool              // embedded: pool knobs stay flat under db.* and flow to every process view wholesale
+}
+
+// Pool holds the connection-pool knobs shared by every process view. New
+// pool fields belong HERE, never directly on DB: the app views embed Pool,
+// so additions propagate to api/worker/migrate narrowing automatically
+// instead of silently dropping out of a hand-copied field list (ARCH-17).
+type Pool struct {
+	MaxConns     int           `conf:"max_conns" default:"16" json:"max_conns" doc:"maximum pool connections"`
+	QueryTimeout time.Duration `conf:"query_timeout" default:"5s" json:"query_timeout" doc:"per-query context deadline"`
 }
 
 // HTTP holds server guardrails. Zero values are replaced by Defaults.
@@ -88,6 +108,7 @@ func Defaults() Framework {
 			MaxBodyBytes:      1 << 20, // 1 MiB
 		},
 		Log: Log{Level: "info", Format: "json"},
+		DB:  DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
 	}
 }
 
@@ -124,6 +145,12 @@ func (f Framework) Validate() error {
 	case "json", "text":
 	default:
 		add("log.format: %q is not one of json|text", f.Log.Format)
+	}
+	if f.DB.MaxConns < 2 || f.DB.MaxConns > 200 {
+		add("db.max_conns: %d outside safe range 2..200", f.DB.MaxConns)
+	}
+	if f.DB.QueryTimeout < 100*time.Millisecond || f.DB.QueryTimeout > 60*time.Second {
+		add("db.query_timeout: %v outside safe range 100ms..60s", f.DB.QueryTimeout)
 	}
 
 	// Production safety floor. Dev-only conveniences added in later phases

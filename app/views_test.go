@@ -1,7 +1,9 @@
 package app
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -17,6 +19,79 @@ var testFramework = config.Framework{
 		MaxBodyBytes:      config.Defaults().HTTP.MaxBodyBytes,
 	},
 	Log: config.Log{Level: "debug", Format: "text"},
+	DB: config.DB{
+		DSN:        config.NewSecret("secretref://env/APP_DSN", "postgres://rt:pw@h/db"),
+		MigrateDSN: config.NewSecret("secretref://env/MIGRATE_DSN", "postgres://mig:pw@h/db"),
+		Pool:       config.Defaults().DB.Pool,
+	},
+}
+
+func mustAPI(t *testing.T, f config.Framework, mods config.Namespaces) APIConfig {
+	t.Helper()
+	c, err := NewAPIConfig(f, mods)
+	if err != nil {
+		t.Fatalf("NewAPIConfig: %v", err)
+	}
+	return c
+}
+
+func mustWorker(t *testing.T, f config.Framework, mods config.Namespaces) WorkerConfig {
+	t.Helper()
+	c, err := NewWorkerConfig(f, mods)
+	if err != nil {
+		t.Fatalf("NewWorkerConfig: %v", err)
+	}
+	return c
+}
+
+func mustMigrate(t *testing.T, f config.Framework) MigrateConfig {
+	t.Helper()
+	c, err := NewMigrateConfig(f)
+	if err != nil {
+		t.Fatalf("NewMigrateConfig: %v", err)
+	}
+	return c
+}
+
+// D-0021: DSNs are validated at narrowing, not by config tags.
+func TestViewsRequireTheirDSN(t *testing.T) {
+	noRT := testFramework
+	noRT.DB.DSN = config.Secret{}
+	if _, err := NewAPIConfig(noRT, nil); err == nil {
+		t.Error("api view must require db.dsn")
+	}
+	if _, err := NewWorkerConfig(noRT, nil); err == nil {
+		t.Error("worker view must require db.dsn")
+	}
+	noMig := testFramework
+	noMig.DB.MigrateDSN = config.Secret{}
+	if _, err := NewMigrateConfig(noMig); err == nil {
+		t.Error("migrate view must require db.migrate_dsn")
+	}
+}
+
+// 12 §7: runtime processes never hold app_migrate credentials, and the
+// migrate process never holds the runtime DSN. The redaction markers carry
+// the refs, so the rendered JSON proves which secrets a view can even name.
+func TestViewsCarryOnlyTheirDSN(t *testing.T) {
+	api, _ := json.Marshal(mustAPI(t, testFramework, testMods))
+	worker, _ := json.Marshal(mustWorker(t, testFramework, testMods))
+	migrate, _ := json.Marshal(mustMigrate(t, testFramework))
+
+	for name, js := range map[string][]byte{"api": api, "worker": worker} {
+		if strings.Contains(string(js), "MIGRATE_DSN") {
+			t.Errorf("%s view must not carry the migrate DSN: %s", name, js)
+		}
+		if !strings.Contains(string(js), "APP_DSN") {
+			t.Errorf("%s view should carry the runtime DSN ref: %s", name, js)
+		}
+	}
+	if strings.Contains(string(migrate), "APP_DSN") {
+		t.Errorf("migrate view must not carry the runtime DSN: %s", migrate)
+	}
+	if !strings.Contains(string(migrate), "MIGRATE_DSN") {
+		t.Errorf("migrate view should carry the migrate DSN ref: %s", migrate)
+	}
 }
 
 var testMods = config.Namespaces{
@@ -64,7 +139,7 @@ func TestMigrateConfig_NoHTTPField(t *testing.T) {
 
 // TestNewAPIConfig_Fields verifies the constructor copies the expected sections.
 func TestNewAPIConfig_Fields(t *testing.T) {
-	c := NewAPIConfig(testFramework, testMods)
+	c := mustAPI(t, testFramework, testMods)
 	if c.Environment != testFramework.Environment {
 		t.Errorf("Environment = %v, want %v", c.Environment, testFramework.Environment)
 	}
@@ -81,7 +156,7 @@ func TestNewAPIConfig_Fields(t *testing.T) {
 
 // TestNewWorkerConfig_Fields verifies the constructor omits HTTP.
 func TestNewWorkerConfig_Fields(t *testing.T) {
-	c := NewWorkerConfig(testFramework, testMods)
+	c := mustWorker(t, testFramework, testMods)
 	if c.Environment != testFramework.Environment {
 		t.Errorf("Environment = %v, want %v", c.Environment, testFramework.Environment)
 	}
@@ -95,7 +170,7 @@ func TestNewWorkerConfig_Fields(t *testing.T) {
 
 // TestNewMigrateConfig_Fields verifies the constructor includes only env+log.
 func TestNewMigrateConfig_Fields(t *testing.T) {
-	c := NewMigrateConfig(testFramework)
+	c := mustMigrate(t, testFramework)
 	if c.Environment != testFramework.Environment {
 		t.Errorf("Environment = %v, want %v", c.Environment, testFramework.Environment)
 	}
@@ -110,8 +185,8 @@ func TestNewMigrateConfig_Fields(t *testing.T) {
 // per-section approach is what makes cross-process drift detection possible
 // (blueprint 12 §7).
 func TestSectionFingerprints_SharedSectionsAgree(t *testing.T) {
-	api := NewAPIConfig(testFramework, testMods)
-	worker := NewWorkerConfig(testFramework, testMods)
+	api := mustAPI(t, testFramework, testMods)
+	worker := mustWorker(t, testFramework, testMods)
 
 	apiFPs, err := api.SectionFingerprints()
 	if err != nil {
@@ -122,7 +197,7 @@ func TestSectionFingerprints_SharedSectionsAgree(t *testing.T) {
 		t.Fatalf("WorkerConfig.SectionFingerprints() error: %v", err)
 	}
 
-	for _, section := range []string{"environment", "log", "modules"} {
+	for _, section := range []string{"environment", "db", "log", "modules"} {
 		if apiFPs[section] != workerFPs[section] {
 			t.Errorf("section %q fingerprints differ between API and Worker for identical input: api=%s worker=%s",
 				section, apiFPs[section].Short(), workerFPs[section].Short())
@@ -138,11 +213,11 @@ func TestSectionFingerprints_ChangedSectionDiffers(t *testing.T) {
 	f2 := testFramework
 	f2.Log.Level = "warn" // mutate only the log section
 
-	fps1, err := NewAPIConfig(f1, testMods).SectionFingerprints()
+	fps1, err := mustAPI(t, f1, testMods).SectionFingerprints()
 	if err != nil {
 		t.Fatalf("SectionFingerprints() error: %v", err)
 	}
-	fps2, err := NewAPIConfig(f2, testMods).SectionFingerprints()
+	fps2, err := mustAPI(t, f2, testMods).SectionFingerprints()
 	if err != nil {
 		t.Fatalf("SectionFingerprints() error: %v", err)
 	}
@@ -158,8 +233,8 @@ func TestSectionFingerprints_ChangedSectionDiffers(t *testing.T) {
 // TestAPIAndWorkerFingerprints_Differ verifies that for the same Framework
 // the API and Worker fingerprints differ, because the API view includes HTTP.
 func TestAPIAndWorkerFingerprints_Differ(t *testing.T) {
-	api := NewAPIConfig(testFramework, testMods)
-	worker := NewWorkerConfig(testFramework, testMods)
+	api := mustAPI(t, testFramework, testMods)
+	worker := mustWorker(t, testFramework, testMods)
 
 	apiFP, err := api.Fingerprint()
 	if err != nil {
@@ -177,8 +252,8 @@ func TestAPIAndWorkerFingerprints_Differ(t *testing.T) {
 // TestFingerprint_Deterministic verifies same input always produces the same
 // fingerprint (fingerprinting is a pure function of the view's content).
 func TestFingerprint_Deterministic(t *testing.T) {
-	api1 := NewAPIConfig(testFramework, testMods)
-	api2 := NewAPIConfig(testFramework, testMods)
+	api1 := mustAPI(t, testFramework, testMods)
+	api2 := mustAPI(t, testFramework, testMods)
 
 	fp1, err := api1.Fingerprint()
 	if err != nil {
@@ -200,11 +275,11 @@ func TestFingerprint_ChangesWithContent(t *testing.T) {
 	f2 := testFramework
 	f2.Log.Level = "warn"
 
-	fp1, err := NewAPIConfig(f1, testMods).Fingerprint()
+	fp1, err := mustAPI(t, f1, testMods).Fingerprint()
 	if err != nil {
 		t.Fatal(err)
 	}
-	fp2, err := NewAPIConfig(f2, testMods).Fingerprint()
+	fp2, err := mustAPI(t, f2, testMods).Fingerprint()
 	if err != nil {
 		t.Fatal(err)
 	}

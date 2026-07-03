@@ -49,11 +49,19 @@ shell: ## Shell in the containerized toolbox (repo mounted at /src)
 db-shell: ## psql into the local postgres
 	$(COMPOSE) exec postgres psql -U wowapi -d wowapi
 
-##@ Database (delivered in Phase 2)
+##@ Database
 
-.PHONY: migrate seed
-migrate seed:
-	@echo "make $@: available in Phase 2 (kernel/database + migration runner) — see docs/implementation/phase-plan.md" >&2; exit 2
+# Local default DSN matches deployments/compose.yaml; CI containers get
+# DATABASE_URL injected by the compose tools service.
+TEST_DSN ?= postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
+
+.PHONY: migrate
+migrate: ## Apply kernel migrations to the local compose database
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) run ./internal/tools/migrate
+
+.PHONY: seed
+seed:
+	@echo "make seed: available in Phase 5 (seed loader) — see docs/implementation/phase-plan.md" >&2; exit 2
 
 ##@ Quality
 
@@ -82,9 +90,13 @@ test-unit: ## Unit tests (no external services)
 test-race: ## Unit tests with the race detector
 	$(GO) test -race $(PKGS)
 
-.PHONY: test-integration test-contract test-security
-test-integration test-contract test-security:
-	@echo "make $@: available from Phase 2/4/5 (needs kernel/database + testkit) — see docs/implementation/phase-plan.md" >&2; exit 2
+.PHONY: test-integration
+test-integration: ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Integration' -count=1 ./testkit/... ./kernel/database/...
+
+.PHONY: test-contract test-security
+test-contract test-security:
+	@echo "make $@: available from Phase 4/5 (needs authz + module SDK) — see docs/implementation/phase-plan.md" >&2; exit 2
 
 .PHONY: bench
 bench: ## Benchmarks (budget gates arrive in Phase 11)

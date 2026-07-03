@@ -176,3 +176,115 @@ Blueprint deviations MUST land here before the code that implements them.
   which layer (or default tag) produced the value and regardless of field kind.
 - **Affected:** kernel/config/bind.go (enforceUnsafe), load.go; tests
   TestLoadUnsafeDefaultRefusedInProd, TestLoadUnsafeStructKnobRefusedInProd.
+
+## D-0020 — Phase 2: `kernel/model` ships complete now
+- **Context:** phase-plan row 2 doesn't name kernel/model, but TenantDB helpers key on
+  `model.TenantScoped`, testkit fixtures return typed handles, and migrations follow its column
+  conventions — building database/testkit against ad-hoc types would create the partial
+  implementations preflight rule 3 bans.
+- **Decision:** implement 04 §3 verbatim in Phase 2: BaseFields/TenantScoped/Auditable/CreatedOnly/
+  Versioned/Temporal/Statused + Ref value objects + `IDGen` port with a UUIDv7 default.
+  Deps: google/uuid (v7 support), shopspring/decimal (Money).
+- **Affected:** kernel/model; go.mod.
+
+## D-0021 — Phase 2: DB DSNs validated at process-view narrowing, not by a required tag
+- **Context:** blueprint 12 §2 sketches `DSN Secret validate:"required"`, but a tag-required DSN
+  would make every Framework load (CLI schema/validate in the framework repo, config-only tests,
+  Defaults()) fail without a database — and §7 says each process receives only what it needs.
+- **Decision:** `config.DB` fields are optional at load; `app.NewAPIConfig`/`NewWorkerConfig`
+  error when the runtime DSN is unset, `app.NewMigrateConfig` errors when the migrate DSN is
+  unset. Raw (non-secretref) DSN strings remain structurally impossible (Secret.UnmarshalText).
+- **Affected:** kernel/config/config.go (DB section), app/views.go, tests.
+
+## D-0022 — Phase 2: integration tests use env-DSN + template-database clones, not testcontainers
+- **Context:** test-strategy sketched testcontainers; the compose stack already provides Postgres
+  both on the host (localhost:5432) and inside the tools container (DATABASE_URL), and
+  testcontainers-go would be the largest dependency in the tree by far.
+- **Decision:** testkit connects via `WOWAPI_TEST_DSN` (fallback `DATABASE_URL`); tests skip with
+  a clear message when neither is set. Speed: kernel migrations run once per process into a
+  template database; each test gets `CREATE DATABASE … TEMPLATE …` + drop on cleanup.
+  Testcontainers can be layered later without API changes. test-strategy.md updated.
+- **Affected:** testkit/db.go, Makefile test-integration, docs/implementation/test-strategy.md.
+
+## D-0023 — Phase 2: runtime RLS identity is a non-superuser login (revised after SEC-11/SEC-12)
+- **Context:** RLS must be enforced against a role that is non-owner, non-superuser, and lacks
+  BYPASSRLS. The original decision (superuser admin login + `SET ROLE app_rt`) was reproduced by
+  the Phase 2 security review to be escapable: a module running arbitrary SQL as designed can
+  `RESET ROLE` back to the superuser login mid-transaction and read every tenant (SEC-11), and a
+  pool wired against an over-privileged DSN silently disables RLS with no signal (SEC-12).
+- **Decision:** deployed processes MUST authenticate as a **non-superuser login mapped to app_rt**;
+  `SET ROLE` from a superuser is no longer an accepted production posture. Defense in depth, all
+  shipped:
+  1. `database.WithConnRLSGuard()` refuses, at connect, any pool whose effective role is superuser
+     or BYPASSRLS (fail-closed pool construction).
+  2. `database.Manager` `WithRole` re-asserts `SET LOCAL ROLE` per tenant tx (survives pool-state
+     leaks across checkouts), and `WithRLSGuard` re-checks enforcement per tenant tx.
+  3. `app_rt`/`app_platform` stay NOLOGIN in the committed migration — no password ships. The
+     testkit grants `app_rt` a local-only LOGIN out-of-band (never committed) and connects as it,
+     modelling production exactly; the SEC-11 escalation test passes only because the login is a
+     genuine non-superuser.
+- **Tradeoffs:** product deployment docs must state the non-superuser-login requirement plainly
+  (Phase 10/12); `WithSetRole` is retained only as a session baseline for tooling, not a security
+  boundary.
+- **Affected:** migrations/00001_bootstrap.sql, kernel/database (pool guards, per-tx role),
+  testkit/db.go, docs/blueprint/12 (deployment note, Phase 10).
+
+## D-0026 — Phase 2 review: global identity tables granted to app_platform, not app_rt (SEC-13)
+- **Context:** global tables carry no RLS (03 §1); granting them to `app_rt` let any module read or
+  tamper with the whole cross-tenant membership graph via ordinary tenant-tx SQL.
+- **Decision:** 00002 grants SELECT/INSERT/UPDATE on tenants/users/user_tenant_access to
+  `app_platform` only. Kernel identity services run platform transactions under that role via a
+  dedicated pool; that pool is wired when the first such service lands (Phase 4). In Phase 2 the
+  runtime `app_rt` simply cannot touch the global spine — correct for now.
+- **Affected:** migrations/00002_core_identity.sql; kernel/database.Manager.Platform (pool wiring
+  deferred to Phase 4, tracked in phase-plan row 4).
+
+## D-0027 — Phase 2 review: per-source migration history tables (ARCH-16)
+- **Context:** goose derives a version from the leading filename digits and tracks one history
+  table; kernel `00001..` and a module's `0001..` would collide, making the documented
+  multi-source model impossible.
+- **Decision:** `database.Migrate(ctx, pool, src, source)` uses a per-source history table
+  (`goose_version_<source>`); the kernel source is `migrations.SourceName` ("wowapi"), each module
+  supplies its own. Independently-numbered sources coexist. `Migrate` returns `MigrateResult{Version,
+  Applied}` so idempotency (`Applied==0` on rerun) is assertable.
+- **Affected:** kernel/database/migrate.go, migrations/migrations.go, internal/tools/migrate,
+  testkit; docs/blueprint/03 §5 wording.
+
+## D-0028 — Phase 2 review: ExpectOneRow distinguishes 0-row conflict from >1-row bug (ARCH-20)
+- **Decision:** 0 rows → `ErrVersionConflict` (409/412); >1 row → a distinct internal error (500),
+  never masked as a conflict — a too-broad WHERE on a versioned aggregate is a bug, not contention.
+- **Affected:** kernel/database/errors.go.
+
+## D-0029 — Phase 2 review: `config.Pool` sub-struct absorbs shared pool knobs (ARCH-17)
+- **Decision:** pool knobs live in `config.Pool`, embedded in `config.DB` and in the app views'
+  `RuntimeDB`/`MigrateDB`; new pool fields propagate to every narrowed view without editing the
+  narrowing code, closing the silent-drop drift.
+- **Affected:** kernel/config/config.go, app/views.go.
+
+## D-0030 — Phase 2 review: actor binding stays optional until the actor model exists (ARCH-19)
+- **Context:** 05 §2 says `WithTenant` binds `app.tenant_id` AND `app.actor_id` "error if absent".
+  The Phase 2 TxManager hard-fails on missing tenant but binds actor only when present. There is no
+  actor model, no audit triggers, and no `created_by` defaults reading `app.actor_id` until Phase 4.
+- **Decision:** keep actor binding optional for Phase 2 (tenant remains fail-closed). When Phase 4
+  introduces the actor/audit machinery that actually consumes `app.actor_id`, `WithTenant` (RW)
+  will require it (fail-closed at the door), while `WithTenantRO` read paths stay actor-optional.
+  Recorded now so the deviation from 05 §2 is explicit, not silent.
+- **Affected:** kernel/database/txmanager.go; revisit at phase-plan row 4.
+
+## D-0024 — Phase 2: TenantDB grows per-phase accessors; sentinel errors until kernel/errors
+- **Context:** 05 §2's TenantDB carries Outbox()/Audit()/Resources(), owned by Phases 4/6; the
+  error taxonomy arrives in Phase 3.
+- **Decision:** Phase 2 TenantDB = DBTX only (D-0006 growth pattern; accessors land with their
+  capabilities). Version-conflict/no-tenant failures are exported sentinel errors in
+  kernel/database now and get mapped into the Phase 3 taxonomy when it exists.
+- **Affected:** kernel/database; revisit notes in phase-plan rows 3/4/6.
+
+## D-0025 — Phase 2: only kernel migrations 000–001 ship; RLS proven on probe tables
+- **Context:** tenants/users/user_tenant_access (001) are GLOBAL tables — RLS-bearing kernel
+  tables start at migration 002+ (later phases). Phase 2 must still prove the RLS mechanics.
+- **Decision:** ship 000 (extensions, roles, `app_tenant_id()`), 001 (tenants/users/access) per
+  phase plan; `testkit.AssertRLSIsolation` + integration tests create standard-convention probe
+  tables (tenant_id + ENABLE/FORCE + policy) to prove SET LOCAL binding, isolation, WITH CHECK,
+  and no-tenant-context failure. Each later migration adding tenant tables reuses the same
+  assertion catalog-driven.
+- **Affected:** migrations/, testkit/asserts.go, kernel/database integration tests.

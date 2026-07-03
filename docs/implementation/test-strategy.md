@@ -7,7 +7,7 @@ Blueprint source: [08-testing-and-tooling.md](../blueprint/08-testing-and-toolin
 | Layer | What | Runner | Make target | From phase |
 |---|---|---|---|---|
 | Unit | pure funcs: config validation/redaction, cursor codecs, backoff math, policy eval, app registration/topo-sort | `go test ./...` (no services) | `test-unit` | 0 |
-| Integration | service+repo+kernel against real Postgres (testcontainers; template-DB clone per test) | containers required | `test-integration` | 2 |
+| Integration | service+repo+kernel against real Postgres (env-DSN from the compose stack; template-DB clone per test — D-0022) | containers required | `test-integration` | 2 |
 | Contract | `testkit.RunModuleContract` against `internal/testmodules/requests` + generated modules | containers | `test-contract` | 5 |
 | Security | RLS isolation sweep, authz matrix, route-metadata completeness, secret-leak scan, unsafe-prod config matrix | containers | `test-security` | 2/4 |
 | External-consumer | scratch product repo (created in CI tmpdir via `wowapi init` + `go mod edit -replace`) builds, registers a module, passes contract tests | containers + Go | `test-consumer` (part of `ci`) | 5 |
@@ -27,6 +27,8 @@ Blueprint source: [08-testing-and-tooling.md](../blueprint/08-testing-and-toolin
 
 ## Container execution
 `deployments/compose.yaml` provides postgres/minio/mailpit plus a `tools` service (Go image with
-repo mounted) so `docker compose run tools make test` works without host Go. Testcontainers-based
-suites run either on host Docker or inside the tools container via the mounted Docker socket
-(documented in the compose file).
+repo mounted) so `docker compose run tools make test` works without host Go. Integration suites
+locate Postgres via `WOWAPI_TEST_DSN`/`DATABASE_URL` (host: `make up` + the compose default;
+tools container: injected) and skip with instructions when neither is set — no testcontainers
+dependency (D-0022). `testkit.NewDB` migrates a template database once per process and clones it
+per test for speed.

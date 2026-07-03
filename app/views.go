@@ -7,62 +7,102 @@
 // can detect per-section drift across processes on shared config sections.
 package app
 
-import "github.com/qatoolist/wowapi/kernel/config"
+import (
+	"errors"
+
+	"github.com/qatoolist/wowapi/kernel/config"
+)
+
+// RuntimeDB is the runtime slice of config.DB handed to api/worker: the
+// app_rt DSN plus the embedded pool knobs. The migration DSN is deliberately
+// absent — runtime processes never hold app_migrate credentials (12 §7).
+// Embedding config.Pool (not re-listing its fields) means new pool knobs
+// reach every view without touching the narrowing code (ARCH-17).
+type RuntimeDB struct {
+	DSN         config.Secret `json:"dsn"`
+	config.Pool               // flattens: max_conns, query_timeout, …
+}
+
+// MigrateDB is the migrate slice of config.DB: the app_migrate DSN plus the
+// pool knobs. The runtime DSN is deliberately absent (blueprint 12 §7).
+type MigrateDB struct {
+	DSN config.Secret `json:"dsn"`
+	config.Pool
+}
 
 // APIConfig is the narrowed view handed to cmd/api: HTTP server settings,
-// logging, and module namespaces. It deliberately omits migration DSN and
-// provider credentials the API process does not use (blueprint 12 §7).
+// runtime database, logging, and module namespaces. It deliberately omits
+// the migration DSN and provider credentials the API process does not use
+// (blueprint 12 §7).
 type APIConfig struct {
 	Environment config.Env        `json:"environment"`
 	HTTP        config.HTTP       `json:"http"`
+	DB          RuntimeDB         `json:"db"`
 	Log         config.Log        `json:"log"`
 	Modules     config.Namespaces `json:"modules"`
 }
 
-// WorkerConfig is the narrowed view handed to cmd/worker: logging and module
-// namespaces. The HTTP server section is deliberately absent — a worker does
-// not bind a port (blueprint 12 §7).
+// WorkerConfig is the narrowed view handed to cmd/worker: runtime database,
+// logging, and module namespaces. The HTTP server section is deliberately
+// absent — a worker does not bind a port (blueprint 12 §7).
 type WorkerConfig struct {
 	Environment config.Env        `json:"environment"`
+	DB          RuntimeDB         `json:"db"`
 	Log         config.Log        `json:"log"`
 	Modules     config.Namespaces `json:"modules"`
 }
 
-// MigrateConfig is the narrowed view handed to cmd/migrate: logging only.
-// Module namespaces and the HTTP section are deliberately absent; a migration
-// DSN (app_migrate secret ref) arrives in Phase 2 and will widen this struct.
+// MigrateConfig is the narrowed view handed to cmd/migrate: the migration
+// DSN and logging only. Module namespaces, the HTTP section, and the runtime
+// DSN are deliberately absent (blueprint 12 §7).
 type MigrateConfig struct {
 	Environment config.Env `json:"environment"`
+	DB          MigrateDB  `json:"db_migrate"`
 	Log         config.Log `json:"log"`
 }
 
 // NewAPIConfig constructs the api process view from a loaded Framework and
-// the full module namespace map.
-func NewAPIConfig(f config.Framework, mods config.Namespaces) APIConfig {
+// the full module namespace map. The runtime DSN is required here — DSNs are
+// validated at narrowing, not by config tags, so DB-less tooling loads stay
+// possible (D-0021).
+func NewAPIConfig(f config.Framework, mods config.Namespaces) (APIConfig, error) {
+	if f.DB.DSN.IsZero() {
+		return APIConfig{}, errors.New("app: db.dsn is required for the api process")
+	}
 	return APIConfig{
 		Environment: f.Environment,
 		HTTP:        f.HTTP,
+		DB:          RuntimeDB{DSN: f.DB.DSN, Pool: f.DB.Pool},
 		Log:         f.Log,
 		Modules:     mods,
-	}
+	}, nil
 }
 
 // NewWorkerConfig constructs the worker process view from a loaded Framework
-// and the full module namespace map.
-func NewWorkerConfig(f config.Framework, mods config.Namespaces) WorkerConfig {
+// and the full module namespace map. Requires the runtime DSN (D-0021).
+func NewWorkerConfig(f config.Framework, mods config.Namespaces) (WorkerConfig, error) {
+	if f.DB.DSN.IsZero() {
+		return WorkerConfig{}, errors.New("app: db.dsn is required for the worker process")
+	}
 	return WorkerConfig{
 		Environment: f.Environment,
+		DB:          RuntimeDB{DSN: f.DB.DSN, Pool: f.DB.Pool},
 		Log:         f.Log,
 		Modules:     mods,
-	}
+	}, nil
 }
 
-// NewMigrateConfig constructs the migrate process view from a loaded Framework.
-func NewMigrateConfig(f config.Framework) MigrateConfig {
+// NewMigrateConfig constructs the migrate process view from a loaded
+// Framework. Requires the migration DSN (D-0021).
+func NewMigrateConfig(f config.Framework) (MigrateConfig, error) {
+	if f.DB.MigrateDSN.IsZero() {
+		return MigrateConfig{}, errors.New("app: db.migrate_dsn is required for the migrate process")
+	}
 	return MigrateConfig{
 		Environment: f.Environment,
+		DB:          MigrateDB{DSN: f.DB.MigrateDSN, Pool: f.DB.Pool},
 		Log:         f.Log,
-	}
+	}, nil
 }
 
 // Fingerprint returns the SHA-256 of this view's canonical redacted JSON
@@ -107,6 +147,7 @@ func (c APIConfig) SectionFingerprints() (map[string]config.Fingerprint, error) 
 	return sectionFingerprints(map[string]any{
 		"environment": c.Environment,
 		"http":        c.HTTP,
+		"db":          c.DB,
 		"log":         c.Log,
 		"modules":     c.Modules,
 	})
@@ -119,6 +160,7 @@ func (c APIConfig) SectionFingerprints() (map[string]config.Fingerprint, error) 
 func (c WorkerConfig) SectionFingerprints() (map[string]config.Fingerprint, error) {
 	return sectionFingerprints(map[string]any{
 		"environment": c.Environment,
+		"db":          c.DB,
 		"log":         c.Log,
 		"modules":     c.Modules,
 	})
@@ -129,8 +171,11 @@ func (c WorkerConfig) SectionFingerprints() (map[string]config.Fingerprint, erro
 // compared for config drift (blueprint 12 §7); comparing whole-view
 // fingerprints across differently-shaped views is meaningless.
 func (c MigrateConfig) SectionFingerprints() (map[string]config.Fingerprint, error) {
+	// The migrate DB slice is named db_migrate so ops never compare it
+	// against the api/worker "db" section — different shapes, different DSNs.
 	return sectionFingerprints(map[string]any{
 		"environment": c.Environment,
+		"db_migrate":  c.DB,
 		"log":         c.Log,
 	})
 }

@@ -56,6 +56,12 @@ for f in module testkit examples internal/testmodules; do
   check_rule "$prod" "internal/cli" "$f" "internal/cli must not import $f"
 done
 
+# internal/tools/* are dev/CI helpers: kernel + migrations only, never the
+# higher layers or product/test code (review finding ARCH-23).
+for f in module app adapters testkit examples internal/testmodules; do
+  check_rule "$prod" "internal/tools" "$f" "internal/tools must not import $f"
+done
+
 # HARD rule: no production package imports testkit (test imports are fine).
 bad=$(awk -v m="$MOD" '
   {
