@@ -134,6 +134,81 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Affected:** kernel/authz (store.go, evaluator.go, store_pg.go), kernel/relationship,
   kernel/resource/registrar; phase-plan rows 4/5.
 
+## D-0040 — Phase 5: Context accessor scope (which of 06 §2 ships now)
+- **Context:** 06 §2's full Context references kernel packages that arrive in later phases (rules→7,
+  workflow→7, outbox/jobs→6, document→8, notify/webhook→9). D-0006 grows Context per phase.
+- **Decision:** Phase 5 ships the accessors whose kernel capabilities exist:
+  Routes/Permissions/Roles/ResourceTypes/RelationshipTypes, Migrations/Seeds/OpenAPI, Tx/Authz/
+  Logger/Config/IDGen/Clock/Health, and Port/ProvidePort (inter-module ports checked at boot). The
+  later-phase accessors (Rules/Workflows/Events/Jobs/Documents/Notify/Webhooks) are added with their
+  packages. Interface widening pre-v0.1.0 is an accepted breaking change (D-0006).
+- **Affected:** module/module.go, app/context.go.
+
+## D-0041 — Phase 5: Kernel + App composition root; boot wires the evaluator and gates on registries
+- **Context:** Phase 4 left the evaluator, permission registry, and PrincipalStore dangling (ARCH-39,
+  ARCH-44). Phase 5 is where the app boot builds them.
+- **Decision:** `kernel.Kernel` (New(ctx, cfg, deps) → owns pool, Tx, Authz evaluator, Log, Health,
+  Audit sink) and `app.App` (Register/Validate/StartAPI/StartWorker/Shutdown). Boot order per 06 §2
+  lifecycle: construct kernel → per-module Register (collect into registries) → Validate (whole-graph:
+  dup permissions, routes without meta, unknown deps/cycles, unsatisfied ports, module-config decode,
+  seed-schema, **permission registry Err()**) → SeedSync (idempotent catalog upsert) → Start. The
+  evaluator is built from the composed permission registry + PgStore + policy engine + relationship
+  checker + audit sink and injected into every module.Context.Authz(). Boot aborts on any Validate
+  error — the permission registry gate is now enforced (closes the Phase 4 deferral).
+- **Affected:** kernel/ (new package), app/app.go + run.go + context.go.
+
+## D-0042 — Phase 5: seed loader is declarative YAML → idempotent catalog upsert
+- **Context:** modules ship `seeds/*.yaml` declaring permissions, roles (+role_permissions),
+  resource_types, relationship_types; SeedSync upserts them idempotently (never touches tenant data).
+- **Decision:** `kernel/seeds` parses a typed seed bundle (strict YAML, unknown keys fail) and
+  SeedSync upserts into the global catalogs as app_platform (the catalogs are app_platform-writable,
+  per SEC-13/D-0026). Seed permission/role keys feed the boot permission registry. Idempotent:
+  ON CONFLICT DO UPDATE; running twice is a no-op diff. Contract-tested (run twice).
+- **Affected:** kernel/seeds, migrations grants (already app_platform), testkit contract suite.
+
+## D-0043 — Phase 5: scratch-consumer test builds a real external module in a tmpdir
+- **Context:** the headline exit criterion — an external product repo can import wowapi, define a
+  module, and pass the contract suite without framework edits.
+- **Decision:** a `test-consumer` flow (host+container) scaffolds a tiny product module in
+  t.TempDir(), `go mod init` + `go mod edit -replace github.com/qatoolist/wowapi => <repo>`, writes
+  a module using only public packages, and runs `testkit.RunModuleContract`. Proves the public API
+  surface is sufficient and import-direction-clean from outside the repo.
+- **Affected:** testkit/contract.go, a consumer test under testkit or internal, Makefile test-consumer.
+
+## D-0044 — Phase 5 review: seed ownership covers role grants + granted_via; grants reconciled
+- **Context:** the seed prefix-ownership check validated declared keys but NOT the role grant-list or
+  `granted_via` — so a module could grant itself a foreign permission (SEC-32, reproduced) or wire
+  its permission to another module's relationship (SEC-34). Sync was also insert-only, so removed
+  grants never pruned (ARCH-47).
+- **Decision:** `seeds.validate` prefix-checks every `RoleSeed.Permissions` entry and `GrantedVia`,
+  and requires `granted_via` to name a relationship type the same bundle declares. `Sync`
+  reconciles each role's grants (deletes grants not in the seed) so a demoted role sheds
+  privileges across redeploys. Regression tests in seeds_test.go.
+- **Affected:** kernel/seeds/seeds.go.
+
+## D-0045 — Phase 5 review: seeds run as app_platform; hybrid-table RLS uses a forgiving tenant fn
+- **Context:** the contract ran `seeds.Sync` as superuser, never testing the SEC-13 grant boundary
+  (SEC-33). Running as app_platform hit the roles/policies RLS `WITH CHECK`, which calls the strict
+  `app_tenant_id()` (raises when unset) — a platform connection has no tenant, so NULL-template
+  writes aborted.
+- **Decision:** add `app_tenant_id_or_null()` (missing_ok → NULL) and use it ONLY in the
+  roles/policies policies (`tenant_id IS NULL OR tenant_id = app_tenant_id_or_null()`), so a
+  platform/catalog connection can read/write NULL-tenant templates while a tenant connection still
+  sees only its rows + templates. Pure tenant tables keep the strict raising `app_tenant_id()`
+  (loud fail-closed + AssertRLSIsolation unchanged). testkit provisions an `app_platform` login +
+  Platform pool; the contract syncs seeds under it (SEC-33) and asserts effect-idempotency via a
+  catalog checksum (ARCH-49). app_rt is still SELECT-only on roles/policies, so this does not widen
+  it.
+- **Affected:** migrations/00001, 00006; testkit/db.go (Platform pool), testkit/contract.go.
+
+## D-0046 — Phase 5 review: contract RLS check is diff-based, not name-prefix (ARCH-48)
+- **Context:** the RLS assertion matched tables by `<module>_` prefix — evadable by naming — and a
+  module with zero conforming tables passed silently.
+- **Decision:** the contract snapshots public tables before/after the module migrate, and asserts
+  ENABLE+FORCE RLS on every table the migration actually created (excluding goose bookkeeping);
+  a module that ran migrations but produced no RLS-forced table fails.
+- **Affected:** testkit/contract.go.
+
 ## D-0010 — Phase 0→1: `environment` is fail-closed in deployed processes (SEC-1)
 - **Context:** security review: `Defaults()` sets `environment=local`; a prod deploy that forgets
   to set it would silently validate under local (lenient) rules.

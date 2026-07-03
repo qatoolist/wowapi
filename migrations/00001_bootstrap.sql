@@ -58,6 +58,15 @@ $$;
 CREATE OR REPLACE FUNCTION app_tenant_id() RETURNS uuid LANGUAGE sql STABLE AS
 $$ SELECT current_setting('app.tenant_id')::uuid $$;
 
+-- app_tenant_id_or_null() is the FORGIVING variant for the few hybrid tables
+-- that hold BOTH platform-template rows (tenant_id IS NULL) and tenant rows
+-- (roles, policies). It returns NULL when app.tenant_id is unset instead of
+-- raising, so a platform/catalog connection (app_platform, no tenant bound) can
+-- write NULL-tenant templates without the strict function aborting the
+-- statement. Pure tenant tables keep using app_tenant_id() (fail-closed/loud).
+CREATE OR REPLACE FUNCTION app_tenant_id_or_null() RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
+
 -- Schema-level grants: allow both runtime roles to see public objects.
 -- Table-level grants are applied in each migration that creates tables (see
 -- 00002_core_identity.sql). No blanket GRANT ALL — least-privilege per table.
@@ -67,6 +76,7 @@ GRANT USAGE ON SCHEMA public TO app_rt, app_platform;
 
 -- Drop the session helper. Dependent RLS policies must already be gone (they
 -- live in later migrations whose Down sections run first under goose rollback).
+DROP FUNCTION IF EXISTS app_tenant_id_or_null();
 DROP FUNCTION IF EXISTS app_tenant_id();
 
 -- Roles and extensions are intentionally left in place on Down.

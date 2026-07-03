@@ -95,17 +95,24 @@ GRANT SELECT, INSERT, UPDATE ON permissions TO app_platform;
 -- + tenant rows. RLS admits the current tenant's rows AND platform templates for
 -- reads; writes are constrained to the current tenant (platform rows are managed
 -- by app_platform / migrations, never app_rt).
+-- roles/policies hold platform templates (tenant_id NULL) + tenant rows. They
+-- use the forgiving app_tenant_id_or_null() so a platform/catalog connection
+-- (app_platform, no tenant bound) can read and write NULL-tenant templates
+-- without the strict function aborting the statement, while a tenant connection
+-- still sees only its own rows + platform templates. app_rt cannot write these
+-- at all (SELECT-only grant), so allowing NULL-tenant writes here does not widen
+-- app_rt.
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles FORCE ROW LEVEL SECURITY;
 CREATE POLICY roles_tenant_read ON roles
-    USING (tenant_id = app_tenant_id() OR tenant_id IS NULL)
-    WITH CHECK (tenant_id = app_tenant_id());
+    USING (tenant_id IS NULL OR tenant_id = app_tenant_id_or_null())
+    WITH CHECK (tenant_id IS NULL OR tenant_id = app_tenant_id_or_null());
 
 ALTER TABLE policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE policies FORCE ROW LEVEL SECURITY;
 CREATE POLICY policies_tenant_read ON policies
-    USING (tenant_id = app_tenant_id() OR tenant_id IS NULL)
-    WITH CHECK (tenant_id = app_tenant_id());
+    USING (tenant_id IS NULL OR tenant_id = app_tenant_id_or_null())
+    WITH CHECK (tenant_id IS NULL OR tenant_id = app_tenant_id_or_null());
 
 -- actor_assignments is strictly tenant-scoped.
 ALTER TABLE actor_assignments ENABLE ROW LEVEL SECURITY;

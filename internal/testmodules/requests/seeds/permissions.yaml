@@ -1,0 +1,44 @@
+# Fixture module seed catalog — domain-neutral "requests" module.
+# All keys are prefixed "requests." (ownership rule, blueprint 06 §2).
+# Field names match seeds.Bundle YAML tags exactly (KnownFields strict decode).
+
+permissions:
+  - key: requests.request.create
+    description: Submit a new request
+    sensitive: false
+  - key: requests.request.read
+    description: Read a request record
+    sensitive: false
+    granted_via: requests.assigned_to
+  - key: requests.request.list
+    description: List requests within the tenant
+    sensitive: false
+  - key: requests.request.update
+    description: Update an existing request
+    sensitive: false
+
+resource_types:
+  - key: requests.request
+    description: A generic request aggregate managed by the requests module
+
+relationship_types:
+  - key: requests.assigned_to
+    subject_kind: capacity
+    object_kind: resource
+    cardinality: many
+    description: A capacity (person/system in a role) is assigned to a request
+
+roles:
+  - key: requests.org.member
+    name: Requests Org Member
+    permissions:
+      - requests.request.create
+      - requests.request.read
+      - requests.request.list
+  - key: requests.org.approver
+    name: Requests Org Approver
+    permissions:
+      - requests.request.create
+      - requests.request.read
+      - requests.request.list
+      - requests.request.update

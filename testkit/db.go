@@ -43,10 +43,11 @@ import (
 // fixtures/DDL) and a runtime pool (SET ROLE app_rt, RLS-enforced) on a
 // database that is EXCLUSIVELY this test's.
 type DBHandle struct {
-	Name    string             // per-test database name
-	Admin   *pgxpool.Pool      // owner credentials — fixtures, probe DDL
-	Runtime *pgxpool.Pool      // SET ROLE app_rt — what production code sees
-	TxM     database.TxManager // manager over Runtime
+	Name     string             // per-test database name
+	Admin    *pgxpool.Pool      // owner credentials — fixtures, probe DDL
+	Runtime  *pgxpool.Pool      // connects AS app_rt — what production code sees
+	Platform *pgxpool.Pool      // connects AS app_platform — kernel/seed catalog writes
+	TxM      database.TxManager // manager over Runtime
 }
 
 // identRE guards every identifier this kit interpolates into DDL/DML. Test
@@ -102,16 +103,29 @@ func NewDB(t *testing.T) *DBHandle {
 		dropTestDB(context.Background(), dsn, name)
 		t.Fatalf("testkit: runtime pool (as %s): %v", runtimeRole, err)
 	}
+	// Platform pool connects AS the non-superuser app_platform login: it holds
+	// the catalog grants (SEC-13) but NOT app_rt's, so a contract seed sync runs
+	// under exactly the privilege a real platform sync has — a seed needing a
+	// grant app_platform lacks fails here instead of in production (SEC-33).
+	platform, err := platformPoolDB(ctx, dsn, name, 2)
+	if err != nil {
+		runtime.Close()
+		admin.Close()
+		dropTestDB(context.Background(), dsn, name)
+		t.Fatalf("testkit: platform pool (as %s): %v", platformRole, err)
+	}
 
 	h := &DBHandle{
-		Name:    name,
-		Admin:   admin,
-		Runtime: runtime,
+		Name:     name,
+		Admin:    admin,
+		Runtime:  runtime,
+		Platform: platform,
 		TxM: database.NewManager(runtime, config.DB{Pool: config.Pool{MaxConns: 4, QueryTimeout: 5 * time.Second}},
 			database.WithRole(runtimeRole), database.WithRLSGuard()),
 	}
 
 	t.Cleanup(func() {
+		platform.Close()
 		runtime.Close()
 		admin.Close()
 		dropTestDB(context.Background(), dsn, name)
@@ -194,6 +208,12 @@ func buildTemplate(ctx context.Context, dsn string) (string, error) {
 	if _, err := conn.Exec(ctx,
 		"ALTER ROLE "+quoteIdent(runtimeRole)+" LOGIN PASSWORD "+quoteLiteral(runtimeRolePassword)); err != nil {
 		return "", fmt.Errorf("provision %s login: %w", runtimeRole, err)
+	}
+	// Same for app_platform: the seed/catalog role, which holds the catalog
+	// grants but not app_rt's (SEC-13/SEC-33).
+	if _, err := conn.Exec(ctx,
+		"ALTER ROLE "+quoteIdent(platformRole)+" LOGIN PASSWORD "+quoteLiteral(platformRolePassword)); err != nil {
+		return "", fmt.Errorf("provision %s login: %w", platformRole, err)
 	}
 	return name, nil
 }
@@ -307,6 +327,11 @@ func testDBName(t *testing.T) string {
 const (
 	runtimeRole         = "app_rt"
 	runtimeRolePassword = "app_rt_testkit_local"
+	// platformRole is the catalog/seed role (app_platform): it holds the global
+	// catalog grants but NOT app_rt's, so seed sync runs under the real
+	// platform privilege (SEC-33). Local-test-only password, never committed.
+	platformRole         = "app_platform"
+	platformRolePassword = "app_platform_testkit_local"
 )
 
 // newPoolDB builds a pool against the base DSN with the database swapped and a
@@ -319,6 +344,12 @@ func newPoolDB(ctx context.Context, dsn, dbname string, maxConns int32, opts ...
 // admin login, so tenant queries run under a genuinely RLS-bound identity.
 func runtimePoolDB(ctx context.Context, dsn, dbname string, maxConns int32, opts ...database.Option) (*pgxpool.Pool, error) {
 	return buildPool(ctx, dsn, dbname, runtimeRole, runtimeRolePassword, maxConns, opts...)
+}
+
+// platformPoolDB builds a pool that authenticates as app_platform — the catalog
+// role — so seed sync runs under real platform privilege (SEC-33).
+func platformPoolDB(ctx context.Context, dsn, dbname string, maxConns int32, opts ...database.Option) (*pgxpool.Pool, error) {
+	return buildPool(ctx, dsn, dbname, platformRole, platformRolePassword, maxConns, opts...)
 }
 
 func buildPool(ctx context.Context, dsn, dbname, user, password string, maxConns int32, opts ...database.Option) (*pgxpool.Pool, error) {

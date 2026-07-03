@@ -94,9 +94,13 @@ test-race: ## Unit tests with the race detector
 test-integration: ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Integration' -count=1 $(PKGS)
 
-.PHONY: test-contract test-security
-test-contract test-security:
-	@echo "make $@: available from Phase 4/5 (needs authz + module SDK) — see docs/implementation/phase-plan.md" >&2; exit 2
+.PHONY: test-contract
+test-contract: ## Module contract + scratch external-consumer suite (needs DB)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Contract|ScratchConsumer' -count=1 ./testkit/...
+
+.PHONY: test-security
+test-security:
+	@echo "make $@: available from Phase 11 (dedicated security suite) — see docs/implementation/phase-plan.md" >&2; exit 2
 
 .PHONY: bench
 bench: ## Benchmarks (budget gates arrive in Phase 11)

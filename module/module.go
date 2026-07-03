@@ -13,12 +13,16 @@
 package module
 
 import (
+	"context"
+	"io/fs"
 	"log/slog"
 	"regexp"
 
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/validation"
 )
@@ -72,12 +76,37 @@ type Context interface {
 	Resources() *resource.Registry
 
 	// Authz returns the authorization evaluator for record-level checks and
-	// list filtering (Phase 4). Nil until the app wires it at boot.
+	// list filtering (Phase 4).
 	Authz() authz.Evaluator
 
+	// Tx returns the tenant transaction manager — the only door to the
+	// database for module work (Phase 2/5).
+	Tx() database.TxManager
+
+	// IDGen returns the id generator (UUIDv7); Clock returns the wall clock —
+	// both injectable so tests run deterministic sequences (Phase 5).
+	IDGen() model.IDGen
+
+	// Migrations registers the module's goose migrations. fsys must be ROOTED
+	// at the .sql files (use fs.Sub if they live in a subdirectory), matching
+	// goose's convention. Seeds registers its embedded YAML catalog bundle;
+	// OpenAPI registers its spec fragment. Applied/synced by the app at boot
+	// (Phase 5, blueprint 06 §2).
+	Migrations(fsys fs.FS)
+	Seeds(fsys fs.FS)
+	OpenAPI(fragment []byte)
+
+	// Health registers a named readiness check (Phase 5).
+	Health(name string, check func(context.Context) error)
+
+	// ProvidePort declares an implementation another module may consume;
+	// Port fetches a declared port (both checked at boot — an unsatisfied
+	// Port dependency fails Validate). Inter-module access is via ports only,
+	// never another module's internals (Phase 5, blueprint 06 §2).
+	ProvidePort(name string, impl any)
+	Port(name string) (any, error)
+
 	// Later phases add, alongside the capability they deliver:
-	//   Tx() database.TxManager                (Phase 2)
-	//   Migrations(fs fs.FS) / Seeds(fs fs.FS) (Phase 5)
 	//   Events() outbox.HandlerRegistry / Jobs() jobs.Registry (Phase 6)
 	//   Rules() rules.Registry / Workflows() workflow.Registry (Phase 7)
 	//   Documents() document.Service           (Phase 8)
