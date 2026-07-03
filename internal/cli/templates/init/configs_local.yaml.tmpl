@@ -1,0 +1,11 @@
+# Local developer overlay for {{.Name}}.
+# NOT committed with production secrets — keep in .gitignore.
+environment: local
+
+log:
+  level: debug
+  format: text
+
+db:
+  dsn: "postgres://app_rt:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+  migrate_dsn: "postgres://app_migrate:secret@localhost:5432/{{.DBName}}?sslmode=disable"

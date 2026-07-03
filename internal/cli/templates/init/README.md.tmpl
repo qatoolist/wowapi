@@ -1,0 +1,30 @@
+# {{.Name}}
+
+A product built on the [wowapi](https://github.com/qatoolist/wowapi) framework.
+
+## Getting started
+
+```bash
+# Validate config
+wowapi config validate --dir configs --env local
+
+# Run API server
+go run ./cmd/api
+
+# Run migrations
+go run ./cmd/migrate up
+```
+
+## Structure
+
+```
+cmd/
+  api/        HTTP API server entry point
+  worker/     Background worker entry point
+  migrate/    Migration runner entry point
+configs/
+  base.yaml   Base configuration (committed)
+  local.yaml  Local developer overlay (gitignored)
+internal/
+  modules/    Product modules (wowapi module.Module implementations)
+```

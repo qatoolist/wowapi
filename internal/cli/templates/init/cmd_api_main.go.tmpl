@@ -1,0 +1,19 @@
+// Command api is the HTTP API server for {{.Name}}.
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	// TODO: construct the kernel and call Boot here.
+	// See: https://github.com/qatoolist/wowapi for bootstrap patterns.
+	_ = ctx
+	log.Println("{{.Name}}: api server starting — wire kernel here")
+}

@@ -1,0 +1,54 @@
+// Package {{.Package}} implements the {{.Name}} wowapi module.
+package {{.Package}}
+
+import (
+	"embed"
+	"io/fs"
+
+	"github.com/qatoolist/wowapi/module"
+)
+
+//go:embed migrations/*.sql
+var migrationsEmbed embed.FS
+
+//go:embed seeds/*.yaml
+var seedsEmbed embed.FS
+
+//go:embed openapi.json
+var openapiFragment []byte
+
+var migrationsFS = mustSub(migrationsEmbed, "migrations")
+var seedsFS = mustSub(seedsEmbed, "seeds")
+
+func mustSub(f embed.FS, dir string) fs.FS {
+	sub, err := fs.Sub(f, dir)
+	if err != nil {
+		panic(err)
+	}
+	return sub
+}
+
+// Module implements module.Module for the {{.Name}} module.
+type Module struct{}
+
+var _ module.Module = (*Module)(nil)
+
+// Name returns the module identifier.
+func (m *Module) Name() string { return "{{.Name}}" }
+
+// DependsOn declares no module dependencies.
+func (m *Module) DependsOn() []string { return nil }
+
+// Register wires the module into the framework kernel.
+func (m *Module) Register(mc module.Context) error {
+	mc.Migrations(migrationsFS)
+	mc.Seeds(seedsFS)
+	mc.OpenAPI(openapiFragment)
+
+	// TODO: register routes, permissions, health checks, and ports here.
+	// Example:
+	//   r := mc.Routes()
+	//   r.Handle("GET", "/{{.Name}}/healthz", httpx.RouteMeta{Public: true}, h.Healthz)
+
+	return nil
+}

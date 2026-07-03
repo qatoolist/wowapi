@@ -13,16 +13,7 @@ import (
 // planned maps not-yet-implemented commands to the phase that delivers them
 // (docs/implementation/phase-plan.md). Keeping the full surface visible from
 // day one makes `wowapi help` an honest roadmap.
-var planned = map[string]string{
-	"init":       "Phase 10",
-	"new-module": "Phase 10",
-	"gen":        "Phase 10",
-	"migrate":    "Phase 10",
-	"seed":       "Phase 10",
-	"openapi":    "Phase 10",
-	"lint":       "Phase 10",
-	"deploy":     "Phase 10",
-}
+var planned = map[string]string{}
 
 // Run executes the CLI and returns the process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -38,6 +29,22 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "config":
 		return runConfig(args[1:], stdout, stderr)
+	case "migrate":
+		return runMigrate(args[1:], stdout, stderr)
+	case "seed":
+		return runSeed(args[1:], stdout, stderr)
+	case "openapi":
+		return runOpenAPI(args[1:], stdout, stderr)
+	case "lint":
+		return runLint(args[1:], stdout, stderr)
+	case "deploy":
+		return runDeploy(args[1:], stdout, stderr)
+	case "init":
+		return runInit(args[1:], stdout, stderr)
+	case "new-module":
+		return runNewModule(args[1:], stdout, stderr)
+	case "gen":
+		return runGen(args[1:], stdout, stderr)
 	default:
 		if phase, ok := planned[cmd]; ok {
 			fmt.Fprintf(stderr, "wowapi %s: not implemented yet — planned in %s.\n", cmd, phase)
@@ -84,17 +91,13 @@ Available commands:
   version      print CLI version and check the go.mod dependency version
   help         this help
   config       validate|print|schema|doctor  (run `+"`wowapi config`"+` for details)
-
-Planned commands (see docs/implementation/phase-plan.md):
-  init         scaffold a product repository            (%s)
-  new-module   scaffold a product module                (%s)
-  gen          run code generators (crud, sqlc, mocks)  (%s)
-  migrate      migration helpers                        (%s)
-  seed         seed validation                          (%s)
-  openapi      merge/check OpenAPI fragments            (%s)
-  lint         boundary lint                            (%s)
-  deploy       render deployment manifests              (%s)
-`, buildinfo.ModulePath,
-		planned["init"], planned["new-module"], planned["gen"], planned["migrate"],
-		planned["seed"], planned["openapi"], planned["lint"], planned["deploy"])
+  init         scaffold a product repository
+  new-module   scaffold a product module
+  gen          run code generators (crud)
+  migrate      create the next-numbered migration file
+  seed         validate a module's seed bundle
+  openapi      merge OpenAPI fragments into one document
+  lint         boundaries — module isolation + layering check
+  deploy       render deployment manifests (compose|env)
+`, buildinfo.ModulePath)
 }

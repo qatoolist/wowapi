@@ -39,13 +39,15 @@ func TestHelpListsPlannedCommands(t *testing.T) {
 	}
 }
 
-func TestPlannedCommandExplainsPhase(t *testing.T) {
-	code, _, errOut := run(t, "new-module", "requests")
-	if code != 2 {
-		t.Fatalf("exit %d, want 2", code)
+func TestNewModuleRequiresName(t *testing.T) {
+	// All Phase-10 commands are now implemented; new-module without a --name is a
+	// usage error, not a "planned" stub.
+	code, _, errOut := run(t, "new-module")
+	if code == 0 {
+		t.Fatalf("new-module with no --name should fail")
 	}
-	if !strings.Contains(errOut, "not implemented yet") || !strings.Contains(errOut, "Phase") {
-		t.Errorf("unhelpful message: %q", errOut)
+	if !strings.Contains(errOut, "name") {
+		t.Errorf("expected a --name error, got: %q", errOut)
 	}
 }
 

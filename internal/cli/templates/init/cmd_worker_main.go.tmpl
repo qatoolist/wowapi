@@ -1,0 +1,18 @@
+// Command worker is the background worker for {{.Name}}.
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	// TODO: wire background jobs here.
+	_ = ctx
+	log.Println("{{.Name}}: worker starting — wire jobs here")
+}

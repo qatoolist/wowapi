@@ -1,0 +1,23 @@
+# Base configuration for {{.Name}}.
+# All environments load this file first; overlay files (<env>.yaml) narrow it.
+# DO NOT set environment here — each overlay must declare its own.
+# Reference: docs/blueprint/12-configuration-and-deployment.md
+
+schema_version: 1
+
+http:
+  addr: ":8080"
+  read_header_timeout: 5s
+  request_timeout: 30s
+  max_body_bytes: 1048576
+
+log:
+  level: info
+  format: json
+
+db:
+  # Use secretref://env/VARNAME to resolve from environment variables at runtime.
+  dsn: ""
+  migrate_dsn: ""
+  max_conns: 16
+  query_timeout: 5s

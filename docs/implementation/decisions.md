@@ -293,6 +293,29 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0057 — Phase 10: installable `wowapi` CLI (scaffolding, codegen, tooling) + review fixes
+- **Context:** Phase 10 delivers the CLI command surface (blueprint 10 §2 E21): init, new-module,
+  gen crud, migrate create, seed validate, openapi merge, lint boundaries, deploy render — plus the
+  existing version/config. No new DB tables.
+- **Decisions:**
+  - **Dispatcher = one file per command:** `internal/cli/cli.go` switches to a `runX(args, stdout,
+    stderr) int`; each command is its own file, buffer-testable. Enabled a conflict-free parallel build
+    (lead: transform commands; agent: scaffolding).
+  - **Generated Go is gofmt-clean:** `renderToFile` runs `go/format.Source` on `.go` output — formats
+    AND fails generation loudly on an invalid-Go template (stronger than a parse-only check).
+  - **Scaffold path safety:** module/resource/field names are `identRE`-validated before any path is
+    built (no traversal); `--force` gates every overwrite.
+  - **lint reuses the framework law:** `wowapi lint boundaries` ports the import-layering + module-
+    isolation rules from `scripts/lint_boundaries.sh` as a pure, unit-tested `checkBoundaries`; the
+    shell script remains the authoritative framework gate for vocabulary/Reveal/test-import checks.
+  - **Review fixes (D-0057):** unknown `gen crud` field type rejected instead of emitting unbuildable Go
+    (CLI-01); `openapi merge` rejects non-object fragments (CLI-02); `checkBoundaries` gained the missing
+    adapters/cmd/internal-cli/internal-tools layer rules + hard testkit rule (CLI-06); usage-error exit
+    codes normalized to 2 (CLI-03); `go list` stderr surfaced (CLI-04); stdout write errors propagated
+    (CLI-05); derived package name validated (CLI-07).
+- **Affected:** internal/cli/ (all command files, scaffold.go, templates/, tests), cmd/wowapi;
+  evidence/phase-10/.
+
 ## D-0056 — Phase 9: notify / webhook / integration framework + review fixes
 - **Context:** Phase 9 delivers the notification, webhook, and integration subsystems (migration 00011,
   blueprint 07 §5/§6). Two parallel review agents reproduced 13 defects (evidence/phase-09/review-findings.md).

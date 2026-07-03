@@ -1,0 +1,18 @@
+.PHONY: build test lint migrate-up migrate-down
+
+build:
+	go build -o bin/api ./cmd/api
+	go build -o bin/worker ./cmd/worker
+	go build -o bin/migrate ./cmd/migrate
+
+test:
+	go test ./...
+
+lint:
+	go vet ./...
+
+migrate-up:
+	go run ./cmd/migrate up
+
+migrate-down:
+	go run ./cmd/migrate down

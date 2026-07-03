@@ -1,0 +1,52 @@
+// {{.ResourceTitle}} CRUD handlers and DTO for the {{.ModuleName}} module.
+package {{.Package}}
+
+import (
+	"net/http"
+
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/module"
+)
+
+// {{.ResourceTitle}}DTO is the wire representation of a {{.Resource}}.
+type {{.ResourceTitle}}DTO struct {
+	ID string `json:"id"`
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.Name}}"`
+{{- end}}
+}
+
+// Register{{.ResourceTitle}}Routes wires {{.Resource}} CRUD routes into mc.
+func Register{{.ResourceTitle}}Routes(mc module.Context) {
+	r := mc.Routes()
+	r.Handle("POST", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.create"}, create{{.ResourceTitle}})
+	r.Handle("GET", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.read"}, get{{.ResourceTitle}})
+	r.Handle("GET", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.list"}, list{{.ResourceTitle}})
+	r.Handle("PUT", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.update"}, update{{.ResourceTitle}})
+	r.Handle("DELETE", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.delete"}, delete{{.ResourceTitle}})
+}
+
+func create{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
+	// TODO: implement create {{.Resource}}.
+	httpx.WriteJSON(w, http.StatusCreated, httpx.OK({{.ResourceTitle}}DTO{}))
+}
+
+func get{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
+	// TODO: implement get {{.Resource}}.
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
+}
+
+func list{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
+	// TODO: implement list {{.Resource}}.
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK([]{{.ResourceTitle}}DTO{}))
+}
+
+func update{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
+	// TODO: implement update {{.Resource}}.
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
+}
+
+func delete{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
+	// TODO: implement delete {{.Resource}}.
+	w.WriteHeader(http.StatusNoContent)
+}

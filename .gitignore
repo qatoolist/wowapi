@@ -58,3 +58,6 @@ graphify-out/
 .docker-data/
 .postgres/
 .minio/
+
+# stray root build artifact from `go build ./cmd/wowapi`
+/wowapi
