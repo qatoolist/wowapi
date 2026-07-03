@@ -98,13 +98,42 @@ test-integration: ## Integration tests against real Postgres (needs `make up` or
 test-contract: ## Module contract + scratch external-consumer suite (needs DB)
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Contract|ScratchConsumer' -count=1 ./testkit/...
 
+# Security-critical test suite (criterion #18, #26).
+# Covers:
+#   RLS/privilege escalation (kernel/authz integration: NoSelf, OverGrant, Scope)
+#   Deny-by-default authz (kernel/authz unit: Deny, Authz, Sensitive)
+#   Secret redaction in logs/CLI/dumps (kernel/config, kernel/logging, internal/cli: Secret, Redact)
+#   Unsafe-config prod rejection (kernel/config: Prod, Unsafe, Security)
+#   DSN credential non-echoing (kernel/database: DSN)
+#   Env-mismatch gate (internal/cli: EnvMismatch)
+#
+# Integration sub-tests (NoSelf, OverGrant, IntegrationScope) need DATABASE_URL.
+SECURITY_TESTS := Authz|Deny|DSN|Escalat|EnvMismatch|Isolation|NoSelf|OverGrant|Privilege|Prod|RLS|Redact|Secret|Security|Sensitive|Unsafe
+
 .PHONY: test-security
-test-security:
-	@echo "make $@: available from Phase 11 (dedicated security suite) — see docs/implementation/phase-plan.md" >&2; exit 2
+test-security: ## Security-critical tests: authz, RLS, secrets, redaction, unsafe-config
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" \
+		$(GO) test -run '$(SECURITY_TESTS)' -count=1 $(PKGS)
+
+# Hot-path benchmarks (criterion #17).
+# bench:        run all package benchmarks; outputs raw go test -bench lines.
+# bench-budget: pipe bench output through the budget gate tool and fail on violation.
+BENCH_PKGS := \
+	./kernel/authz/... \
+	./kernel/policy/... \
+	./kernel/httpx/... \
+	./kernel/config/... \
+	./kernel/filtering/... \
+	./kernel/pagination/...
 
 .PHONY: bench
-bench: ## Benchmarks (budget gates arrive in Phase 11)
-	$(GO) test -bench=. -benchmem -run=^$$ $(PKGS)
+bench: ## Run hot-path benchmarks with allocation counts
+	$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS)
+
+.PHONY: bench-budget
+bench-budget: ## Enforce performance budgets (fails if any benchmark exceeds bench-budgets.txt)
+	$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS) \
+		| $(GO) run ./internal/tools/benchbudget bench-budgets.txt
 
 .PHONY: coverage
 coverage: ## Unit coverage report
@@ -144,11 +173,12 @@ build: ## Build all packages and the CLI
 	$(GO) build -o bin/wowapi ./cmd/wowapi
 
 .PHONY: ci
-ci: ## Full local CI: vet+lint, boundaries, unit, race, build
+ci: ## Full local CI: vet+lint, boundaries, unit, race, perf budgets, build
 	$(GO) vet $(PKGS)
 	$(MAKE) lint-boundaries
 	$(MAKE) test-unit
 	$(MAKE) test-race
+	$(MAKE) bench-budget
 	$(MAKE) build
 
 .PHONY: ci-container

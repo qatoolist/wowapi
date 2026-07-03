@@ -61,3 +61,4 @@ graphify-out/
 
 # stray root build artifact from `go build ./cmd/wowapi`
 /wowapi
+/benchbudget

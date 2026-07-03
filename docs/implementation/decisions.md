@@ -293,6 +293,31 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0058 — Phase 11: observability + performance budgets + security suite + config drift
+- **Context:** Phase 11 hardens the framework (blueprint 07 §1–2/§9; AC #17/#18/#26/#27) — observability
+  wiring, perf budgets, a security gate, and cross-process config drift. Additive; no new domain tables.
+- **Decisions:**
+  - **Observability = ports + adapters:** `kernel/observability` defines a small `Metrics` port
+    (ObserveRequest/IncCounter/SetGauge) + a NoOp default + RED and AccessLog middleware; the Prometheus
+    client lives ONLY in `adapters/metrics/prometheus` (with a `/metrics` handler). The RED middleware
+    labels by the matched route PATTERN (bounded cardinality). Full OTel span export is a product adapter.
+  - **Health:** `kernel/httpx/health.go` — liveness runs NO checks (a failing dep must not trip a
+    liveness probe); readiness runs checks → 200/503 and reports the redacted config fingerprint.
+    `app.Readiness` assembles module `ctx.Health` + framework checks (DB ping / migrations-current,
+    supplied by the composition root) + fingerprint.
+  - **Performance budgets (#17):** 24 hot-path benchmarks + a pure-Go `internal/tools/benchbudget` gate
+    reading piped `go test -bench` output against `bench-budgets.txt`, wired into `make ci`. Config field
+    reads at 0.3 ns/op, 0 allocs prove the hot path is reflection/lookup-free.
+  - **Security suite (#18/#26):** a curated `make test-security` gate over the existing RLS/authz/
+    privilege/secret tests + new per-knob unsafe-config matrix + a structural-secret-redaction gap test.
+    Audit found the core guarantees (deny-by-default, secret-ref-only, structural redaction, RLS,
+    unsafe-config-fails-startup) have no disabling config key.
+  - **Config drift (#27):** `kernel/config/shared.go` — `SharedFingerprint` covers env/schema/DB
+    (excludes process-specific HTTP/Log); `CheckSharedDrift(expected)` fails a mis-deployed process.
+- **Affected:** kernel/observability, adapters/metrics/prometheus, kernel/httpx/health.go,
+  kernel/config/shared.go, app/health.go, internal/tools/benchbudget, bench-budgets.txt, Makefile
+  (bench/bench-budget/test-security + bench-budget in ci), benchmarks + security tests; evidence/phase-11/.
+
 ## D-0057 — Phase 10: installable `wowapi` CLI (scaffolding, codegen, tooling) + review fixes
 - **Context:** Phase 10 delivers the CLI command surface (blueprint 10 §2 E21): init, new-module,
   gen crud, migrate create, seed validate, openapi merge, lint boundaries, deploy render — plus the

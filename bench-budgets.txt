@@ -1,0 +1,67 @@
+# wowapi performance budgets — acceptance criterion #17.
+#
+# Format: BenchmarkName  max_ns_per_op  max_allocs_per_op
+#   - max_ns_per_op:     maximum nanoseconds per operation (integer)
+#   - max_allocs_per_op: maximum heap allocations per operation (-1 = unchecked)
+#
+# Budgets are set at ~10x the measured values on Apple M3 Max (2026-07-04) to
+# remain green across architectures (Linux x86_64, slower CI runners) and under
+# benchmark noise, while still catching 5-10x performance regressions.
+#
+# Measured baseline (Apple M3 Max, Go 1.26, darwin/arm64):
+#   BenchmarkEvaluateDenyByDefault           29 ns/op   0 allocs/op
+#   BenchmarkEvaluateRBACTenantAllow         50 ns/op   1 allocs/op
+#   BenchmarkEvaluateABACDenyPolicy         724 ns/op  22 allocs/op
+#   BenchmarkCovers                          51 ns/op   1 allocs/op
+#   BenchmarkPolicyMatchesEq                175 ns/op   4 allocs/op
+#   BenchmarkPolicyMatchesIn                391 ns/op  11 allocs/op
+#   BenchmarkPolicyMatchesGte               134 ns/op   3 allocs/op
+#   BenchmarkPolicyMatchesMultiCondition    539 ns/op  13 allocs/op
+#   BenchmarkRouterHandle                   539 ns/op  12 allocs/op
+#   BenchmarkRouterRoutes                   452 ns/op   4 allocs/op
+#   BenchmarkRouteMetaValidate              131 ns/op   4 allocs/op
+#   BenchmarkConfigFieldReadMaxBodyBytes    0.3 ns/op   0 allocs/op
+#   BenchmarkConfigFieldReadQueryTimeout    0.3 ns/op   0 allocs/op
+#   BenchmarkConfigDefaults                 0.3 ns/op   0 allocs/op
+#   BenchmarkConfigValidate                 5.8 ns/op   0 allocs/op
+#   BenchmarkFilteringParseAndSQL           254 ns/op   8 allocs/op
+#   BenchmarkFilteringParseMulti            893 ns/op  24 allocs/op
+#   BenchmarkFilteringSQLOnly               173 ns/op   5 allocs/op
+#   BenchmarkSortParseAndSQL                160 ns/op   5 allocs/op
+#   BenchmarkKeysetClause                   403 ns/op  13 allocs/op
+#   BenchmarkCursorEncode                   586 ns/op  14 allocs/op
+#   BenchmarkCursorDecode                   967 ns/op  18 allocs/op
+#   BenchmarkCursorDecodeEmpty              1.1 ns/op   0 allocs/op
+#   BenchmarkCursorRoundTrip               1586 ns/op  32 allocs/op
+#
+# ── kernel/authz ──────────────────────────────────────────────────────────────
+BenchmarkEvaluateDenyByDefault        300    0
+BenchmarkEvaluateRBACTenantAllow      600    5
+BenchmarkEvaluateABACDenyPolicy      8000   80
+BenchmarkCovers                       600    5
+# ── kernel/policy ─────────────────────────────────────────────────────────────
+BenchmarkPolicyMatchesEq             2000   15
+BenchmarkPolicyMatchesIn             4000   40
+BenchmarkPolicyMatchesGte            1500   12
+BenchmarkPolicyMatchesMultiCondition 6000   50
+# ── kernel/httpx ──────────────────────────────────────────────────────────────
+BenchmarkRouterHandle                6000   50
+BenchmarkRouterRoutes                5000   20
+BenchmarkRouteMetaValidate           1500   15
+# ── kernel/config ─────────────────────────────────────────────────────────────
+# Field reads must be zero-alloc; tight ns/op ceiling proves no map/reflection.
+BenchmarkConfigFieldReadMaxBodyBytes   50    0
+BenchmarkConfigFieldReadQueryTimeout   50    0
+BenchmarkConfigDefaults                50    0
+BenchmarkConfigValidate               200    0
+# ── kernel/filtering ──────────────────────────────────────────────────────────
+BenchmarkFilteringParseAndSQL        3000   30
+BenchmarkFilteringParseMulti        11000   80
+BenchmarkFilteringSQLOnly            2000   20
+BenchmarkSortParseAndSQL             2000   20
+BenchmarkKeysetClause                5000   50
+# ── kernel/pagination ─────────────────────────────────────────────────────────
+BenchmarkCursorEncode                7000   50
+BenchmarkCursorDecode               12000   60
+BenchmarkCursorDecodeEmpty            100    0
+BenchmarkCursorRoundTrip            20000  110

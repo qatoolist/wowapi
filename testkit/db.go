@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -32,6 +33,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -212,17 +214,42 @@ func buildTemplate(ctx context.Context, dsn string) (string, error) {
 	// the fresh and reused paths; cluster-wide and idempotent. Kept out of the
 	// committed migration on purpose: no runtime password ships to production,
 	// where ops provision the app_rt login their own way.
-	if _, err := conn.Exec(ctx,
+	if err := alterRoleWithRetry(ctx, conn,
 		"ALTER ROLE "+quoteIdent(runtimeRole)+" LOGIN PASSWORD "+quoteLiteral(runtimeRolePassword)); err != nil {
 		return "", fmt.Errorf("provision %s login: %w", runtimeRole, err)
 	}
 	// Same for app_platform: the seed/catalog role, which holds the catalog
 	// grants but not app_rt's (SEC-13/SEC-33).
-	if _, err := conn.Exec(ctx,
+	if err := alterRoleWithRetry(ctx, conn,
 		"ALTER ROLE "+quoteIdent(platformRole)+" LOGIN PASSWORD "+quoteLiteral(platformRolePassword)); err != nil {
 		return "", fmt.Errorf("provision %s login: %w", platformRole, err)
 	}
 	return name, nil
+}
+
+// alterRoleWithRetry runs a role-DDL statement, retrying the transient "tuple
+// concurrently updated" (XX000) catalog race: app roles are CLUSTER-GLOBAL, so a
+// parallel package's fresh migration (which also ALTERs the same role) can update
+// the pg_authid tuple concurrently. The change is idempotent, so re-running after
+// the winner commits succeeds.
+func alterRoleWithRetry(ctx context.Context, conn *pgx.Conn, sql string) error {
+	const attempts = 20
+	var err error
+	for i := 0; i < attempts; i++ {
+		if _, err = conn.Exec(ctx, sql); err == nil {
+			return nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "XX000" || !strings.Contains(pgErr.Message, "tuple concurrently updated") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return err
 }
 
 // templateName is wowapi_tmpl_<8 hex> where the hash covers the sorted kernel
@@ -377,11 +404,39 @@ func buildPool(ctx context.Context, dsn, dbname, user, password string, maxConns
 	if err != nil {
 		return nil, err
 	}
-	if err := pool.Ping(ctx); err != nil {
+	// Retry the first connection on SQLSTATE 28000 ("role is not permitted to log
+	// in"): under parallel test packages, a fresh template build re-runs the
+	// bootstrap migration which DROP+CREATEs the CLUSTER-GLOBAL app_rt/app_platform
+	// roles as NOLOGIN before buildTemplate re-grants LOGIN — a connection landing
+	// in that brief window transiently fails. It is not a real auth error, so we
+	// wait it out rather than fail the whole package.
+	if err := pingWithRoleRetry(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
 	}
 	return pool, nil
+}
+
+// pingWithRoleRetry pings, retrying only the transient "role not permitted to log
+// in" (28000) provisioning race for up to ~2s.
+func pingWithRoleRetry(ctx context.Context, pool *pgxpool.Pool) error {
+	const attempts = 20
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = pool.Ping(ctx); err == nil {
+			return nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "28000" {
+			return err // a real error, not the provisioning race
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return err
 }
 
 // quoteLiteral renders a single-quoted SQL string literal (for ALTER ROLE …

@@ -31,19 +31,32 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 -- +goose StatementBegin
 DO $$
 BEGIN
-    -- app_rt: runtime role for all application query paths.
+    -- Create each role NOLOGIN only when ABSENT; do NOT re-assert attributes on
+    -- an existing role. The LOGIN attribute is owned OUT OF BAND — ops grant the
+    -- runtime login in production, and the test kit grants a local login. A
+    -- migration that reset LOGIN→NOLOGIN on every (re-)run would fight that,
+    -- flipping the cluster-global role mid-run under parallel test packages.
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rt') THEN
         CREATE ROLE app_rt NOLOGIN;
-    ELSE
-        ALTER ROLE app_rt NOLOGIN;
     END IF;
 
     -- app_platform: support-ops read-only role.
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_platform') THEN
         CREATE ROLE app_platform NOLOGIN;
-    ELSE
-        ALTER ROLE app_platform NOLOGIN;
     END IF;
+EXCEPTION
+    -- Roles are CLUSTER-GLOBAL. Concurrent migrations (parallel test packages
+    -- each building a fresh template, or api+worker+migrate racing at deploy)
+    -- can update the same pg_authid tuple in overlapping transactions, raising
+    -- "tuple concurrently updated". The change is idempotent (the role ends up
+    -- NOLOGIN regardless of which session wins), so this specific catalog race is
+    -- benign and retried; anything else re-raises.
+    WHEN OTHERS THEN
+        IF SQLERRM LIKE '%tuple concurrently updated%' THEN
+            NULL;
+        ELSE
+            RAISE;
+        END IF;
 END
 $$;
 -- +goose StatementEnd
