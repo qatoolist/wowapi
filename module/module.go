@@ -22,7 +22,9 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/validation"
 )
@@ -106,8 +108,18 @@ type Context interface {
 	ProvidePort(name string, impl any)
 	Port(name string) (any, error)
 
+	// Events returns the event subscription registry (Subscribe an idempotent
+	// handler to an event type); Outbox returns the writer for emitting events
+	// in a business transaction (Phase 6, blueprint 07 §3/§7).
+	Events() *outbox.HandlerRegistry
+	Outbox() outbox.Writer
+
+	// Jobs returns the job-kind registry (RegisterKind → worker + retry policy).
+	// Enqueue is a package function (jobs.Enqueue) taking the business tx so a
+	// job commits atomically with the write (Phase 6).
+	Jobs() *jobs.Registry
+
 	// Later phases add, alongside the capability they deliver:
-	//   Events() outbox.HandlerRegistry / Jobs() jobs.Registry (Phase 6)
 	//   Rules() rules.Registry / Workflows() workflow.Registry (Phase 7)
 	//   Documents() document.Service           (Phase 8)
 	//   Notify() notify.Sender / Webhooks() webhook.Service    (Phase 9)

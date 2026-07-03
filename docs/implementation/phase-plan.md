@@ -12,7 +12,7 @@ Phases follow Goal 2's dependency-aware ordering; each phase ends with a proof b
 | 3 | `kernel/errors`, `kernel/httpx` (middleware, RouteMeta), `kernel/validation`, `kernel/pagination`, `kernel/filtering`, idempotency helpers + migration 00003 (04 §4–5, 05 §1–2) | 1, 2 | #3, #11 | **done** (evidence/phase-03) |
 | 4 | `kernel/auth` (OIDC), actor/capacity model, `kernel/authz` + `kernel/policy`, `kernel/relationship`, `kernel/resource`, denial audit, break-glass/impersonation (01 §3, 03 migrations 002–004) | 2, 3 | #4 (denials), authz matrix | **done** (evidence/phase-04) |
 | 5 | Public `module` SDK (full Context), Kernel+App boot, registries, seed loader, `internal/testmodules/requests` fixture, public `testkit`, contract suite, scratch-consumer test (06, 08 §2, 11) | 3, 4 | #1, #13, #15, #16, #19–#21 | **done** (evidence/phase-05) |
-| 6 | `kernel/outbox` + dispatcher + inbox, `kernel/jobs` (River), worker process, retries/DLQ (07 §3, §7; 03 migration 009) | 2, 5 | #9, #10 | pending |
+| 6 | `kernel/outbox` + dispatcher + inbox, `kernel/jobs` (Postgres runner, D-0047), worker process, retries/DLQ (07 §3, §7; migration 00007) | 2, 5 | #9, #10 | **done** (evidence/phase-06) |
 | 7 | `kernel/rules` (versions, resolution, approval) + `kernel/workflow` (runtime, tasks, SLA sweeper, WorkflowSim) (02; 03 migrations 005–006) | 4, 6 | #7, #8 | pending |
 | 8 | `kernel/document` + storage adapter/fake, comments, attachments, retention (07 §4; 03 migration 007) | 4, 6 | doc-flow tests | pending |
 | 9 | `kernel/notify`, `kernel/webhook`, `kernel/integration` + circuit breaker (07 §5–6; 03 migrations 008, 010) | 6 | webhook replay/retry tests | pending |

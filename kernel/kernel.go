@@ -32,6 +32,7 @@ type Kernel struct {
 	Cfg       config.Framework
 	Log       *slog.Logger
 	Pool      *pgxpool.Pool
+	Platform  *pgxpool.Pool // app_platform pool for cross-tenant kernel work (relay, job runner, seed sync); may be nil in api-only processes
 	Tx        database.TxManager
 	Authz     authz.Evaluator
 	Perms     *authz.Registry
@@ -39,12 +40,13 @@ type Kernel struct {
 	audit     authz.AuditSink
 }
 
-// Deps injects the pool/tx (built by the product main, or provided by testkit)
+// Deps injects the pools/tx (built by the product main, or provided by testkit)
 // so the kernel does not hard-code pool construction and stays testable.
 type Deps struct {
-	Pool  *pgxpool.Pool
-	Tx    database.TxManager
-	Audit authz.AuditSink // optional; nil → a logging sink
+	Pool     *pgxpool.Pool
+	Platform *pgxpool.Pool // optional; required only for the worker/migrate processes
+	Tx       database.TxManager
+	Audit    authz.AuditSink // optional; nil → a logging sink
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -70,6 +72,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Cfg:       cfg,
 		Log:       log,
 		Pool:      deps.Pool,
+		Platform:  deps.Platform,
 		Tx:        deps.Tx,
 		Authz:     eval,
 		Perms:     perms,

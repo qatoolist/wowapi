@@ -11,7 +11,9 @@ import (
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/kernel/validation"
@@ -23,6 +25,8 @@ import (
 type Booted struct {
 	Kernel     *kernel.Kernel
 	Router     *httpx.Router
+	Events     *outbox.HandlerRegistry // event subscriptions (drives the relay)
+	Jobs       *jobs.Registry          // job kinds (drives the worker pools)
 	OpenAPI    map[string][]byte
 	Health     map[string]func(context.Context) error
 	Migrations map[string]fs.FS
@@ -49,6 +53,9 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	router := httpx.NewRouter()
 	val := validation.New()
 	idgen := model.UUIDv7()
+	events := outbox.NewHandlerRegistry()
+	writer := outbox.NewWriter(idgen)
+	jobReg := jobs.NewRegistry()
 
 	var regErrs []error
 	for _, m := range ordered {
@@ -60,7 +67,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		}
 		mc := newModuleContext(m.Name(), k.Log, view, moduleDeps{
 			router: router, val: val, perms: k.Perms, rtypes: k.Resources,
-			eval: k.Authz, tx: k.Tx, idgen: idgen, boot: boot,
+			eval: k.Authz, tx: k.Tx, idgen: idgen,
+			events: events, writer: writer, jobs: jobReg, boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
 			regErrs = append(regErrs, fmt.Errorf("module %q: Register: %w", m.Name(), err))
@@ -106,6 +114,12 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if err := router.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
+	if err := events.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
+	if err := jobReg.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
 	// Every route's permission must be a registered permission (deny-by-default
 	// depends on the registry knowing it; an unknown permission is a boot bug).
 	for _, p := range router.Permissions() {
@@ -121,6 +135,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	return &Booted{
 		Kernel:     k,
 		Router:     router,
+		Events:     events,
+		Jobs:       jobReg,
 		OpenAPI:    boot.openapi,
 		Health:     boot.health,
 		Migrations: boot.migrations,

@@ -120,6 +120,15 @@ func CreateResource(t *testing.T, h *DBHandle, tenant uuid.UUID, resType string,
 	return resource.Ref{Type: resType, ID: id}
 }
 
+// CreateResourceTypeAndResource registers a resource type (if needed) and
+// inserts a resources mirror row, returning its Ref — convenient for tests that
+// need a resource-scoped target or aggregate.
+func CreateResourceTypeAndResource(t *testing.T, h *DBHandle, tenant uuid.UUID, resType string) resource.Ref {
+	t.Helper()
+	CreateResourceType(t, h, resType)
+	return CreateResource(t, h, tenant, resType, nil)
+}
+
 // TenantCtx returns a context scoped to the tenant, for driving h.TxM.
 func TenantCtx(tenant uuid.UUID) context.Context {
 	return database.WithTenantID(context.Background(), tenant)

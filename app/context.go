@@ -18,7 +18,9 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/validation"
 	"github.com/qatoolist/wowapi/module"
@@ -59,6 +61,9 @@ type moduleContext struct {
 	eval   authz.Evaluator
 	tx     database.TxManager
 	idgen  model.IDGen
+	events *outbox.HandlerRegistry
+	writer outbox.Writer
+	jobs   *jobs.Registry
 	boot   *bootState
 }
 
@@ -72,6 +77,9 @@ type moduleDeps struct {
 	eval   authz.Evaluator
 	tx     database.TxManager
 	idgen  model.IDGen
+	events *outbox.HandlerRegistry
+	writer outbox.Writer
+	jobs   *jobs.Registry
 	boot   *bootState
 }
 
@@ -82,7 +90,8 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 	return &moduleContext{
 		name: name, logger: logger.With("module", name), view: view,
 		router: deps.router, val: deps.val, perms: deps.perms, rtypes: deps.rtypes,
-		eval: deps.eval, tx: deps.tx, idgen: deps.idgen, boot: deps.boot,
+		eval: deps.eval, tx: deps.tx, idgen: deps.idgen,
+		events: deps.events, writer: deps.writer, jobs: deps.jobs, boot: deps.boot,
 	}
 }
 
@@ -127,6 +136,30 @@ func (c *moduleContext) IDGen() model.IDGen {
 		c.idgen = model.UUIDv7()
 	}
 	return c.idgen
+}
+
+// Events returns the shared event-subscription registry.
+func (c *moduleContext) Events() *outbox.HandlerRegistry {
+	if c.events == nil {
+		c.events = outbox.NewHandlerRegistry()
+	}
+	return c.events
+}
+
+// Outbox returns the event writer for emitting events in a business tx.
+func (c *moduleContext) Outbox() outbox.Writer {
+	if c.writer == nil {
+		c.writer = outbox.NewWriter(c.IDGen())
+	}
+	return c.writer
+}
+
+// Jobs returns the shared job-kind registry.
+func (c *moduleContext) Jobs() *jobs.Registry {
+	if c.jobs == nil {
+		c.jobs = jobs.NewRegistry()
+	}
+	return c.jobs
 }
 
 func (c *moduleContext) Migrations(fsys fs.FS) { c.boot.migrations[c.name] = fsys }

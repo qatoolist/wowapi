@@ -209,6 +209,58 @@ Blueprint deviations MUST land here before the code that implements them.
   a module that ran migrations but produced no RLS-forced table fails.
 - **Affected:** testkit/contract.go.
 
+## D-0047 — Phase 6: Postgres-backed job runner behind the interfaces, not River
+- **Context:** Goal 2 says "River OR the selected Postgres-backed job runner behind framework
+  interfaces". River is a large dependency with its own migration set and API surface; the module
+  portability contract only depends on `jobs.Registry`/`Runner`/`Worker`.
+- **Decision:** implement a focused Postgres job queue (`kernel/jobs`) behind those interfaces:
+  a `jobs_queue` table, `FOR UPDATE SKIP LOCKED` claim, bounded fixed worker pool per queue,
+  exponential backoff + jitter retry, DLQ (status=discarded mirrored to `job_runs`). Interfaces
+  match the blueprint so a future River swap is internal. Keeps the dependency surface small and
+  the retry/DLQ semantics ours to test precisely.
+- **Affected:** kernel/jobs, migration 00007.
+
+## D-0048 — Phase 6: outbox relay reads cross-tenant as app_platform; dispatches per-tenant
+- **Context:** `events_outbox` is tenant-scoped (RLS) so modules write/read only their tenant's
+  events in the business tx. The relay must dispatch ALL tenants' pending events.
+- **Decision:** a role-scoped RLS policy grants `app_platform` (the relay/kernel role) SELECT+UPDATE
+  across all outbox rows; the relay claims a batch with `FOR UPDATE SKIP LOCKED` as app_platform,
+  then for each event RE-ENTERS a tenant transaction bound to the event's tenant_id (SET LOCAL) to
+  run handlers under normal tenant RLS + the inbox dedup. Ordering is per-aggregate
+  (`occurred_at` per resource). This keeps app_rt strictly tenant-isolated while giving the kernel
+  relay the cross-tenant read it needs — mirrors the app_platform posture from Phase 5.
+- **Affected:** migration 00007 (events_outbox policies), kernel/outbox relay.
+
+## D-0049 — Phase 6: TenantDB.Outbox()/Events() + module.Context Events()/Jobs()
+- **Context:** 05 §2 TenantDB carries `Outbox()`; 06 §2 Context carries `Events()`/`Jobs()`.
+- **Decision:** `database.TenantDB` grows `Outbox() outbox.Writer` (same-tx event write); the
+  per-tx writer is attached by the TxManager. module.Context grows `Events() outbox.HandlerRegistry`
+  (Subscribe) and `Jobs() jobs.Registry` (RegisterKind). The worker process (`app.RunWorker`) starts
+  the relay + job pools and drains gracefully on shutdown.
+- **Affected:** kernel/database (TenantDB), kernel/outbox, kernel/jobs, module/module.go,
+  app/context.go, app worker start.
+
+## D-0050 — Phase 6 review: per-aggregate ordering enforced; event DLQ; job timeout/drain separation
+- **Context:** the review reproduced that per-aggregate ordering was NOT actually held (the
+  blueprint's advisory lock was absent; a transient handler failure reordered events, ARCH-53),
+  failed events retried forever with an ineffective cooldown (ARCH-54/55), and the job runner
+  conflated the shutdown drain with the per-job timeout (ARCH-56/57).
+- **Decision:**
+  - Relay: the claim only picks the earliest still-undispatched event per (tenant, resource) — a
+    later event never overtakes an earlier pending/failed one — plus a tx-scoped
+    `pg_advisory_xact_lock` per aggregate so concurrent relays serialize. Per-aggregate ordering is
+    now real (regression test under retry).
+  - Event DLQ: `events_outbox` gains `failed_at`, `max_attempts`, `last_error` and a `'dead'` status;
+    a poison event dead-letters after max_attempts; `RequeueFailed` keys its cooldown on `failed_at`.
+  - Jobs: a per-job `jobTimeout` (default 2m) separate from the shutdown `drainTimeout`; outcomes are
+    written with a fresh short-lived context; `stalledTimeout` is floored above jobTimeout+drain so a
+    live job can't be reclaimed and run concurrently (ARCH-58); `StartWorker` enforces a HARD drain
+    cap so a ctx-ignoring worker can't hang shutdown (ARCH-57).
+  - Semantics documented: jobs are at-least-once with NO framework dedup (workers with external side
+    effects must carry their own idempotency key); event handlers get exactly-once DB effect via the
+    inbox (ARCH-59).
+- **Affected:** migrations/00007, kernel/outbox/relay.go, kernel/jobs/{runner,jobs}.go, app/worker.go.
+
 ## D-0010 — Phase 0→1: `environment` is fail-closed in deployed processes (SEC-1)
 - **Context:** security review: `Defaults()` sets `environment=local`; a prod deploy that forgets
   to set it would silently validate under local (lenient) rules.
