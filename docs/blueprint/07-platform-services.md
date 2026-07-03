@@ -139,7 +139,7 @@ provider surfaced in readiness detail (non-fatal).
   assignments, policies, rules (+versions:activate), workflows (definitions, instances, tasks:decide),
   documents (+versions, grants), comments, attachments, notifications, audit-logs (read-only),
   integrations, webhooks (+deliveries:redeliver), jobs/operations (admin), healthz/readyz (public)`.
-- OpenAPI: module fragments merged by `make openapi-generate`; CI diff-checks spec vs routes.
+- OpenAPI: module fragments merged by `wowapi openapi merge --check`; CI diff-checks spec vs routes.
 
 ## 9. Observability & operations
 
@@ -151,12 +151,16 @@ provider surfaced in readiness detail (non-fatal).
   (alert >60s), job queue depth/failed/dead, workflow open tasks + SLA breaches, notification
   delivery failure rate, webhook breaker state, authz denials, rate-limit drops.
 - **Health:** `/healthz` liveness (process); `/readyz` readiness (DB ping, migrations current,
-  registries validated); module checks via `ctx.Health(...)`; workers expose readiness on admin port.
+  registries validated, config valid — includes the redacted `config_fingerprint`); module checks
+  via `ctx.Health(...)`; workers expose readiness on admin port. Shared-section fingerprint drift
+  between api and worker raises an alert ([12](12-configuration-and-deployment.md) §7).
 - **Ops (small-team pragmatic):** single Dockerfile (distroless, multi-stage); docker-compose for
   dev (pg + minio + mailpit); production = one managed Postgres (PITR backups, tested restore
   runbook) + 2× api + 1× worker containers on a managed runtime (Cloud Run / ECS / Fly / k8s if
   already owned); CI = lint (golangci-lint + boundaries) → unit → integration (testcontainers) →
   race → bench-budget → build/push; migrations as release step (`cmd/migrate`) before rollout;
-  expand-contract keeps them backward-compatible with N-1 pods. Config via env; secrets from
-  platform secret store. Audit export: monthly partition dump to object storage (immutable bucket).
+  expand-contract keeps them backward-compatible with N-1 pods. Configuration and deployment
+  layering (typed layered config, secret references, per-process views, compose/k8s rendering,
+  CI config gates) is specified in [12-configuration-and-deployment.md](12-configuration-and-deployment.md).
+  Audit export: monthly partition dump to object storage (immutable bucket).
   DR: restore-from-backup rehearsal + `RTO 4h / RPO 15m` targets documented.

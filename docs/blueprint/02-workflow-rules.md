@@ -81,7 +81,7 @@ type Runtime interface {
     OpenTasksFor(ctx context.Context, a authz.Actor, p page.Cursor) (page.Page[Task], error)
 }
 
-type Registry interface {           // module-facing (via ModuleContext)
+type Registry interface {           // module-facing (via module.Context)
     RegisterDefinition(def Definition) error       // from seeds
     RegisterAutoAction(key string, fn AutoAction) error
     RegisterAssigneeResolver(key string, fn AssigneeResolver) error

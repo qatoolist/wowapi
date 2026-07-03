@@ -68,7 +68,7 @@ type TxManager interface {
     WithTenant(ctx context.Context, fn func(ctx context.Context, db TenantDB) error) error
     // WithTenantRO: read-only tx (BEGIN READ ONLY) — list/get paths.
     WithTenantRO(ctx context.Context, fn func(ctx context.Context, db TenantDB) error) error
-    // Platform: global tables only; kernel services only; not exposed on ModuleContext.
+    // Platform: global tables only; kernel services only; not exposed on module.Context.
     Platform(ctx context.Context, fn func(ctx context.Context, db DB) error) error
 }
 
@@ -156,8 +156,9 @@ What goes where: **handler** decode/validate-shape/respond · **service** orches
 
 ## 4. Generic CRUD scaffolding
 
-Mechanism: **code generation, not runtime genericity.** `tools/gen crud --module assets --resource asset`
-emits the full vertical slice (handlers with RouteMeta, DTOs+mappers, service with audit/outbox/rules
+Mechanism: **code generation, not runtime genericity.** `wowapi gen crud --module assets --resource asset`
+(installed CLI, templates embedded — see [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md))
+emits the full vertical slice into the consuming product repo (handlers with RouteMeta, DTOs+mappers, service with audit/outbox/rules
 stubs, sqlc queries incl. keyset list + optimistic update + status lifecycle, OpenAPI fragment,
 seeds for `asset.create|read|list|update|deactivate|restore` permissions, table-driven tests).
 Generated code is committed, reviewed, owned, and freely editable — the generator is a starting

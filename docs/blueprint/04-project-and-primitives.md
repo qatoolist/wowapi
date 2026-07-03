@@ -2,32 +2,73 @@
 
 ## 1. Repository layout
 
+wowapi is a **consumable Go module** ([11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md)):
+everything a product module must import is a public package; `internal/` holds only private
+implementation guts. (The earlier draft's all-`internal` layout is superseded — Go forbids external
+modules from importing `internal/` packages, so consumer-facing contracts cannot live there.)
+
+### Framework repository — `github.com/qatoolist/wowapi`
+
 ```text
-/cmd/api            # HTTP server binary: flags/env → kernel.New → app.Register(modules…) → serve
-/cmd/worker         # outbox relay + job runner + schedulers; same composition root, no HTTP
-/cmd/migrate        # goose runner (kernel + module migrations) + seed sync; only binary with app_migrate creds
-/internal/kernel    # L1 platform kernel (package map below)
-/internal/platform  # L2 extension layer: module SDK (Module, ModuleContext, registries, seed schema)
-/internal/modules   # L3 product modules (requests/, assets/, … society/ later)
-/internal/adapters  # L0: postgres/, s3/, smtp/, smsprovider/, oidc/, secrets/, scanner/
-/internal/shared    # tiny pure helpers (ptr, slices, strcase). No kernel imports. Keep <500 LOC total.
-/internal/testkit   # test fixtures, fakes, assertions (imports kernel; test-only)
-/pkg                # ONLY code intended for external consumption (e.g. Go API client). Default: empty.
-/migrations         # kernel goose migrations (modules embed their own)
-/api/openapi        # base spec + merged output of module fragments
-/configs            # config.example.env, per-env compose overrides. No secrets committed.
-/deployments        # Dockerfile(s), compose.yaml, deploy manifests
-/scripts            # dev scripts (db-reset, lint-boundaries)
+/kernel/...         # PUBLIC L1: primitives + service contracts (package map below)
+/module             # PUBLIC L2: Module, Context, registries, lifecycle, seed schema
+/app                # PUBLIC composition helpers: app.New, RunAPI, RunWorker, RunMigrate
+/adapters/...       # PUBLIC L0: postgres/, s3/, smtp/, smsprovider/, oidc/, secrets/, scanner/
+/testkit            # PUBLIC test fixtures, fakes, assertions, module contract suite
+/migrations         # kernel goose migrations, exposed as embed.FS (migrations.Kernel())
+/cmd/wowapi         # installable CLI (scaffolds, generators, seed validate, openapi merge, lint)
+/internal/...       # PRIVATE impl guts: pg stores, engine internals, outbox relay, evaluator impl —
+                    #   wired by /app; never a consumer-facing contract
+/internal/testmodules/requests  # private neutral module fixture for contract tests
+/examples/acme-ops  # optional standalone sample product app, with its own go.mod; non-contractual
+/api/openapi        # base spec fragments the kernel contributes
+/configs /deployments /scripts   # framework dev/test infra (compose: pg+minio+mailpit)
 /docs               # this blueprint, ADRs (docs/adr/NNNN-*.md)
-/tools              # CLI: module generator, openapi merge, seed validate (module `tools/` with its own go.mod)
 ```
 
-Import law (enforced by `make lint-boundaries`, e.g. go-arch-lint or a 40-line script):
-`modules → platform → kernel → (adapter interfaces)`; `adapters → kernel` (implement kernel ports);
-nothing imports `modules` except `cmd/*`; `shared` imports stdlib only; `testkit` never imported by
-non-test code.
+No `/pkg` wrapper directory: public packages at the repo root are the idiomatic shape for a
+consumable framework (cf. chi, river). Shared micro-helpers fold into the relevant `kernel/*`
+package or stay in `internal/` — no grab-bag `shared` package.
+
+### Product application repository (e.g. `example.com/acme-ops`)
+
+```text
+go.mod              # require github.com/qatoolist/wowapi vX.Y.Z
+/cmd/api            # thin main: config → app.RunAPI(cfg, modules…)
+/cmd/worker         # app.RunWorker — outbox relay + job runner + schedulers
+/cmd/migrate        # app.RunMigrate — kernel migrations (from wowapi) + embedded module migrations
+/internal/modules   # L3 product modules (requests/, assets/, … society/ in its own product repo)
+/api/openapi        # merged output (wowapi openapi merge)
+/configs /deployments /scripts
+```
+
+Import law (enforced by `wowapi lint boundaries` + the Go compiler):
+
+- Product modules → `wowapi/module` → `wowapi/kernel/*`; product modules may also import selected
+  `wowapi/kernel/*` helpers directly.
+- `wowapi/kernel/*` defines contracts and primitives; it must not import `wowapi/module`,
+  `wowapi/app`, `wowapi/adapters`, `wowapi/testkit`, examples, or product code.
+- `wowapi/module` may import `wowapi/kernel/*` contracts; it must not import `wowapi/app`,
+  `wowapi/adapters`, examples, or product code.
+- `wowapi/adapters/*` implement kernel ports and may import `wowapi/kernel/*`; they must not import
+  `wowapi/module` or `wowapi/app`.
+- `wowapi/app` is the composition root and may import `kernel`, `module`, `adapters`, and
+  `migrations`; nothing in `kernel`, `module`, or `adapters` imports `app`.
+- `wowapi/testkit` is test support and may compose `app`, `module`, `kernel`, adapters, and private
+  test modules; production packages must not import it.
+- `wowapi/internal/...` is compiler-blocked outside the framework repo; product modules import each
+  other only via declared ports.
+- `examples/*` are standalone sample apps or docs fixtures, preferably separate nested Go modules;
+  they are non-contractual and never imported by `kernel`, `module`, `app`, or `adapters`.
+
+This direction keeps the public package graph acyclic: `kernel` at the base, `module` above it,
+`adapters` beside it implementing ports, and `app` at the top wiring everything together.
 
 ## 2. Kernel package map
+
+All paths below are **public** packages under `github.com/qatoolist/wowapi/` — importable by
+product modules. Where a package has heavyweight implementation (pg stores, engine internals), the
+public package holds the types/interfaces/constructors and the guts live in `internal/`, wired by `app`.
 
 | Package | Responsibility / key exports | Must not import | Modules may import |
 |---|---|---|---|
@@ -53,9 +94,9 @@ non-test code.
 | `kernel/pagination` | page/cursor types, keyset encoding | — | ✅ |
 | `kernel/filtering` | allowlist filter/sort builders | — | ✅ |
 | `kernel/database` | `TxManager`, `TenantDB`, RLS helpers, `IdemStore`, batch helpers | modules | ✅ |
-| `kernel/config` | typed config structs, env loading | everything else | cmd only |
+| `kernel/config` | typed `Framework` config structs, layered loader, precedence, `Secret` redaction, `ModuleView` — see [12](12-configuration-and-deployment.md) | everything else (base of the graph; only stdlib + secret types) | types only — *values* reach modules solely via `module.Context.Config()` |
 | `kernel/logging` / `kernel/observability` | slog setup, otel, metrics, health registry | — | ✅ |
-| `kernel/seeds` | seed schema parsing + sync engine | modules | via platform |
+| `kernel/seeds` | seed schema parsing + sync engine | modules | via module SDK |
 
 ## 3. Base model primitives (`kernel/model`) — composition, no god BaseModel
 

@@ -11,8 +11,17 @@ edges only** (HTTP, DB, object storage, providers), and a **module SDK** that le
 (society, school, club, facility…) plug in resource types, relationship types, roles, permissions,
 rule points, workflow definitions, events, jobs, seeds, and migrations — without touching kernel code.
 
-One binary set (`api`, `worker`, `migrate`), one PostgreSQL database, tenant isolation via
-`tenant_id` + Row-Level Security enforced with `SET LOCAL app.tenant_id` per transaction.
+**Distribution model:** `wowapi` (`github.com/qatoolist/wowapi`) is itself a versioned Go framework
+dependency. Product applications live in **their own repositories**, add it with
+`go get github.com/qatoolist/wowapi@vX.Y.Z`, import its public packages, and register their domain
+modules through the module SDK. The framework repo ships no real product modules — only neutral
+examples/fixtures. Consumer-facing contracts live in public packages (`wowapi/kernel`,
+`wowapi/module`, `wowapi/app`, `wowapi/testkit`, `wowapi/adapters`), never only under Go
+`internal/`. Full details: [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md).
+
+One binary set per product (`api`, `worker`, `migrate` — thin mains over `wowapi/app`), one
+PostgreSQL database, tenant isolation via `tenant_id` + Row-Level Security enforced with
+`SET LOCAL app.tenant_id` per transaction.
 
 ### Concrete stack (opinionated)
 
@@ -33,17 +42,17 @@ One binary set (`api`, `worker`, `migrate`), one PostgreSQL database, tenant iso
 | Errors | RFC 9457 problem details envelope | See [04-project-and-primitives.md](04-project-and-primitives.md). |
 | Logging | `log/slog` (JSON) | stdlib. |
 | Observability | OpenTelemetry traces + Prometheus metrics | — |
-| Config | env-var structs (`caarlos0/env`) + per-env files for compose | No Viper runtime magic. |
+| Config | layered typed config: compiled defaults → `base.yaml` → env overlay → env vars → secret refs; immutable after boot (see [12-configuration-and-deployment.md](12-configuration-and-deployment.md)) | No Viper-style runtime magic; runtime/tenant change goes through the rule engine. |
 | Object storage | S3-compatible adapter (MinIO locally) | Presigned upload/download. |
 | Validation | thin wrapper over `go-playground/validator` + explicit domain validation funcs | Tags for shape, code for rules. |
 | OpenAPI | hand-authored fragments per module, merged by CLI; `oapi-codegen` for DTO/server stubs where it pays | Spec-first keeps API deliberate. |
-| Testing | `testcontainers-go` Postgres + `/internal/testkit` | Real RLS tests, not mocks. |
+| Testing | `testcontainers-go` Postgres + public `wowapi/testkit` | Real RLS tests, not mocks; usable from product repos. |
 | DI | Manual composition root (`Kernel` + `App`), constructor injection | Wire optional later; no runtime container. |
 
 ## 2. Core framework principles
 
 1. **Kernel is domain-blind.** The kernel compiles and ships with zero product concepts. If a word in
-   kernel code would mean something to a housing-society lawyer, it's a bug (enforced by `make lint-boundaries`).
+   kernel code would mean something to a housing-society lawyer, it's a bug (enforced by `wowapi lint boundaries`).
 2. **Deny by default.** No tenant context → no tenant-scoped query. No permission metadata → route
    refuses to register. No matching allow → 403 + audited denial.
 3. **Tenant isolation is structural, not disciplinary.** RLS at the DB + `TenantDB` type at the app
@@ -126,36 +135,41 @@ One binary set (`api`, `worker`, `migrate`), one PostgreSQL database, tenant iso
 
 ```text
 ┌───────────────────────────────────────────────────────────────┐
-│ L3  Product Domain Modules      /internal/modules/*           │
+│ L3  Product Domain Modules      <product repo>/internal/      │
+│     modules/* — separate repositories importing wowapi        │
 │     society | school | club | facility | requests | assets    │
 │     (business tables, business workflows, business rules)     │
 ├───────────────────────────────────────────────────────────────┤
-│ L2  Domain Extension Layer      Module SDK + registries       │
-│     Module, ModuleContext, resource/relationship/role/        │
+│ L2  Domain Extension Layer      wowapi/module (public)        │
+│     Module, Context, resource/relationship/role/              │
 │     rule-point/workflow/event/job/seed registration           │
 ├───────────────────────────────────────────────────────────────┤
-│ L1  Platform Kernel             /internal/kernel/*            │
+│ L1  Platform Kernel             wowapi/kernel/* (public)      │
 │     tenant · auth · authz · policy · resource · relationship  │
 │     workflow · rules · audit · outbox · jobs · document ·     │
 │     notify · webhook · integration · httpx · errors ·         │
 │     validation · pagination · database · config · o11y        │
+│     (implementation guts live in wowapi/internal/*, private)  │
 ├───────────────────────────────────────────────────────────────┤
-│ L0  Adapters                    /internal/adapters/*          │
+│ L0  Adapters                    wowapi/adapters/* (public)    │
 │     postgres · s3 · smtp · sms · push · oidc · secrets        │
 └───────────────────────────────────────────────────────────────┘
 Import direction: L3 → L2 → L1;  L1 → L0 interfaces only.
-Nothing in L0–L2 may import L3. Ever.
+L0–L2 can never import L3 — structurally: L3 lives in other repos,
+and Go blocks anyone outside wowapi from importing wowapi/internal/*.
 ```
 
 ### 4.3 Module registration
 
 ```text
-main() ─▶ kernel.New(cfg) ──▶ builds pools, registries, services
+main() — the PRODUCT app's cmd/api, wired via wowapi/app
    │
-   ├─▶ app.Register(society.Module{}, requests.Module{}, …)   // order-independent
+   ├─▶ kernel.New(cfg) ──▶ builds pools, registries, services
+   │
+   ├─▶ app.Register(requests.Module{}, assets.Module{}, …)   // product-repo modules; order-independent
    │        │
    │        └─ for each module (topo-sorted by DependsOn):
-   │             m.Register(ctx ModuleContext)
+   │             m.Register(ctx module.Context)
    │                ├─ ctx.Routes(...)        route + permission metadata
    │                ├─ ctx.Permissions(...)   catalog entries
    │                ├─ ctx.Roles(...)         role templates
@@ -219,19 +233,22 @@ notification digest — each tenant-iterating, each idempotent.
 | Belongs in… | Contents |
 |---|---|
 | **Kernel (L1)** | tenant context/resolver, authn middleware, authz+policy evaluator, relationship framework, resource registry, workflow runtime, rule registry/resolver, audit logger, outbox+dispatcher, job runner, notification dispatcher, document/file service, webhook service, integration registry, API/error/validation/pagination helpers, tx manager + RLS helpers, migration/seed loaders, o11y, testkit. |
-| **Extension layer (L2)** | `Module` + `ModuleContext` contracts, registries the modules write into, seed schema, boundary lint rules. |
-| **Domain modules (L3)** | product tables, product services, product workflows *as definitions*, product rule points, product roles/permissions, product API routes, product reports. |
-| **Shared utilities** | `/internal/shared`: pure helpers with no kernel deps (slice/ptr/strcase utils). Keep tiny — a fat `shared` is the first symptom of a mud ball. |
-| **Adapters (L0)** | postgres, s3, smtp/sms/push providers, OIDC verifier, secret providers, malware-scan hook impl. |
+| **Extension layer (L2)** | `Module` + `Context` contracts in public `wowapi/module`, registries the modules write into, seed schema, boundary lint rules. |
+| **Domain modules (L3)** | product tables, product services, product workflows *as definitions*, product rule points, product roles/permissions, product API routes, product reports — **in the consuming product's repository**, never in wowapi. |
+| **Contract fixtures** | `wowapi/internal/testmodules/*`: private neutral modules (`requests`) used by the framework's own contract suite; never part of the public API. |
+| **Examples** | `wowapi/examples/*`: standalone sample product repos/apps, preferably with their own `go.mod`; non-contractual and never imported by `kernel`, `module`, or `app`. |
+| **Adapters (L0)** | postgres, s3, smtp/sms/push providers, OIDC verifier, secret providers, malware-scan hook impl — public `wowapi/adapters/*`. |
 
 ### How domain logic is kept out of the kernel
 1. Kernel entities reference domain things only as `resource_type` + `resource_id` (registry pattern).
 2. Kernel vocabulary is closed: adding a noun to the kernel requires an ADR proving ≥2 unrelated domains need it.
-3. `make lint-boundaries` greps kernel + extension packages for a denylist (building, wing, flat, member,
+3. `wowapi lint boundaries` greps kernel + extension packages for a denylist (building, wing, flat, member,
    committee, AGM, maintenance, defaulter, parking, visitor, conveyance, redevelopment, election…) and
    fails CI. Crude, effective.
-4. Contract tests in the testkit instantiate the kernel with a *fake* module ("requests") — if the kernel
-   only works with a specific module, tests break.
+4. Contract tests in the testkit instantiate the kernel with the neutral fixture module
+   (`wowapi/internal/testmodules/requests`) — if the kernel only works with a specific module, tests break.
+5. Product code physically cannot leak in: it lives in other repositories that *depend on* wowapi,
+   and dependencies point one way.
 
 ### Future extraction path (strangler, later only)
 A module becomes a service when: its write load needs independent scaling, or team ownership demands it.

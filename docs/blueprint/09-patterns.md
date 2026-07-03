@@ -68,20 +68,20 @@ state, no reflection containers. Additional:
 ## 8. Developer-experience patterns
 Starter template, registration contract, seed/migration/permission/workflow/rule/event/job
 registration, testkit fixtures, handler/repo/response helpers, codegen, make targets, boundary
-linting, OpenAPI generation — specified in 05/06/08. Net effect: a new module = `make new-module`,
-fill in domain + service + SQL, seeds declare its catalog — no kernel edits, boilerplate ≈ zero,
-logic 100% visible.
+linting, OpenAPI generation — specified in 05/06/08. Net effect: a new module = `wowapi new-module`
+in the product repo, fill in domain + service + SQL, seeds declare its catalog — no kernel edits,
+no framework fork, boilerplate ≈ zero, logic 100% visible.
 
 ## 9. Anti-patterns → safer alternative (explicit list)
 
 | Anti-pattern | Safer framework alternative |
 |---|---|
-| God service / kernel façade object | capability-scoped interfaces on ModuleContext; services own one aggregate family |
+| God service / kernel façade object | capability-scoped interfaces on `module.Context`; services own one aggregate family |
 | Fat controller | 10–25-line handlers + httpx helpers; logic in services |
 | Harmful anemic model | invariant methods on workflow/financial aggregates |
 | Generic repository hiding SQL | per-aggregate repos + sqlc; SQL is a feature |
 | Universal BaseModel | small opt-in embeds (04 §3) |
-| Service locator / hidden globals | composition root; ModuleContext passed explicitly at Register only |
+| Service locator / hidden globals | composition root; `module.Context` passed explicitly at Register only |
 | Circular module imports | DependsOn topo-sort + ports + lint |
 | Cross-module SQL joins | ports or exported read views; lint |
 | Tenant/audit bypass | TenantDB is the only door; audit writers ride the tx; RLS backstop |
@@ -137,4 +137,4 @@ logic 100% visible.
 - **Integrations:** provider adapters + ACL; signed idempotent webhooks; circuit breakers.
 - **API:** REST + problem details + envelopes; ETag/If-Match; Idempotency-Key; cursor pagination; OpenAPI from fragments.
 - **Testing:** testcontainers integration-first; contract suite per module; RLS/authz/audit assertions; fakes at process boundaries only.
-- **Developer scaffolding:** module template + codegen CLI + seed registration + boundary lint + make targets.
+- **Developer scaffolding:** installable `wowapi` CLI (module template + codegen + seed validation + boundary lint, templates embedded) + optional Makefile wrappers.

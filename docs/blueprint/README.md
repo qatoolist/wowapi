@@ -1,9 +1,16 @@
 # Platform Kernel Blueprint — Index
 
 Coding-ready architecture & implementation blueprint for the reusable, domain-agnostic Go enterprise
-backend framework specified in [Goal.md](../../Goal.md). The housing society product is a reference
-domain only; the core is fully reusable for schools, clubs, facilities, vendor/case management, and
-other multi-tenant, workflow-heavy SaaS.
+backend framework specified in [Goal.md](../../Goal.md), refined per [Goal 1.1.md](../../Goal%201.1.md)
+(distribution model) and [Goal 1.2.md](../../Goal%201.2.md) (configuration & deployment).
+The housing society product is a reference domain only; the core is fully reusable for schools,
+clubs, facilities, vendor/case management, and other multi-tenant, workflow-heavy SaaS.
+
+**Consumption model:** wowapi is a versioned third-party Go dependency
+(`go get github.com/qatoolist/wowapi@vX.Y.Z`) with an installable CLI
+(`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`); product applications live in their
+own repositories and register domain modules via the public module SDK — see
+[11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md).
 
 | File | Covers (Goal.md sections) |
 |---|---|
@@ -18,3 +25,5 @@ other multi-tenant, workflow-heavy SaaS.
 | [08-testing-and-tooling.md](08-testing-and-tooling.md) | Testkit, testing strategy, codegen/CLI (§31–32) |
 | [09-patterns.md](09-patterns.md) | Pattern catalog with use/avoid guidance, anti-patterns, decision matrix, recommended stack (Additional Requirement §1–11) |
 | [10-delivery.md](10-delivery.md) | NFR matrix, acceptance criteria, Phase 0 backlog, boundary check, first 10 files (§36–40) |
+| [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md) | Framework-as-dependency: public vs internal packages, product-repo usage flow, combined migrations, installable `wowapi` CLI, boundary rules (Goal 1.1) |
+| [12-configuration-and-deployment.md](12-configuration-and-deployment.md) | Config layers (framework/product/module/deployment/tenant-runtime), typed contracts, precedence, secrets-by-reference, prod safety checks, per-process views, CLI config tooling, compose/k8s deployment (Goal 1.2) |

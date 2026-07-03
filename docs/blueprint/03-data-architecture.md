@@ -561,8 +561,11 @@ CREATE TABLE webhook_events (
 11. `010` integration_providers, webhook_endpoints, webhook_events.
 12. `011` RLS enablement pass over all tenant tables (kept as one reviewable migration) + grants.
 
-Module migrations run after kernel migrations, ordered by module dependency graph, tracked in
-goose's table with a per-module prefix (`society/0001_…`).
+Kernel migrations ship **inside the wowapi dependency** (`wowapi/migrations`, exposed as an
+embed.FS via `migrations.Kernel()`) and always run first. Product module migrations are embedded in
+the consuming product repo and run after, ordered by the module dependency graph — all tracked in
+one goose table with per-source prefixes (`wowapi/000_…`, `requests/0001_…`, `society/0001_…`).
+See [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md) §4.
 
 ## 6. How modules add tables
 

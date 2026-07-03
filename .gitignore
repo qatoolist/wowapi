@@ -1,0 +1,55 @@
+# OS / filesystem
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / local IDE state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local assistant/tool state
+.claude/settings.local.json
+.claude/skills/
+.remember/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.secrets
+*.pem
+*.key
+*.crt
+
+# Go build/test outputs
+/bin/
+/dist/
+/build/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+*.coverprofile
+
+# Generated / temporary files
+/tmp/
+/var/
+*.log
+*.pid
+
+# Tool caches and generated reports
+graphify-out/
+.graphify_*.json
+.graphify_*.txt
+.graphify_old.json
+
+# Local infra data
+.docker-data/
+.postgres/
+.minio/

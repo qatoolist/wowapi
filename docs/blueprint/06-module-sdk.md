@@ -2,8 +2,15 @@
 
 ## 1. Module starter template
 
+Modules live in the **consuming product repository** and are scaffolded there by
+`wowapi new-module requests` (templates embedded in the CLI — see
+[11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md)).
+The framework repo keeps a private neutral fixture at `wowapi/internal/testmodules/requests` for
+contract tests, plus optional standalone examples under `wowapi/examples/*`. Examples are
+non-contractual and never imported by the framework core.
+
 ```text
-/internal/modules/requests/            # neutral example module
+<product-repo>/internal/modules/requests/   # neutral example module
   module.go            # Module impl: Name, DependsOn, Register(ctx). Wiring ONLY — no logic.
   domain/
     model.go           # aggregates + invariant methods (Request.Approve(actor, now) error). No SQL, no HTTP, no kernel service calls except model types.
@@ -34,23 +41,29 @@
     document_classes.yaml
     notification_templates.yaml
   migrations/          # goose files, prefix-ordered, ONLY this module's tables.
-  tests/               # integration tests using /internal/testkit (module contract test included).
+  tests/               # integration tests using wowapi/testkit (module contract test included).
 ```
 
 `ports.go` is the *only* thing another module may import (`modules/x/app` port interfaces are
 re-exported via a tiny `modules/x/port` package to keep the import surface explicit and lintable).
 
-## 2. Module registration contract (`/internal/platform`)
+## 2. Module registration contract (`wowapi/module` — public)
+
+The SDK is a public package: product repos import `github.com/qatoolist/wowapi/module` (plus the
+`wowapi/kernel/*` contracts it references). The embedded-asset methods (`Migrations(fs)`,
+`Seeds(fs)`, `OpenAPI(fragment)`) are public contracts precisely so *external* modules can hand
+their `embed.FS` assets to the framework.
 
 ```go
+// Package module — imported as wowapi/module; Context avoids stutter.
 type Module interface {
     Name() string                 // "requests"
     DependsOn() []string          // module names; cycle → boot failure
-    Register(ctx ModuleContext) error
+    Register(ctx Context) error
 }
 
-// ModuleContext is capability-scoped: modules get registries and services, never raw pools.
-type ModuleContext interface {
+// Context is capability-scoped: modules get registries and services, never raw pools.
+type Context interface {
     // registration
     Routes() httpx.Router                       // Handle(method, pattern, meta, h)
     Permissions() authz.PermissionRegistry      // usually fed from seeds/permissions.yaml
@@ -78,7 +91,7 @@ type ModuleContext interface {
     Notify() notify.Sender
     Webhooks() webhook.Service
     Logger() *slog.Logger
-    Config() config.Reader                      // read-only, namespaced to module
+    Config() config.ModuleView                  // strict Decode of modules.<name>.* ONLY — no global framework config (see 12)
     IDGen() model.IDGen
     Clock() model.Clock
     Port(name string) (any, error)              // fetch another module's declared port (checked at boot)
@@ -87,8 +100,10 @@ type ModuleContext interface {
 ```
 
 ```go
-// modules/requests/module.go — complete wiring example
-func (m Module) Register(mc platform.ModuleContext) error {
+// <product-repo>/internal/modules/requests/module.go — complete wiring example
+import "github.com/qatoolist/wowapi/module"
+
+func (m Module) Register(mc module.Context) error {
     repo := store.NewRequestRepo()
     svc := app.NewService(repo, mc.RulesResolver(), mc.WorkflowRuntime(),
         mc.Authz(), mc.IDGen(), mc.Clock())
@@ -104,8 +119,14 @@ func (m Module) Register(mc platform.ModuleContext) error {
 }
 ```
 
+Module config: declare a typed struct with defaults + validation and decode it once in `Register`
+(`mc.Config().Decode(&cfg)`); pass values into constructors. Decode errors, failed validation, or
+unknown keys in the module's namespace fail boot. Modules never read env vars or global config
+directly ([12-configuration-and-deployment.md](12-configuration-and-deployment.md) §2).
+
 **Lifecycle:** `Register` (collect) → `Validate` (whole-graph checks: dup permission keys, routes
-without meta, unknown workflow auto-actions, seed schema errors, unsatisfied ports, dependency
+without meta, unknown workflow auto-actions, seed schema errors, unsatisfied ports, module config
+decode/validation errors, dependency
 cycles — all boot failures with precise messages) → `Migrate` (cmd/migrate only) → `SeedSync`
 (idempotent upsert of catalogs/templates; tenant data never touched) → `Start` (HTTP or workers)
 → `Stop` (reverse order: stop intake, drain jobs/outbox with deadline, close pools).
@@ -135,29 +156,37 @@ type Kernel struct {
 }
 func New(ctx context.Context, cfg config.Config) (*Kernel, error) // ordered construction; any failure aborts boot
 
-// app.App: kernel + modules.
-type App struct { K *kernel.Kernel; modules []platform.Module; registries *platform.Registries }
-func (a *App) Register(ms ...platform.Module)
+// app.App: kernel + modules. (Both public: wowapi/app composes wowapi/module + wowapi/kernel.)
+type App struct { K *kernel.Kernel; modules []module.Module; registries *module.Registries }
+func (a *App) Register(ms ...module.Module)
 func (a *App) Validate() error
 func (a *App) StartAPI(ctx) error / StartWorker(ctx) error / Shutdown(ctx) error
 ```
 
 ```go
-// cmd/api/main.go (pseudocode)
+// <product-repo>/cmd/api/main.go (pseudocode) — the composition root belongs to the PRODUCT app
+import (
+    "context"
+
+    "github.com/qatoolist/wowapi/app"
+    "github.com/qatoolist/wowapi/kernel/config"
+
+    "example.com/acme-ops/internal/modules/assets"
+    "example.com/acme-ops/internal/modules/requests"
+)
+
 func main() {
     cfg := config.MustLoad()
-    ctx := signalctx.New()                       // SIGTERM/SIGINT → cancel
-    k, err := kernel.New(ctx, cfg); die(err)
-    a := app.New(k)
-    a.Register(requests.Module{}, assets.Module{}) // society.Module{} later — one line
-    die(a.Validate())
-    die(a.StartAPI(ctx))                         // blocks; graceful drain on cancel
+    ctx := context.Background()                  // production main wraps this with SIGTERM/SIGINT handling
+    die(app.RunAPI(ctx, cfg, requests.Module{}, assets.Module{})) // society.Module{} lives in ITS repo
 }
 ```
 
 Rules: constructors take interfaces they consume; `Kernel` fields are concrete where there's one
 impl, interface where an adapter boundary exists (storage, mail, secrets). Circular deps are
-impossible by layering; module↔module cycles are caught by `DependsOn` topo-sort. Wire adoption is
+blocked by the public package graph (`kernel` imports no `module`/`app`, `module` imports kernel
+contracts, adapters implement kernel ports, `app` wires them); module↔module cycles are caught by
+`DependsOn` topo-sort. Wire adoption is
 optional later — the composition root is already the shape Wire generates. Testing: `testkit.NewApp(t)`
 builds a real Kernel on a testcontainer DB with fake clock/idgen/providers injected via config.
 
