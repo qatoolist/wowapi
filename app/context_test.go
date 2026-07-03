@@ -17,7 +17,7 @@ func TestNewModuleContext_Logger(t *testing.T) {
 	h := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 	logger := slog.New(h)
 
-	ctx := newModuleContext("mymod", logger, nil)
+	ctx := newModuleContext("mymod", logger, nil, nil, nil)
 	ctx.Logger().Info("test message")
 
 	if !strings.Contains(buf.String(), "module=mymod") {
@@ -29,7 +29,7 @@ func TestNewModuleContext_Logger(t *testing.T) {
 // yields an empty (but non-nil) MapView so modules with no namespace can
 // still call Decode without a guard.
 func TestNewModuleContext_NilViewReturnsEmptyMapView(t *testing.T) {
-	ctx := newModuleContext("a", slog.Default(), nil)
+	ctx := newModuleContext("a", slog.Default(), nil, nil, nil)
 	mv := ctx.Config()
 	if mv == nil {
 		t.Fatal("Config() must not return nil for a nil view")
@@ -49,7 +49,7 @@ func TestNewModuleContext_ConfigIsolation(t *testing.T) {
 		"b": config.MapView{"key3": "val3"},
 	}
 
-	ctx := newModuleContext("a", slog.Default(), ns["a"])
+	ctx := newModuleContext("a", slog.Default(), ns["a"], nil, nil)
 
 	var out map[string]any
 	if err := ctx.Config().Decode(&out); err != nil {
@@ -76,7 +76,7 @@ func TestNewModuleContext_DecodeTypedStruct(t *testing.T) {
 	ns := config.Namespaces{
 		"catalog": config.MapView{"price_ttl": "5m"},
 	}
-	ctx := newModuleContext("catalog", slog.Default(), ns["catalog"])
+	ctx := newModuleContext("catalog", slog.Default(), ns["catalog"], nil, nil)
 
 	var cfg modCfg
 	if err := ctx.Config().Decode(&cfg); err != nil {

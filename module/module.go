@@ -17,6 +17,8 @@ import (
 	"regexp"
 
 	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/validation"
 )
 
 // Module is implemented by every product module (and by the framework's
@@ -49,8 +51,16 @@ type Context interface {
 	// (modules.<name>.* only — see docs/blueprint/12 §2).
 	Config() config.ModuleView
 
+	// Routes returns the module's route registry. Every route must declare
+	// metadata (a permission or explicit public opt-out); registration errors
+	// surface at boot (Phase 3; blueprint 05 §1).
+	Routes() *httpx.Router
+
+	// Validator returns the shared request validator used by
+	// httpx.BindAndValidate (Phase 3).
+	Validator() *validation.Validator
+
 	// Later phases add, alongside the capability they deliver:
-	//   Routes() httpx.Router                  (Phase 3)
 	//   Tx() database.TxManager                (Phase 2)
 	//   Authz() authz.Evaluator                (Phase 4)
 	//   Migrations(fs fs.FS) / Seeds(fs fs.FS) (Phase 5)

@@ -3,9 +3,29 @@ version: "2"
 linters:
   default: standard
   enable:
+    - depguard
     - misspell
     - unconvert
     - unparam
+  settings:
+    # Encode the blueprint 04 §1 import law as a machine check, complementing
+    # scripts/lint_boundaries.sh (which does path-level + vocabulary checks).
+    # kernel/* is the base: it must never import the upward layers.
+    depguard:
+      rules:
+        kernel:
+          list-mode: lax
+          files:
+            - "**/kernel/**/*.go"
+          deny:
+            - pkg: github.com/qatoolist/wowapi/module
+              desc: "kernel must not import module (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/app
+              desc: "kernel must not import app (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/adapters
+              desc: "kernel must not import adapters (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/testkit
+              desc: "production code must not import testkit"
 
 issues:
   max-issues-per-linter: 0

@@ -271,6 +271,61 @@ Blueprint deviations MUST land here before the code that implements them.
   Recorded now so the deviation from 05 §2 is explicit, not silent.
 - **Affected:** kernel/database/txmanager.go; revisit at phase-plan row 4.
 
+## D-0031 — Phase 3: idempotency_keys migration (00003) ships now, out of 03 §5 order
+- **Context:** phase-plan row 3 requires tested idempotency helpers; 05 §2's `IdemStore` needs the
+  `idempotency_keys` table, which blueprint 03 §5 lists in migration 009 (a Phase 6 batch).
+- **Decision:** pull the single `idempotency_keys` table forward into kernel migration
+  `00003_idempotency.sql` (tenant-scoped, ENABLE+FORCE RLS, granted to app_rt) so the Phase 3
+  idempotency store is real and integration-tested against RLS now. The remaining migration-009
+  tables (outbox, processed_events, job_runs, audit_logs) still land in Phase 6. Migration numbers
+  are per-source and monotonic, so pulling one table forward is safe.
+- **Affected:** migrations/00003_idempotency.sql; kernel/database/idempotency.go (IdemStore + pg
+  impl); kernel/httpx/idempotency.go (WithIdempotency); docs/blueprint/03 §5 note.
+
+## D-0032 — Phase 3: module.Context gains Routes() and Validator()
+- **Context:** D-0006 grows Context per phase; Phase 3 delivers httpx + validation, so modules can
+  now register routes and validate input.
+- **Decision:** add `Routes() *httpx.Router` and `Validator() *validation.Validator` to
+  module.Context (and the app-side moduleContext). Route registration errors surface at boot via
+  Router.Err(). Tx()/Authz()/etc. still arrive in their phases.
+- **Affected:** module/module.go, app/context.go.
+
+## D-0033 — Phase 3 review: the database layer may emit taxonomy Kinds (ARCH-30)
+- **Context:** D-0024 kept `kernel/database` on exported sentinels mapped upstream. `IdemStore`
+  naturally produces conflict / retry_later / in-flight outcomes that ARE taxonomy Kinds
+  (KindConflict, KindIdempotencyInFlight); returning sentinels and re-mapping them in httpx would
+  duplicate the taxonomy.
+- **Decision:** `kernel/database` MAY import `kernel/errors` and return `*errors.Error` for
+  outcomes that map cleanly to a Kind (idempotency, and version-conflict helpers may migrate to
+  this too). The graph stays acyclic — `kernel/errors` imports only stdlib. Encoded a `depguard`
+  rule in `.golangci.yml` (kernel must not import module/app/adapters/testkit) so the import law is
+  machine-checked, not just documented.
+- **Affected:** kernel/database/idempotency.go, .golangci.yml.
+
+## D-0034 — Phase 3 review: idempotency review-finding resolutions
+- **SEC-16/ARCH-27 (critical, reproduced):** the claim raced (SELECT-FOR-UPDATE cannot lock a
+  non-existent row, so concurrent first-uses both went Fresh and the unconditional upsert clobbered
+  a completed response). Rewritten to atomic `INSERT … ON CONFLICT DO NOTHING RETURNING` — only a
+  real insert is Fresh; otherwise `SELECT … FOR UPDATE` and branch (completed→replay, hash
+  mismatch→conflict, expired→re-claim, else in-flight). Concurrency regression test
+  (`TestIntegrationIdempotencyConcurrent`, 8 goroutines, exactly-once, passes ×5 under `-race`).
+- **SEC-18 (medium, reproduced):** `Recover` appended a problem body to already-written responses
+  and swallowed `http.ErrAbortHandler`. Now tracks whether bytes were written (skips the problem
+  body if so) and re-panics on ErrAbortHandler.
+- **ARCH-32/SEC-23:** `WithIdempotency` now stores only 2xx responses; non-2xx claims are discarded
+  (stay retryable) via the new `IdemStore.Discard`.
+- **SEC-19:** `RequestHash` now includes the URL query string.
+- **ARCH-29:** `DecodeJSON` rejects a literal `null` body like an empty one.
+- **ARCH-31/SEC-22:** added `filtering.KeysetClause` (blueprint 05 §2, previously missing) with
+  cursor-key allowlisting + `Sort.Terms()` accessors; columns come only from the sort allowlist,
+  cursor supplies only bound values.
+- **ARCH-34:** `RequireIfMatch` rejects `*` (optimistic concurrency requires a concrete version).
+- **Accepted/deferred:** ARCH-28/SEC-21 (Router.Err() enforced at boot) → Phase 5 app wiring;
+  ARCH-35 (ScopeExtractor `any` → authz.Target) → Phase 4; SEC-20 (duplicate JSON keys / no
+  Content-Type check) → defense-in-depth noted, strict decode + domain validation suffice.
+- **Affected:** kernel/database/idempotency.go, kernel/httpx/{idempotency,middleware,decode,etag}.go,
+  kernel/filtering/{sort,keyset}.go; evidence/phase-03/review-findings.md.
+
 ## D-0024 — Phase 2: TenantDB grows per-phase accessors; sentinel errors until kernel/errors
 - **Context:** 05 §2's TenantDB carries Outbox()/Audit()/Resources(), owned by Phases 4/6; the
   error taxonomy arrives in Phase 3.

@@ -10,10 +10,12 @@ import (
 )
 
 // expectedFiles lists the kernel SQL migrations in ascending goose order.
-// Phase 2 ships exactly two files (decision D-0025).
+// Phase 2 shipped 00001–00002 (D-0025); Phase 3 pulls idempotency_keys forward
+// into 00003 (D-0031).
 var expectedFiles = []string{
 	"00001_bootstrap.sql",
 	"00002_core_identity.sql",
+	"00003_idempotency.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the
