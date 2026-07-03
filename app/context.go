@@ -14,9 +14,12 @@ import (
 	"io/fs"
 	"log/slog"
 
+	"github.com/qatoolist/wowapi/kernel/attachment"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -70,6 +73,11 @@ type moduleContext struct {
 	resolver *rules.Resolver
 	wfReg    *workflow.Registry
 	wfRT     *workflow.Runtime
+	docClass *document.Registry
+	docHooks *document.Hooks
+	docs     *document.Service
+	comments *comment.Service
+	attaches *attachment.Service
 	boot     *bootState
 }
 
@@ -90,6 +98,11 @@ type moduleDeps struct {
 	resolver *rules.Resolver
 	wfReg    *workflow.Registry
 	wfRT     *workflow.Runtime
+	docClass *document.Registry
+	docHooks *document.Hooks
+	docs     *document.Service
+	comments *comment.Service
+	attaches *attachment.Service
 	boot     *bootState
 }
 
@@ -103,6 +116,8 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		eval: deps.eval, tx: deps.tx, idgen: deps.idgen,
 		events: deps.events, writer: deps.writer, jobs: deps.jobs,
 		rules: deps.rules, resolver: deps.resolver, wfReg: deps.wfReg, wfRT: deps.wfRT,
+		docClass: deps.docClass, docHooks: deps.docHooks, docs: deps.docs,
+		comments: deps.comments, attaches: deps.attaches,
 		boot: deps.boot,
 	}
 }
@@ -181,6 +196,14 @@ func (c *moduleContext) RulesResolver() *rules.Resolver { return c.resolver }
 // Workflows returns the workflow registry; WorkflowRuntime the runtime.
 func (c *moduleContext) Workflows() *workflow.Registry      { return c.wfReg }
 func (c *moduleContext) WorkflowRuntime() *workflow.Runtime { return c.wfRT }
+
+// DocumentClasses/DocumentHooks are the shared document registration pointers;
+// Documents/Comments/Attachments are the runtime services.
+func (c *moduleContext) DocumentClasses() *document.Registry { return c.docClass }
+func (c *moduleContext) DocumentHooks() *document.Hooks      { return c.docHooks }
+func (c *moduleContext) Documents() *document.Service        { return c.docs }
+func (c *moduleContext) Comments() *comment.Service          { return c.comments }
+func (c *moduleContext) Attachments() *attachment.Service    { return c.attaches }
 
 func (c *moduleContext) Migrations(fsys fs.FS) { c.boot.migrations[c.name] = fsys }
 func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }

@@ -14,7 +14,7 @@ Phases follow Goal 2's dependency-aware ordering; each phase ends with a proof b
 | 5 | Public `module` SDK (full Context), Kernel+App boot, registries, seed loader, `internal/testmodules/requests` fixture, public `testkit`, contract suite, scratch-consumer test (06, 08 §2, 11) | 3, 4 | #1, #13, #15, #16, #19–#21 | **done** (evidence/phase-05) |
 | 6 | `kernel/outbox` + dispatcher + inbox, `kernel/jobs` (Postgres runner, D-0047), worker process, retries/DLQ (07 §3, §7; migration 00007) | 2, 5 | #9, #10 | **done** (evidence/phase-06) |
 | 7 | `kernel/rules` (versions, resolution, approval) + `kernel/workflow` (runtime, tasks, SLA sweeper, WorkflowSim) (02; 03 migrations 005–006) | 4, 6 | #7, #8 | **done** (evidence/phase-07) |
-| 8 | `kernel/document` + storage adapter/fake, comments, attachments, retention (07 §4; 03 migration 007) | 4, 6 | doc-flow tests | pending |
+| 8 | `kernel/document` + storage adapter/fake, comments, attachments, retention (07 §4; 03 migration 007) | 4, 6 | doc-flow tests | **done** (evidence/phase-08) |
 | 9 | `kernel/notify`, `kernel/webhook`, `kernel/integration` + circuit breaker (07 §5–6; 03 migrations 008, 010) | 6 | webhook replay/retry tests | pending |
 | 10 | `cmd/wowapi` full: init/new-module/gen crud/migrate create/seed validate/openapi merge/lint boundaries/config tooling/deploy render; golden tests (08 §3, 11 §5, 12 §8) | 5 | #6, #12, #23, #28 | pending |
 | 11 | Observability wiring, benchmarks + budgets, race gate, security test suite, config fingerprint drift (07 §1–2, §9) | 3–10 | #17, #18, #26–#27 | pending |

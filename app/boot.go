@@ -70,6 +70,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			eval: k.Authz, tx: k.Tx, idgen: idgen,
 			events: events, writer: writer, jobs: jobReg,
 			rules: k.Rules, resolver: k.RulesResolver, wfReg: k.Workflows, wfRT: k.WorkflowRuntime,
+			docClass: k.DocumentClasses, docHooks: k.DocumentHooks, docs: k.Documents,
+			comments: k.Comments, attaches: k.Attachments,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
@@ -127,6 +129,15 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	}
 	if err := k.Workflows.Err(); err != nil {
 		regErrs = append(regErrs, err)
+	}
+	if err := k.DocumentClasses.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
+	// A module that registered a document class needs a document service to use
+	// it; the service is nil when no object-storage adapter was wired. Fail boot
+	// loudly rather than hand modules a nil Documents() at runtime.
+	if len(k.DocumentClasses.Keys()) > 0 && k.Documents == nil {
+		regErrs = append(regErrs, fmt.Errorf("document classes are registered (%v) but no storage adapter is wired: pass kernel.Deps.Storage", k.DocumentClasses.Keys()))
 	}
 	// Every route's permission must be a registered permission (deny-by-default
 	// depends on the registry knowing it; an unknown permission is a boot bug).

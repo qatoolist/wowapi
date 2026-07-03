@@ -18,9 +18,12 @@ import (
 	"log/slog"
 	"regexp"
 
+	"github.com/qatoolist/wowapi/kernel/attachment"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -130,8 +133,19 @@ type Context interface {
 	Workflows() *workflow.Registry
 	WorkflowRuntime() *workflow.Runtime
 
+	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
+	// registry a module declares its document classes into during Register;
+	// DocumentHooks registers OnFileUpload / OnDocumentAccess hooks. Documents is
+	// the runtime service (nil when the process has no object-storage adapter —
+	// boot fails if a module registered a class but no storage is wired). Comments
+	// and Attachments are plain services over any ResourceRef.
+	DocumentClasses() *document.Registry
+	DocumentHooks() *document.Hooks
+	Documents() *document.Service
+	Comments() *comment.Service
+	Attachments() *attachment.Service
+
 	// Later phases add, alongside the capability they deliver:
-	//   Documents() document.Service           (Phase 8)
 	//   Notify() notify.Sender / Webhooks() webhook.Service    (Phase 9)
 }
 

@@ -48,6 +48,11 @@ type DBHandle struct {
 	Runtime  *pgxpool.Pool      // connects AS app_rt — what production code sees
 	Platform *pgxpool.Pool      // connects AS app_platform — kernel/seed catalog writes
 	TxM      database.TxManager // manager over Runtime
+
+	// PlatformTxM is a tenant-bound TxManager over Platform (SET ROLE app_platform)
+	// for kernel background work that mutates append-only-to-app_rt tables under a
+	// bound tenant — e.g. document scan-status + retention voiding.
+	PlatformTxM database.TxManager
 }
 
 // identRE guards every identifier this kit interpolates into DDL/DML. Test
@@ -122,6 +127,8 @@ func NewDB(t *testing.T) *DBHandle {
 		Platform: platform,
 		TxM: database.NewManager(runtime, config.DB{Pool: config.Pool{MaxConns: 4, QueryTimeout: 5 * time.Second}},
 			database.WithRole(runtimeRole), database.WithRLSGuard()),
+		PlatformTxM: database.NewManager(platform, config.DB{Pool: config.Pool{MaxConns: 2, QueryTimeout: 5 * time.Second}},
+			database.WithRole(platformRole), database.WithRLSGuard()),
 	}
 
 	t.Cleanup(func() {

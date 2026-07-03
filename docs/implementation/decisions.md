@@ -293,6 +293,41 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0055 — Phase 8: document/file framework (storage port, append-only versions, grant RLS) + review fixes
+- **Context:** Phase 8 delivers documents/versions/grants/comments/attachments (migration 00010,
+  blueprint 07 §4). Two parallel review agents reproduced 13 defects (evidence/phase-08/review-findings.md).
+- **Decisions:**
+  - **Object storage is a port (`kernel/storage.Adapter`):** PresignPut/Get + Stat + Peek + Delete;
+    blob bytes never transit the API process (client ↔ store via presigned URLs). A memory adapter
+    backs tests + local dev; an S3/minio adapter implements the same five methods.
+  - **Append-only versions + privilege split:** `document_versions` is INSERT-only to app_rt;
+    scan-status settlement and retention voiding run as app_platform (tenant-bound via a PlatformTxM),
+    so a module can neither rewrite an immutable file pointer nor clear an infected scan flag.
+  - **Download authorization is deny-first + owner + capacity-grant:** an explicit deny policy from
+    the authz evaluator is authoritative; otherwise the document owner, an authz role/policy allow, or
+    a valid (windowed) capacity grant permits. Two kernel-owned permissions (`kernel.document.read`,
+    `kernel.document.update`) are registered at boot.
+  - **Grant writes are RLS-ownership-enforced (SEC-41/42):** a new `app_actor_id()` SQL function +
+    a RESTRICTIVE policy pin every `document_access_grants` INSERT/UPDATE to a document the acting
+    actor owns — a module cannot self-grant or redirect a grant even via raw SQL. Chosen over an
+    app_platform-only grant path to keep grant creation composable in the module's business tx.
+  - **Governance columns are app_platform-only (SEC-44):** app_rt gets column-level UPDATE on
+    documents (title/sensitivity/version/updated_*) but NOT status/legal_hold/retention_until — a
+    module cannot clear a legal hold or void a document to dodge retention.
+  - **Download is a pure read (ARCH-65):** it emits NO outbox event (that INSERT broke read-only-tx
+    callers); durable download audit is deferred to the audit_logs writer.
+  - **Retention sweep ordering (SEC-48):** rows are tombstoned inside the tx; blobs are deleted only
+    AFTER commit — a failure orphans a blob (safe) rather than leaving an active row over a deleted blob.
+  - **Random storage keys (ARCH-66):** the upload key uses a UUID suffix, not the version number, so
+    concurrent InitiateUpload calls never clobber each other's blob.
+  - **Comment/attachment author guards (SEC-45/46):** Go-level author/creator checks (fail-closed on
+    no actor) for edit/void/detach — the realistic user-vs-user protection; a trusted in-process
+    module issuing raw SQL can still touch its own tenant's rows (accepted; DB-level protection is
+    reserved for the cross-authorization/legal controls).
+- **Affected:** kernel/storage, kernel/document, kernel/comment, kernel/attachment,
+  migrations/00010_documents.sql, kernel/kernel.go, module/module.go, app/{context,boot}.go,
+  testkit/db.go; evidence/phase-08/.
+
 ## D-0054 — Phase 7 review: temporal resolution, write-time schema, draft/activate split, workflow fail-closed
 - **Context:** two parallel review agents (security + architecture) reproduced eight gaps in the
   rules + workflow slice (see evidence/phase-07/review-findings.md).

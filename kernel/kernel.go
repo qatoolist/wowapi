@@ -19,15 +19,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/qatoolist/wowapi/kernel/attachment"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/relationship"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/storage"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
@@ -46,7 +50,18 @@ type Kernel struct {
 	RulesResolver   *rules.Resolver
 	Workflows       *workflow.Registry
 	WorkflowRuntime *workflow.Runtime
-	audit           authz.AuditSink
+
+	// Document / file framework (Phase 8). DocumentClasses + DocumentHooks are the
+	// shared registration pointers modules write into during Register; Documents is
+	// nil when no storage adapter is provided (an api-only process may run without
+	// object storage). Comments/Attachments need no storage.
+	DocumentClasses *document.Registry
+	DocumentHooks   *document.Hooks
+	Documents       *document.Service
+	Comments        *comment.Service
+	Attachments     *attachment.Service
+
+	audit authz.AuditSink
 }
 
 // Deps injects the pools/tx (built by the product main, or provided by testkit)
@@ -56,6 +71,10 @@ type Deps struct {
 	Platform *pgxpool.Pool // optional; required only for the worker/migrate processes
 	Tx       database.TxManager
 	Audit    authz.AuditSink // optional; nil → a logging sink
+	// Storage is the object-storage adapter backing the document framework.
+	// Optional: when nil, Kernel.Documents is nil and modules that require it fail
+	// boot only if they actually register a document class (checked by app.Boot).
+	Storage storage.Adapter
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -92,6 +111,20 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	wfReg := workflow.NewRegistry()
 	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen)
 
+	// Documents: the class registry + hook set modules register into, plus the
+	// service (only when an object-storage adapter is wired). The two document
+	// permissions are kernel-owned so the download gate can Evaluate them.
+	docClasses := document.NewRegistry()
+	docHooks := document.NewHooks()
+	perms.Register(authz.Permission{Key: document.PermRead})
+	perms.Register(authz.Permission{Key: document.PermWrite})
+	var docSvc *document.Service
+	if deps.Storage != nil {
+		docSvc = document.New(docClasses, deps.Storage, eval, writer, docHooks, idgen)
+	}
+	commentSvc := comment.New(idgen, writer)
+	attachmentSvc := attachment.New(idgen, writer)
+
 	return &Kernel{
 		Cfg:             cfg,
 		Log:             log,
@@ -105,6 +138,11 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		RulesResolver:   ruleResolver,
 		Workflows:       wfReg,
 		WorkflowRuntime: wfRuntime,
+		DocumentClasses: docClasses,
+		DocumentHooks:   docHooks,
+		Documents:       docSvc,
+		Comments:        commentSvc,
+		Attachments:     attachmentSvc,
 		audit:           audit,
 	}, nil
 }
