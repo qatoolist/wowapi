@@ -1,0 +1,69 @@
+# Local development & test stack (container-first, Goal 2 §Container-First).
+# Usage: make up / make down / make shell / make ci-container
+name: wowapi
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wowapi
+      POSTGRES_PASSWORD: wowapi-local-only   # local dev only; real envs use secretrefs
+      POSTGRES_DB: wowapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wowapi -d wowapi"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: wowapi
+      MINIO_ROOT_PASSWORD: wowapi-local-only
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"   # SMTP sink
+      - "8025:8025"   # web UI
+
+  # Containerized toolbox: run tests/lint without host Go.
+  #   docker compose -f deployments/compose.yaml run --rm tools make ci
+  tools:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: dev
+    working_dir: /src
+    volumes:
+      - ..:/src
+      - gocache:/root/.cache/go-build
+      - gomod:/go/pkg/mod
+    environment:
+      DATABASE_URL: postgres://wowapi:wowapi-local-only@postgres:5432/wowapi?sslmode=disable
+      S3_ENDPOINT: http://minio:9000
+      SMTP_ADDR: mailpit:1025
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  gocache:
+  gomod:

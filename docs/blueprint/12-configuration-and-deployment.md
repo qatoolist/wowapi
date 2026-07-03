@@ -69,10 +69,12 @@ type ModuleView interface {
 
 - Every field carries: a `conf` key, a compiled **default** (or `validate:"required"`), validation
   tags, `redact` where applicable, and a `doc` string (feeds `wowapi config schema`).
-- **Product config** composes rather than forks: the product defines
-  `type Config struct { config.Framework; Product ProductConfig; Modules map[string]yaml.Node }`
-  (scaffolded by `wowapi init`). Product-owned fields live under `product.*`; module namespaces
-  under `modules.*`. Framework keys keep framework meaning everywhere.
+- **Product config** composes rather than forks. Naming is fixed: the framework-owned struct is
+  `config.Framework` (this package); the product-owned type is `Config` in the product's
+  `internal/appcfg` package (scaffolded by `wowapi init`):
+  `type Config struct { config.Framework; Product ProductConfig; Modules map[string]yaml.Node }`,
+  loaded via `appcfg.Load(...)` / `appcfg.MustLoad()`. Product-owned fields live under `product.*`;
+  module namespaces under `modules.*`. Framework keys keep framework meaning everywhere.
 - **Module config isolation:** modules declare a typed struct with defaults/validation and decode
   it in `Register` via `ctx.Config().Decode(&cfg)`. Decode failure or leftover unknown keys =
   **boot failure**, reported per module. `RunModuleContract` asserts the module boots with an empty
@@ -115,6 +117,10 @@ supports (or older than its supported floor), and any **production safety violat
   (stage warns loudly). `wowapi config validate --env prod` applies the same check in CI.
 - Sanity floors in prod: TLS-terminating base URL required, non-debug log level, DSN must be a
   secret ref (raw DSN string in a file = error), pool/timeout values inside safe ranges.
+- **Environment is fail-closed:** deployed processes must set `environment` explicitly — the
+  loader errors when it is absent from every layer. The compiled default (`local`) exists only for
+  `Defaults()` in tests and local tooling; a production deploy can never silently validate under
+  `local` rules because a missing/typoed env var left the field unset (phase-00 review finding SEC-1).
 
 ## 5. Secrets: references, not values
 
@@ -168,10 +174,15 @@ wowapi config schema                   # JSON Schema from struct tags (framework
 wowapi deploy render --env prod        # render compose/k8s manifests from templates + effective config
 ```
 
-Validation/schema/diff run against the *product's* config types (the CLI builds with the product's
-module list via a tiny generated `tools/configcheck` shim — no framework fork needed). The CLI is
-**not** a deployment platform: scaffolding, validation, rendering, and diagnostics only; applying
-manifests stays with the team's normal tooling (kubectl/helm/CD).
+**How the CLI sees product config types without importing product code:** the installed `wowapi`
+binary never imports product packages (it can't — it's prebuilt). `wowapi init` scaffolds a tiny
+**generated product-local checker** at `tools/configcheck/main.go` in the product repo: it imports
+the product's `internal/appcfg` + `wowapi/kernel/config`, and emits the JSON Schema / validation
+report / redacted effective config as JSON on stdout. The CLI's `config validate|doctor|print|diff|
+schema` commands execute `go run ./tools/configcheck` inside the product repo and format its
+output. In the framework repo (no product types), the same commands run against `config.Framework`
+alone. The CLI is **not** a deployment platform: scaffolding, validation, rendering, and
+diagnostics only; applying manifests stays with the team's normal tooling (kubectl/helm/CD).
 
 ## 9. Deployment guidance (product repos)
 

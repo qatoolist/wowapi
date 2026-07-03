@@ -27,7 +27,7 @@ contains no real product modules — only neutral standalone examples and privat
 
 | Path | Visibility | Contents |
 |---|---|---|
-| `wowapi/kernel/...` | **public** | primitives + service contracts modules import: `model`, `errors`, `validation`, `pagination`, `filtering`, `httpx`, `database` (TxManager/TenantDB), `tenant`, `auth`, `authz`, `policy`, `resource`, `relationship`, `workflow`, `rules`, `audit`, `outbox`, `jobs`, `document`, `notify`, `webhook`, `integration`, `config`, `health` |
+| `wowapi/kernel/...` | **public** | primitives + service contracts modules import: `model`, `errors`, `validation`, `pagination`, `filtering`, `httpx`, `database` (TxManager/TenantDB), `tenant`, `auth`, `authz`, `policy`, `resource`, `relationship`, `workflow`, `rules`, `audit`, `outbox`, `jobs`, `document`, `notify`, `webhook`, `integration`, `secrets`, `config`, `health` |
 | `wowapi/module` | **public** | `Module`, `Context`, registries, lifecycle contracts |
 | `wowapi/app` | **public** | composition helpers: `app.New`, `RunAPI`, `RunWorker`, `RunMigrate` |
 | `wowapi/adapters/...` | **public** | postgres, s3, smtp, sms, push, oidc, secrets, scanner |
@@ -77,15 +77,15 @@ import (
     "context"
 
     "github.com/qatoolist/wowapi/app"
-    "github.com/qatoolist/wowapi/kernel/config"
 
+    "example.com/acme-ops/internal/appcfg"      // product-owned Config (embeds config.Framework), scaffolded by wowapi init
     "example.com/acme-ops/internal/modules/assets"
     "example.com/acme-ops/internal/modules/requests"
 )
 
 func main() {
     ctx := context.Background() // production main wraps this with SIGTERM/SIGINT handling
-    app.RunAPI(ctx, config.MustLoad(), requests.Module{}, assets.Module{})
+    app.RunAPI(ctx, appcfg.MustLoad(), requests.Module{}, assets.Module{})
     // cmd/worker: app.RunWorker(...)   cmd/migrate: app.RunMigrate(...) — same module list
 }
 ```
@@ -127,7 +127,12 @@ wowapi openapi merge
 wowapi lint boundaries
 wowapi version
 
-wowapi config init | validate [--env prod] | doctor | print --redacted | diff --from dev --to prod | schema
+wowapi config init
+wowapi config validate --env prod
+wowapi config doctor
+wowapi config print --redacted
+wowapi config diff --from dev --to prod
+wowapi config schema
 wowapi deploy render --env prod                    # see 12-configuration-and-deployment.md
 ```
 

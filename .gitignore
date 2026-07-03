@@ -26,6 +26,11 @@ Desktop.ini
 *.key
 *.crt
 
+# Re-include framework SOURCE dirs shadowed by the user-global ignore rule
+# `**/secrets/` (these hold the secret-reference framework code, never secrets)
+!kernel/secrets/
+!adapters/secrets/
+
 # Go build/test outputs
 /bin/
 /dist/

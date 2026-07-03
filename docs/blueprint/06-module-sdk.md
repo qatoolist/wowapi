@@ -138,7 +138,7 @@ No container, no reflection, no service locator. Two structs:
 ```go
 // kernel.Kernel: owns infrastructure + kernel services. Built once, explicit order.
 type Kernel struct {
-    Cfg     config.Config
+    Cfg     config.Framework
     Log     *slog.Logger
     DB      *pgxpool.Pool          // never leaves the kernel
     Tx      database.TxManager
@@ -154,7 +154,7 @@ type Kernel struct {
     Health  *health.Registry
     …
 }
-func New(ctx context.Context, cfg config.Config) (*Kernel, error) // ordered construction; any failure aborts boot
+func New(ctx context.Context, cfg config.Framework) (*Kernel, error) // ordered construction; any failure aborts boot
 
 // app.App: kernel + modules. (Both public: wowapi/app composes wowapi/module + wowapi/kernel.)
 type App struct { K *kernel.Kernel; modules []module.Module; registries *module.Registries }
@@ -169,14 +169,14 @@ import (
     "context"
 
     "github.com/qatoolist/wowapi/app"
-    "github.com/qatoolist/wowapi/kernel/config"
 
+    "example.com/acme-ops/internal/appcfg"       // product-owned Config type, scaffolded by `wowapi init`
     "example.com/acme-ops/internal/modules/assets"
     "example.com/acme-ops/internal/modules/requests"
 )
 
 func main() {
-    cfg := config.MustLoad()
+    cfg := appcfg.MustLoad()                     // product Config embeds config.Framework (see 12 §2)
     ctx := context.Background()                  // production main wraps this with SIGTERM/SIGINT handling
     die(app.RunAPI(ctx, cfg, requests.Module{}, assets.Module{})) // society.Module{} lives in ITS repo
 }

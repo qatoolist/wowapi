@@ -94,7 +94,8 @@ public package holds the types/interfaces/constructors and the guts live in `int
 | `kernel/pagination` | page/cursor types, keyset encoding | — | ✅ |
 | `kernel/filtering` | allowlist filter/sort builders | — | ✅ |
 | `kernel/database` | `TxManager`, `TenantDB`, RLS helpers, `IdemStore`, batch helpers | modules | ✅ |
-| `kernel/config` | typed `Framework` config structs, layered loader, precedence, `Secret` redaction, `ModuleView` — see [12](12-configuration-and-deployment.md) | everything else (base of the graph; only stdlib + secret types) | types only — *values* reach modules solely via `module.Context.Config()` |
+| `kernel/secrets` | `Provider` port (env/cloud managers), `Ref` (`secretref://<provider>/<path>`) parsing/validation | everything (graph base: stdlib only) | ✅ (types; resolution happens at boot in `app`) |
+| `kernel/config` | typed `Framework` config structs, layered loader, precedence, `Secret` redaction, `ModuleView` — see [12](12-configuration-and-deployment.md) | everything except `kernel/secrets` (near-base of the graph) | types only — *values* reach modules solely via `module.Context.Config()` |
 | `kernel/logging` / `kernel/observability` | slog setup, otel, metrics, health registry | — | ✅ |
 | `kernel/seeds` | seed schema parsing + sync engine | modules | via module SDK |
 
