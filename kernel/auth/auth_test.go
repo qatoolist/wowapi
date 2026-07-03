@@ -237,16 +237,19 @@ func TestVerify_TamperedSignature(t *testing.T) {
 	v := newVerifier(ti)
 	tok := ti.Issue("idp|alice", uuid.New(), uuid.Nil)
 
-	// Flip the last character of the signature segment.
+	// Flip the FIRST character of the signature segment. The first base64url
+	// char always contributes 6 significant bits (the top of byte 0), so the
+	// decoded signature is guaranteed to differ — unlike the trailing char,
+	// which may only carry discarded padding bits and leave the signature intact.
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 {
 		t.Fatalf("unexpected token shape")
 	}
 	sig := []byte(parts[2])
-	if sig[len(sig)-1] == 'A' {
-		sig[len(sig)-1] = 'B'
+	if sig[0] == 'A' {
+		sig[0] = 'B'
 	} else {
-		sig[len(sig)-1] = 'A'
+		sig[0] = 'A'
 	}
 	tampered := parts[0] + "." + parts[1] + "." + string(sig)
 

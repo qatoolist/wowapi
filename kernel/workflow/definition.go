@@ -1,0 +1,372 @@
+// Package workflow is wowapi's small custom Postgres-backed workflow engine:
+// a closed-step-type approval/state-machine runtime that shares the caller's
+// tenant transaction (RLS + outbox + audit) exactly as blueprint 02 §1 and
+// decisions D-0051/D-0053 specify.
+//
+// The kernel owns the runtime; modules own the definitions (seeded JSON/YAML)
+// via a boot-validated Registry. Definitions are immutable per version and
+// running instances pin their version. Every transition re-checks the actor
+// (assignee + optional `workflow.task.decide` permission), mutates instance and
+// task rows with optimistic locking, and writes the matching outbox event in
+// the SAME tenant transaction as the state change.
+//
+// Import boundary (depguard): stdlib + kernel/{database,authz,resource,outbox,
+// errors,model,pagination} + pgx + uuid + yaml. NEVER module/app/adapters/
+// testkit in production. Domain-neutral vocabulary only.
+package workflow
+
+import (
+	"bytes"
+	"fmt"
+	"sort"
+	"strings"
+
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"gopkg.in/yaml.v3"
+)
+
+// StepType is the closed set of workflow step kinds (D-0053). A definition that
+// carries any other type fails validation.
+type StepType string
+
+const (
+	// StepApproval is an approve/reject decision by one or more assignees.
+	StepApproval StepType = "approval"
+	// StepTask is a do-something step marked done (with optional output).
+	StepTask StepType = "task"
+	// StepAuto invokes a registered module Go action, then advances.
+	StepAuto StepType = "auto"
+	// StepGateway branches on a simple predicate over the instance context.
+	StepGateway StepType = "gateway"
+	// StepVote is a quorum/threshold decision over an electorate.
+	StepVote StepType = "vote"
+	// StepTerminal ends the instance with an outcome.
+	StepTerminal StepType = "terminal"
+)
+
+// validStepTypes is the closed step-type set for validation.
+var validStepTypes = map[StepType]bool{
+	StepApproval: true, StepTask: true, StepAuto: true,
+	StepGateway: true, StepVote: true, StepTerminal: true,
+}
+
+// Assignee spec kinds (closed set). These describe how a step's assignees are
+// derived at task-creation time; they are resolved into concrete Assignee rows.
+const (
+	SpecActor         = "actor"          // explicit acting capacity
+	SpecRole          = "role"           // role-at-scope
+	SpecRelationship  = "relationship"   // relationship-holder
+	SpecResourceOwner = "resource_owner" // owner of the target resource
+	SpecResolver      = "resolver"       // module-registered resolver func
+)
+
+var validSpecKinds = map[string]bool{
+	SpecActor: true, SpecRole: true, SpecRelationship: true,
+	SpecResourceOwner: true, SpecResolver: true,
+}
+
+// Definition is the JSON/YAML workflow definition: a versioned, seedable graph
+// of steps. It is immutable per (Key, Version); running instances pin a version.
+type Definition struct {
+	Key         string          `yaml:"key"`
+	Version     int             `yaml:"version"`
+	AppliesTo   string          `yaml:"applies_to"`
+	InitialStep string          `yaml:"initial_step"`
+	Steps       map[string]Step `yaml:"steps"`
+}
+
+// Step is one node in the definition graph. Which fields are meaningful depends
+// on Type; validation and the runtime read only the relevant ones.
+type Step struct {
+	Type      StepType       `yaml:"type"`
+	Assignees []AssigneeSpec `yaml:"assignees,omitempty"`
+	Policy    *Policy        `yaml:"policy,omitempty"`
+	SLA       *SLA           `yaml:"sla,omitempty"`
+
+	// approval / vote transitions.
+	OnApprove *Transition `yaml:"on_approve,omitempty"`
+	OnReject  *Transition `yaml:"on_reject,omitempty"`
+
+	// task / auto / gateway default transition.
+	Next *Transition `yaml:"next,omitempty"`
+
+	// auto step.
+	Action  string      `yaml:"action,omitempty"`
+	OnError *Transition `yaml:"on_error,omitempty"`
+
+	// gateway step.
+	Branches []Branch `yaml:"branches,omitempty"`
+
+	// vote step (minimal).
+	Electorate *Electorate `yaml:"electorate,omitempty"`
+	Quorum     *Fraction   `yaml:"quorum,omitempty"`
+	Pass       *Fraction   `yaml:"pass,omitempty"`
+	Window     string      `yaml:"window,omitempty"`
+
+	// terminal step.
+	Outcome string `yaml:"outcome,omitempty"`
+}
+
+// AssigneeSpec describes one source of assignees for a step.
+type AssigneeSpec struct {
+	Kind     string `yaml:"kind"`
+	Actor    string `yaml:"actor,omitempty"`    // capacity id (kind=actor)
+	Role     string `yaml:"role,omitempty"`     // role key (kind=role)
+	Scope    string `yaml:"scope,omitempty"`    // scope hint (kind=role)
+	Rel      string `yaml:"rel,omitempty"`      // relationship type (kind=relationship)
+	Resolver string `yaml:"resolver,omitempty"` // resolver key (kind=resolver)
+}
+
+// Policy governs an approval/vote step's decision rules.
+type Policy struct {
+	MinApprovals int   `yaml:"min_approvals,omitempty"`
+	SelfApproval *bool `yaml:"self_approval,omitempty"` // pointer: distinguish unset from explicit false
+}
+
+// SLA carries the reminder/escalation timings for a step (ISO-8601 durations).
+type SLA struct {
+	Due         string `yaml:"due,omitempty"`
+	RemindAfter string `yaml:"remind_after,omitempty"`
+	EscalateTo  string `yaml:"escalate_to,omitempty"` // "step:key" or "key"
+}
+
+// Transition is an edge to another step (Next) with optional decision flags.
+type Transition struct {
+	Next           string `yaml:"next,omitempty"`
+	RequireComment bool   `yaml:"require_comment,omitempty"`
+	Retry          string `yaml:"retry,omitempty"` // auto on_error retry policy (advisory)
+	Then           string `yaml:"then,omitempty"`  // auto on_error target step
+}
+
+// target returns the step key this transition points at (Next, or Then for
+// an on_error transition).
+func (t *Transition) target() string {
+	if t == nil {
+		return ""
+	}
+	if t.Next != "" {
+		return t.Next
+	}
+	return t.Then
+}
+
+// Branch is one gateway edge. A nil When is the default (fallthrough).
+type Branch struct {
+	When *Condition `yaml:"when,omitempty"`
+	Next string     `yaml:"next"`
+}
+
+// Condition is a minimal equality predicate over the instance context.
+type Condition struct {
+	Key    string `yaml:"key"`
+	Equals any    `yaml:"equals"`
+}
+
+// Electorate describes the voter set for a vote step (minimal).
+type Electorate struct {
+	Kind string `yaml:"kind"`
+	Rel  string `yaml:"rel,omitempty"`
+	Of   string `yaml:"of,omitempty"`
+}
+
+// Fraction is a "n/d" quorum or pass threshold, e.g. "2/3".
+type Fraction struct {
+	Kind  string `yaml:"kind,omitempty"`
+	Value string `yaml:"value,omitempty"`
+}
+
+// stripStepPrefix normalizes an "step:key" escalate_to reference to "key".
+func stripStepPrefix(s string) string { return strings.TrimPrefix(s, "step:") }
+
+// ParseDefinition parses a strict JSON/YAML definition. Unknown keys are an
+// error (KnownFields), so a typo in a seed fails loudly at load rather than
+// silently dropping a step or transition. JSON is a subset of YAML, so this one
+// path covers both.
+func ParseDefinition(raw []byte) (Definition, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	var d Definition
+	if err := dec.Decode(&d); err != nil {
+		return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+			"invalid workflow definition: "+err.Error())
+	}
+	return d, nil
+}
+
+// Validate checks the definition graph and its external references, accumulating
+// ALL problems into a single error. autoActions and resolvers are the sets of
+// registered keys the definition may reference; unknown keys fail.
+//
+// Checks: initial_step exists; every step type is in the closed set; every
+// transition target exists; every step is reachable from initial_step (no
+// orphans); at least one terminal is reachable; every auto action key is
+// registered; every resolver key is registered.
+func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
+	var probs []string
+	add := func(format string, a ...any) { probs = append(probs, fmt.Sprintf(format, a...)) }
+
+	if d.Key == "" {
+		add("key is required")
+	}
+	if d.Version <= 0 {
+		add("version must be a positive integer")
+	}
+	if len(d.Steps) == 0 {
+		add("definition has no steps")
+		return joinProblems(d.Key, probs)
+	}
+	if d.InitialStep == "" {
+		add("initial_step is required")
+	} else if _, ok := d.Steps[d.InitialStep]; !ok {
+		add("initial_step %q does not exist", d.InitialStep)
+	}
+
+	// Per-step validation: type, external refs, transition targets exist.
+	for _, name := range sortedStepKeys(d.Steps) {
+		step := d.Steps[name]
+		if !validStepTypes[step.Type] {
+			add("step %q has unknown type %q", name, step.Type)
+		}
+		for i, spec := range step.Assignees {
+			if !validSpecKinds[spec.Kind] {
+				add("step %q assignee[%d] has unknown kind %q", name, i, spec.Kind)
+			}
+			if spec.Kind == SpecResolver {
+				if spec.Resolver == "" {
+					add("step %q assignee[%d] resolver kind requires a resolver key", name, i)
+				} else if !resolvers[spec.Resolver] {
+					add("step %q references unregistered resolver %q", name, spec.Resolver)
+				}
+			}
+		}
+		if step.Type == StepAuto {
+			if step.Action == "" {
+				add("auto step %q requires an action", name)
+			} else if !autoActions[step.Action] {
+				add("auto step %q references unregistered auto-action %q", name, step.Action)
+			}
+		}
+		// FAIL-CLOSED on gating the runtime does not yet enforce (review
+		// findings SEC-36/37/38). Rather than silently mis-tally, a definition
+		// that RELIES on unimplemented gating is rejected at boot so no
+		// authorization decision can depend on an unenforced control:
+		//   - vote steps (quorum/pass/window are parsed but not tallied),
+		//   - approval min_approvals > 1 (advances on the first approval),
+		//   - self_approval:false (the submitter-exclusion is not enforced).
+		if step.Type == StepVote {
+			add("step %q: vote steps are not yet tallied by the runtime and are rejected until implemented (fail-closed)", name)
+		}
+		if step.Type == StepApproval {
+			if step.Policy != nil && step.Policy.MinApprovals > 1 {
+				add("step %q: policy.min_approvals > 1 is not yet enforced by the runtime (fail-closed)", name)
+			}
+			if step.Policy != nil && step.Policy.SelfApproval != nil && !*step.Policy.SelfApproval {
+				add("step %q: policy.self_approval:false is not yet enforced by the runtime (fail-closed)", name)
+			}
+			// An approval step must define BOTH decision transitions, or a
+			// reject would dead-end at runtime (review finding ARCH-64).
+			if step.OnApprove == nil || step.OnApprove.target() == "" {
+				add("approval step %q must define on_approve.next", name)
+			}
+			if step.OnReject == nil || step.OnReject.target() == "" {
+				add("approval step %q must define on_reject.next", name)
+			}
+		}
+		for _, tgt := range step.outgoing() {
+			if _, ok := d.Steps[tgt]; !ok {
+				add("step %q transitions to unknown step %q", name, tgt)
+			}
+		}
+	}
+
+	// Reachability from initial_step: orphans and terminal-reachability.
+	if _, ok := d.Steps[d.InitialStep]; ok {
+		reached := d.reachable()
+		for _, name := range sortedStepKeys(d.Steps) {
+			if !reached[name] {
+				add("step %q is unreachable from initial_step (orphan)", name)
+			}
+		}
+		terminalReached := false
+		for name := range reached {
+			if d.Steps[name].Type == StepTerminal {
+				terminalReached = true
+				break
+			}
+		}
+		if !terminalReached {
+			add("no terminal step is reachable from initial_step")
+		}
+	}
+
+	return joinProblems(d.Key, probs)
+}
+
+// outgoing returns the step keys this step can transition to.
+func (s Step) outgoing() []string {
+	var out []string
+	push := func(t *Transition) {
+		if tgt := t.target(); tgt != "" {
+			out = append(out, tgt)
+		}
+	}
+	switch s.Type {
+	case StepApproval, StepVote:
+		push(s.OnApprove)
+		push(s.OnReject)
+	case StepTask:
+		push(s.Next)
+	case StepAuto:
+		push(s.Next)
+		push(s.OnError)
+	case StepGateway:
+		for _, b := range s.Branches {
+			if b.Next != "" {
+				out = append(out, b.Next)
+			}
+		}
+	}
+	return out
+}
+
+// reachable returns the set of step keys reachable from initial_step (BFS).
+func (d Definition) reachable() map[string]bool {
+	seen := map[string]bool{}
+	queue := []string{d.InitialStep}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if seen[cur] {
+			continue
+		}
+		seen[cur] = true
+		step, ok := d.Steps[cur]
+		if !ok {
+			continue
+		}
+		for _, tgt := range step.outgoing() {
+			if !seen[tgt] {
+				queue = append(queue, tgt)
+			}
+		}
+	}
+	return seen
+}
+
+func sortedStepKeys(steps map[string]Step) []string {
+	keys := make([]string, 0, len(steps))
+	for k := range steps {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func joinProblems(key string, probs []string) error {
+	if len(probs) == 0 {
+		return nil
+	}
+	sort.Strings(probs)
+	return kerr.E(kerr.KindValidation, "workflow_definition_invalid",
+		"workflow definition "+key+" invalid: "+strings.Join(probs, "; "))
+}

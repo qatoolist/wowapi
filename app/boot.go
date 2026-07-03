@@ -68,7 +68,9 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		mc := newModuleContext(m.Name(), k.Log, view, moduleDeps{
 			router: router, val: val, perms: k.Perms, rtypes: k.Resources,
 			eval: k.Authz, tx: k.Tx, idgen: idgen,
-			events: events, writer: writer, jobs: jobReg, boot: boot,
+			events: events, writer: writer, jobs: jobReg,
+			rules: k.Rules, resolver: k.RulesResolver, wfReg: k.Workflows, wfRT: k.WorkflowRuntime,
+			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
 			regErrs = append(regErrs, fmt.Errorf("module %q: Register: %w", m.Name(), err))
@@ -118,6 +120,12 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		regErrs = append(regErrs, err)
 	}
 	if err := jobReg.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
+	if err := k.Rules.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
+	if err := k.Workflows.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
 	// Every route's permission must be a registered permission (deny-by-default

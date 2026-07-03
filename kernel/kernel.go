@@ -16,28 +16,37 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/relationship"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // Kernel owns infrastructure and kernel services. Fields are read-only after
 // construction; the pool never leaves the kernel.
 type Kernel struct {
-	Cfg       config.Framework
-	Log       *slog.Logger
-	Pool      *pgxpool.Pool
-	Platform  *pgxpool.Pool // app_platform pool for cross-tenant kernel work (relay, job runner, seed sync); may be nil in api-only processes
-	Tx        database.TxManager
-	Authz     authz.Evaluator
-	Perms     *authz.Registry
-	Resources *resource.Registry
-	audit     authz.AuditSink
+	Cfg             config.Framework
+	Log             *slog.Logger
+	Pool            *pgxpool.Pool
+	Platform        *pgxpool.Pool // app_platform pool for cross-tenant kernel work (relay, job runner, seed sync); may be nil in api-only processes
+	Tx              database.TxManager
+	Authz           authz.Evaluator
+	Perms           *authz.Registry
+	Resources       *resource.Registry
+	Rules           *rules.Registry
+	RulesResolver   *rules.Resolver
+	Workflows       *workflow.Registry
+	WorkflowRuntime *workflow.Runtime
+	audit           authz.AuditSink
 }
 
 // Deps injects the pools/tx (built by the product main, or provided by testkit)
@@ -68,16 +77,35 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Audit:         audit,
 	})
 
+	idgen := model.UUIDv7()
+	writer := outbox.NewWriter(idgen)
+
+	// Rules: registry + resolver (org ancestry via the authz store) — the
+	// registry is populated during module Register; the resolver reads it.
+	ruleReg := rules.NewRegistry()
+	orgAncestry := func(ctx context.Context, db database.TenantDB, orgID uuid.UUID) ([]uuid.UUID, error) {
+		return authz.NewStore().OrgAncestors(ctx, db, orgID)
+	}
+	ruleResolver := rules.NewResolver(ruleReg, orgAncestry)
+
+	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
+	wfReg := workflow.NewRegistry()
+	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen)
+
 	return &Kernel{
-		Cfg:       cfg,
-		Log:       log,
-		Pool:      deps.Pool,
-		Platform:  deps.Platform,
-		Tx:        deps.Tx,
-		Authz:     eval,
-		Perms:     perms,
-		Resources: resources,
-		audit:     audit,
+		Cfg:             cfg,
+		Log:             log,
+		Pool:            deps.Pool,
+		Platform:        deps.Platform,
+		Tx:              deps.Tx,
+		Authz:           eval,
+		Perms:           perms,
+		Resources:       resources,
+		Rules:           ruleReg,
+		RulesResolver:   ruleResolver,
+		Workflows:       wfReg,
+		WorkflowRuntime: wfRuntime,
+		audit:           audit,
 	}, nil
 }
 

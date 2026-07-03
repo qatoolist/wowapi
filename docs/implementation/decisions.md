@@ -261,6 +261,67 @@ Blueprint deviations MUST land here before the code that implements them.
     inbox (ARCH-59).
 - **Affected:** migrations/00007, kernel/outbox/relay.go, kernel/jobs/{runner,jobs}.go, app/worker.go.
 
+## D-0051 — Phase 7: migrations 00008 (rules) + 00009 (workflow); custom Postgres engines
+- **Context:** blueprint 02 §1.1 recommends a small custom Postgres-backed workflow engine over
+  Temporal/Camunda (approval/state-machine shaped, tenant-editable, shares the business tx/RLS/audit/
+  outbox). Rules likewise are a Postgres-backed versioned config engine.
+- **Decision:** `kernel/rules` (rule-point registry + version storage + resolution) and
+  `kernel/workflow` (definition model + runtime + SLA sweeper) as custom engines. Migration 00008
+  = rule_definitions (global) + rule_versions (tenant+platform hybrid, temporal, exclusion
+  constraint one-active-per-scope); 00009 = workflow_definitions (global+tenant) + workflow_instances
+  + workflow_tasks + workflow_task_assignees (tenant-scoped RLS). Both engines share the tenant tx
+  and emit outbox events + audit in the same transaction as state changes.
+- **Affected:** kernel/rules, kernel/workflow, migrations/00008–00009.
+
+## D-0052 — Phase 7: rule resolution is org-ancestry → tenant → platform → code default, historical by `at`
+- **Decision:** `rules.Resolver.Resolve(key, tenant, org?, at)` picks the first active version
+  (effective_from <= at < effective_to) walking org ancestry upward, then tenant, then platform,
+  then the code-registered default; the value is JSON-Schema validated (defense in depth) and
+  returned with provenance. Versions are immutable (never mutated, only superseded), so any
+  historical `at` resolves deterministically. Approval-gated points require an `active` version to
+  have passed approval; a draft/pending version never resolves. Resolution runs on the caller's
+  TenantDB (one snapshot).
+- **Affected:** kernel/rules resolver + tests.
+
+## D-0053 — Phase 7: workflow step-type set is closed; definitions validated at boot
+- **Decision:** closed step types (approval|task|auto|gateway|vote|terminal); assignee kinds
+  (actor|role-at-scope|relationship|resource_owner|resolver). Definitions are validated at
+  registration (graph connectivity, no orphan steps, terminals reachable, unknown auto-actions
+  fail boot). Instances pin their definition version (immutable per version). Every transition
+  re-checks the actor (assignee + `workflow.task.decide`), mutates with optimistic locking, and
+  writes audit + outbox in the same tenant tx. testkit `WorkflowSim` drives definitions over a real
+  test DB.
+- **Affected:** kernel/workflow, testkit/workflowsim.
+
+## D-0054 — Phase 7 review: temporal resolution, write-time schema, draft/activate split, workflow fail-closed
+- **Context:** two parallel review agents (security + architecture) reproduced eight gaps in the
+  rules + workflow slice (see evidence/phase-07/review-findings.md).
+- **Decisions:**
+  - **Historical resolution includes superseded (ARCH-60):** the resolver reads
+    `status IN ('active','superseded')` within the temporal `effective_from/to` window, not
+    `status='active'` — a value active in the past then superseded must still resolve for an `at`
+    inside its old window rather than falling through to the code default.
+  - **Write-time schema validation (SEC-40):** `Propose` validates the value against the point's
+    `value_schema` (focused `type`+`enum` validator, `kernel/rules/schema.go`) before INSERT —
+    defense in depth over read-path Decode. Full JSON Schema deferred.
+  - **Draft/activate privilege split (SEC-13):** `Propose` inserts a DRAFT on app_rt (never
+    resolves); `Activate` supersedes+activates on app_platform via a role-scoped
+    `rule_versions_platform_all` policy. Activation changes runtime behavior, so it stays off the
+    module role. `created_by` is the proposing actor from `ActorIDFrom(ctx)` (ARCH-62).
+  - **Workflow fail-closed on unenforced gating (SEC-36/37/38):** the runtime does not yet tally
+    votes, enforce `min_approvals > 1`, or exclude self-approval, so the definition validator
+    REJECTS such definitions at boot rather than accepting and mis-enforcing them. `Policy.SelfApproval`
+    is `*bool` to distinguish unset from explicit false. Approval steps must define both
+    `on_approve.next` and `on_reject.next` (ARCH-64). Per R7, fail-closed is the acceptable posture
+    for an unshipped control.
+  - **Override authz gate (SEC-39):** `Runtime.Override(ctx, actor, id, to, reason)` evaluates
+    `workflow.instance.override` on the instance resource before forcing a step; deny → `KindForbidden`.
+  - **Test-suite fix:** `TestVerify_TamperedSignature` flipped the trailing base64url char of the
+    JWT signature, which can carry only discarded padding bits → non-deterministic (passed on host,
+    failed in-container). Now flips the first char (always 6 significant bits); 200× stable.
+- **Affected:** kernel/rules/{resolver,store,schema}.go, kernel/workflow/{definition,runtime}.go,
+  kernel/auth/auth_test.go; evidence/phase-07/.
+
 ## D-0010 — Phase 0→1: `environment` is fail-closed in deployed processes (SEC-1)
 - **Context:** security review: `Defaults()` sets `environment=local`; a prod deploy that forgets
   to set it would silently validate under local (lenient) rules.

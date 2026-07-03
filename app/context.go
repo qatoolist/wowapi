@@ -22,7 +22,9 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 	"github.com/qatoolist/wowapi/module"
 )
 
@@ -51,36 +53,44 @@ func newBootState() *bootState {
 // moduleContext implements module.Context. Unexported; callers receive the
 // interface value.
 type moduleContext struct {
-	name   string
-	logger *slog.Logger
-	view   config.ModuleView
-	router *httpx.Router
-	val    *validation.Validator
-	perms  *authz.Registry
-	rtypes *resource.Registry
-	eval   authz.Evaluator
-	tx     database.TxManager
-	idgen  model.IDGen
-	events *outbox.HandlerRegistry
-	writer outbox.Writer
-	jobs   *jobs.Registry
-	boot   *bootState
+	name     string
+	logger   *slog.Logger
+	view     config.ModuleView
+	router   *httpx.Router
+	val      *validation.Validator
+	perms    *authz.Registry
+	rtypes   *resource.Registry
+	eval     authz.Evaluator
+	tx       database.TxManager
+	idgen    model.IDGen
+	events   *outbox.HandlerRegistry
+	writer   outbox.Writer
+	jobs     *jobs.Registry
+	rules    *rules.Registry
+	resolver *rules.Resolver
+	wfReg    *workflow.Registry
+	wfRT     *workflow.Runtime
+	boot     *bootState
 }
 
 // moduleDeps bundles the shared registries/services the app injects into every
 // module context, keeping the constructor signature stable as capabilities grow.
 type moduleDeps struct {
-	router *httpx.Router
-	val    *validation.Validator
-	perms  *authz.Registry
-	rtypes *resource.Registry
-	eval   authz.Evaluator
-	tx     database.TxManager
-	idgen  model.IDGen
-	events *outbox.HandlerRegistry
-	writer outbox.Writer
-	jobs   *jobs.Registry
-	boot   *bootState
+	router   *httpx.Router
+	val      *validation.Validator
+	perms    *authz.Registry
+	rtypes   *resource.Registry
+	eval     authz.Evaluator
+	tx       database.TxManager
+	idgen    model.IDGen
+	events   *outbox.HandlerRegistry
+	writer   outbox.Writer
+	jobs     *jobs.Registry
+	rules    *rules.Registry
+	resolver *rules.Resolver
+	wfReg    *workflow.Registry
+	wfRT     *workflow.Runtime
+	boot     *bootState
 }
 
 func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, deps moduleDeps) module.Context {
@@ -91,7 +101,9 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		name: name, logger: logger.With("module", name), view: view,
 		router: deps.router, val: deps.val, perms: deps.perms, rtypes: deps.rtypes,
 		eval: deps.eval, tx: deps.tx, idgen: deps.idgen,
-		events: deps.events, writer: deps.writer, jobs: deps.jobs, boot: deps.boot,
+		events: deps.events, writer: deps.writer, jobs: deps.jobs,
+		rules: deps.rules, resolver: deps.resolver, wfReg: deps.wfReg, wfRT: deps.wfRT,
+		boot: deps.boot,
 	}
 }
 
@@ -161,6 +173,14 @@ func (c *moduleContext) Jobs() *jobs.Registry {
 	}
 	return c.jobs
 }
+
+// Rules returns the rule-point registry; RulesResolver the resolver.
+func (c *moduleContext) Rules() *rules.Registry         { return c.rules }
+func (c *moduleContext) RulesResolver() *rules.Resolver { return c.resolver }
+
+// Workflows returns the workflow registry; WorkflowRuntime the runtime.
+func (c *moduleContext) Workflows() *workflow.Registry      { return c.wfReg }
+func (c *moduleContext) WorkflowRuntime() *workflow.Runtime { return c.wfRT }
 
 func (c *moduleContext) Migrations(fsys fs.FS) { c.boot.migrations[c.name] = fsys }
 func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }

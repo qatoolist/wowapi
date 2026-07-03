@@ -26,7 +26,9 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // Module is implemented by every product module (and by the framework's
@@ -119,8 +121,16 @@ type Context interface {
 	// job commits atomically with the write (Phase 6).
 	Jobs() *jobs.Registry
 
+	// Rules returns the rule-point registry (declare configurable rule points);
+	// RulesResolver returns the resolver for reading effective rule values.
+	// Workflows returns the workflow definition/action registry; WorkflowRuntime
+	// returns the runtime for driving instances (Phase 7, blueprint 02).
+	Rules() *rules.Registry
+	RulesResolver() *rules.Resolver
+	Workflows() *workflow.Registry
+	WorkflowRuntime() *workflow.Runtime
+
 	// Later phases add, alongside the capability they deliver:
-	//   Rules() rules.Registry / Workflows() workflow.Registry (Phase 7)
 	//   Documents() document.Service           (Phase 8)
 	//   Notify() notify.Sender / Webhooks() webhook.Service    (Phase 9)
 }
