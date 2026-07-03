@@ -3,17 +3,144 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/logging"
+	"github.com/qatoolist/wowapi/kernel/observability"
+
+	"{{.Module}}/internal/wire"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	// TODO: construct the kernel and call Boot here.
-	// See: https://github.com/qatoolist/wowapi for bootstrap patterns.
-	_ = ctx
-	log.Println("{{.Name}}: api server starting — wire kernel here")
+	if err := run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "{{.Name}}: api: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	cfg, fp, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	log, err := logging.New(os.Stderr, cfg.Log)
+	if err != nil {
+		return fmt.Errorf("logger: %w", err)
+	}
+	logging.LogStartup(log, "api", cfg.Environment, fp)
+
+	// Resolve the runtime DSN: prefer a resolved secretref, then DATABASE_URL.
+	dsn := cfg.DB.DSN.Reveal()
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		return fmt.Errorf("db.dsn required: set db.dsn in configs/ via secretref://env/DATABASE_URL, or export DATABASE_URL")
+	}
+
+	// Build the runtime pool as app_rt with RLS enforcement (SEC-11/SEC-12).
+	pool, err := database.NewPool(ctx, dsn, cfg.DB,
+		database.WithSetRole("app_rt"),
+		database.WithConnRLSGuard(),
+	)
+	if err != nil {
+		return fmt.Errorf("db pool: %w", err)
+	}
+	defer pool.Close()
+
+	txm := database.NewManager(pool, cfg.DB,
+		database.WithRole("app_rt"),
+		database.WithRLSGuard(),
+	)
+
+	k, err := kernel.New(cfg, log, kernel.Deps{Pool: pool, Tx: txm})
+	if err != nil {
+		return fmt.Errorf("kernel: %w", err)
+	}
+
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(ctx, k, nil)
+	if err != nil {
+		return fmt.Errorf("boot: %w", err)
+	}
+
+	// Build the application mux: module routes from the booted router plus
+	// framework health endpoints. Go 1.22+ ServeMux accepts "METHOD /path".
+	mux := http.NewServeMux()
+	for _, r := range booted.Router.Routes() {
+		mux.HandleFunc(r.Method+" "+r.Pattern, r.Handler)
+	}
+	health := app.Readiness(booted, fp, map[string]httpx.HealthCheck{
+		"db": func(ctx context.Context) error { return pool.Ping(ctx) },
+	})
+	mux.Handle("/healthz", health.Liveness())
+	mux.Handle("/readyz", health.Readiness())
+
+	handler := httpx.Chain(mux,
+		httpx.RequestID(),
+		httpx.Recover(log),
+		observability.Requests(observability.NoOp),
+		observability.AccessLog(log),
+	)
+
+	srv := &http.Server{
+		Addr:              cfg.HTTP.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+	}
+
+	return app.RunHooks(ctx, log, 30*time.Second,
+		app.Hook{
+			Name: "http",
+			Start: func(ctx context.Context) error {
+				log.InfoContext(ctx, "listening", "addr", cfg.HTTP.Addr)
+				go func() {
+					if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						log.ErrorContext(ctx, "http server error", "err", err)
+					}
+				}()
+				return nil
+			},
+			Stop: func(ctx context.Context) error { return srv.Shutdown(ctx) },
+		},
+	)
+}
+
+// loadConfig loads the framework configuration. Layers applied in order:
+//  1. configs/base.yaml (if the file exists)
+//  2. configs/<APP_ENV>.yaml (if APP_ENV env var is set)
+//  3. WOWAPI__ environment variable prefix (e.g. WOWAPI__ENVIRONMENT=local)
+//
+// Secret references (secretref://env/DATABASE_URL) are resolved via envprovider.
+func loadConfig() (config.Framework, config.Fingerprint, error) {
+	opts := config.Options{
+		EnvPrefix: "WOWAPI__",
+		Secrets:   envprovider.New(),
+	}
+	if _, err := os.Stat("configs/base.yaml"); err == nil {
+		opts.BaseFile = "configs/base.yaml"
+	}
+	if env := os.Getenv("APP_ENV"); env != "" {
+		opts.EnvFile = "configs/" + env + ".yaml"
+	}
+	cfg, fp, err := config.Load[config.Framework](opts)
+	if err != nil {
+		return config.Framework{}, config.Fingerprint{}, fmt.Errorf("config: %w", err)
+	}
+	return cfg, fp, nil
 }

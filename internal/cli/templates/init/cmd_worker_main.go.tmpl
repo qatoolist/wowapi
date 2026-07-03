@@ -3,16 +3,115 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/logging"
+
+	"{{.Module}}/internal/wire"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	// TODO: wire background jobs here.
-	_ = ctx
-	log.Println("{{.Name}}: worker starting — wire jobs here")
+	if err := run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "{{.Name}}: worker: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	cfg, fp, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	log, err := logging.New(os.Stderr, cfg.Log)
+	if err != nil {
+		return fmt.Errorf("logger: %w", err)
+	}
+	logging.LogStartup(log, "worker", cfg.Environment, fp)
+
+	dsn := cfg.DB.DSN.Reveal()
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		return fmt.Errorf("db.dsn required: set db.dsn in configs/ via secretref://env/DATABASE_URL, or export DATABASE_URL")
+	}
+
+	// Runtime pool: app_rt with RLS enforcement (SEC-11/SEC-12).
+	pool, err := database.NewPool(ctx, dsn, cfg.DB,
+		database.WithSetRole("app_rt"),
+		database.WithConnRLSGuard(),
+	)
+	if err != nil {
+		return fmt.Errorf("db pool (runtime): %w", err)
+	}
+	defer pool.Close()
+
+	// Platform pool for the outbox relay and job runner (cross-tenant kernel
+	// work). In production, use a dedicated app_platform DSN from config.
+	// Here we reuse the same DSN and assume app_platform exists post-migrate.
+	platformPool, err := database.NewPool(ctx, dsn, cfg.DB,
+		database.WithSetRole("app_platform"),
+	)
+	if err != nil {
+		return fmt.Errorf("db pool (platform): %w", err)
+	}
+	defer platformPool.Close()
+
+	txm := database.NewManager(pool, cfg.DB,
+		database.WithRole("app_rt"),
+		database.WithRLSGuard(),
+	)
+
+	k, err := kernel.New(cfg, log, kernel.Deps{
+		Pool:     pool,
+		Platform: platformPool,
+		Tx:       txm,
+	})
+	if err != nil {
+		return fmt.Errorf("kernel: %w", err)
+	}
+
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(ctx, k, nil)
+	if err != nil {
+		return fmt.Errorf("boot: %w", err)
+	}
+
+	return app.StartWorker(ctx, booted, app.WorkerConfigOpts{})
+}
+
+// loadConfig loads the framework configuration. Layers applied in order:
+//  1. configs/base.yaml (if the file exists)
+//  2. configs/<APP_ENV>.yaml (if APP_ENV env var is set)
+//  3. WOWAPI__ environment variable prefix (e.g. WOWAPI__ENVIRONMENT=local)
+//
+// Secret references (secretref://env/DATABASE_URL) are resolved via envprovider.
+func loadConfig() (config.Framework, config.Fingerprint, error) {
+	opts := config.Options{
+		EnvPrefix: "WOWAPI__",
+		Secrets:   envprovider.New(),
+	}
+	if _, err := os.Stat("configs/base.yaml"); err == nil {
+		opts.BaseFile = "configs/base.yaml"
+	}
+	if env := os.Getenv("APP_ENV"); env != "" {
+		opts.EnvFile = "configs/" + env + ".yaml"
+	}
+	cfg, fp, err := config.Load[config.Framework](opts)
+	if err != nil {
+		return config.Framework{}, config.Fingerprint{}, fmt.Errorf("config: %w", err)
+	}
+	return cfg, fp, nil
 }

@@ -16,8 +16,8 @@ log:
   format: json
 
 db:
-  # Use secretref://env/VARNAME to resolve from environment variables at runtime.
-  dsn: ""
-  migrate_dsn: ""
+  # DSN is NOT set here — define it in the env overlay (configs/<env>.yaml)
+  # as a secretref://env/<VAR> reference, or pass DATABASE_URL at runtime.
+  # See configs/local.yaml for the local-dev pattern.
   max_conns: 16
   query_timeout: 5s

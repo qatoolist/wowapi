@@ -293,6 +293,27 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0059 — Phase 12: `wowapi init` produces a framework-wired product repo; E2E acceptance
+- **Context:** Phase 12 (capstone) must prove a blank repo builds a WORKING API binary (AC #19) and runs
+  kernel + module migrations from cmd/migrate (AC #22). The Phase-10 init mains were framework-import-free
+  stubs — a gap.
+- **Decisions:**
+  - **The scaffolded mains wire the framework.** `wowapi init` now renders real `cmd/api|worker|migrate`
+    mains: config load → pool (runtime AS app_rt + RLS guard; worker also a platform pool) → `kernel.New`
+    → `app.New().Register(wire.Modules()...).Boot` → serve the router behind the observability middleware
+    chain + `/healthz`//`/readyz`, graceful shutdown; worker runs `app.StartWorker`; migrate runs
+    `migrations.Kernel()` then each module's migrations. Modules are registered via a generated
+    `internal/wire/modules.go` (manual list — auto-append is a documented follow-up).
+  - **Config scaffold uses secret references.** `configs/local.yaml` renders `secretref://env/DATABASE_URL`
+    (raw/empty DSN strings fail `Secret.UnmarshalText` by design) — the secret-ref-only guarantee shows up
+    in the scaffold itself.
+  - **E2E test = acceptance through the real CLI.** `internal/e2e` runs `wowapi init`, replaces wowapi with
+    the local tree, `go build`s the repo, and (with a DB) runs the migrate binary + curls the api binary's
+    `/healthz` — following the consumer test's offline-skip discipline.
+  - **Release notes + full acceptance sweep.** `CHANGELOG.md` (v0.1.0); the 28-criterion acceptance map.
+- **Affected:** internal/cli/templates/init/* (cmd mains + internal/wire + config), internal/cli/init_cmd.go,
+  internal/e2e/e2e_test.go, CHANGELOG.md; evidence/phase-12/. **Goal 2 complete (Phases 0–12).**
+
 ## D-0058 — Phase 11: observability + performance budgets + security suite + config drift
 - **Context:** Phase 11 hardens the framework (blueprint 07 §1–2/§9; AC #17/#18/#26/#27) — observability
   wiring, perf budgets, a security gate, and cross-process config drift. Additive; no new domain tables.

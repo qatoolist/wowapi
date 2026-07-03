@@ -1,0 +1,20 @@
+// Package wire is the product-specific module registry. Add modules here
+// after running `wowapi new-module`; the api, worker, and migrate binaries
+// all call Modules(). A fresh repository has no modules; the api still
+// serves /healthz and /readyz with no additional routes.
+package wire
+
+import "github.com/qatoolist/wowapi/module"
+
+// Modules returns the product-registered module set. Registration order does
+// not matter: the framework derives actual startup order from each module's
+// DependsOn graph. Add a module after `wowapi new-module`:
+//
+//	import "{{.Module}}/internal/modules/mymodule"
+//	// inside Modules():
+//	mymodule.New(),
+func Modules() []module.Module {
+	return []module.Module{
+		// e.g. mymodule.New()
+	}
+}

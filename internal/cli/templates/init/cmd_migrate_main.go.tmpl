@@ -1,10 +1,138 @@
 // Command migrate runs database migrations for {{.Name}}.
 package main
 
-import "log"
+import (
+	"context"
+	"fmt"
+	"os"
+	"sort"
+	"time"
+
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/logging"
+	"github.com/qatoolist/wowapi/migrations"
+
+	"{{.Module}}/internal/wire"
+)
 
 func main() {
-	// TODO: wire migration runner here.
-	// See: https://github.com/qatoolist/wowapi kernel/database/migrate for patterns.
-	log.Println("{{.Name}}: migrate — wire runner here")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if err := run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "{{.Name}}: migrate: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	// Load configuration; environment and pool tuning come from configs/ and
+	// WOWAPI__ env vars. Config failure is non-fatal here: we fall back to
+	// safe defaults so the migrate binary can run in CI without a configs/ dir
+	// (SEC-15 note: in production use a dedicated app_migrate DSN).
+	cfg, err := loadConfigOrDefaults()
+	if err != nil {
+		return err
+	}
+
+	log, err := logging.New(os.Stderr, cfg.Log)
+	if err != nil {
+		return fmt.Errorf("logger: %w", err)
+	}
+
+	// Resolve DSN: prefer db.migrate_dsn, then db.dsn, then DATABASE_URL.
+	dsn := cfg.DB.MigrateDSN.Reveal()
+	if dsn == "" {
+		dsn = cfg.DB.DSN.Reveal()
+	}
+	if dsn == "" {
+		dsn = os.Getenv("DATABASE_URL")
+	}
+	if dsn == "" {
+		return fmt.Errorf("DSN required: set DATABASE_URL or configure db.migrate_dsn in configs/")
+	}
+
+	// Migrate pool: no role constraint — the DSN user owns the schema.
+	pool, err := database.NewPool(ctx, dsn, cfg.DB)
+	if err != nil {
+		return fmt.Errorf("db pool: %w", err)
+	}
+	defer pool.Close()
+
+	// Run kernel migrations first (blueprint 03 §5 ordering contract).
+	res, err := database.Migrate(ctx, pool, migrations.Kernel(), migrations.SourceName)
+	if err != nil {
+		return fmt.Errorf("kernel migrations: %w", err)
+	}
+	log.InfoContext(ctx, "kernel migrations applied",
+		"source", migrations.SourceName,
+		"applied", res.Applied,
+		"version", res.Version,
+	)
+
+	// Boot the app to collect module migration sets. Boot wires only in-memory
+	// registries during Register — it does not query the database — so it
+	// succeeds on a fresh DB that has just had kernel migrations applied.
+	txm := database.NewManager(pool, cfg.DB)
+	k, err := kernel.New(cfg, log, kernel.Deps{Pool: pool, Tx: txm})
+	if err != nil {
+		return fmt.Errorf("kernel: %w", err)
+	}
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(ctx, k, nil)
+	if err != nil {
+		return fmt.Errorf("boot: %w", err)
+	}
+
+	// Run each module's migrations in stable alphabetical order.
+	names := make([]string, 0, len(booted.Migrations))
+	for name := range booted.Migrations {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		r, err := database.Migrate(ctx, pool, booted.Migrations[name], name)
+		if err != nil {
+			return fmt.Errorf("module %q migrations: %w", name, err)
+		}
+		log.InfoContext(ctx, "module migrations applied",
+			"module", name,
+			"applied", r.Applied,
+			"version", r.Version,
+		)
+	}
+	return nil
+}
+
+// loadConfigOrDefaults tries to load the framework config; on failure it
+// returns safe defaults with environment=local so the binary can still run in
+// environments without a configs/ directory (e.g. bare CI, scratch containers).
+// A DSN error is always surfaced regardless.
+func loadConfigOrDefaults() (config.Framework, error) {
+	opts := config.Options{
+		EnvPrefix: "WOWAPI__",
+		Secrets:   envprovider.New(),
+	}
+	if _, err := os.Stat("configs/base.yaml"); err == nil {
+		opts.BaseFile = "configs/base.yaml"
+	}
+	if env := os.Getenv("APP_ENV"); env != "" {
+		opts.EnvFile = "configs/" + env + ".yaml"
+	}
+	cfg, _, err := config.Load[config.Framework](opts)
+	if err != nil {
+		// Simplified fallback: compiled defaults + environment from env var.
+		// This lets `migrate` run with only DATABASE_URL in a minimal container.
+		env := config.Env(os.Getenv("WOWAPI__ENVIRONMENT"))
+		if !env.Valid() {
+			env = config.EnvLocal
+		}
+		cfg = config.Defaults()
+		cfg.Environment = env
+	}
+	return cfg, nil
 }

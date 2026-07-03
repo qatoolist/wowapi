@@ -18,7 +18,7 @@ Phases follow Goal 2's dependency-aware ordering; each phase ends with a proof b
 | 9 | `kernel/notify`, `kernel/webhook`, `kernel/integration` + circuit breaker (07 §5–6; 03 migrations 008, 010) | 6 | webhook replay/retry tests | **done** (evidence/phase-09) |
 | 10 | `cmd/wowapi` full: init/new-module/gen crud/migrate create/seed validate/openapi merge/lint boundaries/config tooling/deploy render; golden tests (08 §3, 11 §5, 12 §8) | 5 | #6, #12, #23, #28 | **done** (evidence/phase-10) |
 | 11 | Observability wiring, benchmarks + budgets, race gate, security test suite, config fingerprint drift (07 §1–2, §9) | 3–10 | #17, #18, #26–#27 | **done** (evidence/phase-11) |
-| 12 | E2E acceptance: scratch product repo, api/worker/migrate smoke, acceptance map complete, release notes, final Graphify + review pass | all | all remaining | pending |
+| 12 | E2E acceptance: scratch product repo, api/worker/migrate smoke, acceptance map complete, release notes, final Graphify + review pass | all | all remaining | **done** (evidence/phase-12) |
 
 Rules in force throughout: no deep features before layout/config/container/test harness are stable
 (Goal 2 preflight rule 5); every deviation from the blueprint → entry in `decisions.md` before code;
