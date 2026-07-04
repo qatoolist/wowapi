@@ -40,6 +40,10 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
 - Step-up / MFA hooks: `authz.Permission.StepUp` + `authz.Actor.AMR`; `Evaluate` challenges an
   otherwise-allowed decision (`Decision.StepUpRequired`) when no strong auth factor is present, and
   the httpx gate returns 401 + `WWW-Authenticate: … step_up="mfa"`. `env.mfa` added as an ABAC attribute.
+- Snapshot/artifact pipeline (`kernel/artifact`, migration 00021): immutable, per-(tenant,kind)
+  versioned artifacts with sha256 content hash, structured sidecar, and template-by-effective-date
+  resolution; `Verify` re-hashes to detect tampering. The product supplies the rendered bytes
+  (e.g. PDF/A) — no document-format library in the kernel.
 - Data lifecycle (`kernel/retention`, migration 00020): generalized legal hold over any entity
   (`Place`/`Release`/`IsHeld`/`List`, not just documents) + a DSR ledger (`Open`/`Complete`/`Reject`)
   for export/erasure requests with a statutory-override reason.

@@ -6,7 +6,25 @@ delivered as individually QA-gated commits:
 - **E3 — gap-free per-tenant sequence allocator** — DONE (D-0066).
 - **E6 — bulk-operation framework** — DONE (D-0068).
 - **E2 — data lifecycle: generalized legal hold + DSR ledger** — DONE (D-0072).
-- E4 — snapshot/artifact pipeline — pending (needs a PDF/A library).
+- **E4 — snapshot/artifact pipeline** — DONE (D-0076). **H5 complete.**
+
+## E4 — snapshot / artifact pipeline
+
+| Verdict | Fix |
+|---|---|
+| real (P0) — no immutable versioned-artifact primitive; a compliance product would hand-roll receipt/certificate snapshots | `kernel/artifact`: `Generate` turns product-rendered bytes into an immutable, per-(tenant,kind) versioned `artifacts` row (migration 00021) with `sha256(content)`, a structured sidecar, content-type, template version + effective date; `Get`/`List`/`Verify`. `Templates` resolves the template version effective at a date. |
+
+Framework owns immutability (append-only grants — app_rt has no UPDATE/DELETE, tested), per-(tenant,kind)
+versioning, content hashing, tamper-verification, and template-by-effective-date; the **product supplies
+the rendered bytes** (e.g. a PDF/A from its own renderer), so no document-format library enters the
+kernel — mirroring the storage-port layering. Content is stored in-row (bounded compliance artifacts) so
+an artifact is atomic and self-verifying.
+
+Tests (`kernel/artifact/*_test.go`): generate→get round-trips content/hash/sidecar/template; `Verify`
+passes clean and **detects an out-of-band content mutation** (hash mismatch); versions increment per kind
+(receipt 1,2,3; certificate 1); append-only (app_rt UPDATE+DELETE denied); template resolution picks the
+version effective at a date (and rejects pre-effective / unknown kinds). Gate: 0 FAIL, 0 SKIP, 86
+packages; boundary lint + 00021 reversibility pass.
 
 ## E2 — data lifecycle (generalized legal hold + DSR)
 

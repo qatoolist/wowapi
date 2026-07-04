@@ -303,6 +303,21 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0076 — Hardening H5 (E4): snapshot / artifact pipeline
+- **Context:** no immutable versioned-artifact primitive; a compliance product would hand-roll
+  receipt/certificate snapshots (roadmap E4).
+- **Decision:** `kernel/artifact` over an `artifacts` table (migration 00021). `Generate` turns
+  product-rendered bytes into an immutable per-(tenant,kind) versioned row with sha256(content), a
+  structured sidecar, content-type, template version + effective date; `Get`/`List`/`Verify` (re-hash to
+  detect tamper). A `Templates` registry resolves the version effective at a date. Content is stored
+  in-row (bounded compliance artifacts) so an artifact is atomic + self-verifying; append-only grants
+  (app_rt no UPDATE/DELETE).
+- **Layering:** the framework owns immutability/versioning/hashing/verify/template-resolution; the product
+  supplies the rendered bytes (its own PDF/A renderer) — no document-format library in the kernel,
+  mirroring the storage-port split.
+- **Affected:** `kernel/artifact/{artifact,templates}.go` (+`_test.go`), `migrations/00021_artifacts.sql`,
+  evidence/hardening-H5.
+
 ## D-0075 — Hardening P1 (O1): distributed-tracing seam
 - **Context:** only request-id propagation; no tracing (roadmap O1: "behind the metrics/observability
   port; zero-cost when disabled").
