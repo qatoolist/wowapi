@@ -24,6 +24,10 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
 - Native fuzz targets for the filter DSL parser and cursor decoder (`make test-fuzz`).
 - Reference reverse-proxy deployment (`deployments/reference/`) and an operations deployment checklist
   (security headers, TLS, config-drift alerting convention).
+- Dead-letter-queue operability: `wowapi dlq <jobs|events> <list|inspect|replay|discard>` and the
+  kernel admin functions behind it (`jobs.{ListDead,ReplayDead,DiscardDead}`,
+  `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
+  DELETE on the queue tables.
 
 ### Fixed
 - Retention sweep legal-hold race: a hold applied concurrently with `SweepRetention` could be voided.

@@ -293,6 +293,22 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0062 — Hardening H2 (R4): dead-letter-queue operability
+- **Context:** dead-lettering worked (jobs → `status='discarded'`, events → `dispatch_status='dead'`)
+  but there was no inspect/replay/discard path (roadmap R4). Operators could not recover poison work.
+- **Decision:** kernel admin functions on the platform pool — `jobs.{ListDead,ReplayDead,DiscardDead}`
+  and `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}` — plus a `wowapi dlq` CLI
+  (`<jobs|events> <list|inspect|replay|discard>`) that connects as app_platform via DATABASE_URL.
+  Replay resets status/attempts; discard DELETEs. Migration 00013 grants DELETE on both tables to
+  app_platform (it already had SELECT/UPDATE from 00007).
+- **Safety:** replay is safe by construction — jobs are at-least-once + idempotent workers; events
+  dedup via the `processed_events` inbox on re-dispatch.
+- **Tradeoffs:** durable audit of the admin action lands with the audit subsystem (H4); for now the
+  action is logged. An end-to-end CLI-through-DB test was dropped (testkit isolates per-test DBs while
+  the CLI reads the base `DATABASE_URL`); kernel funcs carry the integration coverage.
+- **Affected:** `kernel/jobs/dlq.go`, `kernel/outbox/dlq.go`, `internal/cli/dlq_cmd.go`, `cli.go`,
+  `migrations/00013_dlq_admin.sql`, evidence/hardening-H2.
+
 ## D-0061 — Hardening H1: edge middleware, cursor sort-spec versioning, sweeps, legal-hold race
 - **Context:** ROADMAP-wowapi.md hardening backlog. A three-track code audit verified each item's
   "current state" claim before any work; the H1 phase closes the self-contained P0/P1 gaps

@@ -45,6 +45,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runNewModule(args[1:], stdout, stderr)
 	case "gen":
 		return runGen(args[1:], stdout, stderr)
+	case "dlq":
+		return runDLQ(args[1:], stdout, stderr)
 	default:
 		if phase, ok := planned[cmd]; ok {
 			fmt.Fprintf(stderr, "wowapi %s: not implemented yet — planned in %s.\n", cmd, phase)
@@ -99,5 +101,6 @@ Available commands:
   openapi      merge OpenAPI fragments into one document
   lint         boundaries — module isolation + layering check
   deploy       render deployment manifests (compose|env)
+  dlq          inspect/replay/discard dead-letter jobs and events
 `, buildinfo.ModulePath)
 }
