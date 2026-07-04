@@ -62,3 +62,15 @@ graphify-out/
 # stray root build artifact from `go build ./cmd/wowapi`
 /wowapi
 /benchbudget
+
+# AI-prompt / conversation working files that seeded this project. Their durable
+# content is folded into docs/SRS.md + docs/GOALS-TRACKER.md; kept locally for
+# reference but out of the repo. (bench-budgets.txt is NOT here — it is live
+# perf-gate config read by `make bench-budget`.)
+/Goal.md
+/Goal 1.1.md
+/Goal 1.2.md
+/Goal 2.md
+/goal-test.md
+/ROADMAP-wowapi.md
+/VERIFICATION-wowapi-hardening.md
