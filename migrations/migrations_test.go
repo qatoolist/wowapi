@@ -30,6 +30,7 @@ var expectedFiles = []string{
 	"00015_sequences.sql",
 	"00016_bulk_operations.sql",
 	"00017_audit_logs.sql",
+	"00018_audit_chain.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

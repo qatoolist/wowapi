@@ -2,9 +2,24 @@
 
 Plan: [../../hardening-plan.md](../../hardening-plan.md). H4 builds the compliance audit layer:
 
-- **E1 — durable field-level audit trail + query API** — DONE (D-0069). This bundle.
-- S6 — cryptographic tamper-evidence (per-tenant-per-period hash-chaining + verification tool) —
-  pending. It layers on the append-only `audit_logs` table this phase creates.
+- **E1 — durable field-level audit trail + query API** — DONE (D-0069).
+- **S6 — cryptographic tamper-evidence (hash-chaining + verification)** — DONE (D-0070). **H4 complete.**
+
+## S6 — audit tamper-evidence (hash-chaining)
+
+| Verdict | Fix |
+|---|---|
+| real (P0) — audit rows were append-only (grant-enforced) but had no cryptographic proof against an owner/DBA mutation | Migration 00018 adds `seq`/`row_hash`/`prev_hash` to `audit_logs` + a per-tenant `audit_chain(next_seq, head_hash)`. `Record` now chains: it locks the tenant's chain head, assigns a gap-free `seq`, computes `row_hash = sha256(prev_hash ‖ length-prefixed canonical row)`, and advances the head — all in the caller's tx. `Verify` walks the chain recomputing hashes and checking prev-links + seq continuity; `Anchor` exports the head (seq + hash) for external notarization. |
+
+Correctness details: the timestamp is truncated to microseconds (Postgres `timestamptz` precision) so
+Record's hash input matches what Verify reads back; `metadata` (jsonb, which reformats on round-trip) is
+deliberately excluded from the hash — the audited change (entity/field/before/after/actor/action) is
+what the chain protects. Length-prefixed field encoding prevents value-boundary collisions.
+
+Tests (`kernel/audit/audit_test.go`): chain verifies clean (Count/HeadSeq/Anchor); **mutation detected**
+— an admin-pool UPDATE of a committed row's action (bypassing app_rt append-only) → Verify fails at that
+seq ("row_hash does not match"); **deletion detected** — an admin DELETE → Verify fails at the seq gap.
+Gate: 0 FAIL, 0 SKIP, 80 packages; boundary lint + 00018 reversibility pass.
 
 ## E1 — durable field-level audit trail
 

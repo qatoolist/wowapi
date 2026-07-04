@@ -9,12 +9,18 @@ package audit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"hash"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -77,8 +83,10 @@ func New(idgen model.IDGen, redact Redactor) *Writer {
 }
 
 // Record appends one audit row in db's transaction (so it commits with the
-// business write). The acting actor id and the request id are read from ctx; the
-// caller supplies the semantic fields via e. Action is required.
+// business write) and extends the tenant's hash chain (S6). The acting actor id
+// and request id are read from ctx; the caller supplies the semantic fields via
+// e. Action is required. Concurrent audit writes for a tenant serialize on the
+// audit_chain head row, so seq is gap-free and the chain is well-ordered.
 func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) error {
 	if e.Action == "" {
 		return kerr.E(kerr.KindValidation, "invalid_audit", "audit action is required")
@@ -94,22 +102,162 @@ func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) erro
 	if err != nil {
 		return kerr.Wrapf(err, "audit.Record", "marshal metadata")
 	}
-	var actorID any
-	if id, ok := database.ActorIDFrom(ctx); ok {
-		actorID = id
+
+	// Microsecond precision: Postgres timestamptz stores micros, so truncating
+	// here keeps the hash input identical to what Verify later reads back.
+	occurredAt := time.Now().UTC().Truncate(time.Microsecond)
+	id := w.idgen.New()
+	requestID := httpx.RequestIDFrom(ctx)
+	actorStr := ""
+	var actorArg any
+	if aid, ok := database.ActorIDFrom(ctx); ok {
+		actorStr, actorArg = aid.String(), aid
 	}
-	_, err = db.Exec(ctx,
+
+	// Lock/read this tenant's chain head (genesis on first write). ON CONFLICT DO
+	// UPDATE is a no-op that still row-locks and returns the current head.
+	var seq int64
+	var prevHash string
+	if err := db.QueryRow(ctx,
+		`INSERT INTO audit_chain (tenant_id) VALUES (app_tenant_id())
+		 ON CONFLICT (tenant_id) DO UPDATE SET tenant_id = audit_chain.tenant_id
+		 RETURNING next_seq, head_hash`).Scan(&seq, &prevHash); err != nil {
+		return kerr.Wrapf(err, "audit.Record", "lock chain head")
+	}
+
+	rowHash := chainHash(prevHash, seq, id, occurredAt, actorStr, e.ActorKind,
+		uuidStr(e.ImpersonatorID), requestID, e.Action, e.EntityType, uuidStr(e.EntityID),
+		e.Field, e.OldValue, e.NewValue, e.Reason)
+
+	if _, err := db.Exec(ctx,
 		`INSERT INTO audit_logs
-		    (id, tenant_id, actor_id, actor_kind, impersonator_id, request_id,
-		     action, entity_type, entity_id, field, old_value, new_value, reason, metadata)
-		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		w.idgen.New(), actorID, nullStr(e.ActorKind), nullUUID(e.ImpersonatorID),
-		nullStr(httpx.RequestIDFrom(ctx)), e.Action, nullStr(e.EntityType), nullUUID(e.EntityID),
-		nullStr(e.Field), nullStr(e.OldValue), nullStr(e.NewValue), nullStr(e.Reason), metaJSON)
-	if err != nil {
+		    (id, tenant_id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
+		     action, entity_type, entity_id, field, old_value, new_value, reason, metadata,
+		     seq, row_hash, prev_hash)
+		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		id, occurredAt, actorArg, nullStr(e.ActorKind), nullUUID(e.ImpersonatorID), nullStr(requestID),
+		e.Action, nullStr(e.EntityType), nullUUID(e.EntityID), nullStr(e.Field), nullStr(e.OldValue),
+		nullStr(e.NewValue), nullStr(e.Reason), metaJSON, seq, rowHash, prevHash); err != nil {
 		return kerr.Wrapf(err, "audit.Record", "insert audit row")
 	}
+
+	if _, err := db.Exec(ctx,
+		`UPDATE audit_chain SET next_seq = $1, head_hash = $2 WHERE tenant_id = app_tenant_id()`,
+		seq+1, rowHash); err != nil {
+		return kerr.Wrapf(err, "audit.Record", "advance chain head")
+	}
 	return nil
+}
+
+// chainHash computes row_hash = sha256(lp(prev) || lp(fields…)). Each field is
+// length-prefixed so no combination of values can collide with a different one.
+// metadata is intentionally NOT chained: it is stored as jsonb, which reformats
+// on round-trip and so cannot be hashed reproducibly — the audited change
+// (entity/field/before/after/actor/action) is what the chain protects.
+func chainHash(prev string, seq int64, id uuid.UUID, occurredAt time.Time, fields ...string) string {
+	h := sha256.New()
+	lp(h, prev)
+	var seqb [8]byte
+	binary.BigEndian.PutUint64(seqb[:], uint64(seq))
+	h.Write(seqb[:])
+	lp(h, id.String())
+	lp(h, occurredAt.UTC().Format(time.RFC3339Nano))
+	for _, f := range fields {
+		lp(h, f)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func lp(h hash.Hash, s string) {
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], uint32(len(s)))
+	_, _ = h.Write(b[:])
+	_, _ = h.Write([]byte(s))
+}
+
+// VerifyResult reports a chain verification. OK is true when every row's hash
+// recomputes and links to its predecessor with no seq gap.
+type VerifyResult struct {
+	OK        bool
+	Count     int64  // rows checked
+	HeadSeq   int64  // last seq seen
+	BrokenSeq int64  // first seq where the chain broke (0 when OK)
+	Reason    string // why it broke
+}
+
+// Verify walks the current tenant's audit chain in seq order, recomputing each
+// row's hash and checking the prev-links and sequence continuity. It detects any
+// mutation of a past row (its hash no longer matches) and any deletion (a seq
+// gap). Read-only; safe in a read-only transaction.
+func (w *Writer) Verify(ctx context.Context, db database.TenantDB) (VerifyResult, error) {
+	rows, err := db.Query(ctx,
+		`SELECT seq, id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
+		        action, entity_type, entity_id, field, old_value, new_value, reason, row_hash, prev_hash
+		   FROM audit_logs WHERE tenant_id = app_tenant_id() ORDER BY seq`)
+	if err != nil {
+		return VerifyResult{}, kerr.Wrapf(err, "audit.Verify", "read chain")
+	}
+	defer rows.Close()
+
+	var res VerifyResult
+	expected := int64(1)
+	prev := ""
+	for rows.Next() {
+		var (
+			seq                                                         int64
+			id                                                          uuid.UUID
+			occurredAt                                                  time.Time
+			actorID, impersonator, entityID                             *uuid.UUID
+			action                                                      string
+			actorKind, requestID, entityType, field, oldV, newV, reason *string
+			rowHash, prevHash                                           string
+		)
+		if err := rows.Scan(&seq, &id, &occurredAt, &actorID, &actorKind, &impersonator, &requestID,
+			&action, &entityType, &entityID, &field, &oldV, &newV, &reason,
+			&rowHash, &prevHash); err != nil {
+			return VerifyResult{}, kerr.Wrapf(err, "audit.Verify", "scan row")
+		}
+		res.Count++
+		res.HeadSeq = seq
+		if seq != expected {
+			res.BrokenSeq, res.Reason = seq, "sequence gap (a row was deleted)"
+			return res, nil
+		}
+		if prevHash != prev {
+			res.BrokenSeq, res.Reason = seq, "prev_hash does not link to the previous row"
+			return res, nil
+		}
+		want := chainHash(prev, seq, id, occurredAt, uuidStr(ptrUUID(actorID)), deref(actorKind),
+			uuidStr(ptrUUID(impersonator)), deref(requestID), action, deref(entityType),
+			uuidStr(ptrUUID(entityID)), deref(field), deref(oldV), deref(newV), deref(reason))
+		if want != rowHash {
+			res.BrokenSeq, res.Reason = seq, "row_hash does not match (row was modified)"
+			return res, nil
+		}
+		prev = rowHash
+		expected++
+	}
+	if err := rows.Err(); err != nil {
+		return VerifyResult{}, kerr.Wrapf(err, "audit.Verify", "iterate chain")
+	}
+	res.OK = true
+	return res, nil
+}
+
+// Anchor returns the tenant's current chain head — the last seq and its hash.
+// Exporting/publishing an anchor lets a later Verify prove no tampering occurred
+// up to that seq. Returns (0, "") when the tenant has no audit rows yet.
+func (w *Writer) Anchor(ctx context.Context, db database.TenantDB) (seq int64, headHash string, err error) {
+	err = db.QueryRow(ctx,
+		`SELECT next_seq - 1, head_hash FROM audit_chain WHERE tenant_id = app_tenant_id()`).
+		Scan(&seq, &headHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", nil
+	}
+	if err != nil {
+		return 0, "", kerr.Wrapf(err, "audit.Anchor", "read chain head")
+	}
+	return seq, headHash, nil
 }
 
 // Filter narrows a Query. Zero-valued fields are ignored; Limit defaults to 100.
@@ -204,4 +352,19 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// uuidStr renders a uuid for hashing: "" for the nil uuid, canonical form else.
+func uuidStr(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
+	}
+	return id.String()
+}
+
+func ptrUUID(p *uuid.UUID) uuid.UUID {
+	if p == nil {
+		return uuid.Nil
+	}
+	return *p
 }

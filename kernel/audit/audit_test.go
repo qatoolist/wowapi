@@ -141,6 +141,104 @@ func TestIntegrationAuditRedaction(t *testing.T) {
 	}
 }
 
+// recordN records n simple audit rows for the tenant.
+func recordN(t *testing.T, h *testkit.DBHandle, w *audit.Writer, ctx context.Context, n int) {
+	t.Helper()
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		for i := 0; i < n; i++ {
+			if err := w.Record(ctx, db, audit.Entry{Action: "step", EntityType: "e", NewValue: string(rune('a' + i))}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+}
+
+func TestIntegrationAuditChainVerifies(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "r")
+
+	recordN(t, h, w, ctx, 5)
+
+	var res audit.VerifyResult
+	var seq int64
+	var head string
+	_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		res, e = w.Verify(ctx, db)
+		if e != nil {
+			return e
+		}
+		seq, head, e = w.Anchor(ctx, db)
+		return e
+	})
+	if !res.OK || res.Count != 5 || res.HeadSeq != 5 {
+		t.Fatalf("verify = %+v, want OK/Count5/Head5", res)
+	}
+	if seq != 5 || head == "" {
+		t.Fatalf("anchor = (seq %d, head %q), want (5, <hash>)", seq, head)
+	}
+}
+
+// TestIntegrationAuditChainDetectsMutation mutates a committed row via the admin
+// pool (bypassing app_rt's append-only grant) and proves Verify flags it.
+func TestIntegrationAuditChainDetectsMutation(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "r")
+	recordN(t, h, w, ctx, 4)
+
+	// Tamper: change the action of seq 2 out-of-band.
+	if _, err := h.Admin.Exec(context.Background(),
+		`UPDATE audit_logs SET action = 'tampered' WHERE tenant_id = $1 AND seq = 2`, tenant); err != nil {
+		t.Fatal(err)
+	}
+	var res audit.VerifyResult
+	_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		res, e = w.Verify(ctx, db)
+		return e
+	})
+	if res.OK {
+		t.Fatal("Verify passed on a mutated chain — tamper-evidence failed")
+	}
+	if res.BrokenSeq != 2 {
+		t.Fatalf("broken at seq %d, want 2 (%s)", res.BrokenSeq, res.Reason)
+	}
+}
+
+// TestIntegrationAuditChainDetectsDeletion deletes a row and proves the seq gap
+// is caught.
+func TestIntegrationAuditChainDetectsDeletion(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "r")
+	recordN(t, h, w, ctx, 4)
+
+	if _, err := h.Admin.Exec(context.Background(),
+		`DELETE FROM audit_logs WHERE tenant_id = $1 AND seq = 2`, tenant); err != nil {
+		t.Fatal(err)
+	}
+	var res audit.VerifyResult
+	_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		res, e = w.Verify(ctx, db)
+		return e
+	})
+	if res.OK {
+		t.Fatal("Verify passed despite a deleted row")
+	}
+	if res.BrokenSeq != 3 { // seq 2 gone → at the row where seq==3 we expected 2
+		t.Fatalf("broken at seq %d, want 3 (gap); reason=%s", res.BrokenSeq, res.Reason)
+	}
+}
+
 func TestIntegrationAuditTenantIsolation(t *testing.T) {
 	h := testkit.NewDB(t)
 	w := audit.New(model.UUIDv7(), nil)

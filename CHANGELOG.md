@@ -31,6 +31,9 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   DELETE on the queue tables.
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
+- Audit tamper-evidence (hash-chaining, migration 00018): each audit row carries a per-tenant seq +
+  `row_hash = sha256(prev_hash ‖ row)`; `audit.Verify` recomputes the chain and detects any mutation
+  (hash mismatch) or deletion (seq gap); `audit.Anchor` exports the head for external notarization.
 - Durable field-level audit trail (`kernel/audit`, migration 00017): append-only `audit_logs` with a
   `Record`/`Query` API capturing entity/field/before/after/actor/request-id + a per-record redaction
   hook. Append-only is grant-enforced (app_rt has no UPDATE/DELETE). Basis for S6 hash-chaining.

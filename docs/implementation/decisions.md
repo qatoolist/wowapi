@@ -303,6 +303,23 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0070 — Hardening H4 (S6): audit tamper-evidence via hash-chaining
+- **Context:** audit_logs was append-only by grant (E1/D-0069) but had no cryptographic proof against an
+  owner/DBA who bypasses the runtime role (roadmap S6).
+- **Decision:** migration 00018 adds `seq`/`row_hash`/`prev_hash` to audit_logs + a per-tenant
+  `audit_chain(next_seq, head_hash)`. `Record` locks the tenant chain head, assigns a gap-free seq,
+  computes `row_hash = sha256(prev_hash ‖ length-prefixed canonical row)`, inserts, and advances the head
+  — atomically in the caller's tx. `Verify` recomputes the chain and reports the first break (a mutated
+  row's hash mismatch, or a seq gap from deletion); `Anchor` exports the head (seq+hash) for external
+  notarization.
+- **Correctness:** timestamp truncated to microseconds so Record's hash matches Verify's read-back;
+  metadata (jsonb reformats) excluded from the hash — the audited change is what's protected;
+  length-prefixed encoding prevents field-boundary collisions.
+- **Tradeoffs:** every audit write now serializes on the tenant chain head (correctness over throughput,
+  acceptable for audit). Verify is O(rows); anchor-based partial verification is a follow-up.
+- **Affected:** `kernel/audit/audit.go` (+`_test.go`), `migrations/00018_audit_chain.sql`,
+  evidence/hardening-H4.
+
 ## D-0069 — Hardening H4 (E1): durable field-level audit trail
 - **Context:** the only audit was `authz.AuditSink.AuthzDenial` (denial logging via a nil-safe sink);
   the kernel stubbed "durable audit_logs writer replaces it in Phase 6". No durable, field-level,
