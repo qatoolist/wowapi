@@ -1,10 +1,21 @@
 # wowapi — Hardening Roadmap
 
-> Companion to [ROADMAP.md](ROADMAP.md) (§6 framework discovery, §14 generic improvements). Scope: what is required to take wowapi v0.1.0 — all 12 implementation phases completed ~2026-07-04, zero production exposure — to a state a compliance-grade product can safely stand on. Everything here is **domain-neutral**; nothing society-specific belongs in the framework.
+> Companion to the product-scope `ROADMAP.md` (§6 framework discovery, §14 generic improvements) — an
+> external planning doc that lives outside this framework repository, so it is referenced by section number,
+> not linked. Scope: what is required to take wowapi v0.1.0 — all 12 implementation phases completed ~2026-07-04, zero production exposure — to a state a compliance-grade product can safely stand on. Everything here is **domain-neutral**; nothing society-specific belongs in the framework.
 >
 > Two categories throughout: **(A) trust hardening** — making existing capabilities production-trustworthy under real load and adversarial pressure; **(B) capability gaps** — things a compliance-grade product cannot ship without (cross-referenced to ROADMAP.md §14 numbering).
 
 Priority key: **P0** = before any product MVP ships on the framework · **P1** = before post-MVP phases depend on it · **P2** = quality-of-life / scale-driven.
+
+> **Remediation status (post-verification):** the third-party review
+> [VERIFICATION-wowapi-hardening.md](VERIFICATION-wowapi-hardening.md) found the exit gate unmet and
+> defined corrective actions CA-1…CA-15. Their live status — what shipped, what's rescoped, what remains —
+> is the closure matrix in **VERIFICATION §6**. Notably **R2 is reopened and now CLOSED** by a real load
+> characterization (CA-4, `docs/operations/load-characterization.md`); **S4** is a non-gap with its
+> `config.Secret` residual closed (CA-14); the previously-fictional `trace_sample_ratio` config key now
+> exists (CA-2). Do not read the "Current state" columns below as live status — they are the pre-hardening
+> baseline; VERIFICATION §6 is authoritative for closure.
 
 ---
 

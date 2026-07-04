@@ -13,6 +13,27 @@ may still make breaking changes between minor versions.
 Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-plan.md`) — phases H1, H2,
 and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` + `make ci-container` gate.
 
+### Hardening remediation — corrective actions CA-1…CA-15
+
+Closure of the exit-gate gaps found by `VERIFICATION-wowapi-hardening.md` (status matrix in its §6):
+
+- **Metrics actually emit** (CA-1): `kernel.Deps.Metrics`; RED middleware + `/metrics` in the generated
+  api; scheduler-lag, webhook-breaker, rate-limit-drop, config-fingerprint gauges; reference Prometheus
+  alerts/scrape in `deployments/reference/`.
+- **Secure-by-default wiring** (CA-2): rate limiter in the default chain (opt-out `http.rate_limit`); real
+  `telemetry.trace_sample_ratio` wired to the OTel adapter; composite API-key+OIDC authenticator; opt-in
+  authz assignment cache; signed keyset cursors in `workflow.OpenTasksFor` and the generated CRUD list.
+- **API keys** (CA-3): `apikey.Store.Rotate`, audited issue/rotate/revoke, and a `wowapi apikey` CLI.
+- **Advisory-lock load envelope** (CA-4) documented with a repeatable test.
+- **Module recurring jobs** (CA-5): `module.Context.RecurringJob`.
+- **Audit** (CA-11): `module.Context` accessors for audit/sequence/bulk/artifact; `audit_logs.tx_id`
+  (migration 00023); `wowapi audit verify` CLI.
+- **Correctness/security nits**: idempotency replay-after-expiry now errors (410, CA-8); gate step-up
+  test (CA-13); `integration.Config.Credential` is a redacted `config.Secret` (CA-14); an unregistered
+  notification channel fails terminally instead of silently reporting `sent` (CA-15).
+- Hosted CI workflow added (`.github/workflows/ci.yml`, CA-6). Remaining open/rescoped items (async trace
+  propagation, read-replica routing, O2/O3/O5 finishers) are tracked in VERIFICATION §6.
+
 ### Added
 - `kernel/httpx` edge middleware — `SecureHeaders`, `CORS`, `BodyLimit`, `Timeout` — completing the
   blueprint's fixed chain. `BodyLimit`/`Timeout` now enforce the previously dead `http.max_body_bytes`
