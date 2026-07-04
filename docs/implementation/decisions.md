@@ -303,6 +303,23 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0069 — Hardening H4 (E1): durable field-level audit trail
+- **Context:** the only audit was `authz.AuditSink.AuthzDenial` (denial logging via a nil-safe sink);
+  the kernel stubbed "durable audit_logs writer replaces it in Phase 6". No durable, field-level,
+  queryable audit existed (roadmap E1).
+- **Decision:** `kernel/audit.Writer` over an `audit_logs` table (migration 00017). `Record` appends an
+  entry (entity/field/before/after/actor/actor-kind/impersonator/request-id/action/reason/metadata) in
+  the caller's tenant tx (commits iff the change does). `Query(Filter)` reads it back (RLS-scoped,
+  newest-first with a UUIDv7 id tiebreaker for same-tx rows). A `Redactor` hook masks sensitive field
+  values pre-persist. Append-only is grant-enforced: app_rt gets SELECT+INSERT but NOT UPDATE/DELETE —
+  proven by a test asserting both are denied.
+- **Tradeoffs:** integrity via append-only grants now; cryptographic tamper-evidence (hash-chaining) is
+  S6, layering on this table. Records are written explicitly by services (no automatic trigger capture
+  yet); the `AuthzDenial` denial-sink bridge is deferred (its signature lacks a tx handle). Exposed as a
+  constructable primitive; a `module.Context` accessor is a follow-up.
+- **Affected:** `kernel/audit/audit.go` (+`_test.go`), `migrations/00017_audit_logs.sql`,
+  evidence/hardening-H4.
+
 ## D-0068 — Hardening H5 (E6): bulk-operation framework
 - **Context:** the job runner processed items one at a time; a compliance product needs chunked bulk
   operations with progress, a partial-failure ledger, and resumability (roadmap E6).
