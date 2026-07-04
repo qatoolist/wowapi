@@ -25,6 +25,11 @@ type Permission struct {
 	Key        string
 	Sensitive  bool
 	GrantedVia string // relationship type key, or "" for none
+	// StepUp requires the actor to have satisfied an elevated authentication
+	// factor (MFA) for this permission: an otherwise-allowed decision becomes a
+	// step-up challenge when the actor's AMR carries no strong factor (roadmap
+	// S3). MFA itself is the IdP's job; this gates on the surfaced amr claim.
+	StepUp bool
 }
 
 // Registry is the boot-time permission catalog. Evaluating a permission absent

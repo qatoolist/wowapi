@@ -177,8 +177,33 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 		}
 	}
 
+	// --- Step-up: a permission may require an elevated auth factor. If the actor
+	// would otherwise be allowed but carries no strong factor in its AMR, downgrade
+	// to a step-up challenge (roadmap S3). This never grants — it only gates an
+	// existing allow — so deny-by-default is preserved. ---
+	if decision.Allowed && pdef.StepUp && !hasStrongFactor(a.AMR) {
+		decision.Allowed = false
+		decision.StepUpRequired = true
+		decision.Reason = "step_up_required"
+	}
+
 	e.maybeAudit(ctx, a, perm, t, pdef, decision)
 	return decision, nil
+}
+
+// strongFactors are AMR values that count as an elevated (second) authentication
+// factor. "mfa" is the OIDC aggregate; the rest are common specific methods.
+var strongFactors = map[string]bool{
+	"mfa": true, "otp": true, "totp": true, "hwk": true, "sms": true, "fpt": true, "face": true,
+}
+
+func hasStrongFactor(amr []string) bool {
+	for _, m := range amr {
+		if strongFactors[m] {
+			return true
+		}
+	}
+	return false
 }
 
 // maybeAudit fires the audit sink for a denial of a sensitive permission or any
@@ -254,6 +279,7 @@ func (e *engine) attributes(a Actor, t Target, now time.Time) map[string]any {
 		"actor.kind":          string(a.Kind),
 		"actor.impersonating": a.ImpersonatorUserID != uuid.Nil,
 		"actor.break_glass":   a.BreakGlass,
+		"env.mfa":             hasStrongFactor(a.AMR),
 		"env.time":            now.Format(time.RFC3339),
 		"env.hour":            now.Hour(),
 		"resource.type":       t.Resource.Type,

@@ -83,6 +83,15 @@ func gateRoute(meta RouteMeta, h http.Handler, auth Authenticator, eval authz.Ev
 			WriteError(ctx, w, aerr)
 			return
 		}
+		// Step-up: the actor is otherwise permitted but the permission demands an
+		// elevated auth factor it has not satisfied — challenge for re-auth (401 +
+		// WWW-Authenticate) rather than a flat 403 (roadmap S3).
+		if decision.StepUpRequired {
+			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", step_up="mfa"`)
+			WriteError(ctx, w, kerr.E(kerr.KindUnauthenticated, "step_up_required",
+				"elevated authentication (MFA) required for: "+meta.Permission))
+			return
+		}
 		if !decision.Allowed {
 			WriteError(ctx, w, kerr.E(kerr.KindForbidden, "permission_denied",
 				"not permitted: "+meta.Permission))

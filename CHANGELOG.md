@@ -31,6 +31,9 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   DELETE on the queue tables.
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
+- Step-up / MFA hooks: `authz.Permission.StepUp` + `authz.Actor.AMR`; `Evaluate` challenges an
+  otherwise-allowed decision (`Decision.StepUpRequired`) when no strong auth factor is present, and
+  the httpx gate returns 401 + `WWW-Authenticate: … step_up="mfa"`. `env.mfa` added as an ABAC attribute.
 - Data lifecycle (`kernel/retention`, migration 00020): generalized legal hold over any entity
   (`Place`/`Release`/`IsHeld`/`List`, not just documents) + a DSR ledger (`Open`/`Complete`/`Reject`)
   for export/erasure requests with a statutory-override reason.

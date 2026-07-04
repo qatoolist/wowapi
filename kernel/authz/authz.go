@@ -50,6 +50,10 @@ type Actor struct {
 	// authorizes like an RBAC grant but remains subject to ABAC deny policies.
 	// Human and internal-system actors leave it empty and are unaffected.
 	Scopes []string
+	// AMR is the authentication-methods-references set surfaced from the IdP token
+	// (e.g. ["pwd","mfa","otp"]). It drives step-up enforcement and the env.mfa
+	// ABAC attribute (roadmap S3).
+	AMR []string
 }
 
 // ScopeKind is the granularity of an authorization target.
@@ -76,6 +80,11 @@ type Decision struct {
 	Allowed   bool
 	Reason    string
 	PolicyIDs []uuid.UUID
+	// StepUpRequired is set when the actor would be allowed but the permission
+	// demands an elevated auth factor the actor has not satisfied (roadmap S3).
+	// The HTTP gate turns this into a re-authentication challenge rather than a
+	// flat 403.
+	StepUpRequired bool
 }
 
 // ListFilter is the structured constraint Filter returns so list queries embed

@@ -31,4 +31,18 @@ table + a send-path check, out of scope for this small increment.
 
 Test (`kernel/notify/notify_test.go::TestIntegrationDeliveriesReceipts`): a 2-channel send yields 2
 receipts (inapp + email) with the email destination + queued status. Gate green (76 packages).
+
+## S3 — Step-up / MFA hooks (D-0073)
+
+| Verdict | Fix |
+|---|---|
+| real (P1) — the token was the only factor; the authz layer could not demand elevated auth per permission | `authz.Permission.StepUp` marks a permission as requiring MFA; `authz.Actor.AMR` carries the surfaced auth-methods-references; `authz.Evaluate` turns an otherwise-allowed decision into a step-up challenge (`Decision.StepUpRequired`, reason `step_up_required`) when the AMR has no strong factor. `env.mfa` is surfaced as an ABAC attribute so policies can also condition on it. The httpx gate maps `StepUpRequired` to `401` + `WWW-Authenticate: … step_up="mfa"` (re-auth) rather than a flat 403. |
+
+Deny-by-default preserved: step-up only *gates* an existing allow — it never grants, and a plain deny is
+never masked as a step-up (tested). Strong factors = `mfa/otp/totp/hwk/sms/fpt/face`. MFA itself stays
+the IdP's job; the framework gates on the surfaced `amr`.
+
+Tests (`kernel/authz/step_up_test.go`): a granted actor without a strong factor gets a step-up challenge
+and is admitted once AMR includes `mfa`; an ungranted actor on a StepUp perm gets a plain `default_deny`
+(no step-up). All pre-existing authz + gate tests still green with the additions. Gate: 84 packages.
 </content>

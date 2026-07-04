@@ -303,6 +303,20 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0073 — Hardening P1 (S3): step-up / MFA hooks
+- **Context:** the token was the only factor; the authz layer could not demand elevated auth per
+  permission (roadmap S3, blueprint 07 §1 "env.mfa conditions").
+- **Decision:** `authz.Permission.StepUp` marks a permission MFA-required; `authz.Actor.AMR` carries the
+  surfaced auth-methods-references; `Evaluate` turns an otherwise-allowed decision into a step-up
+  challenge (`Decision.StepUpRequired`, reason `step_up_required`) when the AMR carries no strong factor
+  (`mfa/otp/totp/hwk/sms/fpt/face`). `env.mfa` is surfaced as an ABAC attribute. The httpx gate maps
+  `StepUpRequired` → `401` + `WWW-Authenticate: … step_up="mfa"`.
+- **Tradeoffs:** step-up only gates an existing allow (never grants; a plain deny is not masked — tested).
+  MFA remains the IdP's job; the framework gates on the surfaced amr. Generic TOTP-challenge issuance +
+  dual-control-with-workflow composition are follow-ups.
+- **Affected:** `kernel/authz/{registry,authz,evaluator}.go` (+step_up_test), `kernel/httpx/authz_gate.go`,
+  evidence/hardening-P1.
+
 ## D-0072 — Hardening H5 (E2): data lifecycle — generalized legal hold + DSR ledger
 - **Context:** legal hold was a per-document flag (R6); no generalized hold across entities, no DSR
   primitive, no statutory-override for refusing erasure (roadmap E2, DPDP Rules live 2026).
