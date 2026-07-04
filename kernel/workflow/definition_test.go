@@ -136,8 +136,10 @@ func TestValidateUnknownAutoAction(t *testing.T) {
 
 func TestValidateUnknownResolver(t *testing.T) {
 	def := Definition{Key: "k.v", Version: 1, InitialStep: "a", Steps: map[string]Step{
-		"a": {Type: StepApproval, Assignees: []AssigneeSpec{{Kind: SpecResolver, Resolver: "missing.resolver"}},
-			OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"}},
+		"a": {
+			Type: StepApproval, Assignees: []AssigneeSpec{{Kind: SpecResolver, Resolver: "missing.resolver"}},
+			OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"},
+		},
 		"end": {Type: StepTerminal, Outcome: "completed"},
 	}}
 	err := def.Validate(nil, autos("other.resolver"))
@@ -222,14 +224,18 @@ func TestValidateFailsClosedOnUnenforcedGating(t *testing.T) {
 		},
 		{
 			name: "min_approvals > 1",
-			step: Step{Type: StepApproval, Policy: &Policy{MinApprovals: 2},
-				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"}},
+			step: Step{
+				Type: StepApproval, Policy: &Policy{MinApprovals: 2},
+				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"},
+			},
 			want: "min_approvals > 1 is not yet enforced",
 		},
 		{
 			name: "self_approval:false",
-			step: Step{Type: StepApproval, Policy: &Policy{SelfApproval: bp(false)},
-				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"}},
+			step: Step{
+				Type: StepApproval, Policy: &Policy{SelfApproval: bp(false)},
+				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"},
+			},
 			want: "self_approval:false is not yet enforced",
 		},
 	}

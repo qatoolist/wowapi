@@ -250,7 +250,8 @@ func seedRolePerm(t *testing.T, h *testkit.DBHandle, ctx context.Context, role u
 // seedAssignment inserts an actor_assignment. validFrom/validTo are raw SQL
 // expressions (e.g. "now()", "NULL") interpolated as trusted test literals.
 func seedAssignment(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant, capID, role uuid.UUID,
-	scopeKind string, scopeID *uuid.UUID, scopeType *string, validFrom, validTo string) {
+	scopeKind string, scopeID *uuid.UUID, scopeType *string, validFrom, validTo string,
+) {
 	t.Helper()
 	var scopeIDArg, scopeTypeArg any
 	if scopeID != nil {

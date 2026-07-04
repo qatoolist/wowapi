@@ -1,0 +1,30 @@
+#!/bin/sh
+# wowapi pre-commit hook (installed via `make hooks` → core.hooksPath=.githooks).
+# Fast checks on the Go changes being committed: formatting (gofumpt + goimports)
+# and a lint of only the CHANGED code. Bypass in an emergency: git commit --no-verify
+set -e
+
+changed=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.go$' || true)
+[ -z "$changed" ] && exit 0
+
+if ! command -v golangci-lint >/dev/null 2>&1; then
+	echo "pre-commit: golangci-lint not found — run 'make tools'. Skipping (commit allowed)."
+	exit 0
+fi
+
+# 1. Formatting: gofumpt + goimports (golangci-lint bundles them).
+drift=$(golangci-lint fmt --diff 2>/dev/null || true)
+if [ -n "$drift" ]; then
+	echo "pre-commit: formatting needed — run 'make fmt', then re-stage. Offending files:"
+	printf '%s\n' "$drift" | grep -E '^(diff|\+\+\+) ' | head
+	exit 1
+fi
+
+# 2. Lint the changed code only (the pre-existing backlog is not enforced here).
+base=$(git rev-parse --verify -q origin/main || git rev-parse --verify -q HEAD~1 || true)
+if [ -n "$base" ]; then
+	golangci-lint run --new-from-merge-base="$base" ./... || {
+		echo "pre-commit: fix the new lint issues above, or 'git commit --no-verify' to skip."
+		exit 1
+	}
+fi

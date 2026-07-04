@@ -154,16 +154,14 @@ func extractTemplateVars(body string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if t.Tree == nil || t.Tree.Root == nil {
+	if t.Tree == nil || t.Root == nil {
 		return nil, nil
 	}
 	seen := map[string]bool{}
 	var vars []string
 
 	var walk func(parse.Node)
-	var walkPipe func(*parse.PipeNode)
-
-	walkPipe = func(p *parse.PipeNode) {
+	walkPipe := func(p *parse.PipeNode) {
 		if p == nil {
 			return
 		}
@@ -213,7 +211,7 @@ func extractTemplateVars(body string) ([]string, error) {
 		}
 	}
 
-	walk(t.Tree.Root)
+	walk(t.Root)
 	return vars, nil
 }
 

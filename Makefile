@@ -5,6 +5,10 @@
 COMPOSE := docker compose -f deployments/compose.yaml
 GO      ?= go
 PKGS    := ./...
+# Baseline for the "changed code only" lint gate (lint-new). golangci-lint lints
+# only issues introduced since the merge-base with this ref, so the large
+# pre-existing backlog does not block while all NEW code is fully linted.
+LINT_BASE ?= origin/main
 
 .DEFAULT_GOAL := help
 
@@ -15,7 +19,7 @@ help: ## List targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 .PHONY: setup
-setup: tools ## One-time developer setup (tool install + go mod download)
+setup: tools hooks ## One-time developer setup (tools + git hooks + go mod download)
 	$(GO) mod download
 
 .PHONY: tools
@@ -66,16 +70,46 @@ seed:
 ##@ Quality
 
 .PHONY: fmt
-fmt: ## gofmt all Go files
-	$(GO) fmt $(PKGS)
+fmt: ## Format all Go files (gofumpt + goimports, via golangci-lint)
+	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint fmt; else echo "golangci-lint not installed; running gofmt"; $(GO) fmt $(PKGS); fi
+
+.PHONY: fmt-check
+fmt-check: ## Fail if any file needs gofumpt/goimports formatting
+	@d=$$(golangci-lint fmt --diff 2>/dev/null); if [ -n "$$d" ]; then echo "$$d"; echo ">> run 'make fmt'"; exit 1; fi
+
+.PHONY: vet
+vet: ## go vet
+	$(GO) vet $(PKGS)
 
 .PHONY: lint
-lint: ## golangci-lint (falls back to go vet)
+lint: ## Full golangci-lint (ADVISORY — includes the pre-existing backlog; see docs/working/lint-backlog.md)
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; else echo "golangci-lint not installed; running go vet"; $(GO) vet $(PKGS); fi
+
+.PHONY: lint-new
+lint-new: ## ENFORCED gate: golangci-lint on CHANGED code only (new since LINT_BASE=$(LINT_BASE))
+	golangci-lint run --new-from-merge-base=$(LINT_BASE) ./...
 
 .PHONY: lint-boundaries
 lint-boundaries: ## Import-law + vocabulary + Reveal() boundary lint
 	sh scripts/lint_boundaries.sh
+
+.PHONY: tidy
+tidy: ## go mod tidy
+	$(GO) mod tidy
+
+.PHONY: tidy-check
+tidy-check: ## Fail if go.mod/go.sum are not tidy
+	@cp go.mod go.mod.ci.bak; cp go.sum go.sum.ci.bak; $(GO) mod tidy; \
+		if ! diff -q go.mod go.mod.ci.bak >/dev/null 2>&1 || ! diff -q go.sum go.sum.ci.bak >/dev/null 2>&1; then \
+			mv go.mod.ci.bak go.mod; mv go.sum.ci.bak go.sum; echo ">> go.mod/go.sum not tidy — run 'make tidy'"; exit 1; fi; \
+		rm -f go.mod.ci.bak go.sum.ci.bak
+
+.PHONY: check
+check: fmt-check vet lint-new tidy-check test-unit ## Fast pre-flight before commit/push (fmt, vet, lint changed code, tidy, unit tests)
+
+.PHONY: hooks
+hooks: ## Install the versioned git hooks (pre-commit + pre-push)
+	@git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push 2>/dev/null; echo "git hooks installed (core.hooksPath=.githooks)"
 
 ##@ Tests
 

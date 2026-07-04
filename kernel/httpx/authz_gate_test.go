@@ -21,6 +21,7 @@ type stepUpEval struct{}
 func (stepUpEval) Evaluate(context.Context, database.TenantDB, authz.Actor, string, authz.Target) (authz.Decision, error) {
 	return authz.Decision{StepUpRequired: true}, nil
 }
+
 func (stepUpEval) Filter(context.Context, database.TenantDB, authz.Actor, string, string) (authz.ListFilter, error) {
 	return authz.ListFilter{}, nil
 }

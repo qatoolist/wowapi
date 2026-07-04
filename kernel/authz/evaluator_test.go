@@ -29,15 +29,19 @@ type fakeStore struct {
 func (f *fakeStore) ActiveAssignments(context.Context, database.TenantDB, authz.Actor, time.Time) ([]authz.Assignment, error) {
 	return f.assignments, nil
 }
+
 func (f *fakeStore) OrgAncestors(_ context.Context, _ database.TenantDB, id uuid.UUID) ([]uuid.UUID, error) {
 	return f.ancestors[id], nil
 }
+
 func (f *fakeStore) OrgSubtree(_ context.Context, _ database.TenantDB, id uuid.UUID) ([]uuid.UUID, error) {
 	return f.subtree[id], nil
 }
+
 func (f *fakeStore) Policies(context.Context, database.TenantDB, authz.Actor, string, string) ([]authz.Policy, error) {
 	return f.policies, nil
 }
+
 func (f *fakeStore) ResourceOrg(_ context.Context, _ database.TenantDB, ref resource.Ref) (uuid.UUID, error) {
 	return f.resourceOrg[ref.ID], nil
 }

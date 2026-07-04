@@ -32,12 +32,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so `lint-new` can compute the merge-base
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
           cache: true
+      - name: install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      - name: format check (gofumpt + goimports)
+        run: make fmt-check
       - name: go vet
-        run: go vet ./...
+        run: make vet
+      - name: lint changed code (golangci-lint, new-from-merge-base)
+        run: make lint-new
+      - name: go.mod tidy check
+        run: make tidy-check
       - name: boundaries
         run: make lint-boundaries
       - name: unit tests (no database — pure unit path must pass standalone)

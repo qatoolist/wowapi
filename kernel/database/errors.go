@@ -32,10 +32,10 @@ var (
 // a programming bug and must surface as an internal error (500), never be
 // masked as a benign conflict (review finding ARCH-20).
 func ExpectOneRow(tag pgconn.CommandTag, entity string) error {
-	switch n := tag.RowsAffected(); {
-	case n == 1:
+	switch n := tag.RowsAffected(); n {
+	case 1:
 		return nil
-	case n == 0:
+	case 0:
 		return fmt.Errorf("%s: %w", entity, ErrVersionConflict)
 	default:
 		return fmt.Errorf("%s: expected to affect 1 row, affected %d (WHERE clause too broad)", entity, n)

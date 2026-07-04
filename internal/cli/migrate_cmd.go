@@ -13,8 +13,10 @@ import (
 	"strconv"
 )
 
-var migNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-var migFileRE = regexp.MustCompile(`^(\d{5})_.*\.sql$`)
+var (
+	migNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	migFileRE = regexp.MustCompile(`^(\d{5})_.*\.sql$`)
+)
 
 func migrateUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: wowapi migrate <subcommand> [flags]

@@ -82,8 +82,12 @@ func TestEnvValid(t *testing.T) {
 		env  Env
 		want bool
 	}{
-		{EnvLocal, true}, {EnvDev, true}, {EnvStage, true}, {EnvProd, true},
-		{Env("production"), false}, {Env(""), false},
+		{EnvLocal, true},
+		{EnvDev, true},
+		{EnvStage, true},
+		{EnvProd, true},
+		{Env("production"), false},
+		{Env(""), false},
 	} {
 		if got := tc.env.Valid(); got != tc.want {
 			t.Errorf("Env(%q).Valid() = %v, want %v", tc.env, got, tc.want)

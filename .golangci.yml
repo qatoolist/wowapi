@@ -1,7 +1,7 @@
 version: "2"
 
 linters:
-  default: standard
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
     - depguard
     - misspell
@@ -17,6 +17,9 @@ linters:
           list-mode: lax
           files:
             - "**/kernel/**/*.go"
+            # Test files legitimately import testkit (and may cross layers for
+            # test setup); the import law governs PRODUCTION code only.
+            - "!**/kernel/**/*_test.go"
           deny:
             - pkg: github.com/qatoolist/wowapi/module
               desc: "kernel must not import module (04 §1 import law)"
@@ -26,6 +29,21 @@ linters:
               desc: "kernel must not import adapters (04 §1 import law)"
             - pkg: github.com/qatoolist/wowapi/testkit
               desc: "production code must not import testkit"
+  exclusions:
+    # Tests commonly ignore errors (t.Fatal paths, best-effort cleanup) and use
+    # fixed-value helpers, so errcheck/unparam there are noise, not defects.
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+
+# golangci-lint v2 bundles the formatters, so `golangci-lint fmt` = gofumpt +
+# goimports (no separate binaries to install). `run` also reports format drift.
+formatters:
+  enable:
+    - gofumpt
+    - goimports
 
 issues:
   max-issues-per-linter: 0

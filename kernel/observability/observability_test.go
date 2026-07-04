@@ -3,12 +3,11 @@ package observability_test
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"log/slog"
 
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/observability"

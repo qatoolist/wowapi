@@ -68,7 +68,7 @@ func Load(src fs.FS, module string) (Bundle, error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !(strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
+		if d.IsDir() || (!strings.HasSuffix(p, ".yaml") && !strings.HasSuffix(p, ".yml")) {
 			return nil
 		}
 		data, rerr := fs.ReadFile(src, p)

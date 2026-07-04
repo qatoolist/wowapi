@@ -22,15 +22,19 @@ func (c *countingStore) ActiveAssignments(context.Context, database.TenantDB, Ac
 	c.calls++
 	return c.asgs, nil
 }
+
 func (c *countingStore) OrgAncestors(context.Context, database.TenantDB, uuid.UUID) ([]uuid.UUID, error) {
 	return nil, nil
 }
+
 func (c *countingStore) OrgSubtree(context.Context, database.TenantDB, uuid.UUID) ([]uuid.UUID, error) {
 	return nil, nil
 }
+
 func (c *countingStore) Policies(context.Context, database.TenantDB, Actor, string, string) ([]Policy, error) {
 	return nil, nil
 }
+
 func (c *countingStore) ResourceOrg(context.Context, database.TenantDB, resource.Ref) (uuid.UUID, error) {
 	return uuid.Nil, nil
 }

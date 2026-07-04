@@ -161,9 +161,11 @@ type tenantTx struct{ tx pgx.Tx }
 func (t tenantTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return t.tx.Exec(ctx, sql, args...)
 }
+
 func (t tenantTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return t.tx.Query(ctx, sql, args...)
 }
+
 func (t tenantTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return t.tx.QueryRow(ctx, sql, args...)
 }
@@ -175,9 +177,11 @@ type platformTx struct{ tx pgx.Tx }
 func (t platformTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 	return t.tx.Exec(ctx, sql, args...)
 }
+
 func (t platformTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	return t.tx.Query(ctx, sql, args...)
 }
+
 func (t platformTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
 	return t.tx.QueryRow(ctx, sql, args...)
 }

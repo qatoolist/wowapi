@@ -159,9 +159,9 @@ func TestLoadEnvironmentFromEnvVarSatisfiesFailClosed(t *testing.T) {
 }
 
 func TestLoadUnknownEnvironmentRejected(t *testing.T) {
-	base := writeYAML(t, "environment: produktion\n")
+	base := writeYAML(t, "environment: production\n")
 	_, _, err := config.Load[config.Framework](config.Options{BaseFile: base})
-	mustContain(t, err, "produktion")
+	mustContain(t, err, "production")
 }
 
 // ---------- error accumulation ----------

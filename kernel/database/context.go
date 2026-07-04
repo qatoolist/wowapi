@@ -11,8 +11,10 @@ import (
 // SET LOCAL. Repositories never read these keys — the database enforces
 // isolation, not application filtering.
 
-type tenantIDKey struct{}
-type actorIDKey struct{}
+type (
+	tenantIDKey struct{}
+	actorIDKey  struct{}
+)
 
 // WithTenantID returns a context carrying the tenant the following database
 // work is scoped to. Set by auth middleware (Phase 4) and job runners; tests
