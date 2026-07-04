@@ -1,0 +1,40 @@
+// Package appcfg is {{.Name}}'s product-owned configuration (D-0002): the
+// framework config plus this product's module namespaces and any
+// product-specific fields. config.Framework is embedded, so its fields
+// (Environment, HTTP, Log, DB) are read directly; each module receives its
+// modules.<name>.* subtree via Config.Modules.
+package appcfg
+
+import (
+	"os"
+
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/kernel/config"
+)
+
+// Config is {{.Name}}'s composed configuration. Add product-specific top-level
+// config fields here; they load from the same layered sources.
+type Config struct {
+	config.Framework
+	// Modules carries each registered module's modules.<name>.* namespace,
+	// passed to app.Boot so modules receive only their own config.
+	Modules config.Namespaces `conf:"modules"`
+}
+
+// Load reads the layered configuration in precedence order: configs/base.yaml,
+// then the configs/<APP_ENV>.yaml overlay (when APP_ENV is set), then the
+// WOWAPI__ environment layer, with secretref:// values resolved via the env
+// secret provider. It returns the composed config and its redacted fingerprint.
+func Load() (Config, config.Fingerprint, error) {
+	opts := config.Options{
+		EnvPrefix: "WOWAPI__",
+		Secrets:   envprovider.New(),
+	}
+	if _, err := os.Stat("configs/base.yaml"); err == nil {
+		opts.BaseFile = "configs/base.yaml"
+	}
+	if env := os.Getenv("APP_ENV"); env != "" {
+		opts.EnvFile = "configs/" + env + ".yaml"
+	}
+	return config.Load[Config](opts)
+}

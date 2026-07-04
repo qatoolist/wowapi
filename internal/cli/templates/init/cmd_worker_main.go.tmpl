@@ -8,13 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/logging"
 
+	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
 )
 
@@ -28,9 +27,9 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	cfg, fp, err := loadConfig()
+	cfg, fp, err := appcfg.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("config: %w", err)
 	}
 
 	log, err := logging.New(os.Stderr, cfg.Log)
@@ -73,7 +72,7 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
-	k, err := kernel.New(cfg, log, kernel.Deps{
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{
 		Pool:     pool,
 		Platform: platformPool,
 		Tx:       txm,
@@ -84,34 +83,10 @@ func run(ctx context.Context) error {
 
 	a := app.New()
 	a.Register(wire.Modules()...)
-	booted, err := a.Boot(ctx, k, nil)
+	booted, err := a.Boot(ctx, k, cfg.Modules)
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}
 
 	return app.StartWorker(ctx, booted, app.WorkerConfigOpts{})
-}
-
-// loadConfig loads the framework configuration. Layers applied in order:
-//  1. configs/base.yaml (if the file exists)
-//  2. configs/<APP_ENV>.yaml (if APP_ENV env var is set)
-//  3. WOWAPI__ environment variable prefix (e.g. WOWAPI__ENVIRONMENT=local)
-//
-// Secret references (secretref://env/DATABASE_URL) are resolved via envprovider.
-func loadConfig() (config.Framework, config.Fingerprint, error) {
-	opts := config.Options{
-		EnvPrefix: "WOWAPI__",
-		Secrets:   envprovider.New(),
-	}
-	if _, err := os.Stat("configs/base.yaml"); err == nil {
-		opts.BaseFile = "configs/base.yaml"
-	}
-	if env := os.Getenv("APP_ENV"); env != "" {
-		opts.EnvFile = "configs/" + env + ".yaml"
-	}
-	cfg, fp, err := config.Load[config.Framework](opts)
-	if err != nil {
-		return config.Framework{}, config.Fingerprint{}, fmt.Errorf("config: %w", err)
-	}
-	return cfg, fp, nil
 }

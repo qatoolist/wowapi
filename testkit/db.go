@@ -142,7 +142,10 @@ func NewDB(t *testing.T) *DBHandle {
 	return h
 }
 
-// adminDSN resolves the owner DSN or skips the test with actionable guidance.
+// adminDSN resolves the owner DSN. Without one it normally SKIPs (a local
+// convenience), but a CI/release gate sets WOWAPI_REQUIRE_DB=1 so a missing DB
+// FAILS loudly instead of turning every DB-backed test into a silent skip —
+// green-but-hollow CI is the failure mode this guard closes.
 func adminDSN(t *testing.T) string {
 	t.Helper()
 	if dsn := os.Getenv("WOWAPI_TEST_DSN"); dsn != "" {
@@ -151,11 +154,20 @@ func adminDSN(t *testing.T) string {
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		return dsn
 	}
-	t.Skip("testkit: no admin DSN. Run `make up`, then export " +
+	const guidance = "testkit: no admin DSN. Run `make up`, then export " +
 		"DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable " +
-		"(or set WOWAPI_TEST_DSN).")
-	return "" // unreachable; t.Skip halts the goroutine
+		"(or set WOWAPI_TEST_DSN)."
+	if RequireDB() {
+		t.Fatal("WOWAPI_REQUIRE_DB is set but no database DSN is available — DB-backed tests must run in this gate. " + guidance)
+	}
+	t.Skip(guidance)
+	return "" // unreachable; t.Skip/Fatal halts the goroutine
 }
+
+// RequireDB reports whether the environment mandates that DB-backed tests run
+// (rather than skip when no DSN). Set WOWAPI_REQUIRE_DB=1 in CI/release gates.
+// Exported so external suites (scratch-consumer, E2E) share one policy.
+func RequireDB() bool { return os.Getenv("WOWAPI_REQUIRE_DB") != "" }
 
 // ensureTemplate builds the migrated template once per process.
 func ensureTemplate(ctx context.Context, dsn string) (string, error) {

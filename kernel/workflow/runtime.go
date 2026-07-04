@@ -372,8 +372,10 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 			return kerr.Wrapf(err, "workflow.OpenTasksFor", "query tasks")
 		}
 		defer rows.Close()
-		var lastCreated time.Time
-		var lastID uuid.UUID
+		// createdAts parallels page.Items (Task carries no created_at field) so the
+		// keyset cursor can be encoded from the last RETURNED item, not the
+		// lookahead row.
+		var createdAts []time.Time
 		for rows.Next() {
 			var t Task
 			var createdAt time.Time
@@ -384,7 +386,7 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 			}
 			t.Output = decodeJSONMap(out)
 			page.Items = append(page.Items, t)
-			lastCreated, lastID = createdAt, t.ID
+			createdAts = append(createdAts, createdAt)
 		}
 		if err := rows.Err(); err != nil {
 			return kerr.Wrapf(err, "workflow.OpenTasksFor", "iterate tasks")
@@ -392,7 +394,12 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 		if len(page.Items) > limit {
 			page.Items = page.Items[:limit]
 			page.HasMore = true
-			c, err := pagination.EncodeCursor(map[string]any{"created_at": lastCreated, "id": lastID})
+			// The cursor must point at the last item ACTUALLY RETURNED (index
+			// limit-1). Encoding the dropped lookahead row (index limit) would make
+			// the next `> cursor` query skip it entirely.
+			c, err := pagination.EncodeCursor(map[string]any{
+				"created_at": createdAts[limit-1], "id": page.Items[limit-1].ID,
+			})
 			if err != nil {
 				return kerr.Wrapf(err, "workflow.OpenTasksFor", "encode cursor")
 			}

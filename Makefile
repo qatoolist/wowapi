@@ -92,7 +92,7 @@ test-race: ## Unit tests with the race detector
 
 .PHONY: test-integration
 test-integration: ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
-	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Integration' -count=1 $(PKGS)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 $(GO) test -run 'Integration' -count=1 $(PKGS)
 
 .PHONY: test-contract
 test-contract: ## Module contract + scratch external-consumer suite (needs DB)
@@ -182,5 +182,5 @@ ci: ## Full local CI: vet+lint, boundaries, unit, race, perf budgets, build
 	$(MAKE) build
 
 .PHONY: ci-container
-ci-container: ## Run `make ci` inside the toolbox container
-	$(COMPOSE) run --rm tools make ci
+ci-container: ## Run `make ci` inside the toolbox container (authoritative gate: DB tests MUST run)
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 tools make ci

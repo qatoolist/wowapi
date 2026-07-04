@@ -175,15 +175,39 @@ func TestCheckBoundariesFrameworkLayering(t *testing.T) {
 
 func TestDeployRenderCompose(t *testing.T) {
 	var out, errb bytes.Buffer
-	code := runDeploy([]string{"render", "--format", "compose", "--name", "acme", "--image", "acme:1.0", "--env", "staging"}, &out, &errb)
+	// --env must be a config-valid environment ("stage", not "staging").
+	code := runDeploy([]string{"render", "--format", "compose", "--name", "acme", "--image", "acme:1.0", "--env", "stage"}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	got := out.String()
-	for _, want := range []string{"acme-api", "acme-worker", "acme-migrate", "acme:1.0", "staging", "${WOWAPI_DB_DSN}"} {
+	// The DSN must be a secretref reference (config.DB.DSN is a Secret), never ${VAR}.
+	for _, want := range []string{"acme-api", "acme-worker", "acme-migrate", "acme:1.0", "stage", "secretref://env/WOWAPI_DB_DSN"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("compose manifest missing %s:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "${WOWAPI_DB_DSN}") {
+		t.Fatalf("manifest must not emit a raw ${VAR} DSN (config.Secret needs a secretref):\n%s", got)
+	}
+}
+
+// A --env value the config loader would reject must fail render, not emit a
+// manifest that cannot boot (finding: default was "production", valid is "prod").
+func TestDeployRenderRejectsInvalidEnv(t *testing.T) {
+	for _, bad := range []string{"production", "staging", "PROD", "qa"} {
+		var out, errb bytes.Buffer
+		if code := runDeploy([]string{"render", "--env", bad}, &out, &errb); code != 2 {
+			t.Fatalf("--env %q should be rejected (exit 2), got %d", bad, code)
+		}
+	}
+	// The documented default renders cleanly (it is a valid env).
+	var out, errb bytes.Buffer
+	if code := runDeploy([]string{"render"}, &out, &errb); code != 0 {
+		t.Fatalf("default --env must render: exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "WOWAPI__ENVIRONMENT: prod") {
+		t.Fatalf("default env should be prod:\n%s", out.String())
 	}
 }
 

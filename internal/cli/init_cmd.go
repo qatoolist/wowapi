@@ -107,6 +107,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		{"configs/base.yaml", "templates/init/configs_base.yaml.tmpl"},
 		{"configs/local.yaml", "templates/init/configs_local.yaml.tmpl"},
 		{"internal/wire/modules.go", "templates/init/internal_wire_modules.go.tmpl"},
+		{"internal/appcfg/config.go", "templates/init/internal_appcfg_config.go.tmpl"},
+		{"tools/configcheck/main.go", "templates/init/tools_configcheck_main.go.tmpl"},
 	}
 
 	for _, spec := range files {

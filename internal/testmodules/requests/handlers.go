@@ -19,13 +19,15 @@ import (
 
 // Handlers holds injected collaborators for every route in this module.
 //
-// TODO(phase-5): authz.Evaluator is stored but not called. Actor derivation
-// from request context requires the auth middleware wired in Phase 5. The
-// contract suite exercises registration, migration, seed, and RLS — not live
-// authz through HTTP — so Evaluate is intentionally deferred.
+// Route-level authorization (the RouteMeta permission) is now enforced by the
+// framework's httpx.SecureHandler gate BEFORE a handler runs (AuthN → bind
+// tenant/actor → AuthZ(permission)), so these handlers already run only for an
+// authorized actor. The stored evaluator is for FINE-GRAINED, resource-scoped
+// checks a handler makes against a concrete target (e.g. "read THIS request");
+// this neutral fixture module has none, so it is unused here.
 type Handlers struct {
 	tx    database.TxManager
-	authz authz.Evaluator //nolint:unused // wired; called once actor-from-ctx lands
+	authz authz.Evaluator //nolint:unused // for resource-scoped checks; unused in this fixture
 	val   *validation.Validator
 	idgen model.IDGen
 }

@@ -130,6 +130,9 @@ func TestInitCreatesAllFiles(t *testing.T) {
 		filepath.Join(dir, "configs", "base.yaml"),
 		filepath.Join(dir, "configs", "local.yaml"),
 		filepath.Join(dir, "internal", "modules", ".gitkeep"),
+		filepath.Join(dir, "internal", "wire", "modules.go"),
+		filepath.Join(dir, "internal", "appcfg", "config.go"), // product config layer (D-0002)
+		filepath.Join(dir, "tools", "configcheck", "main.go"), // CLI config-check binary (D-0003)
 	}
 	for _, f := range expected {
 		assertFileExists(t, f)
@@ -146,6 +149,8 @@ func TestInitGoFilesParseOK(t *testing.T) {
 		filepath.Join(dir, "cmd", "api", "main.go"),
 		filepath.Join(dir, "cmd", "worker", "main.go"),
 		filepath.Join(dir, "cmd", "migrate", "main.go"),
+		filepath.Join(dir, "internal", "appcfg", "config.go"),
+		filepath.Join(dir, "tools", "configcheck", "main.go"),
 	} {
 		assertParseGo(t, f)
 	}

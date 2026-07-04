@@ -1,7 +1,8 @@
 // deploy_cmd.go — `wowapi deploy render` (Phase 10). Renders a deployment
 // manifest (docker-compose or a plain env file) for the api/worker/migrate
-// processes from a small set of flags. Secrets are emitted as references
-// (${VAR}), never inlined — the manifest is safe to commit.
+// processes from a small set of flags. The DB DSN is emitted as a
+// secretref://env/… reference (config.DB.DSN is a Secret), never an inlined
+// value — the manifest is safe to commit.
 package cli
 
 import (
@@ -11,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"text/template"
+
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 func deployUsage(w io.Writer) {
@@ -22,7 +25,7 @@ Flags:
   --format   compose | env   (default "compose")
   --name     deployment/service base name (default "app")
   --image    container image (default "app:latest")
-  --env      target environment name (default "production")
+  --env      target environment: local|dev|stage|prod (default "prod")
   --out      output file (default: stdout)
 `)
 }
@@ -47,9 +50,17 @@ func runDeploy(args []string, stdout, stderr io.Writer) int {
 	format := fs.String("format", "compose", "compose | env")
 	name := fs.String("name", "app", "deployment base name")
 	image := fs.String("image", "app:latest", "container image")
-	env := fs.String("env", "production", "target environment")
+	env := fs.String("env", "prod", "target environment: local|dev|stage|prod")
 	out := fs.String("out", "", "output file (default stdout)")
 	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+
+	// The rendered WOWAPI__ENVIRONMENT must be a value the config loader accepts
+	// (Env.Valid), or the deployed process fails at startup. Reject an invalid
+	// --env here rather than emitting a manifest that cannot boot.
+	if !config.Env(*env).Valid() {
+		fmt.Fprintf(stderr, "wowapi deploy render: invalid --env %q (want local|dev|stage|prod)\n", *env)
 		return 2
 	}
 
@@ -90,14 +101,16 @@ func runDeploy(args []string, stdout, stderr io.Writer) int {
 }
 
 const composeTemplate = `# Rendered by ` + "`wowapi deploy render`" + ` — deployment manifest for {{.Name}} ({{.Env}}).
-# Secrets are referenced from the environment ($VAR), never inlined.
+# The DB DSN is a secretref://env/… reference (config.DB.DSN is a Secret): the
+# real DSN lives in the WOWAPI_DB_DSN / WOWAPI_MIGRATE_DSN environment variable,
+# never inlined here. api/worker receive the runtime DSN; migrate the migrate DSN.
 services:
   {{.Name}}-api:
     image: {{.Image}}
     command: ["/app/api"]
     environment:
       WOWAPI__ENVIRONMENT: {{.Env}}
-      WOWAPI__DB__DSN: ${WOWAPI_DB_DSN}
+      WOWAPI__DB__DSN: secretref://env/WOWAPI_DB_DSN
     ports: ["8080:8080"]
     restart: unless-stopped
   {{.Name}}-worker:
@@ -105,19 +118,20 @@ services:
     command: ["/app/worker"]
     environment:
       WOWAPI__ENVIRONMENT: {{.Env}}
-      WOWAPI__DB__DSN: ${WOWAPI_DB_DSN}
+      WOWAPI__DB__DSN: secretref://env/WOWAPI_DB_DSN
     restart: unless-stopped
   {{.Name}}-migrate:
     image: {{.Image}}
     command: ["/app/migrate"]
     environment:
       WOWAPI__ENVIRONMENT: {{.Env}}
-      WOWAPI__DB__DSN: ${WOWAPI_DB_DSN}
+      WOWAPI__DB__MIGRATE_DSN: secretref://env/WOWAPI_MIGRATE_DSN
     restart: "no"
 `
 
 const envTemplate = `# Rendered by ` + "`wowapi deploy render`" + ` — {{.Name}} deployment env ({{.Env}}).
+# WOWAPI__DB__DSN is a secret REFERENCE; set WOWAPI_DB_DSN to the real DSN.
 WOWAPI__ENVIRONMENT={{.Env}}
-WOWAPI__DB__DSN=${WOWAPI_DB_DSN}
+WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN
 WOWAPI_IMAGE={{.Image}}
 `

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/pagination"
 	"github.com/qatoolist/wowapi/testkit"
 )
 
@@ -212,6 +213,65 @@ func TestIntegrationWorkflowOverride(t *testing.T) {
 	// Negative: overriding a no-longer-running instance is a state error.
 	if err := rt.Override(ctx, act, instID, "end_done", "again"); kerr.KindOf(err) != kerr.KindWorkflowState {
 		t.Fatalf("override on a non-running instance must be a workflow-state error, got %v", err)
+	}
+}
+
+// TestIntegrationWorkflowOpenTasksForNoSkip is the regression for the keyset
+// pagination bug: paging N assignee tasks in pages of `limit` must return EVERY
+// task exactly once — the old cursor (encoded from the dropped lookahead row)
+// skipped one task per page boundary.
+func TestIntegrationWorkflowOpenTasksForNoSkip(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
+
+	rt := buildRuntime(t, h, cap, linearDef)
+	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
+	testkit.CreateResourceType(t, h, "requests.request")
+
+	// Start 5 instances → 5 open manager_review tasks assigned to `cap`.
+	const total = 5
+	for i := 0; i < total; i++ {
+		res := testkit.CreateResource(t, h, tn.ID, "requests.request", nil)
+		testkit.NewWorkflowSim(t, h, rt).Start("requests.approval", res, nil)
+	}
+
+	// Page through with a small limit; collect every returned task id.
+	act := actor(tn.ID, userID, cap)
+	def := pagination.Defaults{PerPage: 2, MaxPerPage: 100}
+	seen := map[uuid.UUID]int{}
+	cursor := ""
+	pages := 0
+	for {
+		req, err := pagination.Parse("2", cursor, def)
+		if err != nil {
+			t.Fatalf("pagination.Parse: %v", err)
+		}
+		pg, err := rt.OpenTasksFor(testkit.TenantCtx(tn.ID), act, req)
+		if err != nil {
+			t.Fatalf("OpenTasksFor: %v", err)
+		}
+		for _, task := range pg.Items {
+			seen[task.ID]++
+		}
+		pages++
+		if !pg.HasMore {
+			break
+		}
+		cursor = pg.NextCursor
+		if pages > total+2 {
+			t.Fatal("pagination did not terminate")
+		}
+	}
+
+	if len(seen) != total {
+		t.Fatalf("paged tasks = %d, want %d (a task was skipped or duplicated across pages)", len(seen), total)
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("task %s returned %d times across pages, want exactly 1", id, n)
+		}
 	}
 }
 

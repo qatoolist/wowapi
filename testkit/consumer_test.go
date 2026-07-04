@@ -21,6 +21,9 @@ func TestIntegrationScratchConsumer(t *testing.T) {
 		dsn = os.Getenv("DATABASE_URL")
 	}
 	if dsn == "" {
+		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+			t.Fatal("WOWAPI_REQUIRE_DB is set but no database DSN — the scratch-consumer proof must run in this gate")
+		}
 		t.Skip("scratch-consumer test needs a database DSN (run `make up` and export DATABASE_URL)")
 	}
 	if _, err := exec.LookPath("go"); err != nil {

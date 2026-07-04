@@ -1,0 +1,50 @@
+// Command configcheck validates and inspects {{.Name}}'s COMPOSED configuration
+// (internal/appcfg.Config), which the prebuilt `wowapi` CLI cannot link directly
+// (D-0003). The CLI shells out to `go run ./tools/configcheck <mode>` so
+// `wowapi config validate|print` operate on the product's config, not just
+// config.Framework.
+//
+// Modes:
+//
+//	validate  load + validate; exit 0 if OK, 1 if invalid (CI gate)
+//	print     emit the effective config as JSON (Secret fields are redacted)
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"{{.Module}}/internal/appcfg"
+)
+
+func main() {
+	mode := "validate"
+	if len(os.Args) > 1 {
+		mode = os.Args[1]
+	}
+
+	cfg, fp, err := appcfg.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configcheck: %v\n", err)
+		os.Exit(1)
+	}
+
+	switch mode {
+	case "validate":
+		fmt.Printf("OK: configuration valid (fingerprint %s)\n", fp.Short())
+	case "print":
+		// config.Secret fields marshal as their redaction marker, so this is safe
+		// to emit (structural redaction, verified by the framework's secret tests).
+		b, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "configcheck: encode: %v\n", err)
+			os.Exit(1)
+		}
+		os.Stdout.Write(b)
+		fmt.Println()
+	default:
+		fmt.Fprintf(os.Stderr, "configcheck: unknown mode %q (want validate|print)\n", mode)
+		os.Exit(2)
+	}
+}

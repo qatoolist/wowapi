@@ -10,15 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/logging"
 	"github.com/qatoolist/wowapi/kernel/observability"
 
+	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
 )
 
@@ -32,9 +31,9 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	cfg, fp, err := loadConfig()
+	cfg, fp, err := appcfg.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("config: %w", err)
 	}
 
 	log, err := logging.New(os.Stderr, cfg.Log)
@@ -67,24 +66,28 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
-	k, err := kernel.New(cfg, log, kernel.Deps{Pool: pool, Tx: txm})
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
 
 	a := app.New()
 	a.Register(wire.Modules()...)
-	booted, err := a.Boot(ctx, k, nil)
+	// Modules receive only their own modules.<name>.* namespace.
+	booted, err := a.Boot(ctx, k, cfg.Modules)
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}
 
-	// Build the application mux: module routes from the booted router plus
-	// framework health endpoints. Go 1.22+ ServeMux accepts "METHOD /path".
-	mux := http.NewServeMux()
-	for _, r := range booted.Router.Routes() {
-		mux.HandleFunc(r.Method+" "+r.Pattern, r.Handler)
-	}
+	// Build the application mux with the RouteMeta permission gate ENFORCED on
+	// every non-Public route (deny-by-default: AuthN -> bind tenant/actor ->
+	// AuthZ(permission)). DenyAllAuthenticator is the SECURE DEFAULT — business
+	// routes return 401 until you wire a real Authenticator here (verify the
+	// bearer token via kernel/auth, resolve the tenant, return an authz.Actor).
+	// TODO: replace httpx.DenyAllAuthenticator{} with your OIDC/tenant Authenticator.
+	mux := booted.Router.SecureHandler(httpx.DenyAllAuthenticator{}, booted.Kernel.Authz, booted.Kernel.Tx)
+
+	// Health endpoints are Public infrastructure, mounted directly.
 	health := app.Readiness(booted, fp, map[string]httpx.HealthCheck{
 		"db": func(ctx context.Context) error { return pool.Ping(ctx) },
 	})
@@ -119,28 +122,4 @@ func run(ctx context.Context) error {
 			Stop: func(ctx context.Context) error { return srv.Shutdown(ctx) },
 		},
 	)
-}
-
-// loadConfig loads the framework configuration. Layers applied in order:
-//  1. configs/base.yaml (if the file exists)
-//  2. configs/<APP_ENV>.yaml (if APP_ENV env var is set)
-//  3. WOWAPI__ environment variable prefix (e.g. WOWAPI__ENVIRONMENT=local)
-//
-// Secret references (secretref://env/DATABASE_URL) are resolved via envprovider.
-func loadConfig() (config.Framework, config.Fingerprint, error) {
-	opts := config.Options{
-		EnvPrefix: "WOWAPI__",
-		Secrets:   envprovider.New(),
-	}
-	if _, err := os.Stat("configs/base.yaml"); err == nil {
-		opts.BaseFile = "configs/base.yaml"
-	}
-	if env := os.Getenv("APP_ENV"); env != "" {
-		opts.EnvFile = "configs/" + env + ".yaml"
-	}
-	cfg, fp, err := config.Load[config.Framework](opts)
-	if err != nil {
-		return config.Framework{}, config.Fingerprint{}, fmt.Errorf("config: %w", err)
-	}
-	return cfg, fp, nil
 }

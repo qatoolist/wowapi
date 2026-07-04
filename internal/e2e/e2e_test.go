@@ -98,9 +98,14 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		t.Fatalf("e2e: go vet ./...: %v", err)
 	}
 
-	// DB smoke path: guarded by DATABASE_URL so it skips cleanly in offline CI.
+	// DB smoke path: guarded by DATABASE_URL so it skips cleanly in offline CI —
+	// but a CI/release gate sets WOWAPI_REQUIRE_DB=1 so the runtime proof (migrate
+	// + api /healthz) is not silently skipped.
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
+		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+			t.Fatal("WOWAPI_REQUIRE_DB is set but DATABASE_URL is empty — the E2E runtime smoke (migrate + /healthz) must run in this gate")
+		}
 		t.Log("e2e: skipping DB smoke — DATABASE_URL not set; build+vet passed (criterion #19 ✓)")
 		return
 	}

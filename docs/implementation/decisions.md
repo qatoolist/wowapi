@@ -293,6 +293,35 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0060 — Review-findings pass: runtime authz gate, deploy/config-scaffold fixes, CI DB gate
+- **Context:** an external review reproduced six findings against the Goal-2 framework; five were real
+  (one a false-premise-free but expected deferral). Fixed each with existing conventions + regression tests.
+- **Decisions:**
+  - **Runtime authz enforcement (High).** The RouteMeta permission gate was boot-validated but NEVER
+    enforced per request — a deployed API served every route unauthenticated/unauthorized. Added
+    `httpx.SecureHandler`/`gateRoute`: for each non-Public route, AuthN (via a pluggable `Authenticator`
+    port — the product supplies OIDC/tenant strategy) → bind tenant+actor → AuthZ(permission) at tenant
+    scope → serve; deny-by-default. The generated api wires it with `DenyAllAuthenticator` (fail-closed:
+    business routes 401 until a real Authenticator is set). Fine-grained resource checks stay per-handler.
+  - **Workflow pagination off-by-one (Medium).** `OpenTasksFor` encoded the cursor from the dropped
+    lookahead row, skipping one task per page boundary; now encodes the last RETURNED item. Regression
+    test proven by revert (skips 1 → paged 4/5).
+  - **deploy render (High).** Defaulted `--env production` (invalid; valid is `prod`) and rendered
+    `${WOWAPI_DB_DSN}` (config.DB.DSN is a Secret needing `secretref://`). Now defaults `prod`, validates
+    `--env` via `config.Env.Valid()`, and renders `secretref://env/WOWAPI_DB_DSN` (+ MIGRATE_DSN).
+  - **Product config scaffolding (Medium).** `wowapi init` now scaffolds `internal/appcfg` (product
+    Config embedding config.Framework + Modules namespaces, D-0002) and `tools/configcheck` (D-0003); the
+    generated api/worker load via `appcfg.Load` and pass `cfg.Modules` to `Boot` (was `nil`).
+  - **CI DB-skip hygiene (Medium).** DB-backed tests SKIP without a DSN, so host `make ci` could be
+    green-but-hollow. Added `testkit.RequireDB()` (WOWAPI_REQUIRE_DB=1) → FAIL not skip; `make ci-container`
+    and `make test-integration` set it, so the authoritative gate cannot silently skip DB/E2E proofs.
+  - **Deferrals (Lower) — no change.** Workflow vote/min_approvals>1/self_approval are fail-closed
+    (D-0054), audit_logs is the logging sink, gen-crud emits honest TODO handlers — all already
+    accurately documented as deferrals; verified no doc overclaims them complete.
+- **Affected:** kernel/httpx/{authz_gate,router}.go, kernel/workflow/runtime.go, internal/cli/{deploy_cmd,
+  init_cmd}.go + templates, testkit/db.go + consumer_test, internal/e2e, internal/testmodules/requests,
+  Makefile; evidence/phase-12 acceptance-map (#18 now runtime-enforced).
+
 ## D-0059 — Phase 12: `wowapi init` produces a framework-wired product repo; E2E acceptance
 - **Context:** Phase 12 (capstone) must prove a blank repo builds a WORKING API binary (AC #19) and runs
   kernel + module migrations from cmd/migrate (AC #22). The Phase-10 init mains were framework-import-free
