@@ -1,5 +1,13 @@
 # Hardening Implementation Plan
 
+> **STATUS (complete):** every verified real gap below is implemented, tested, and shipped behind the
+> `make ci` + `make ci-container` gate — H1, H2, H3, H4, H5, and the P1 items S2/S3/R1/R5/O1. Decisions
+> D-0061…D-0076; evidence under `evidence/hardening-{H1,H2,H3,H4,H5,P1}/`; migrations at v21. The
+> roadmap's inaccurate "current state" claims (S4, O3, R2, R8, R5-core) were verified as NON-gaps and
+> recorded so they don't reopen. Documented follow-ups (not gaps): OTel SDK adapter binding, cross-process
+> trace propagation, per-record-class disposition registry wiring, `module.Context` accessors for the new
+> primitives, and a `wowapi apikey` CLI.
+
 Companion to [ROADMAP-wowapi.md](../../ROADMAP-wowapi.md). Derived from a three-track code audit
 (security S1–S8, reliability R1–R8, operational O1–O5, evidence E1–E6) run 2026-07-04 against the
 v0.1.0 tree. Each roadmap "current state" claim was verified against the actual code; the table below
