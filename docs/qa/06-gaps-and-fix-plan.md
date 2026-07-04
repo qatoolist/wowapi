@@ -13,6 +13,17 @@
 | G7 | `kernel.New` wiring untested directly | LOW | **ACCEPTED** — exercised indirectly by app boot tests; a nil field fails those. Direct test = low marginal value |
 | G8 | benchbudget CI-gate parser untested | LOW (tooling) | **CLOSED** — `main_test.go` |
 
+### Second-pass gaps (mid-coverage packages)
+
+A follow-up scan of the 60–79% packages for *meaningful* (not %-chasing) untested behavior:
+
+| ID | Gap | Severity | Disposition |
+|---|---|---|---|
+| G9 | `httpx.ParsePagination/ParseFilters/ParseSort` (HTTP list-query parsing) untested | LOW | **ACCEPTED** — thin adapters over `pagination.Parse`/`filtering` (both 85–92% covered incl. invalid inputs). Testing the adapters adds little confidence; noted, not added |
+| G10 | Document `OnFileUpload`/`OnDocumentAccess` hook FIRING untested (every test wired nil hooks) | MED (security extension point) | **CLOSED** — `hooks_fire_test.go` (upload hook aborts confirm → no version row; access hook denies download) |
+| G11 | `seeds.Sync` (authz-catalog write + stale-grant prune) | — | **NOT A GAP** — exercised by `testkit/contract.go` (RunModuleContract calls Sync twice → idempotency). Not duplicated |
+| G12 | `jobs.EnqueueGlobal` (tenant-less job path) untested | MED (data path) | **CLOSED** — `enqueue_global_test.go` (NULL-tenant row + nil/empty-kind rejection) |
+
 ## B. Design finding
 
 ### D1 — `relationship.Relate` is an exported, caller-less, previously-untested platform-only write
@@ -42,6 +53,9 @@ documented contract.
    harness beyond `openapi merge` — carried from Goal 2, not a regression gap.
 3. **Durable audit_logs assertions** — audit currently flows through the logging sink; when the durable
    `audit_logs` writer lands, add data-integrity tests for the partitioned append-only table.
+5. **Global-job RUN semantics** — `EnqueueGlobal` (enqueue path) is now tested; the worker's handling of
+   a NULL-tenant job at claim/run time (tenant binding for a global job) is a distinct behavior worth a
+   dedicated test when the SLA/sweeper global-job consumers are exercised end-to-end.
 4. **Per-package coverage attribution** — `database`'s pool/tx plumbing is exercised by integration
    tests in *other* packages; if a per-package floor is ever enforced, measure with
    `go test -coverpkg=./...` to attribute cross-package coverage correctly.

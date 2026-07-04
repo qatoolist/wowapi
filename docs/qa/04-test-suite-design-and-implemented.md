@@ -17,7 +17,7 @@
 5. **Negative + security first.** Each new area includes the failure/deny paths (superuser rejected,
    app_rt denied, non-task step refused, empty-reason override, malformed durations, bad budget files).
 
-## Implemented tests (6 files, 21 test functions)
+## Implemented tests (8 files, 25 test functions)
 
 | File | Pkg | Tests | What it pins |
 |---|---|---|---|
@@ -27,6 +27,8 @@
 | `kernel/relationship/relationship_relate_test.go` | relationship_test | `TestIntegrationRelateAsPlatformThenHas`, `…RelateAsAppRtDenied`, `…RelateTenantIsolation` | The ReBAC edge write path: correct platform-role write visible to Has; app_rt denied (SEC-24); tenant isolation. **Data integrity + security.** |
 | `kernel/resource/registry_test.go` | resource_test | `TestRegistryAcceptsWellFormedType`, `…RejectsMalformedKey`, `…RejectsForeignModulePrefix`, `…RejectsDuplicate`, `…AccumulatesAllErrors`, `TestValidTypeKeyAndRefIsZero` | The resource-type registration contract (key shape, module-prefix ownership, duplicates, error accumulation) + `ValidTypeKey`/`Ref.IsZero`. **Framework contract.** |
 | `internal/tools/benchbudget/main_test.go` | main | `TestBaseNameStripsGomaxprocsSuffix`, `TestLoadBudgetsValid`, `TestLoadBudgetsRejectsMalformed`, `TestParseBenchOutput` | The CI perf-gate's parsing/thresholding (suffix strip, budget file valid/malformed, bench-output parse + worst-of-duplicates). **Tooling reliability.** |
+| `kernel/document/hooks_fire_test.go` | document_test | `TestIntegrationUploadHookAbortsConfirm`, `TestIntegrationAccessHookDeniesDownload` | The document extension points fire: an OnFileUpload hook aborts the confirm (no version row committed); an OnDocumentAccess hook denies the download. **Security extension point.** |
+| `kernel/jobs/enqueue_global_test.go` | jobs_test | `TestIntegrationEnqueueGlobalInsertsTenantlessJob`, `TestEnqueueGlobalRejectsInvalidJob` | The tenant-less (global) job enqueue path: a NULL-tenant row is written; nil/empty-kind jobs are rejected. **Data path.** |
 
 ## Traceability
 

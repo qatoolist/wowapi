@@ -22,6 +22,10 @@ Grounded in the actual suite (measured coverage in 01 §3).
 | Jobs / worker | jobs, app.StartWorker | ✓✓ enqueue-atomic/retry-DLQ/reclaim/isolation | — | ✓✓ | ✓✓ | ✓✓ | ✓ | HIGH | Well covered |
 | Idempotency (DB + http) | database.IdemStore, httpx | ✓✓ store/in-flight/concurrent + WithIdempotency | — | ✓✓ | ✓✓ | ✓✓ | — | HIGH | **Covered — not duplicated (G6 dropped)** |
 | Documents / storage | document, storage | ✓✓ upload/scan/retention/grants/RLS | — | ✓✓ | ✓✓ | ✓✓ | — | HIGH | Well covered |
+| **Document hooks** | document OnFileUpload/OnDocumentAccess | ✗ (nil hooks in every test) | **✓✓ hooks_fire_test** (upload hook aborts confirm; access hook denies download) | ✓ | ✓✓ | ✓✓ | — | MED | **Gap closed (G10)** |
+| **Global (tenant-less) jobs** | jobs.EnqueueGlobal | ✗ | **✓✓ enqueue_global_test** (NULL-tenant row; nil/empty-kind rejected) | ✓ | ✓✓ | ✓✓ | — | MED | **Gap closed (G12)**; global RUN semantics noted |
+| Seed catalog sync | seeds.Sync | ✓✓ via RunModuleContract (called 2× → idempotent) | — | ✓✓ | ✓ | ✓✓ | — | HIGH | **Covered — not duplicated (G11)** |
+| HTTP list-query parse | httpx ParsePagination/Filters/Sort | ✓ via pagination/filtering primitives | — (thin adapters; accepted G9) | ✓ | ✓ | ✓ | — | LOW | Adapters over tested primitives |
 | Comments / attachments | comment, attachment | ✓✓ CAS/author-guard/isolation | — | ✓✓ | ✓✓ | ✓✓ | — | MED | Well covered |
 | Notify / webhook / integ | notify, webhook, integration | ✓✓ send-tx/backoff; verify/replay/breaker; provider | — | ✓✓ | ✓✓ | ✓✓ | — | HIGH | Well covered |
 | Config / secrets | config, secrets, logging | ✓✓ layered/redaction/fingerprint/drift/unsafe-matrix | — | ✓✓ | ✓✓ | ✓ | — | HIGH | Well covered |

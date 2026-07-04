@@ -11,10 +11,11 @@ plan → fix → re-test → regression.
 contract/E2E/security/perf layers. The effort was therefore scoped, per `goal-test.md`, to
 **non-duplicative gap closure and reliability hardening**, not bulk test generation.
 
-- **8 candidate gaps** identified by function-level coverage analysis cross-checked against existing
-  tests. **6 closed** with new tests; **1 dropped** as already-covered (idempotency store — G6); **1
-  accepted** as adequately covered indirectly (kernel.New — G7).
-- **21 new test functions** in **6 files**, each grounded in real code, reusing existing fixtures and
+- **12 candidate gaps** (G1–G12) identified by function-level coverage analysis cross-checked against
+  existing tests. **8 closed** with new tests (G1–G5, G8, G10, G12); **2 dropped** as already-covered
+  (idempotency store G6, seeds.Sync G11); **2 accepted** as adequately covered indirectly (kernel.New G7,
+  the thin httpx list-query adapters G9).
+- **25 new test functions** in **8 files**, each grounded in real code, reusing existing fixtures and
   terminology, and covering the failure/security paths — no brittle, dead, or placeholder tests.
 - **1 design finding (D1)** surfaced and turned into a documented, regression-protected contract
   (`relationship.Relate` is platform-only; app_rt is denied) with no production code change.
@@ -39,20 +40,20 @@ Coverage of the touched packages rose measurably (resource 23→97%, relationshi
 
 - `make ci` (host: vet, boundary lint, unit, **race**, **bench-budget**, build) → **exit 0**.
 - `make ci-container` (parallel, in-container) → **exit 0**, zero failures, zero flakes.
-- All 21 new tests pass; no existing test regressed.
+- All 25 new tests pass; no existing test regressed.
 
 ## 4. Artifacts (proof of work / traceability) — `docs/qa/`
 
 1. `01-discovery-report.md` — architecture, inventory, measured coverage, confirmed gaps.
 2. `02-existing-test-review.md` — strong-coverage baseline + reuse map (non-duplication).
 3. `03-coverage-matrix.md` — module/flow × components × existing/new × happy/neg/integ/E2E × priority.
-4. `04-test-suite-design-and-implemented.md` — design principles + the 6 files / 21 tests.
+4. `04-test-suite-design-and-implemented.md` — design principles + the 8 files / 25 tests.
 5. `05-execution-report-and-regression-guide.md` — results + actual project commands.
 6. `06-gaps-and-fix-plan.md` — gap disposition, finding D1, recommendations, fix plan.
 7. `07-closure-report.md` — this document.
 
 Plus the implemented test files under `kernel/database`, `kernel/workflow`, `kernel/relationship`,
-`kernel/resource`, `internal/tools/benchbudget` (each header-tagged with its QA gap ID).
+`kernel/resource`, `kernel/document`, `kernel/jobs`, `internal/tools/benchbudget` (each header-tagged with its QA gap ID).
 
 ## 5. Quality bar (met)
 

@@ -6,7 +6,7 @@ Date: 2026-07-04. Environment: darwin/arm64, Go 1.26, Postgres via
 `DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`, and the
 container toolbox (`make ci-container`).
 
-### New tests — all PASS (21/21)
+### New tests — all PASS (25/25)
 
 | Suite | Result |
 |---|---|
@@ -16,8 +16,10 @@ container toolbox (`make ci-container`).
 | `kernel/relationship` Relate (3) | PASS |
 | `kernel/resource` registry (6) | PASS |
 | `internal/tools/benchbudget` parser (4) | PASS |
+| `kernel/document` hook firing (2) | PASS |
+| `kernel/jobs` EnqueueGlobal (2) | PASS |
 
-Passed: 21. Failed: 0. Skipped: 0 (the RLS-guard reject test is env-conditional but ran — the test
+Passed: 25. Failed: 0. Skipped: 0 (the RLS-guard reject test is env-conditional but ran — the test
 cluster's login role is superuser/BYPASSRLS, so the reject path executed). Flaky: 0. Blocked: 0.
 
 ### Full regression — all PASS, no regressions
