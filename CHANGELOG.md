@@ -10,7 +10,8 @@ may still make breaking changes between minor versions.
 
 ## [Unreleased]
 
-Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-plan.md`). Phase H1:
+Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-plan.md`) — phases H1, H2,
+and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` + `make ci-container` gate.
 
 ### Added
 - `kernel/httpx` edge middleware — `SecureHeaders`, `CORS`, `BodyLimit`, `Timeout` — completing the
@@ -28,7 +29,6 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   kernel admin functions behind it (`jobs.{ListDead,ReplayDead,DiscardDead}`,
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
-
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
 - Gap-free per-tenant sequence allocator (`kernel/sequence`, migration 00015): transactional
