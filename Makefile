@@ -182,6 +182,14 @@ bench-budget: ## Enforce performance budgets (fails if any benchmark exceeds ben
 coverage: ## Unit coverage report
 	$(GO) test -coverprofile=coverage.out $(PKGS) && $(GO) tool cover -func=coverage.out | tail -1
 
+COVERAGE_FLOOR ?= 35.0
+.PHONY: coverage-check
+coverage-check: coverage ## Enforce the coverage floor (raise COVERAGE_FLOOR as coverage grows)
+	@$(GO) tool cover -html=coverage.out -o coverage.html
+	@pct=$$($(GO) tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
+	echo "total coverage: $$pct% (floor $(COVERAGE_FLOOR)%)"; \
+	awk -v p="$$pct" -v f="$(COVERAGE_FLOOR)" 'BEGIN{ if (p+0 < f+0) { printf "coverage %.1f%% below floor %.1f%%\n", p, f; exit 1 } }'
+
 ##@ Generators & CLI (delivered in Phase 10)
 
 .PHONY: gen new-module gen-crud openapi config-validate config-doctor
@@ -227,3 +235,25 @@ ci: ## Full local CI: vet+lint, boundaries, unit, race, perf budgets, build
 .PHONY: ci-container
 ci-container: ## Run `make ci` inside the toolbox container (authoritative gate: DB tests MUST run)
 	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 tools make ci
+
+##@ Security & Release (CI-enforced)
+
+.PHONY: actionlint
+actionlint: ## Lint GitHub Actions workflows (installs actionlint on demand)
+	@command -v actionlint >/dev/null 2>&1 || $(GO) install github.com/rhysd/actionlint/cmd/actionlint@latest
+	actionlint -color
+
+.PHONY: govulncheck
+govulncheck: ## Scan for known Go vulnerabilities reachable by our code
+	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
+
+.PHONY: goreleaser-check
+goreleaser-check: ## Validate the GoReleaser release config
+	@command -v goreleaser >/dev/null 2>&1 || $(GO) install github.com/goreleaser/goreleaser/v2@latest
+	goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot: ## Dry-run the full release build locally (no publish)
+	@command -v goreleaser >/dev/null 2>&1 || $(GO) install github.com/goreleaser/goreleaser/v2@latest
+	goreleaser release --snapshot --clean --skip=sign,sbom

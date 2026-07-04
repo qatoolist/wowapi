@@ -1,0 +1,33 @@
+name: govulncheck
+
+# Go vulnerability scanning (call-graph aware — only reports vulns your code
+# actually reaches). Runs on changes and daily to catch newly disclosed CVEs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "13 6 * * *" # daily 06:13 UTC
+
+concurrency:
+  group: vuln-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: run govulncheck
+        run: govulncheck ./...

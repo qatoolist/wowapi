@@ -1,0 +1,104 @@
+# GoReleaser config for the wowapi CLI. Validate with `make goreleaser-check`;
+# dry-run the whole build with `goreleaser release --snapshot --clean`.
+version: 2
+
+project_name: wowapi
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wowapi
+    main: ./cmd/wowapi
+    binary: wowapi
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/qatoolist/wowapi/internal/buildinfo.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # No 32-bit / niche targets — the CLI targets developer + CI machines.
+
+archives:
+  - id: wowapi
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Software Bill of Materials per archive (syft). The syft binary is provided by
+# the release workflow (anchore/sbom-action/download-syft).
+sboms:
+  - id: archive
+    artifacts: archive
+
+# Keyless signing (Sigstore/cosign): signs the checksums file. Consumers verify
+# against the workflow identity + GitHub OIDC issuer — no long-lived keys.
+signs:
+  - id: cosign
+    cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+    artifacts: checksum
+    output: true
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - "merge conflict"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: qatoolist
+    name: wowapi
+  draft: false
+  prerelease: auto # v*-rc.* / v0.x pre-releases flagged automatically
+  mode: replace
+  footer: |
+    ---
+    **Supply chain:** binaries are cosign-signed (keyless), ship an SBOM, and carry SLSA build provenance.
+    See [SECURITY.md](https://github.com/qatoolist/wowapi/blob/main/SECURITY.md) for verification commands.

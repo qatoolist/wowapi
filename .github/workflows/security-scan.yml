@@ -1,0 +1,90 @@
+name: security-scan
+
+# Secret scanning (gitleaks), filesystem/config vulnerability + misconfig scan
+# (Trivy), and PR dependency review.
+#
+# gitleaks and Trivy work on a private repo (they gate via job status / logs).
+# dependency-review needs the dependency-graph API, which requires a PUBLIC repo
+# or GitHub Advanced Security — so the `guard` job skips it until the repo is
+# public or GHAS is enabled.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 5 * * 1" # Mondays 05:41 UTC
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: visibility guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      public: ${{ steps.check.outputs.public }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          vis=$(gh api "repos/$REPO" --jq '.visibility')
+          echo "repo visibility: $vis"
+          if [ "$vis" = "public" ]; then echo "public=true" >> "$GITHUB_OUTPUT"; else echo "public=false" >> "$GITHUB_OUTPUT"; fi
+
+  gitleaks:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # full history so the scheduled run scans all commits
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  trivy:
+    name: filesystem scan (trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: trivy filesystem + config scan
+        # Table output to the job log (no SARIF upload, which would need GHAS on a
+        # private repo). Informational: exit-code 0 so it never blocks; Go vulns
+        # are gated by govulncheck and secrets by gitleaks. Flip exit-code to 1
+        # (and/or switch to SARIF upload) once the repo is public.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+  dependency-review:
+    name: dependency review (PR)
+    needs: guard
+    if: github.event_name == 'pull_request' && needs.guard.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # post the summary comment
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: dependency review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          license-check: true

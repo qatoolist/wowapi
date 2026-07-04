@@ -1,20 +1,18 @@
 name: ci
 
-# Hosted CI gate (roadmap CA-6). Enforces the same checks as `make ci-container`
-# on every push and pull request, so the gate is no longer only developer-invoked.
-#
-# Two jobs:
-#   unit  — fast, NO database. Proves the pure unit tests actually pass on their
-#           own (un-gating the DB-skip path: a package must not report `ok` only
-#           because every test skipped for lack of a DSN).
-#   gate  — authoritative. Runs `make ci` inside the toolbox container against the
-#           real compose Postgres with WOWAPI_REQUIRE_DB=1, so DB-backed tests
-#           MUST run (never silently skip), plus the fuzz seed corpus.
+# Authoritative correctness gate. Four jobs:
+#   workflow-lint — actionlint over every workflow (dogfood the CI config itself).
+#   unit          — fast, NO database. Proves the pure unit tests pass standalone
+#                   (un-gating the DB-skip path: a package must not report `ok`
+#                   only because every test skipped for lack of a DSN).
+#   gate          — authoritative. Runs `make ci` inside the toolbox container
+#                   against the real compose Postgres with WOWAPI_REQUIRE_DB=1, so
+#                   DB-backed tests MUST run, plus the fuzz seed corpus.
+#   coverage      — publishes a coverage profile artifact and enforces a floor.
 #
 # NOTE: the reference-stack (nginx) header smoke in deployments/reference/smoke.sh
 # requires a running product API (generated from templates, not built in this
 # repo); the in-process header posture is unit-tested in kernel/httpx/edge_test.go.
-# Standing up a scaffolded product in CI is tracked as the CA-6 residual.
 
 on:
   push:
@@ -26,17 +24,40 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: read-only by default; jobs widen only what they need.
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+
 jobs:
+  workflow-lint:
+    name: workflow lint (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@latest
+      - name: actionlint
+        run: actionlint -color
+
   unit:
     name: unit (no DB)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0 # full history so `lint-new` can compute the merge-base
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.26'
+          go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
@@ -58,8 +79,9 @@ jobs:
   gate:
     name: authoritative gate (ci-container + DB + fuzz seeds)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
       - name: authoritative gate (make ci inside toolbox, WOWAPI_REQUIRE_DB=1)
@@ -70,6 +92,33 @@ jobs:
         run: |
           docker compose -f deployments/compose.yaml run --rm -T tools \
             go test ./kernel/filtering/ ./kernel/pagination/ -run '^Fuzz' -count=1
+      - name: tear down
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v
+
+  coverage:
+    name: coverage (profile + floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: start compose services (postgres, minio, mailpit)
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
+      - name: coverage + floor (real DB, inside toolbox)
+        # Runs the whole check inside the toolbox (which has Go), so the runner
+        # needs no Go toolchain. `make coverage-check` writes coverage.out +
+        # coverage.html and fails if total coverage drops below COVERAGE_FLOOR.
+        run: |
+          docker compose -f deployments/compose.yaml run --rm -T \
+            -e WOWAPI_REQUIRE_DB=1 tools make coverage-check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: coverage
+          path: |
+            coverage.out
+            coverage.html
+          if-no-files-found: ignore
       - name: tear down
         if: always()
         run: docker compose -f deployments/compose.yaml down -v

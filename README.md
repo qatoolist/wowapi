@@ -1,5 +1,15 @@
 # wowapi
 
+[![CI](https://github.com/qatoolist/wowapi/actions/workflows/ci.yml/badge.svg)](https://github.com/qatoolist/wowapi/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+<!-- These badges render once the repo is public (CodeQL/Scorecard need code
+     scanning; pkg.go.dev needs a public module). Uncomment when going public:
+[![CodeQL](https://github.com/qatoolist/wowapi/actions/workflows/codeql.yml/badge.svg)](https://github.com/qatoolist/wowapi/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/qatoolist/wowapi/badge)](https://securityscorecards.dev/viewer/?uri=github.com/qatoolist/wowapi)
+[![Go Reference](https://pkg.go.dev/badge/github.com/qatoolist/wowapi.svg)](https://pkg.go.dev/github.com/qatoolist/wowapi)
+-->
+
+
 **A domain-neutral, reusable enterprise backend framework ("platform kernel") in Go.**
 
 `wowapi` is a modular-monolith framework you consume as a versioned Go dependency
@@ -337,7 +347,6 @@ A green host suite can be hollow if DB tests silently skip — always trust `mak
 
 Documented honestly rather than hidden:
 
-- **No `LICENSE` file yet.** Clarify licensing before external distribution (see [License](#license)).
 - **Published version tags** — `go install …@vX.Y.Z` assumes the version is tagged/published on the
   module proxy; if not, build the CLI from a clone (Quick start A, step 1).
 - **One PostgreSQL database per product**, modular monolith — not a microservice mesh.
@@ -384,6 +393,6 @@ More: [Troubleshooting & FAQ](docs/user-guide/troubleshooting-faq.md).
 
 ## License
 
-**No `LICENSE` file is currently present in this repository.** Until one is added, treat the code as
-"all rights reserved" by the authors and clarify usage terms before relying on or redistributing it.
-Adding a license is a recommended next step for adoption.
+Licensed under the **Apache License 2.0** — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Apache-2.0 is a
+permissive license with an explicit patent grant, suitable for adopting wowapi as a dependency in commercial
+and open-source products alike.

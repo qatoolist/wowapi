@@ -1,0 +1,17 @@
+# Code owners — auto-requested as reviewers on matching PRs.
+# See https://docs.github.com/en/repositories/managing-your-repositories-permissions-and-collaborations/managing-repository-settings/about-code-owners
+
+# Default owner for everything in the repo.
+*                       @qatoolist
+
+# Security- and supply-chain-sensitive areas get explicit ownership so changes
+# to the trust boundary always route through the maintainer.
+/.github/                @qatoolist
+/.goreleaser.yaml        @qatoolist
+/Dockerfile              @qatoolist
+/kernel/authz/           @qatoolist
+/kernel/auth/            @qatoolist
+/kernel/secrets/         @qatoolist
+/kernel/apikey/          @qatoolist
+/kernel/audit/           @qatoolist
+/migrations/             @qatoolist

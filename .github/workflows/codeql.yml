@@ -1,0 +1,66 @@
+name: codeql
+
+# CodeQL static analysis (SAST) for Go. Results appear in the Security tab.
+#
+# Code scanning requires a PUBLIC repo or GitHub Advanced Security. This repo is
+# currently private without GHAS, so the `guard` job detects visibility at
+# runtime and the analysis is SKIPPED (not failed) until the repo is public or
+# GHAS is enabled — at which point it activates automatically.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "27 3 * * 1" # Mondays 03:27 UTC
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: visibility guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      public: ${{ steps.check.outputs.public }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          vis=$(gh api "repos/$REPO" --jq '.visibility')
+          echo "repo visibility: $vis"
+          if [ "$vis" = "public" ]; then echo "public=true" >> "$GITHUB_OUTPUT"; else echo "public=false" >> "$GITHUB_OUTPUT"; fi
+
+  analyze:
+    name: analyze (go)
+    needs: guard
+    if: needs.guard.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # upload SARIF results
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: initialize CodeQL
+        uses: github/codeql-action/init@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
+        with:
+          languages: go
+          build-mode: autobuild
+          queries: security-extended
+      - name: analyze
+        uses: github/codeql-action/analyze@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
+        with:
+          category: "/language:go"

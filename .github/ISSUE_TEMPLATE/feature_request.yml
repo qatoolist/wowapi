@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a capability or change to the framework.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        wowapi is a **domain-neutral** platform kernel. Requests that add product/domain-specific
+        concepts to the kernel are out of scope by design — those belong in consuming modules.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and why is it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like wowapi to provide? Sketch the API/CLI if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: neutrality
+    attributes:
+      label: Domain-neutrality
+      options:
+        - label: This proposal is domain-neutral (no product/society/school/etc. concepts in the kernel).
+          required: true

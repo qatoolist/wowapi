@@ -1,0 +1,40 @@
+# Path-based PR labels (actions/labeler v5 schema).
+kernel:
+  - changed-files:
+      - any-glob-to-any-file: "kernel/**"
+
+module-sdk:
+  - changed-files:
+      - any-glob-to-any-file: ["module/**", "app/**"]
+
+cli:
+  - changed-files:
+      - any-glob-to-any-file: ["cmd/**", "internal/cli/**"]
+
+adapters:
+  - changed-files:
+      - any-glob-to-any-file: "adapters/**"
+
+migrations:
+  - changed-files:
+      - any-glob-to-any-file: "migrations/**"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "**/*.md"]
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", ".goreleaser.yaml", "Makefile"]
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ["go.mod", "go.sum"]
+
+testing:
+  - changed-files:
+      - any-glob-to-any-file: ["**/*_test.go", "testkit/**"]
+
+deployment:
+  - changed-files:
+      - any-glob-to-any-file: ["deployments/**", "Dockerfile"]

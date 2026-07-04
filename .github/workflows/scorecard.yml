@@ -1,0 +1,59 @@
+name: scorecard
+
+# OpenSSF Scorecard — supply-chain security posture score.
+#
+# Scorecard's value (SARIF in the Security tab + the public results API that
+# backs the README badge) requires a PUBLIC repo or GitHub Advanced Security.
+# The `guard` job skips the analysis until the repo is public/GHAS, so it does
+# not fail on the current private repo; it activates automatically when public.
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "22 4 * * 1" # Mondays 04:22 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: visibility guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      public: ${{ steps.check.outputs.public }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          vis=$(gh api "repos/$REPO" --jq '.visibility')
+          echo "repo visibility: $vis"
+          if [ "$vis" = "public" ]; then echo "public=true" >> "$GITHUB_OUTPUT"; else echo "public=false" >> "$GITHUB_OUTPUT"; fi
+
+  analysis:
+    name: scorecard analysis
+    needs: guard
+    if: needs.guard.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write # upload SARIF
+      id-token: write # publish results to the Scorecard API
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: run scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: upload SARIF
+        uses: github/codeql-action/upload-sarif@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
+        with:
+          sarif_file: scorecard-results.sarif
+          category: scorecard
