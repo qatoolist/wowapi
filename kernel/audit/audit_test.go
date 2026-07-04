@@ -19,6 +19,59 @@ func auditCtx(tenant, actor uuid.UUID, reqID string) context.Context {
 	return httpx.WithRequestID(ctx, reqID)
 }
 
+// TestIntegrationAuditTxIDCorrelation is the CA-11 regression: audit rows written
+// in the SAME database transaction share a tx_id, and rows in different
+// transactions get different ones — so a forensic query can correlate every
+// change made by one unit of work.
+func TestIntegrationAuditTxIDCorrelation(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant, actor := uuid.New(), uuid.New()
+	ctx := auditCtx(tenant, actor, "req-1")
+	ent := uuid.New()
+
+	// Two records in ONE transaction.
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		if err := w.Record(ctx, db, audit.Entry{Action: "widget.create", EntityType: "widget", EntityID: ent}); err != nil {
+			return err
+		}
+		return w.Record(ctx, db, audit.Entry{Action: "widget.update", EntityType: "widget", EntityID: ent})
+	}); err != nil {
+		t.Fatalf("tx1: %v", err)
+	}
+	// A third record in a SEPARATE transaction.
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return w.Record(ctx, db, audit.Entry{Action: "widget.delete", EntityType: "widget", EntityID: ent})
+	}); err != nil {
+		t.Fatalf("tx2: %v", err)
+	}
+
+	var logs []audit.Log
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		logs, e = w.Query(ctx, db, audit.Filter{EntityType: "widget", EntityID: ent})
+		return e
+	}); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(logs) != 3 {
+		t.Fatalf("want 3 audit rows, got %d", len(logs))
+	}
+	byAction := map[string]string{}
+	for _, l := range logs {
+		if l.TxID == "" {
+			t.Fatalf("tx_id must be populated, empty on %s", l.Action)
+		}
+		byAction[l.Action] = l.TxID
+	}
+	if byAction["widget.create"] != byAction["widget.update"] {
+		t.Errorf("same-tx rows must share tx_id: create=%s update=%s", byAction["widget.create"], byAction["widget.update"])
+	}
+	if byAction["widget.delete"] == byAction["widget.create"] {
+		t.Errorf("different-tx rows must differ in tx_id, both = %s", byAction["widget.delete"])
+	}
+}
+
 func TestIntegrationAuditRecordAndQuery(t *testing.T) {
 	h := testkit.NewDB(t)
 	w := audit.New(model.UUIDv7(), nil)

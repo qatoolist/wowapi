@@ -60,6 +60,7 @@ type Log struct {
 	OldValue       string
 	NewValue       string
 	Reason         string
+	TxID           string // database transaction id (forensic correlation; roadmap CA-11)
 }
 
 // Redactor may mutate an Entry before it is written — e.g. mask the values of
@@ -133,8 +134,9 @@ func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) erro
 		`INSERT INTO audit_logs
 		    (id, tenant_id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
 		     action, entity_type, entity_id, field, old_value, new_value, reason, metadata,
-		     seq, row_hash, prev_hash)
-		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		     seq, row_hash, prev_hash, tx_id)
+		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+		         pg_current_xact_id()::text)`,
 		id, occurredAt, actorArg, nullStr(e.ActorKind), nullUUID(e.ImpersonatorID), nullStr(requestID),
 		e.Action, nullStr(e.EntityType), nullUUID(e.EntityID), nullStr(e.Field), nullStr(e.OldValue),
 		nullStr(e.NewValue), nullStr(e.Reason), metaJSON, seq, rowHash, prevHash); err != nil {
@@ -296,7 +298,7 @@ func (w *Writer) Query(ctx context.Context, db database.TenantDB, f Filter) ([]L
 	}
 	args = append(args, limit)
 	sql := `SELECT id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
-	               action, entity_type, entity_id, field, old_value, new_value, reason
+	               action, entity_type, entity_id, field, old_value, new_value, reason, tx_id
 	          FROM audit_logs
 	         WHERE ` + strings.Join(conds, " AND ") +
 		// id (UUIDv7) is a creation-ordered tiebreaker so rows written in the same
@@ -311,11 +313,12 @@ func (w *Writer) Query(ctx context.Context, db database.TenantDB, f Filter) ([]L
 	var out []Log
 	for rows.Next() {
 		var l Log
-		var actorKind, requestID, entityType, field, oldV, newV, reason *string
+		var actorKind, requestID, entityType, field, oldV, newV, reason, txID *string
 		if err := rows.Scan(&l.ID, &l.OccurredAt, &l.ActorID, &actorKind, &l.ImpersonatorID,
-			&requestID, &l.Action, &entityType, &l.EntityID, &field, &oldV, &newV, &reason); err != nil {
+			&requestID, &l.Action, &entityType, &l.EntityID, &field, &oldV, &newV, &reason, &txID); err != nil {
 			return nil, kerr.Wrapf(err, "audit.Query", "scan audit row")
 		}
+		l.TxID = deref(txID)
 		l.ActorKind = deref(actorKind)
 		l.RequestID = deref(requestID)
 		l.EntityType = deref(entityType)
