@@ -29,6 +29,10 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
 
+- Recurring scheduler (`jobs.Scheduler` + `schedules` table, migration 00014): fixed-interval kernel
+  maintenance tasks, leader-safe across worker replicas via an atomic per-row claim. Wires the workflow
+  SLA sweep (per-tenant) and the idempotency-key expiry sweep so they now actually run on a schedule
+  without N replicas double-firing.
 - In-process rate limiting: `kernel/httpx.RateLimit` middleware + `TokenBucket` limiter
   (`NewTokenBucket`), `KeyByIP` / `KeyByActor` strategies, 429 + `Retry-After` + RFC 7807. Opt-in.
 - Migration reversibility: `database.MigrateReset` (goose down-to-0) and a CI forward→down→forward drill

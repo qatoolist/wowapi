@@ -1,0 +1,68 @@
+package app
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+)
+
+// registerMaintenance wires the kernel's periodic sweeps onto the scheduler
+// (roadmap R3 + S5): the cross-tenant idempotency-key expiry sweep and the
+// per-tenant workflow SLA sweep. Both are idempotent, so the scheduler's
+// leader-safe at-most-once-per-interval guarantee is sufficient — N worker
+// replicas will not double-fire.
+func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery time.Duration) {
+	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
+	// k.Platform pool already connects AS app_platform, so Platform() runs with
+	// the cross-tenant sweep policy (migration 00012).
+	platTxM := database.NewManager(k.Platform, config.DB{}, database.WithRole("app_platform"), database.WithRLSGuard())
+	idem := database.NewIdemStore()
+	sched.Register("kernel.idempotency.sweep", idemEvery, func(ctx context.Context) error {
+		_, err := idem.SweepExpired(ctx, platTxM, time.Now())
+		return err
+	})
+
+	// Workflow SLA timers: fan out one tenant-bound sweep per active tenant. One
+	// tenant's failure is logged and does not block the others.
+	sched.Register("kernel.workflow.sla", slaEvery, func(ctx context.Context) error {
+		tenants, err := activeTenants(ctx, k)
+		if err != nil {
+			return err
+		}
+		for _, tid := range tenants {
+			tctx := database.WithTenantID(ctx, tid)
+			if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+				_, _, serr := k.WorkflowRuntime.SweepSLA(ctx, db, time.Now())
+				return serr
+			}); err != nil {
+				k.Log.WarnContext(ctx, "scheduler: sla sweep failed for tenant", "tenant", tid, "err", err)
+			}
+		}
+		return nil
+	})
+}
+
+// activeTenants lists tenant ids eligible for per-tenant maintenance. Read on the
+// platform pool (app_platform holds the tenants-catalog grant).
+func activeTenants(ctx context.Context, k *kernel.Kernel) ([]uuid.UUID, error) {
+	rows, err := k.Platform.Query(ctx, `SELECT id FROM tenants WHERE status = 'active'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

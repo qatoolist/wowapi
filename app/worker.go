@@ -17,6 +17,10 @@ type WorkerConfigOpts struct {
 	JobPoll       time.Duration
 	JobPoolSize   int
 	ShutdownDrain time.Duration
+	// Scheduler (leader-safe kernel maintenance sweeps). Zero values use defaults.
+	SchedulerPoll       time.Duration // how often to check for due tasks (default 30s)
+	SLAInterval         time.Duration // workflow SLA sweep interval (default 1m)
+	IdempotencyInterval time.Duration // idempotency-key expiry sweep interval (default 1h)
 }
 
 // StartWorker runs the background worker process for a booted app: the outbox
@@ -46,6 +50,15 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if opts.ShutdownDrain <= 0 {
 		opts.ShutdownDrain = 30 * time.Second
 	}
+	if opts.SchedulerPoll <= 0 {
+		opts.SchedulerPoll = 30 * time.Second
+	}
+	if opts.SLAInterval <= 0 {
+		opts.SLAInterval = time.Minute
+	}
+	if opts.IdempotencyInterval <= 0 {
+		opts.IdempotencyInterval = time.Hour
+	}
 
 	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch)
 	var runnerOpts []jobs.RunnerOpt
@@ -55,6 +68,16 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	runnerOpts = append(runnerOpts, jobs.WithDrainTimeout(opts.ShutdownDrain), jobs.WithLogger(log))
 	runner := jobs.NewRunner(k.Platform, k.Tx, b.Jobs, runnerOpts...)
 
+	// Scheduler: leader-safe kernel maintenance sweeps (SLA timers, idempotency
+	// expiry). Registered here so every worker replica participates; the schedules
+	// table ensures each due task runs on exactly one replica per interval.
+	sched := jobs.NewScheduler(k.Platform, log)
+	sched.OnRun(func(name string, lag time.Duration, err error) {
+		log.InfoContext(ctx, "scheduler ran maintenance task",
+			"task", name, "lag_ms", lag.Milliseconds(), "ok", err == nil)
+	})
+	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval)
+
 	// Both loops respect ctx cancellation and drain in-flight work themselves.
 	// StartWorker blocks until ctx is cancelled and both have returned — but with
 	// a HARD cap: if a loop does not drain within ShutdownDrain (e.g. a worker
@@ -63,10 +86,11 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	// reclaim path recovers any job left 'running'.
 	log.InfoContext(ctx, "worker starting", "relay_poll", opts.RelayPoll, "job_poll", opts.JobPoll)
 	var wg sync.WaitGroup
-	var relayErr, jobErr error
-	wg.Add(2)
+	var relayErr, jobErr, schedErr error
+	wg.Add(3)
 	go func() { defer wg.Done(); relayErr = relay.Run(ctx, opts.RelayPoll) }()
 	go func() { defer wg.Done(); jobErr = runner.Run(ctx, opts.JobPoll) }()
+	go func() { defer wg.Done(); schedErr = sched.Run(ctx, opts.SchedulerPoll) }()
 
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
@@ -84,7 +108,10 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if relayErr != nil {
 		return relayErr
 	}
-	return jobErr
+	if jobErr != nil {
+		return jobErr
+	}
+	return schedErr
 }
 
 // errDrainTimeout signals the hard shutdown-drain cap was hit.

@@ -6,7 +6,18 @@ delivered in coherent, individually QA-gated commits:
 - **R4 — DLQ operability** — DONE (D-0062).
 - **O2 — migration forward/down CI drill + expand/contract doc** — DONE (D-0063).
 - **O5 — backup/restore runbook + drill** — DONE (D-0063).
-- R3 — SLA sweeper registration + leader-safe scheduling — pending (paired with the E5 scheduler).
+- **E5 scheduler + R3 SLA-sweeper leader-safe scheduling** — DONE (D-0065).
+
+## E5 + R3 — recurring scheduler + leader-safe kernel sweeps
+
+| Verdict | Fix |
+|---|---|
+| real (P0) — SLA sweeper + idempotency sweep existed as methods but nothing ran them on a schedule, and N replicas would all fire | `jobs.Scheduler` over a new `schedules` table (migration 00014): fixed-interval tasks, each due tick claimed by an atomic `FOR UPDATE SKIP LOCKED` + `next_run_at<=now` conditional → exactly one replica per interval, no separate leader election. Wired in `StartWorker` (3rd loop) with two tasks: cross-tenant idempotency sweep + per-tenant workflow SLA sweep. Lag surfaced via `OnRun` hook (logged; wireable to a metric). |
+
+Tests (`kernel/jobs/scheduler_test.go`): `TestIntegrationSchedulerLeaderSafe` — 6 concurrent replicas
+ticking one due task run it exactly once; `TestIntegrationSchedulerRunsDueTask` — runs when due, does not
+re-run after the claim advances `next_run_at`. The maintenance wiring (`app/maintenance.go`) is glue over
+already-integration-tested pieces (`IdemStore.SweepExpired`, `Runtime.SweepSLA`).
 
 ## O2 — migration safety harness
 

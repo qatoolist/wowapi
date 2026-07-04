@@ -293,6 +293,22 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0065 — Hardening H2 (E5, R3): recurring scheduler + leader-safe kernel sweeps
+- **Context:** the workflow SLA sweeper and the idempotency-key sweep existed as methods but nothing ran
+  them periodically, and nothing stopped N worker replicas from all firing at once (roadmap E5 + R3).
+- **Decision:** a `jobs.Scheduler` over a new `schedules` table (migration 00014). Each registered task
+  has a row; a due tick is claimed by an atomic conditional `UPDATE`/`SELECT … FOR UPDATE SKIP LOCKED`
+  where `next_run_at <= now()`, then `next_run_at` advances by the interval — so exactly one replica runs
+  a given task per interval, **without a separate leader election**. Tasks run outside the claim tx (a
+  slow task never holds the row lock); a failed task retries next interval (tasks are idempotent). Wired
+  as a third loop in `StartWorker` with two kernel tasks: the cross-tenant idempotency sweep (as
+  app_platform) and the per-tenant workflow SLA sweep (fan-out over active tenants via `k.Tx.WithTenant`).
+  Lag is surfaced via an `OnRun` hook (logged; wireable to observability — R3 "sweeper lag as a metric").
+- **Tradeoffs:** interval-based recurrence, not cron expressions (covers the P0 sweep need; a cron parser
+  is a later enhancement). Per-tenant SLA fan-out is sequential; fine at current scale, shardable later.
+- **Affected:** `kernel/jobs/scheduler.go` (+`_test.go`), `app/maintenance.go`, `app/worker.go`,
+  `migrations/00014_schedules.sql`, evidence/hardening-H2.
+
 ## D-0064 — Hardening P1 (S2): in-process rate limiting
 - **Context:** rate limiting was proxy-delegated with only middleware hooks; no in-process limiter for
   per-principal / per-permission guardrails (roadmap S2, blueprint 07 §1).
