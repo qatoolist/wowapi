@@ -56,10 +56,15 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Close()
 
-	// Platform pool for the outbox relay and job runner (cross-tenant kernel
-	// work). In production, use a dedicated app_platform DSN from config.
-	// Here we reuse the same DSN and assume app_platform exists post-migrate.
-	platformPool, err := database.NewPool(ctx, dsn, cfg.DB,
+	// Platform pool for the outbox relay, job runner, and scheduler (cross-tenant
+	// kernel work). Prefer a dedicated app_platform login (db.platform_dsn) so the
+	// worker holds platform privileges under a locked-down production role; when
+	// unset, fall back to the runtime DSN with SET ROLE app_platform (fine locally).
+	platformDSN := cfg.DB.PlatformDSN.Reveal()
+	if platformDSN == "" {
+		platformDSN = dsn
+	}
+	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
 		database.WithSetRole("app_platform"),
 	)
 	if err != nil {

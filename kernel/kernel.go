@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qatoolist/wowapi/kernel/attachment"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -100,9 +101,20 @@ type Deps struct {
 // kernel's Perms/Resources registries are the shared pointers modules register
 // into during boot; the evaluator reads them at decision time.
 func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+	idgen := model.UUIDv7()
+
+	// Audit sink: unless a product injects one, denials are written DURABLY to
+	// audit_logs (not just logged) whenever a runtime TxManager is available — the
+	// evaluator runs in a read-only tx, so the durable sink writes in its own tenant
+	// transaction (see durableAudit). Without a TxManager (rare api-only wiring) it
+	// falls back to WARN logs.
 	audit := deps.Audit
 	if audit == nil {
-		audit = loggingAudit{log: log}
+		if deps.Tx != nil {
+			audit = durableAudit{log: log, txm: deps.Tx, writer: kaudit.New(idgen, nil)}
+		} else {
+			audit = loggingAudit{log: log}
+		}
 	}
 	perms := authz.NewRegistry()
 	resources := resource.NewRegistry()
@@ -115,7 +127,6 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Audit:         audit,
 	})
 
-	idgen := model.UUIDv7()
 	writer := outbox.NewWriter(idgen)
 
 	// Rules: registry + resolver (org ancestry via the authz store) — the
@@ -222,4 +233,40 @@ func (a loggingAudit) AuthzDenial(ctx context.Context, actor authz.Actor, perm s
 		"break_glass", actor.BreakGlass,
 		"target_scope", string(t.Scope),
 	)
+}
+
+// durableAudit is the default AuditSink: it logs the denial AND writes a durable
+// audit_logs row. The evaluator runs in a read-only transaction, so the durable
+// write cannot happen inline — it runs in its own tenant write tx, which also
+// correctly persists the denial even when the request transaction rolls back.
+// Best-effort: a durable-write failure is logged, never blocking the decision.
+type durableAudit struct {
+	log    *slog.Logger
+	txm    database.TxManager
+	writer *kaudit.Writer
+}
+
+func (a durableAudit) AuthzDenial(ctx context.Context, actor authz.Actor, perm string, t authz.Target, reason string) {
+	loggingAudit{log: a.log}.AuthzDenial(ctx, actor, perm, t, reason)
+	if a.txm == nil || a.writer == nil || actor.TenantID == uuid.Nil {
+		return
+	}
+	// Detach from the request context so a client disconnect after the 403 does
+	// not drop the audit record; bind the actor for attribution.
+	wctx := database.WithActorID(database.WithTenantID(context.WithoutCancel(ctx), actor.TenantID), actor.CapacityID)
+	err := a.txm.WithTenant(wctx, func(ctx context.Context, db database.TenantDB) error {
+		return a.writer.Record(ctx, db, kaudit.Entry{
+			Action:    "authz.denied",
+			Reason:    reason,
+			ActorKind: string(actor.Kind),
+			Metadata: map[string]any{
+				"permission":   perm,
+				"target_scope": string(t.Scope),
+				"break_glass":  actor.BreakGlass,
+			},
+		})
+	})
+	if err != nil && a.log != nil {
+		a.log.WarnContext(ctx, "authz denial: durable audit write failed", "err", err, "permission", perm)
+	}
 }

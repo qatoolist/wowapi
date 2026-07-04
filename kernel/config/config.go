@@ -67,9 +67,10 @@ type Framework struct {
 // migrate requires MigrateDSN (D-0021) — the framework repo's config tooling
 // and DB-less tests must stay loadable.
 type DB struct {
-	DSN        Secret `conf:"dsn" json:"dsn" doc:"runtime database DSN (app_rt role) as a secretref:// reference"`
-	MigrateDSN Secret `conf:"migrate_dsn" json:"migrate_dsn" doc:"migration DSN (app_migrate role) as a secretref:// reference; only the migrate process receives it"`
-	Pool              // embedded: pool knobs stay flat under db.* and flow to every process view wholesale
+	DSN         Secret `conf:"dsn" json:"dsn" doc:"runtime database DSN (app_rt role) as a secretref:// reference"`
+	MigrateDSN  Secret `conf:"migrate_dsn" json:"migrate_dsn" doc:"migration DSN (app_migrate role) as a secretref:// reference; only the migrate process receives it"`
+	PlatformDSN Secret `conf:"platform_dsn" json:"platform_dsn" doc:"cross-tenant platform DSN (app_platform login) as a secretref:// reference; the worker uses it for the relay/runner/scheduler. Unset falls back to the runtime DSN with SET ROLE app_platform (fine for local; production should provide a dedicated app_platform login)"`
+	Pool               // embedded: pool knobs stay flat under db.* and flow to every process view wholesale
 }
 
 // Pool holds the connection-pool knobs shared by every process view. New

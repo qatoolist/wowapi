@@ -34,6 +34,7 @@ var expectedFiles = []string{
 	"00019_api_keys.sql",
 	"00020_retention_dsr.sql",
 	"00021_artifacts.sql",
+	"00022_notification_channel_prefs.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

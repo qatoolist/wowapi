@@ -282,6 +282,75 @@ func TestSendRejectsIncompleteVariables(t *testing.T) {
 	}
 }
 
+// TestIntegrationChannelPrefSkipsOptedOut is the R5 channel-preferences check: a
+// recipient opted out of a channel gets no delivery on it.
+func TestIntegrationChannelPrefSkipsOptedOut(t *testing.T) {
+	a := newHarness(t)
+	party := uuid.New()
+	if err := a.db.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
+		return a.svc.SetChannelPref(ctx, db, party, notify.ChannelEmail, false)
+	}); err != nil {
+		t.Fatalf("set pref: %v", err)
+	}
+
+	id, err := a.send(t, notify.Message{
+		TemplateKey:      "core.notify.welcome",
+		RecipientPartyID: party,
+		Variables:        map[string]any{"Name": "Kai", "Amount": "1"},
+		Channels: []notify.ChannelDest{
+			{Channel: notify.ChannelInApp},
+			{Channel: notify.ChannelEmail, Destination: "kai@example.test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	var count int
+	if err := a.db.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM notification_deliveries WHERE notification_id = $1`, id).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("deliveries = %d, want 1 (email opted out)", count)
+	}
+	var ch string
+	if err := a.db.Admin.QueryRow(context.Background(),
+		`SELECT channel FROM notification_deliveries WHERE notification_id = $1`, id).Scan(&ch); err != nil {
+		t.Fatal(err)
+	}
+	if ch != "inapp" {
+		t.Fatalf("remaining channel = %q, want inapp", ch)
+	}
+}
+
+// TestIntegrationChannelPrefAllOptedOut: opting out of every requested channel
+// makes Send fail loudly rather than silently sending nothing.
+func TestIntegrationChannelPrefAllOptedOut(t *testing.T) {
+	a := newHarness(t)
+	party := uuid.New()
+	if err := a.db.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
+		if e := a.svc.SetChannelPref(ctx, db, party, notify.ChannelInApp, false); e != nil {
+			return e
+		}
+		return a.svc.SetChannelPref(ctx, db, party, notify.ChannelEmail, false)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := a.send(t, notify.Message{
+		TemplateKey:      "core.notify.welcome",
+		RecipientPartyID: party,
+		Variables:        map[string]any{"Name": "Kai", "Amount": "1"},
+		Channels: []notify.ChannelDest{
+			{Channel: notify.ChannelInApp},
+			{Channel: notify.ChannelEmail, Destination: "kai@example.test"},
+		},
+	})
+	if kerr.KindOf(err) != kerr.KindValidation {
+		t.Fatalf("all-channels-opted-out should be a validation error, got %v", err)
+	}
+}
+
 // TestIntegrationDeliveriesReceipts is the R5 receipts API: delivery status is
 // queryable per notification, one receipt per channel, carrying the provider
 // message id and last error.

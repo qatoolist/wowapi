@@ -1,19 +1,23 @@
 // Command configcheck validates and inspects {{.Name}}'s COMPOSED configuration
 // (internal/appcfg.Config), which the prebuilt `wowapi` CLI cannot link directly
 // (D-0003). The CLI shells out to `go run ./tools/configcheck <mode>` so
-// `wowapi config validate|print` operate on the product's config, not just
-// config.Framework.
+// `wowapi config validate|print|schema|doctor` operate on the product's config,
+// not just config.Framework.
 //
 // Modes:
 //
 //	validate  load + validate; exit 0 if OK, 1 if invalid (CI gate)
 //	print     emit the effective config as JSON (Secret fields are redacted)
+//	schema    emit the JSON Schema derived from the product Config struct tags
+//	doctor    emit the effective config plus its fingerprint (redacted)
 package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/qatoolist/wowapi/kernel/config"
 
 	"{{.Module}}/internal/appcfg"
 )
@@ -22,6 +26,18 @@ func main() {
 	mode := "validate"
 	if len(os.Args) > 1 {
 		mode = os.Args[1]
+	}
+
+	// schema needs no config files — derive it from struct tags and exit.
+	if mode == "schema" {
+		b, err := config.Schema[appcfg.Config]()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "configcheck: schema: %v\n", err)
+			os.Exit(1)
+		}
+		os.Stdout.Write(b)
+		fmt.Println()
+		return
 	}
 
 	cfg, fp, err := appcfg.Load()
@@ -33,7 +49,7 @@ func main() {
 	switch mode {
 	case "validate":
 		fmt.Printf("OK: configuration valid (fingerprint %s)\n", fp.Short())
-	case "print":
+	case "print", "doctor":
 		// config.Secret fields marshal as their redaction marker, so this is safe
 		// to emit (structural redaction, verified by the framework's secret tests).
 		b, err := json.MarshalIndent(cfg, "", "  ")
@@ -43,8 +59,11 @@ func main() {
 		}
 		os.Stdout.Write(b)
 		fmt.Println()
+		if mode == "doctor" {
+			fmt.Printf("fingerprint: %s\n", fp.Short())
+		}
 	default:
-		fmt.Fprintf(os.Stderr, "configcheck: unknown mode %q (want validate|print)\n", mode)
+		fmt.Fprintf(os.Stderr, "configcheck: unknown mode %q (want validate|print|schema|doctor)\n", mode)
 		os.Exit(2)
 	}
 }

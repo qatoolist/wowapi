@@ -25,12 +25,17 @@ import (
 func configUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: wowapi config <subcommand> [flags]
 
+In a product repo (with tools/configcheck, scaffolded by 'wowapi init'), these
+commands run the product-local checker so they see the product's Config type; in
+the framework repo they run against the framework config alone.
+
 Subcommands:
-  validate    load and validate framework config; CI gate (exit 0 = OK, 1 = invalid)
+  validate    load and validate config; CI gate (exit 0 = OK, 1 = invalid)
   print       print redacted effective config as JSON (--redacted is required)
   schema      print JSON Schema derived from struct tags (no config files needed)
   doctor      show per-key provenance table and fingerprint
               (note: environment-variable sanity probes arrive in Phase 10)
+  diff        redacted effective-config diff (--from <env> --to <env>)
 
 Shared flags (validate, print, doctor):
   --dir         directory holding base.yaml + <env>.yaml (default "configs")
@@ -129,17 +134,31 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		configUsage(stderr)
 		return 2
 	}
-	switch args[0] {
-	case "validate":
-		return runConfigValidate(args[1:], stdout, stderr)
-	case "print":
-		return runConfigPrint(args[1:], stdout, stderr)
-	case "schema":
-		return runConfigSchema(args[1:], stdout, stderr)
-	case "doctor":
-		return runConfigDoctor(args[1:], stdout, stderr)
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "validate", "print", "schema", "doctor":
+		// Prefer the product-local checker (it knows the product's Config type);
+		// fall back to framework-only handling when it is absent.
+		if handled, code := delegateConfigCheck(sub, rest, stdout, stderr); handled {
+			return code
+		}
+		switch sub {
+		case "validate":
+			return runConfigValidate(rest, stdout, stderr)
+		case "print":
+			return runConfigPrint(rest, stdout, stderr)
+		case "schema":
+			return runConfigSchema(rest, stdout, stderr)
+		case "doctor":
+			return runConfigDoctor(rest, stdout, stderr)
+		}
+		return 2 // unreachable
+	case "diff":
+		// diff needs two environments loaded at once; handled framework-side
+		// (product-field diff via the checker is a follow-up).
+		return runConfigDiff(rest, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "wowapi config: unknown subcommand %q\n", args[0])
+		fmt.Fprintf(stderr, "wowapi config: unknown subcommand %q\n", sub)
 		configUsage(stderr)
 		return 2
 	}

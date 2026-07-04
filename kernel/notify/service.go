@@ -197,8 +197,18 @@ func (s *Service) Send(ctx context.Context, db database.TenantDB, msg Message) (
 		destination string
 	}
 	var channels []resolved
+	optedOut := false
 	for _, cd := range msg.Channels {
 		if cd.Channel == "" {
+			continue
+		}
+		// Skip a channel the recipient has opted out of (R5 channel preferences).
+		off, err := s.channelDisabled(ctx, db, msg.RecipientPartyID, cd.Channel)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if off {
+			optedOut = true
 			continue
 		}
 		dest := cd.Destination
@@ -220,6 +230,10 @@ func (s *Service) Send(ctx context.Context, db database.TenantDB, msg Message) (
 		channels = append(channels, resolved{channel: cd.Channel, destination: dest})
 	}
 	if len(channels) == 0 {
+		if optedOut {
+			return uuid.Nil, kerr.E(kerr.KindValidation, "all_channels_opted_out",
+				"notify: the recipient has opted out of every requested channel")
+		}
 		return uuid.Nil, kerr.E(kerr.KindValidation, "no_template_found",
 			"notify: no template found for key "+msg.TemplateKey+" on any requested channel")
 	}
@@ -355,6 +369,33 @@ func (s *Service) Deliveries(ctx context.Context, db database.TenantDB, notifica
 		return nil, kerr.Wrapf(err, "notify.Deliveries", "iterate deliveries")
 	}
 	return out, nil
+}
+
+// SetChannelPref records a recipient's opt-in/opt-out for a channel (R5). Absence
+// of a preference means enabled, so this is only needed to opt OUT (or to re-enable
+// after opting out). Runs in the caller's tenant tx.
+func (s *Service) SetChannelPref(ctx context.Context, db database.TenantDB, partyID uuid.UUID, channel Channel, enabled bool) error {
+	if _, err := db.Exec(ctx,
+		`INSERT INTO notification_channel_prefs (tenant_id, party_id, channel, enabled)
+		 VALUES (app_tenant_id(), $1, $2, $3)
+		 ON CONFLICT (tenant_id, party_id, channel)
+		 DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`,
+		partyID, string(channel), enabled); err != nil {
+		return kerr.Wrapf(err, "notify.SetChannelPref", "upsert preference")
+	}
+	return nil
+}
+
+// channelDisabled reports whether a party has an explicit opt-out for a channel.
+func (s *Service) channelDisabled(ctx context.Context, db database.TenantDB, partyID uuid.UUID, channel Channel) (bool, error) {
+	var disabled bool
+	if err := db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM notification_channel_prefs
+		                 WHERE party_id = $1 AND channel = $2 AND enabled = false)`,
+		partyID, string(channel)).Scan(&disabled); err != nil {
+		return false, kerr.Wrapf(err, "notify.channelDisabled", "read preference")
+	}
+	return disabled, nil
 }
 
 // --- platform-privileged operations (run on a tenant-bound app_platform tx) ---
