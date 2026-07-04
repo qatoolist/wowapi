@@ -15,6 +15,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
@@ -39,11 +40,34 @@ type Writer interface {
 	Write(ctx context.Context, db database.TenantDB, e Event) error
 }
 
+// WriterOption customizes the outbox writer.
+type WriterOption func(*pgWriter)
+
+// WithWriterTracer wires a tracer so each written event captures the current
+// request's W3C traceparent (roadmap O1/CA-9); the relay continues that trace
+// when it dispatches the event. Default: NoOpTracer (empty trace context).
+func WithWriterTracer(tr observability.Tracer) WriterOption {
+	return func(w *pgWriter) {
+		if tr != nil {
+			w.tracer = tr
+		}
+	}
+}
+
 // NewWriter returns the Postgres outbox writer. idgen mints event ids
 // (UUIDv7 — time-ordered, so per-aggregate dispatch order is natural).
-func NewWriter(idgen model.IDGen) Writer { return pgWriter{idgen: idgen} }
+func NewWriter(idgen model.IDGen, opts ...WriterOption) Writer {
+	w := pgWriter{idgen: idgen, tracer: observability.NoOpTracer}
+	for _, o := range opts {
+		o(&w)
+	}
+	return w
+}
 
-type pgWriter struct{ idgen model.IDGen }
+type pgWriter struct {
+	idgen  model.IDGen
+	tracer observability.Tracer
+}
 
 func (w pgWriter) Write(ctx context.Context, db database.TenantDB, e Event) error {
 	if e.Type == "" {
@@ -71,13 +95,20 @@ func (w pgWriter) Write(ctx context.Context, db database.TenantDB, e Event) erro
 		resType = e.Resource.Type
 		resID = e.Resource.ID
 	}
+	// Capture the current distributed-trace context (W3C traceparent) so the
+	// relay can continue the SAME trace when it dispatches asynchronously
+	// (roadmap O1/CA-9). Empty string when tracing is disabled.
+	var traceCtx any
+	if tc := w.tracer.Inject(ctx); tc != "" {
+		traceCtx = tc
+	}
 	// tenant_id from app_tenant_id() so the RLS WITH CHECK holds and the event
 	// is bound to the same tenant as the business write.
 	_, err = db.Exec(ctx,
 		`INSERT INTO events_outbox
-             (id, tenant_id, event_type, schema_version, resource_type, resource_id, actor, payload, created_by)
-         VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, '00000000-0000-0000-0000-000000000000')`,
-		id, e.Type, sv, resType, resID, actor, payload)
+             (id, tenant_id, event_type, schema_version, resource_type, resource_id, actor, payload, created_by, trace_context)
+         VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, '00000000-0000-0000-0000-000000000000', $8)`,
+		id, e.Type, sv, resType, resID, actor, payload, traceCtx)
 	if err != nil {
 		return kerr.Wrapf(err, "outbox.Write", "insert event %s", e.Type)
 	}

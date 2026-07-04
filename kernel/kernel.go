@@ -94,6 +94,10 @@ type Kernel struct {
 	// Never nil — defaults to observability.NoOp when no adapter is wired.
 	Metrics observability.Metrics
 
+	// Tracer is the distributed-tracing port; never nil (NoOpTracer default). The
+	// outbox writer captures its trace context; the relay continues it (CA-9).
+	Tracer observability.Tracer
+
 	// AuthzCache is the per-actor assignment cache wrapping the evaluator's store
 	// when Deps.AuthzCacheTTL > 0; nil when caching is disabled. Call Invalidate/
 	// InvalidateTenant on it from role grant/revoke paths for immediate effect.
@@ -129,6 +133,11 @@ type Deps struct {
 	// Metrics is the observability sink (Prometheus adapter in production).
 	// Optional; nil → observability.NoOp so call sites never nil-check.
 	Metrics observability.Metrics
+	// Tracer is the distributed-tracing port (OTel adapter in production).
+	// Optional; nil → observability.NoOpTracer. Wired into the outbox writer so
+	// emitted events carry the request's trace context across the async boundary
+	// (roadmap O1/CA-9).
+	Tracer observability.Tracer
 	// AuthzCacheTTL, when > 0, wraps the authorization store in a per-actor
 	// ActiveAssignments cache with this TTL (roadmap R1/CA-2). DEFAULT OFF
 	// (zero) — enabling it accepts up-to-TTL stale-allow after a revocation on
@@ -148,6 +157,11 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	metrics := deps.Metrics
 	if metrics == nil {
 		metrics = observability.NoOp
+	}
+	// Tracer: NoOp unless a product wires an OTel adapter.
+	tracer := deps.Tracer
+	if tracer == nil {
+		tracer = observability.NoOpTracer
 	}
 
 	// Shared audit writer: used both as the durable authz-denial sink below and
@@ -188,7 +202,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Audit:         audit,
 	})
 
-	writer := outbox.NewWriter(idgen)
+	writer := outbox.NewWriter(idgen, outbox.WithWriterTracer(tracer))
 
 	// Rules: registry + resolver (org ancestry via the authz store) — the
 	// registry is populated during module Register; the resolver reads it.
@@ -265,6 +279,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		IntegrationProviders: intReg,
 		Integrations:         intStore,
 		Metrics:              metrics,
+		Tracer:               tracer,
 		AuthzCache:           authzCache,
 		Audit:                auditWriter,
 		Sequence:             sequence.New(idgen),

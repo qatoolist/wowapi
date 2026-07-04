@@ -60,7 +60,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 		opts.IdempotencyInterval = time.Hour
 	}
 
-	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch)
+	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch, outbox.WithRelayTracer(k.Tracer))
 	var runnerOpts []jobs.RunnerOpt
 	if opts.JobPoolSize > 0 {
 		runnerOpts = append(runnerOpts, jobs.WithPoolSize(opts.JobPoolSize))

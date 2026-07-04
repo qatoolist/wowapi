@@ -94,7 +94,7 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
-	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm, Metrics: metrics})
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm, Metrics: metrics, Tracer: tracer})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}

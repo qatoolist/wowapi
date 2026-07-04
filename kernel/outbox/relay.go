@@ -12,6 +12,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
@@ -33,15 +34,34 @@ type Relay struct {
 	txm      database.TxManager // tenant tx manager for handler dispatch
 	registry *HandlerRegistry
 	batch    int
+	tracer   observability.Tracer
+}
+
+// RelayOption customizes the relay.
+type RelayOption func(*Relay)
+
+// WithRelayTracer wires a tracer so the relay continues the originating request's
+// trace when it dispatches an event (roadmap O1/CA-9): it extracts the event's
+// stored traceparent and runs the handler under a child span. Default: NoOpTracer.
+func WithRelayTracer(tr observability.Tracer) RelayOption {
+	return func(r *Relay) {
+		if tr != nil {
+			r.tracer = tr
+		}
+	}
 }
 
 // NewRelay builds the relay. pool must authenticate as the relay role
 // (app_platform); txm runs handler transactions per tenant.
-func NewRelay(pool *pgxpool.Pool, txm database.TxManager, registry *HandlerRegistry, batchSize int) *Relay {
+func NewRelay(pool *pgxpool.Pool, txm database.TxManager, registry *HandlerRegistry, batchSize int, opts ...RelayOption) *Relay {
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	return &Relay{pool: pool, txm: txm, registry: registry, batch: batchSize}
+	r := &Relay{pool: pool, txm: txm, registry: registry, batch: batchSize, tracer: observability.NoOpTracer}
+	for _, o := range opts {
+		o(r)
+	}
+	return r
 }
 
 // row is a claimed outbox event.
@@ -55,6 +75,7 @@ type row struct {
 	actor    []byte
 	payload  []byte
 	attempts int
+	trace    *string // W3C traceparent captured at write time (CA-9); nil when absent
 }
 
 // DispatchOnce claims up to batch pending events (FOR UPDATE SKIP LOCKED, so
@@ -77,7 +98,7 @@ func (r *Relay) DispatchOnce(ctx context.Context) (int, error) {
 	// dispatch tx additionally takes a per-aggregate advisory lock so two relays
 	// never process the same aggregate concurrently.
 	rows, err := tx.Query(ctx,
-		`SELECT e.id, e.tenant_id, e.event_type, e.schema_version, e.resource_type, e.resource_id, e.actor, e.payload, e.attempts
+		`SELECT e.id, e.tenant_id, e.event_type, e.schema_version, e.resource_type, e.resource_id, e.actor, e.payload, e.attempts, e.trace_context
            FROM events_outbox e
           WHERE e.dispatch_status = 'pending'
             AND NOT EXISTS (
@@ -97,7 +118,7 @@ func (r *Relay) DispatchOnce(ctx context.Context) (int, error) {
 	var claimed []row
 	for rows.Next() {
 		var rw row
-		if err := rows.Scan(&rw.id, &rw.tenant, &rw.evType, &rw.schemaV, &rw.resType, &rw.resID, &rw.actor, &rw.payload, &rw.attempts); err != nil {
+		if err := rows.Scan(&rw.id, &rw.tenant, &rw.evType, &rw.schemaV, &rw.resType, &rw.resID, &rw.actor, &rw.payload, &rw.attempts, &rw.trace); err != nil {
 			rows.Close()
 			return 0, kerr.Wrapf(err, "relay.DispatchOnce", "scan event")
 		}
@@ -148,6 +169,16 @@ func (r *Relay) dispatch(ctx context.Context, rw row) error {
 	if len(subs) == 0 {
 		return nil // no subscribers — dispatched is a no-op
 	}
+	// Continue the originating request's trace across the async boundary
+	// (roadmap O1/CA-9): extract the traceparent stored at write time, then run
+	// the dispatch under a child span. Zero-cost with NoOpTracer.
+	if rw.trace != nil && *rw.trace != "" {
+		ctx = r.tracer.Extract(ctx, *rw.trace)
+	}
+	ctx, span := r.tracer.StartSpan(ctx, "outbox.dispatch "+rw.evType)
+	span.SetAttr("event.type", rw.evType)
+	span.SetAttr("event.id", rw.id.String())
+	defer span.End()
 	de := DispatchedEvent{
 		ID: rw.id, Type: rw.evType, SchemaVersion: rw.schemaV,
 		Actor: json.RawMessage(rw.actor), Payload: json.RawMessage(rw.payload), TenantID: rw.tenant,
@@ -157,7 +188,7 @@ func (r *Relay) dispatch(ctx context.Context, rw row) error {
 	}
 
 	tctx := database.WithTenantID(ctx, rw.tenant)
-	return r.txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+	derr := r.txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
 		// Serialize dispatch per aggregate across concurrent relays: a
 		// transaction-scoped advisory lock keyed on (tenant, resource) means two
 		// relays never run handlers for the same aggregate at once, preserving
@@ -192,6 +223,10 @@ func (r *Relay) dispatch(ctx context.Context, rw row) error {
 		}
 		return nil
 	})
+	if derr != nil {
+		span.RecordError(derr)
+	}
+	return derr
 }
 
 // Run drives the relay until ctx is cancelled: dispatch batches back-to-back

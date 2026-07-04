@@ -13,9 +13,92 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/testkit"
 )
+
+// fakeTracer records the carrier passed to Extract and injects a fixed
+// traceparent, so a test can prove the outbox carries trace context across the
+// async boundary (CA-9).
+type fakeTracer struct {
+	inject    string
+	mu        sync.Mutex
+	extracted []string
+}
+
+func (f *fakeTracer) StartSpan(ctx context.Context, _ string) (context.Context, observability.Span) {
+	return ctx, fakeSpan{}
+}
+func (f *fakeTracer) Inject(context.Context) string { return f.inject }
+func (f *fakeTracer) Extract(ctx context.Context, carrier string) context.Context {
+	f.mu.Lock()
+	f.extracted = append(f.extracted, carrier)
+	f.mu.Unlock()
+	return ctx
+}
+
+type fakeSpan struct{}
+
+func (fakeSpan) End()                {}
+func (fakeSpan) SetAttr(_, _ string) {}
+func (fakeSpan) RecordError(error)   {}
+
+// TestIntegrationOutboxTracePropagation is the O1/CA-9 regression: an event
+// captures the writer's trace context, and the relay extracts it when it
+// dispatches — so an async handler continues the originating request's trace.
+func TestIntegrationOutboxTracePropagation(t *testing.T) {
+	h := testkit.NewDB(t)
+	const carrier = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	tr := &fakeTracer{inject: carrier}
+	w := outbox.NewWriter(model.UUIDv7(), outbox.WithWriterTracer(tr))
+	tn := testkit.CreateTenant(t, h)
+	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+
+	var dispatched int64
+	reg := outbox.NewHandlerRegistry()
+	reg.Subscribe("requests.request.changed", "h",
+		func(context.Context, database.TenantDB, outbox.DispatchedEvent) error {
+			atomic.AddInt64(&dispatched, 1)
+			return nil
+		})
+
+	if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
+		return w.Write(ctx, db, outbox.Event{Type: "requests.request.changed", Resource: res})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The event row stored the injected trace context.
+	var stored string
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT coalesce(trace_context,'') FROM events_outbox WHERE tenant_id = $1`, tn.ID).Scan(&stored); err != nil {
+		t.Fatalf("read trace_context: %v", err)
+	}
+	if stored != carrier {
+		t.Fatalf("stored trace_context = %q, want the injected carrier", stored)
+	}
+
+	// The relay extracts that carrier when dispatching (continuing the trace).
+	relay := outbox.NewRelay(h.Platform, h.TxM, reg, 10, outbox.WithRelayTracer(tr))
+	if _, err := relay.DispatchOnce(context.Background()); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if atomic.LoadInt64(&dispatched) != 1 {
+		t.Fatalf("expected 1 dispatch, got %d", dispatched)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	found := false
+	for _, c := range tr.extracted {
+		if c == carrier {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("relay must Extract the stored trace context to continue the trace; extracted=%v", tr.extracted)
+	}
+}
 
 func countEvents(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID, typ string) int {
 	t.Helper()
