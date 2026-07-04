@@ -145,6 +145,50 @@ func TestIntegrationIdempotencySweepExpired(t *testing.T) {
 	}
 }
 
+// TestIntegrationIdempotencyReplayAfterExpiryErrors is the S5 acceptance
+// regression (roadmap CA-8): a request presenting an idempotency key whose row
+// has expired but is still present must receive a DEFINED error
+// (KindIdempotencyExpired → 410), NOT a silent re-execution. Before the fix the
+// expired branch re-claimed the key as Fresh and the operation ran a second
+// time.
+func TestIntegrationIdempotencyReplayAfterExpiryErrors(t *testing.T) {
+	h := NewDB(t)
+	store := database.NewIdemStore()
+	tenant := uuid.New()
+	ctx := database.WithTenantID(context.Background(), tenant)
+	const scope, key, hash = "actor-1", "expired-present", "hash-abc"
+
+	// Seed a completed key with a negative TTL: the row is present but already
+	// past expiry, and NOT swept.
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		rep, err := store.Begin(ctx, db, scope, key, hash, -time.Hour)
+		if err != nil {
+			return err
+		}
+		if !rep.Fresh {
+			t.Fatal("seed Begin should be Fresh")
+		}
+		return store.Complete(ctx, db, scope, key, 201, []byte(`{"id":"x"}`))
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// A replay of the same key while the expired row is still present must fail
+	// closed with the defined error — never Fresh (which would re-execute) and
+	// never Found (the aged-out response is not replayable).
+	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		rep, err := store.Begin(ctx, db, scope, key, hash, time.Hour)
+		if err != nil {
+			return err
+		}
+		t.Fatalf("expired-but-present key must error, got replay %+v", rep)
+		return nil
+	})
+	if errors.KindOf(err) != errors.KindIdempotencyExpired {
+		t.Fatalf("replay after expiry should be KindIdempotencyExpired (410), got %v", err)
+	}
+}
+
 // TestIntegrationIdempotencyInFlight proves a key claimed but not completed is
 // reported in-flight to a concurrent request (retry_later / 409).
 func TestIntegrationIdempotencyInFlight(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -30,18 +31,32 @@ import (
 // scheme prefixes every token so an API key is distinguishable from a JWT.
 const scheme = "wowapi"
 
-// Store issues, verifies, and revokes API keys.
+// Store issues, verifies, rotates, and revokes API keys.
 type Store struct {
 	idgen model.IDGen
 	now   func() time.Time
+	audit *kaudit.Writer // optional; when set, issue/rotate/revoke are audited
+}
+
+// StoreOption customizes a Store.
+type StoreOption func(*Store)
+
+// WithAudit records an audit_logs entry (in the caller's tenant tx) for every
+// key issuance, rotation, and revocation (roadmap S1/CA-3).
+func WithAudit(w *kaudit.Writer) StoreOption {
+	return func(s *Store) { s.audit = w }
 }
 
 // NewStore builds a Store.
-func NewStore(idgen model.IDGen) *Store {
+func NewStore(idgen model.IDGen, opts ...StoreOption) *Store {
 	if idgen == nil {
 		idgen = model.UUIDv7()
 	}
-	return &Store{idgen: idgen, now: time.Now}
+	s := &Store{idgen: idgen, now: time.Now}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Principal is a verified machine caller.
@@ -73,7 +88,71 @@ func (s *Store) Issue(ctx context.Context, db database.TenantDB, name string, sc
 		id, name, prefix, hashSecret(secret), scopes, expiresAt, actorOrNil(ctx)); err != nil {
 		return "", uuid.Nil, kerr.Wrapf(err, "apikey.Issue", "insert key")
 	}
+	if err := s.recordAudit(ctx, db, "apikey.issue", id, map[string]any{
+		"name": name, "scopes": scopes,
+	}); err != nil {
+		return "", uuid.Nil, err
+	}
 	return scheme + "_" + prefix + "_" + secret, id, nil
+}
+
+// Rotate mints a NEW secret for the same logical principal — a new key row
+// inheriting the old key's name, scopes, and expiry — and returns the new token
+// ONCE. It is the safe two-call rotation: the old key stays valid so callers can
+// cut over with zero downtime, then Revoke(oldID) once migrated. Runs in the
+// caller's tenant transaction; audited as apikey.rotate. KindNotFound if oldID is
+// not an active key of this tenant.
+func (s *Store) Rotate(ctx context.Context, db database.TenantDB, oldID uuid.UUID) (token string, newID uuid.UUID, err error) {
+	var (
+		name      string
+		scopes    []string
+		expiresAt *time.Time
+	)
+	row := db.QueryRow(ctx,
+		`SELECT name, scopes, expires_at FROM api_keys
+		  WHERE id = $1 AND revoked_at IS NULL`, oldID)
+	if serr := row.Scan(&name, &scopes, &expiresAt); serr != nil {
+		if errors.Is(serr, pgx.ErrNoRows) {
+			return "", uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "no active key with that id")
+		}
+		return "", uuid.Nil, kerr.Wrapf(serr, "apikey.Rotate", "load key")
+	}
+
+	prefix, secret, gerr := randParts()
+	if gerr != nil {
+		return "", uuid.Nil, kerr.Wrapf(gerr, "apikey.Rotate", "generate key")
+	}
+	newID = s.idgen.New()
+	if _, xerr := db.Exec(ctx,
+		`INSERT INTO api_keys (id, tenant_id, name, key_prefix, key_hash, scopes, expires_at, created_by)
+		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7)`,
+		newID, name, prefix, hashSecret(secret), scopes, expiresAt, actorOrNil(ctx)); xerr != nil {
+		return "", uuid.Nil, kerr.Wrapf(xerr, "apikey.Rotate", "insert rotated key")
+	}
+	if aerr := s.recordAudit(ctx, db, "apikey.rotate", newID, map[string]any{
+		"name": name, "scopes": scopes, "rotated_from": oldID.String(),
+	}); aerr != nil {
+		return "", uuid.Nil, aerr
+	}
+	return scheme + "_" + prefix + "_" + secret, newID, nil
+}
+
+// recordAudit writes an audit_logs entry in db's tx when auditing is enabled.
+func (s *Store) recordAudit(ctx context.Context, db database.TenantDB, action string, keyID uuid.UUID, meta map[string]any) error {
+	if s.audit == nil {
+		return nil
+	}
+	// ActorID + kind are read from ctx by Record — the issuer is typically an
+	// admin user, not the machine principal, so we do not force ActorKind here.
+	if err := s.audit.Record(ctx, db, kaudit.Entry{
+		Action:     action,
+		EntityType: "api_key",
+		EntityID:   keyID,
+		Metadata:   meta,
+	}); err != nil {
+		return kerr.Wrapf(err, action, "audit")
+	}
+	return nil
 }
 
 // Verify authenticates a token cross-tenant (as app_platform, since the tenant is
@@ -136,7 +215,7 @@ func (s *Store) Revoke(ctx context.Context, db database.TenantDB, id uuid.UUID) 
 	if tag.RowsAffected() == 0 {
 		return kerr.E(kerr.KindNotFound, "not_found", "no active key with that id")
 	}
-	return nil
+	return s.recordAudit(ctx, db, "apikey.revoke", id, nil)
 }
 
 // KeyInfo is a non-secret view of a key for listing.

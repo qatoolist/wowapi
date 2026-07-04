@@ -37,6 +37,34 @@ func (DenyAllAuthenticator) Authenticate(*http.Request) (authz.Actor, error) {
 		"no Authenticator is wired — deny-by-default (wire an OIDC/tenant Authenticator to serve business routes)")
 }
 
+// Composite tries each authenticator in order and returns the first successful
+// actor — the way a product runs API-key and OIDC auth side by side (roadmap
+// S1/CA-2). An authenticator that returns a KindUnauthenticated error is treated
+// as "not my scheme" and the next is tried; any OTHER error (e.g. the key store
+// is unreachable) short-circuits so a transient fault is not misreported as a
+// clean 401. If every authenticator declines, the last unauthenticated error is
+// returned. With no authenticators it fails closed.
+func Composite(auths ...Authenticator) Authenticator {
+	return compositeAuthenticator{auths: auths}
+}
+
+type compositeAuthenticator struct{ auths []Authenticator }
+
+func (c compositeAuthenticator) Authenticate(r *http.Request) (authz.Actor, error) {
+	var lastErr error = kerr.E(kerr.KindUnauthenticated, "unauthenticated", "no credentials accepted")
+	for _, a := range c.auths {
+		actor, err := a.Authenticate(r)
+		if err == nil {
+			return actor, nil
+		}
+		if kerr.KindOf(err) != kerr.KindUnauthenticated {
+			return authz.Actor{}, err // hard fault: do not mask as a 401
+		}
+		lastErr = err
+	}
+	return authz.Actor{}, lastErr
+}
+
 // SecureHandler builds the serving mux with every route wrapped by the
 // authN→authZ(RouteMeta) gate. Public routes are served directly; every other
 // route is authenticated and authorized against its declared permission before

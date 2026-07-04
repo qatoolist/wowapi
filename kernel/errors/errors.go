@@ -33,6 +33,11 @@ const (
 	KindWorkflowState
 	KindRateLimited
 	KindExternal
+	// KindIdempotencyExpired: a request presented an idempotency key whose
+	// stored record has expired, so the original response can no longer be
+	// replayed. Returned instead of silently re-executing the operation
+	// (roadmap S5). Appended last to keep the earlier iota values stable.
+	KindIdempotencyExpired
 )
 
 // FieldError is one shape-validation failure, addressed by JSON path.
@@ -63,6 +68,7 @@ var mapping = map[Kind]kindInfo{
 	KindWorkflowState:       {"invalid_transition", http.StatusConflict},
 	KindRateLimited:         {"rate_limited", http.StatusTooManyRequests},
 	KindExternal:            {"upstream_error", http.StatusBadGateway},
+	KindIdempotencyExpired:  {"idempotency_key_expired", http.StatusGone},
 	KindInternal:            {"internal", http.StatusInternalServerError},
 }
 

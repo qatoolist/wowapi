@@ -47,6 +47,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runGen(args[1:], stdout, stderr)
 	case "dlq":
 		return runDLQ(args[1:], stdout, stderr)
+	case "apikey":
+		return runApikey(args[1:], stdout, stderr)
 	default:
 		if phase, ok := planned[cmd]; ok {
 			fmt.Fprintf(stderr, "wowapi %s: not implemented yet — planned in %s.\n", cmd, phase)

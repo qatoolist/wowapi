@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -131,6 +132,71 @@ func TestIntegrationOutboxRelayDispatchAndInbox(t *testing.T) {
 // the same aggregate, the handler fails the FIRST once. The relay must not
 // dispatch the second before the first succeeds — the handler observes them in
 // occurred_at order.
+// TestIntegrationOutboxHotAggregateThroughput is the R2/CA-4 load
+// characterization: it emits a burst of events onto ONE hot aggregate — the
+// worst case for the per-aggregate advisory lock (relay.go pg_advisory_xact_lock)
+// that serializes dispatch to preserve ordering — drains them with several
+// concurrent relay workers, and reports the observed throughput envelope. The
+// measured number feeds docs/operations/load-characterization.md; the assertion
+// is on correctness (every event dispatched exactly once) so it is not flaky.
+func TestIntegrationOutboxHotAggregateThroughput(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := outbox.NewWriter(model.UUIDv7())
+	tn := testkit.CreateTenant(t, h)
+	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+
+	const total = 200
+	var dispatched int64
+	reg := outbox.NewHandlerRegistry()
+	reg.Subscribe("requests.request.changed", "count",
+		func(context.Context, database.TenantDB, outbox.DispatchedEvent) error {
+			atomic.AddInt64(&dispatched, 1)
+			return nil
+		})
+
+	for i := 0; i < total; i++ {
+		i := i
+		if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
+			return w.Write(ctx, db, outbox.Event{Type: "requests.request.changed", Resource: res, Payload: map[string]any{"i": i}})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	relay := outbox.NewRelay(h.Platform, h.TxM, reg, 20)
+	const workers = 4
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for wkr := 0; wkr < workers; wkr++ {
+		go func() {
+			defer wg.Done()
+			for atomic.LoadInt64(&dispatched) < total && ctx.Err() == nil {
+				n, err := relay.DispatchOnce(ctx)
+				if err != nil {
+					t.Errorf("dispatch: %v", err)
+					return
+				}
+				if n == 0 {
+					time.Sleep(time.Millisecond) // contended or momentarily drained
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	got := atomic.LoadInt64(&dispatched)
+	if got != total {
+		t.Fatalf("dispatched %d events, want %d exactly once (advisory-lock serialization stalled?)", got, total)
+	}
+	t.Logf("R2 hot-aggregate throughput: %d events drained in %v = %.0f events/sec (%d relay workers, single hot aggregate, advisory-lock serialized)",
+		total, elapsed.Round(time.Millisecond), float64(total)/elapsed.Seconds(), workers)
+}
+
 func TestIntegrationOutboxPerAggregateOrderUnderRetry(t *testing.T) {
 	h := testkit.NewDB(t)
 	w := outbox.NewWriter(model.UUIDv7())

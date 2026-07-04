@@ -480,8 +480,22 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 				Attempts:       d.attempts,
 			}
 
-			sender := s.senderFor(del.Channel)
-			providerMsgID, sendErr := sender.Send(ctx, del)
+			// An unregistered channel is a configuration error, not a transient
+			// fault: fail the delivery loudly (and terminally) instead of routing
+			// it to a no-op sender that would mark it 'sent' (roadmap CA-15).
+			sender, ok := s.senderFor(del.Channel)
+			var (
+				providerMsgID string
+				sendErr       error
+			)
+			permanent := false
+			if !ok {
+				sendErr = kerr.E(kerr.KindExternal, "no_channel_sender",
+					"no sender registered for channel "+string(del.Channel))
+				permanent = true
+			} else {
+				providerMsgID, sendErr = sender.Send(ctx, del)
+			}
 
 			newAttempts := d.attempts + 1
 			if sendErr == nil {
@@ -502,7 +516,9 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 				// A dead delivery is never re-claimed, so its next_attempt_at is
 				// irrelevant (leave NULL); a failed one gets its cooldown deadline.
 				var nextAttempt any
-				if newAttempts >= maxAttempts {
+				// A permanent misconfiguration (no sender for the channel) cannot
+				// be fixed by retrying, so it goes terminal immediately.
+				if permanent || newAttempts >= maxAttempts {
 					newStatus = "dead"
 				} else {
 					nextAttempt = now.Add(backoff(newAttempts))
@@ -568,12 +584,12 @@ func localeFallback(locale string) []string {
 	return chain
 }
 
-// senderFor returns the registered sender for ch, or a no-op if none is wired.
-func (s *Service) senderFor(ch Channel) ChannelSender {
-	if sndr, ok := s.senders[string(ch)]; ok {
-		return sndr
-	}
-	return noopSender{}
+// senderFor returns the registered sender for ch. The bool is false when no
+// sender is wired for the channel — the caller must treat that as a delivery
+// failure, NOT a silent success (roadmap CA-15).
+func (s *Service) senderFor(ch Channel) (ChannelSender, bool) {
+	sndr, ok := s.senders[string(ch)]
+	return sndr, ok
 }
 
 func actorFromCtx(ctx context.Context) uuid.UUID {

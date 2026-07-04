@@ -12,6 +12,35 @@ import (
 	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
+// TestRateLimitOnDropFires proves the OnRateLimitDrop hook is invoked when a
+// request is rejected — the injection point the composition root wires to the
+// rate-limit-drop metric counter (roadmap CA-1). httpx cannot import
+// kernel/observability (cycle), so emission is a plain callback.
+func TestRateLimitOnDropFires(t *testing.T) {
+	clk := &fakeClock{t: time.Unix(0, 0)}
+	tb := httpx.NewTokenBucketWithClock(1, 1, clk.now) // 1/s, burst 1
+
+	drops := 0
+	mw := httpx.RateLimit(tb, func(*http.Request) string { return "k" },
+		httpx.OnRateLimitDrop(func(string) { drops++ }))
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+
+	// First request consumes the single burst token → allowed, no drop.
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+	if drops != 0 {
+		t.Fatalf("allowed request must not fire OnDrop, got %d", drops)
+	}
+	// Second request is over budget → 429 + one drop.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("over-budget request should be 429, got %d", rec.Code)
+	}
+	if drops != 1 {
+		t.Fatalf("rejected request must fire OnDrop exactly once, got %d", drops)
+	}
+}
+
 func TestTokenBucketBurstThenLimit(t *testing.T) {
 	clk := &fakeClock{t: time.Unix(0, 0)}
 	tb := httpx.NewTokenBucketWithClock(10, 2, clk.now) // 10/s, burst 2

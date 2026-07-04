@@ -1,12 +1,21 @@
 # Hardening Implementation Plan
 
-> **STATUS (complete):** every verified real gap below is implemented, tested, and shipped behind the
-> `make ci` + `make ci-container` gate — H1, H2, H3, H4, H5, and the P1 items S2/S3/R1/R5/O1. Decisions
-> D-0061…D-0076; evidence under `evidence/hardening-{H1,H2,H3,H4,H5,P1}/`; migrations at v21. The
-> roadmap's inaccurate "current state" claims (S4, O3, R2, R8, R5-core) were verified as NON-gaps and
-> recorded so they don't reopen. Documented follow-ups (not gaps): OTel SDK adapter binding, cross-process
-> trace propagation, per-record-class disposition registry wiring, `module.Context` accessors for the new
-> primitives, and a `wowapi apikey` CLI.
+> **STATUS (in progress — exit gate NOT met):** the H-phases below built and unit/DB-tested the kernel
+> primitives for H1–H5 and the P1 items S2/S3/R1/R5/O1 behind the `make ci` + `make ci-container` gate.
+> **An independent verification ([VERIFICATION-wowapi-hardening.md](../../VERIFICATION-wowapi-hardening.md))
+> found the roadmap acceptance criteria and exit gate are NOT satisfied**: the dominant gap is
+> *built-but-not-wired* (metrics port has zero emission sites; rate limiter, authz cache, signed cursors,
+> OTel adapter, and several evidence primitives are not wired by default), plus no hosted CI, R2 load
+> characterization missing, and expired idempotency keys re-executing. Closure is tracked as corrective
+> actions **CA-1…CA-15** in that report (CA-1…CA-7 are P0). Do **not** treat this plan as "complete" until
+> those are closed and re-verified.
+>
+> Decisions D-0061…**D-0077**; evidence under `evidence/hardening-{H1,H2,H3,H4,H5,P1}/`; migrations to
+> **00022**. The roadmap's inaccurate "current state" claims (S4, O3, R8) were verified as NON-gaps; **R2
+> is reopened** (declassified here to doc-only, but its acceptance was a load characterization that does
+> not exist — see CA-4). Documented follow-ups now escalated to corrective actions: OTel adapter binding +
+> cross-process trace propagation (CA-2/CA-9), `module.Context` accessors for the new primitives (CA-5/
+> CA-11), and a `wowapi apikey` CLI (CA-3).
 
 Companion to [ROADMAP-wowapi.md](../../ROADMAP-wowapi.md). Derived from a three-track code audit
 (security S1–S8, reliability R1–R8, operational O1–O5, evidence E1–E6) run 2026-07-04 against the
@@ -71,10 +80,13 @@ QA-gated hardening increment.
   audited voids; E2 generalized retention/disposition + legal hold + DSR export/erasure; E6 bulk-op
   framework (chunk/progress/partial-failure ledger/resume); E4 snapshot/artifact pipeline.
 
-## P1 backlog (post-P0, sequenced but not in this pass)
+## P1 backlog (subsequently implemented at the kernel level — wiring/finishers tracked as CAs)
 
-S2 rate limiting · S3 step-up/MFA hooks · R1 authz caching + read-replica routing · R5 notification
-receipts API + channel prefs · O1 OTel tracing · O2 expand/contract helper DSL.
+These were built after this plan's first draft (commits for S2 rate limiting, S3 step-up/MFA, R1 authz
+caching, R5 receipts + channel prefs, O1 OTel seam), so the "not in this pass" wording above is **stale**.
+However, independent verification found each landed as a **kernel primitive that is not wired by default**
+or with acceptance residuals — closure is tracked as: S2→CA-1/CA-2, S3→CA-13, R1→CA-2/CA-10, R5→CA-15,
+O1→CA-2/CA-9, O2 expand/contract helper→CA-12.
 
 ## Doc-only (verified NOT gaps — recorded so the roadmap's inaccurate rows don't reopen)
 

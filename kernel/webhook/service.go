@@ -380,6 +380,7 @@ func (s *Service) deliverToEndpoint(
 
 	if postErr == nil && statusCode >= 200 && statusCode < 300 {
 		br.recordSuccess()
+		s.emitBreakerState(ep.ID, br)
 		// ARCH-72: a recovered endpoint must return to 'active' — otherwise it
 		// stays 'degraded' forever after the breaker closes.
 		if _, cerr := db.Exec(ctx,
@@ -399,6 +400,7 @@ func (s *Service) deliverToEndpoint(
 	}
 
 	br.recordFailure(s.now())
+	s.emitBreakerState(ep.ID, br)
 
 	// Persist endpoint status='degraded' when the breaker just opened.
 	if br.isOpen(s.now()) {

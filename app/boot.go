@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"time"
 
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -30,7 +32,18 @@ type Booted struct {
 	OpenAPI    map[string][]byte
 	Health     map[string]func(context.Context) error
 	Migrations map[string]fs.FS
-	Seeds      seeds.Bundle // merged catalog seeds, ready for SeedSync
+	Seeds      seeds.Bundle   // merged catalog seeds, ready for SeedSync
+	Recurring  []RecurringJob // module-registered recurring jobs (run by the worker scheduler)
+}
+
+// RecurringJob is a leader-safe per-tenant recurring job a module registered via
+// module.Context.RecurringJob (roadmap E5/CA-5). StartWorker registers each on
+// the scheduler; Run is invoked once per active tenant every Every, in that
+// tenant's transaction.
+type RecurringJob struct {
+	Name  string
+	Every time.Duration
+	Run   func(ctx context.Context, db database.TenantDB) error
 }
 
 // Boot runs the module lifecycle up to (not including) Start: it registers every
@@ -75,6 +88,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			comments: k.Comments, attaches: k.Attachments,
 			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,
 			intReg: k.IntegrationProviders, intStore: k.Integrations,
+			audit: k.Audit, sequence: k.Sequence, bulk: k.Bulk, artifacts: k.Artifacts,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
@@ -169,5 +183,6 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		Health:     boot.health,
 		Migrations: boot.migrations,
 		Seeds:      bundle,
+		Recurring:  boot.recurring,
 	}, nil
 }

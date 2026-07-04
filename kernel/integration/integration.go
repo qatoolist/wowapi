@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/qatoolist/wowapi/kernel/config"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -31,11 +32,15 @@ var keyRE = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
 // resolved credential (from the row's credential_ref via the secrets provider).
 // Credential is never logged.
 type Config struct {
-	Key        string
-	Kind       string
-	Settings   map[string]any
-	Credential string // resolved secret value; "" when the row has no credential_ref
-	IsPlatform bool   // true when resolved from the platform (tenant_id NULL) row
+	Key      string
+	Kind     string
+	Settings map[string]any
+	// Credential is the resolved secret as a config.Secret, so it is structurally
+	// redacted — it never appears in logs, %v, JSON, or dumps (roadmap S4/CA-14).
+	// Unwrap the plaintext with the Secret's reveal accessor at the point of use;
+	// IsZero when there is no credential_ref.
+	Credential config.Secret
+	IsPlatform bool // true when resolved from the platform (tenant_id NULL) row
 }
 
 // Provider is the adapter a module registers for one provider key. Concrete

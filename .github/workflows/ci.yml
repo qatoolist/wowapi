@@ -1,0 +1,65 @@
+name: ci
+
+# Hosted CI gate (roadmap CA-6). Enforces the same checks as `make ci-container`
+# on every push and pull request, so the gate is no longer only developer-invoked.
+#
+# Two jobs:
+#   unit  — fast, NO database. Proves the pure unit tests actually pass on their
+#           own (un-gating the DB-skip path: a package must not report `ok` only
+#           because every test skipped for lack of a DSN).
+#   gate  — authoritative. Runs `make ci` inside the toolbox container against the
+#           real compose Postgres with WOWAPI_REQUIRE_DB=1, so DB-backed tests
+#           MUST run (never silently skip), plus the fuzz seed corpus.
+#
+# NOTE: the reference-stack (nginx) header smoke in deployments/reference/smoke.sh
+# requires a running product API (generated from templates, not built in this
+# repo); the in-process header posture is unit-tested in kernel/httpx/edge_test.go.
+# Standing up a scaffolded product in CI is tracked as the CA-6 residual.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit (no DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: boundaries
+        run: make lint-boundaries
+      - name: unit tests (no database — pure unit path must pass standalone)
+        run: make test-unit
+      - name: build
+        run: make build
+
+  gate:
+    name: authoritative gate (ci-container + DB + fuzz seeds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: start compose services (postgres, minio, mailpit)
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
+      - name: authoritative gate (make ci inside toolbox, WOWAPI_REQUIRE_DB=1)
+        # Mirrors `make ci-container`: DB-backed tests fail (not skip) if the DB
+        # is unreachable, so coverage cannot silently evaporate.
+        run: make ci-container
+      - name: fuzz seed corpus (filter DSL + cursor decoder)
+        run: |
+          docker compose -f deployments/compose.yaml run --rm -T tools \
+            go test ./kernel/filtering/ ./kernel/pagination/ -run '^Fuzz' -count=1
+      - name: tear down
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v

@@ -11,6 +11,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/filtering"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/pagination"
@@ -343,8 +344,26 @@ func (rt *Runtime) Instance(ctx context.Context, id uuid.UUID) (Instance, error)
 	return inst, err
 }
 
+// openTasksSort is the fixed (created_at, id) keyset order for OpenTasksFor.
+// Building it through the filtering allowlist gives the cursor a sort-spec
+// signature so a forged or stale cursor is rejected loudly on decode (roadmap
+// R7/CA-2) instead of the previous legacy unsigned cursor.
+var openTasksSort = mustSort(filtering.SortAllowlist{
+	"created_at": {Col: "t.created_at"},
+	"id":         {Col: "t.id"},
+})
+
+func mustSort(allow filtering.SortAllowlist) filtering.Sort {
+	s, err := filtering.ParseSort("created_at,id", allow)
+	if err != nil {
+		panic("workflow: invalid openTasksSort spec: " + err.Error())
+	}
+	return s
+}
+
 // OpenTasksFor lists the open tasks an actor may act on (capacity assignee or
-// delegate), cursor-paginated by (created_at, id).
+// delegate), cursor-paginated by (created_at, id) with a signed (versioned)
+// keyset cursor.
 func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur pagination.Request) (pagination.CursorPage[Task], error) {
 	var page pagination.CursorPage[Task]
 	limit := cur.Limit
@@ -353,11 +372,17 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 	}
 	err := rt.txm.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
 		args := []any{a.CapacityID.String(), a.CapacityID, limit + 1}
+		// KeysetClause verifies the cursor's sort-spec signature and builds the
+		// injection-safe "rows after the cursor" predicate; a forged/stale cursor
+		// (wrong sort) fails with KindValidation instead of silently mis-paging.
+		clause, cargs, _, cerr := filtering.KeysetClause(openTasksSort, cur.Cursor, 4)
+		if cerr != nil {
+			return cerr
+		}
 		where := ""
-		if v := cur.Cursor.Values(); v != nil {
-			// Keyset resume on (created_at, id).
-			where = ` AND (t.created_at, t.id) > ($4, $5)`
-			args = append(args, v["created_at"], v["id"])
+		if clause != "" {
+			where = " AND " + clause
+			args = append(args, cargs...)
 		}
 		rows, err := db.Query(ctx,
 			`SELECT DISTINCT t.id, t.instance_id, t.step_key, t.task_type, t.status,
@@ -397,8 +422,8 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 			// The cursor must point at the last item ACTUALLY RETURNED (index
 			// limit-1). Encoding the dropped lookahead row (index limit) would make
 			// the next `> cursor` query skip it entirely.
-			c, err := pagination.EncodeCursor(map[string]any{
-				"created_at": createdAts[limit-1], "id": page.Items[limit-1].ID,
+			c, err := filtering.NextCursor(openTasksSort, map[string]any{
+				"t.created_at": createdAts[limit-1], "t.id": page.Items[limit-1].ID,
 			})
 			if err != nil {
 				return kerr.Wrapf(err, "workflow.OpenTasksFor", "encode cursor")

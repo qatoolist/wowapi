@@ -106,18 +106,19 @@ func (s *PgIdemStore) Begin(ctx context.Context, db TenantDB, actorScope, key, r
 		return Replay{}, kerr.Wrapf(err, "IdemStore.Begin", "read idempotency key")
 	}
 
-	// Expired row → re-claim it for this request.
+	// Expired row → fail closed with a defined error rather than silently
+	// re-executing the operation (roadmap S5). The stored response has aged out
+	// past its TTL, so we can neither replay it nor safely assume the caller
+	// wants the side effects run a second time under the same key. The client
+	// must mint a fresh idempotency key to perform the operation again.
+	//
+	// Note: this guarantee holds while the expired row is still present. Once
+	// SweepExpired removes it, an identical key is indistinguishable from a new
+	// one and yields Fresh; size the sweep horizon to exceed the client retry
+	// window so the defined-error window is meaningful.
 	if !expiresAt.After(now) {
-		if _, uerr := db.Exec(ctx,
-			`UPDATE idempotency_keys
-                SET request_hash = $1, status = 'in_progress',
-                    response_status = NULL, response_body = NULL,
-                    created_at = now(), expires_at = $2
-              WHERE actor_scope = $3 AND idem_key = $4`,
-			requestHash, now.Add(ttl), actorScope, key); uerr != nil {
-			return Replay{}, kerr.Wrapf(uerr, "IdemStore.Begin", "reclaim expired idempotency key")
-		}
-		return Replay{Fresh: true}, nil
+		return Replay{}, kerr.E(kerr.KindIdempotencyExpired, "idempotency_key_expired",
+			"idempotency key has expired; retry with a new key")
 	}
 
 	if existingHash != requestHash {
@@ -142,8 +143,9 @@ func (s *PgIdemStore) Begin(ctx context.Context, db TenantDB, actorScope, key, r
 // unchanged; only this cross-tenant maintenance path may purge other tenants'
 // rows (migration 00012). Returns the number of rows removed. Safe alongside
 // request traffic: DELETE takes row locks, so a key still held by a live claim
-// blocks until that request commits rather than vanishing under it. Schedule it
-// periodically (the recurring scheduler lands in hardening H2).
+// blocks until that request commits rather than vanishing under it. It is
+// scheduled on the leader-safe recurring scheduler at boot
+// (app/maintenance.go registers "kernel.idempotency.sweep").
 func (s *PgIdemStore) SweepExpired(ctx context.Context, plat TxManager, before time.Time) (int64, error) {
 	var n int64
 	err := plat.Platform(ctx, func(ctx context.Context, db DB) error {

@@ -55,11 +55,23 @@ type Framework struct {
 	// Environment carries NO default tag: it is fail-closed (D-0010/SEC-1) —
 	// the loader errors when it is absent from every layer. The compiled
 	// `local` value exists only through Defaults() for tests/local tooling.
-	Environment   Env  `conf:"environment" json:"environment" doc:"deployment environment (local|dev|stage|prod); must be set explicitly in deployed processes"`
-	SchemaVersion int  `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
-	HTTP          HTTP `conf:"http" json:"http"`
-	Log           Log  `conf:"log" json:"log"`
-	DB            DB   `conf:"db" json:"db"`
+	Environment   Env       `conf:"environment" json:"environment" doc:"deployment environment (local|dev|stage|prod); must be set explicitly in deployed processes"`
+	SchemaVersion int       `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
+	HTTP          HTTP      `conf:"http" json:"http"`
+	Log           Log       `conf:"log" json:"log"`
+	DB            DB        `conf:"db" json:"db"`
+	Telemetry     Telemetry `conf:"telemetry" json:"telemetry"`
+}
+
+// Telemetry configures distributed tracing (roadmap O1). Tracing is OFF by
+// default (zero-cost NoOp tracer) and becomes active only when the sample ratio
+// is > 0 — the composition root then wires the OTel adapter with this ratio,
+// exporting to the OTLP endpoint named by the standard OTEL_EXPORTER_OTLP_ENDPOINT
+// environment variable (e.g. http://jaeger:4318 in the compose stack). This is
+// the real config key that replaces the previously-documented-but-nonexistent
+// cfg.TraceSampleRatio (roadmap CA-2/CA-7).
+type Telemetry struct {
+	TraceSampleRatio float64 `conf:"trace_sample_ratio" default:"0" json:"trace_sample_ratio" doc:"OTel trace head-sampling ratio 0.0..1.0 (0 disables tracing; export target is OTEL_EXPORTER_OTLP_ENDPOINT)"`
 }
 
 // DB configures the Postgres pools. DSNs are optional at load time and
@@ -91,7 +103,18 @@ type HTTP struct {
 	// CORSAllowedOrigins is the exact-match CORS allowlist (deny-by-default when
 	// empty). Set per environment, e.g. modules-free base leaves it empty and the
 	// prod overlay lists the product's web origins.
-	CORSAllowedOrigins []string `conf:"cors_allowed_origins" json:"cors_allowed_origins" doc:"exact-match CORS origin allowlist (empty = deny all cross-origin)"`
+	CORSAllowedOrigins []string  `conf:"cors_allowed_origins" json:"cors_allowed_origins" doc:"exact-match CORS origin allowlist (empty = deny all cross-origin)"`
+	RateLimit          RateLimit `conf:"rate_limit" json:"rate_limit"`
+}
+
+// RateLimit configures the in-process per-client rate limiter that the generated
+// api installs in its default middleware chain (roadmap S2/CA-2). It is OPT-OUT:
+// enabled unless Disabled is set, so a scaffolded product is protected against
+// resource-exhaustion by default. Limits are guardrails, not billing.
+type RateLimit struct {
+	Disabled          bool    `conf:"disabled" json:"disabled" doc:"set true to remove the default per-client rate limiter from the chain"`
+	RequestsPerSecond float64 `conf:"requests_per_second" default:"20" json:"requests_per_second" doc:"sustained requests/sec per client key (per replica)"`
+	Burst             int     `conf:"burst" default:"40" json:"burst" doc:"burst capacity per client key"`
 }
 
 // Log configures structured logging.
@@ -111,9 +134,11 @@ func Defaults() Framework {
 			ReadHeaderTimeout: 5 * time.Second,
 			RequestTimeout:    30 * time.Second,
 			MaxBodyBytes:      1 << 20, // 1 MiB
+			RateLimit:         RateLimit{Disabled: false, RequestsPerSecond: 20, Burst: 40},
 		},
-		Log: Log{Level: "info", Format: "json"},
-		DB:  DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
+		Log:       Log{Level: "info", Format: "json"},
+		DB:        DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
+		Telemetry: Telemetry{TraceSampleRatio: 0},
 	}
 }
 
@@ -156,6 +181,17 @@ func (f Framework) Validate() error {
 	}
 	if f.DB.QueryTimeout < 100*time.Millisecond || f.DB.QueryTimeout > 60*time.Second {
 		add("db.query_timeout: %v outside safe range 100ms..60s", f.DB.QueryTimeout)
+	}
+	if f.Telemetry.TraceSampleRatio < 0 || f.Telemetry.TraceSampleRatio > 1 {
+		add("telemetry.trace_sample_ratio: %v outside range 0.0..1.0", f.Telemetry.TraceSampleRatio)
+	}
+	if !f.HTTP.RateLimit.Disabled {
+		if f.HTTP.RateLimit.RequestsPerSecond <= 0 {
+			add("http.rate_limit.requests_per_second: must be > 0 when the limiter is enabled")
+		}
+		if f.HTTP.RateLimit.Burst < 1 {
+			add("http.rate_limit.burst: must be >= 1 when the limiter is enabled")
+		}
 	}
 
 	// Production safety floor. Dev-only conveniences added in later phases

@@ -68,6 +68,33 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 	})
 }
 
+// registerModuleRecurring wires each module-registered recurring job onto the
+// scheduler (roadmap E5/CA-5). Like the kernel sweeps, each runs leader-safe and
+// fans out per active tenant, giving the module's callback a tenant-bound DB in
+// that tenant's transaction. One tenant's failure is logged and does not block
+// the others.
+func registerModuleRecurring(sched *jobs.Scheduler, k *kernel.Kernel, recurring []RecurringJob) {
+	for _, rj := range recurring {
+		rj := rj
+		sched.Register(rj.Name, rj.Every, func(ctx context.Context) error {
+			tenants, err := activeTenants(ctx, k)
+			if err != nil {
+				return err
+			}
+			for _, tid := range tenants {
+				tctx := database.WithTenantID(ctx, tid)
+				if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+					return rj.Run(ctx, db)
+				}); err != nil {
+					k.Log.WarnContext(ctx, "scheduler: module recurring job failed for tenant",
+						"job", rj.Name, "tenant", tid, "err", err)
+				}
+			}
+			return nil
+		})
+	}
+}
+
 // activeTenants lists tenant ids eligible for per-tenant maintenance. Read on the
 // platform pool (app_platform holds the tenants-catalog grant).
 func activeTenants(ctx context.Context, k *kernel.Kernel) ([]uuid.UUID, error) {

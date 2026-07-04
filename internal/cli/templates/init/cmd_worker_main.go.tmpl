@@ -4,10 +4,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -77,10 +79,18 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
+	// Metrics: the worker exports scheduler/sweeper lag, webhook breaker state,
+	// and (once wired) DLQ depth. Scrape it on an internal listener (default
+	// :9090, override with WORKER_METRICS_ADDR) — never expose it publicly.
+	metrics := promadapter.New()
+	metrics.SetGauge("wowapi_config_fingerprint_info", 1,
+		map[string]string{"fingerprint": fp.Short()})
+
 	k, err := kernel.New(cfg.Framework, log, kernel.Deps{
 		Pool:     pool,
 		Platform: platformPool,
 		Tx:       txm,
+		Metrics:  metrics,
 	})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
@@ -92,6 +102,22 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}
+
+	// Internal metrics endpoint. Serves only while the worker runs; shut down
+	// when the process context is cancelled.
+	metricsAddr := os.Getenv("WORKER_METRICS_ADDR")
+	if metricsAddr == "" {
+		metricsAddr = ":9090"
+	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metrics.Handler())
+	metricsSrv := &http.Server{Addr: metricsAddr, Handler: metricsMux, ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout}
+	go func() {
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.ErrorContext(ctx, "worker metrics server error", "err", err)
+		}
+	}()
+	defer func() { _ = metricsSrv.Shutdown(context.WithoutCancel(ctx)) }()
 
 	return app.StartWorker(ctx, booted, app.WorkerConfigOpts{})
 }

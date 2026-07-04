@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -22,7 +23,7 @@ type fakeProvider struct {
 func (f *fakeProvider) Key() string  { return f.key }
 func (f *fakeProvider) Kind() string { return f.kind }
 func (f *fakeProvider) HealthCheck(_ context.Context, cfg integration.Config) error {
-	f.gotCred = cfg.Credential
+	f.gotCred = cfg.Credential.Reveal()
 	return f.health
 }
 
@@ -136,8 +137,13 @@ func TestIntegrationCredentialResolved(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if cfg.Credential != "sk_live_xyz" {
-		t.Fatalf("credential not resolved from secret ref: %q", cfg.Credential)
+	if cfg.Credential.Reveal() != "sk_live_xyz" {
+		t.Fatalf("credential not resolved from secret ref: %q", cfg.Credential.Reveal())
+	}
+	// S4/CA-14: the credential is a config.Secret, so it must be redacted in any
+	// string/format rendering — the plaintext must never leak into logs or dumps.
+	if rendered := fmt.Sprintf("%v %s %#v", cfg.Credential, cfg.Credential, cfg.Credential); strings.Contains(rendered, "sk_live_xyz") {
+		t.Fatalf("credential leaked in formatted output: %q", rendered)
 	}
 }
 

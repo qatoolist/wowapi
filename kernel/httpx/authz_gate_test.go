@@ -1,8 +1,10 @@
 package httpx_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/qatoolist/wowapi/kernel/authz"
@@ -11,6 +13,46 @@ import (
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/testkit"
 )
+
+// stepUpEval forces the step-up path: the actor is otherwise permitted but the
+// permission demands an elevated factor it lacks.
+type stepUpEval struct{}
+
+func (stepUpEval) Evaluate(context.Context, database.TenantDB, authz.Actor, string, authz.Target) (authz.Decision, error) {
+	return authz.Decision{StepUpRequired: true}, nil
+}
+func (stepUpEval) Filter(context.Context, database.TenantDB, authz.Actor, string, string) (authz.ListFilter, error) {
+	return authz.ListFilter{}, nil
+}
+
+// TestIntegrationAuthzGateStepUpChallenge is the S3/CA-13 regression: when the
+// evaluator signals step-up, the gate answers 401 with a WWW-Authenticate
+// challenge (re-authenticate) rather than a flat 403.
+func TestIntegrationAuthzGateStepUpChallenge(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	capID := testkit.CreateCapacity(t, h, tn.ID, userID)
+
+	router := httpx.NewRouter()
+	router.Handle(http.MethodPost, "/sensitive", httpx.RouteMeta{Permission: "core.thing.approve"},
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	if err := router.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	act := authz.Actor{Kind: authz.ActorUser, UserID: userID, CapacityID: capID, TenantID: tn.ID}
+	mux := router.SecureHandler(fakeAuth{actor: act}, stepUpEval{}, h.TxM)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sensitive", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("step-up must return 401, got %d", rec.Code)
+	}
+	if wa := rec.Header().Get("WWW-Authenticate"); !strings.Contains(wa, "step_up") {
+		t.Fatalf("step-up 401 must carry a WWW-Authenticate challenge, got %q", wa)
+	}
+}
 
 // authz_gate_test.go — the runtime enforcement gap (Finding 1). Proves the
 // framework now ENFORCES the RouteMeta permission per request: Public routes are

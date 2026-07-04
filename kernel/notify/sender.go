@@ -63,10 +63,3 @@ func (inAppSender) Send(_ context.Context, d Delivery) (string, error) {
 	// In-app "delivery" is just the row written by Send; no transport needed.
 	return "inapp-" + d.ID.String(), nil
 }
-
-// noopSender is a fallback for channels with no registered sender.
-type noopSender struct{}
-
-func (noopSender) Send(_ context.Context, _ Delivery) (string, error) {
-	return "", nil
-}

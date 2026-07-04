@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel/apikey"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -33,6 +34,97 @@ func issue(t *testing.T, h *testkit.DBHandle, s *apikey.Store, tenant uuid.UUID,
 		t.Fatalf("issue: %v", err)
 	}
 	return token
+}
+
+// TestIntegrationApiKeyRotate is the CA-3 regression for the two-call rotation:
+// Rotate mints a new key inheriting the old key's scopes; the old key stays
+// valid (overlap) until explicitly revoked, and revoking the old never affects
+// the new.
+func TestIntegrationApiKeyRotate(t *testing.T) {
+	h := testkit.NewDB(t)
+	s := apikey.NewStore(model.UUIDv7())
+	tenant := testkit.CreateTenant(t, h).ID
+	ctx := database.WithActorID(database.WithTenantID(context.Background(), tenant), uuid.New())
+
+	var oldTok, newTok string
+	var oldID, newID uuid.UUID
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		oldTok, oldID, e = s.Issue(ctx, db, "svc", []string{"a.b.read"}, nil)
+		return e
+	}); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		newTok, newID, e = s.Rotate(ctx, db, oldID)
+		return e
+	}); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+
+	if newID == oldID {
+		t.Fatal("rotate must mint a new key id")
+	}
+	p, err := s.Verify(context.Background(), h.PlatformTxM, newTok)
+	if err != nil {
+		t.Fatalf("verify rotated key: %v", err)
+	}
+	if len(p.Scopes) != 1 || p.Scopes[0] != "a.b.read" {
+		t.Fatalf("rotated key must inherit scopes, got %v", p.Scopes)
+	}
+	if _, err := s.Verify(context.Background(), h.PlatformTxM, oldTok); err != nil {
+		t.Fatalf("old token must stay valid until revoked (overlap): %v", err)
+	}
+
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return s.Revoke(ctx, db, oldID)
+	}); err != nil {
+		t.Fatalf("revoke old: %v", err)
+	}
+	if _, err := s.Verify(context.Background(), h.PlatformTxM, oldTok); kerr.KindOf(err) != kerr.KindUnauthenticated {
+		t.Fatalf("revoked old token must fail, got %v", err)
+	}
+	if _, err := s.Verify(context.Background(), h.PlatformTxM, newTok); err != nil {
+		t.Fatalf("new token must survive the old key's revoke: %v", err)
+	}
+}
+
+// TestIntegrationApiKeyAudited proves issue/rotate/revoke write durable
+// audit_logs rows when the store has an audit writer (CA-3).
+func TestIntegrationApiKeyAudited(t *testing.T) {
+	h := testkit.NewDB(t)
+	s := apikey.NewStore(model.UUIDv7(), apikey.WithAudit(kaudit.New(model.UUIDv7(), nil)))
+	tenant := testkit.CreateTenant(t, h).ID
+	ctx := database.WithActorID(database.WithTenantID(context.Background(), tenant), uuid.New())
+
+	var oldID uuid.UUID
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		_, oldID, e = s.Issue(ctx, db, "svc", []string{"a.b.read"}, nil)
+		return e
+	}); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		if _, _, e := s.Rotate(ctx, db, oldID); e != nil {
+			return e
+		}
+		return s.Revoke(ctx, db, oldID)
+	}); err != nil {
+		t.Fatalf("rotate+revoke: %v", err)
+	}
+
+	var n int
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(ctx,
+			`SELECT count(*) FROM audit_logs WHERE action IN ('apikey.issue','apikey.rotate','apikey.revoke')`).Scan(&n)
+	}); err != nil {
+		t.Fatalf("read audit_logs: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 apikey audit rows (issue+rotate+revoke), got %d", n)
+	}
 }
 
 func TestIntegrationApiKeyIssueVerify(t *testing.T) {

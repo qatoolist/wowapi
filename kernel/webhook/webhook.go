@@ -13,6 +13,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // Direction values mirror the DB check constraint.
@@ -127,27 +128,41 @@ type Service struct {
 	breaker   *breakerRegistry
 	idgen     model.IDGen
 	now       func() time.Time
+	metrics   observability.Metrics
+}
+
+// Option customizes a Service at construction.
+type Option func(*Service)
+
+// WithMetrics wires an observability sink so the outbound breaker state is
+// exported as the webhook_breaker_state gauge (0=closed, 1=open, 2=half-open).
+func WithMetrics(m observability.Metrics) Option {
+	return func(s *Service) {
+		if m != nil {
+			s.metrics = m
+		}
+	}
 }
 
 // New wires the Service. sender, secrets, and idgen are required.
-func New(sender Sender, secrets SecretResolver, idgen model.IDGen) *Service {
+func New(sender Sender, secrets SecretResolver, idgen model.IDGen, opts ...Option) *Service {
 	if sender == nil || secrets == nil || idgen == nil {
 		panic("webhook.New: sender, secrets, and idgen are required")
 	}
-	return newService(sender, secrets, idgen, time.Now)
+	return newService(sender, secrets, idgen, time.Now, opts...)
 }
 
 // NewWithClock is like New but accepts an injectable clock — used by tests that
 // exercise the circuit breaker and retry/DLQ paths deterministically.
-func NewWithClock(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time) *Service {
+func NewWithClock(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time, opts ...Option) *Service {
 	if sender == nil || secrets == nil || idgen == nil || nowFn == nil {
 		panic("webhook.NewWithClock: all arguments are required")
 	}
-	return newService(sender, secrets, idgen, nowFn)
+	return newService(sender, secrets, idgen, nowFn, opts...)
 }
 
-func newService(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time) *Service {
-	return &Service{
+func newService(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time, opts ...Option) *Service {
+	s := &Service{
 		verifiers: make(map[string]Verifier),
 		handlers:  make(map[string]InboundHandler),
 		sender:    sender,
@@ -155,7 +170,20 @@ func newService(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn 
 		breaker:   newBreakerRegistry(nowFn),
 		idgen:     idgen,
 		now:       nowFn,
+		metrics:   observability.NoOp,
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+// emitBreakerState exports the endpoint's circuit-breaker state as a gauge
+// (0=closed, 1=open, 2=half-open) after a delivery outcome (roadmap CA-1). NoOp
+// unless a metrics adapter is wired.
+func (s *Service) emitBreakerState(endpointID uuid.UUID, br *breakerState) {
+	s.metrics.SetGauge("webhook_breaker_state", br.stateValue(s.now()),
+		map[string]string{"endpoint_id": endpointID.String()})
 }
 
 // RegisterVerifier registers a Verifier for the given provider key.

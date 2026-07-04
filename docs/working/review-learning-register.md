@@ -59,6 +59,33 @@ one pass. The register turns those into durable prevention.
   verified after write. → **Rule: verify artifact well-formedness after generation** (added to
   `review_gate.sh`: scan for stray tags).
 
+## Review pass 4 — documentation (Independent Review Gate applied to README + docs/user-guide)
+The adversarial fact-check found **7 real inaccuracies** in a first draft written partly from memory of
+the codebase rather than re-reading source:
+- **[High] `app_migrate` claimed as created by the first migration** — it is NOT
+  (`00001_bootstrap.sql` creates only `app_rt`/`app_platform`; the runner connects *as* `app_migrate`).
+- **[High] Seeds documented as SQL `INSERT … ON CONFLICT`** — they are declarative **YAML catalogs**
+  (`kernel/seeds` → `Bundle` of permissions/roles/resource_types/relationship_types).
+- **[Med] `wowapi config diff` labelled "not implemented"** — it *is* implemented
+  (`config_delegate.go runConfigDiff`); a real feature was documented as a gap (inverse over-claim).
+- **[Med] `WithBreakGlass()` shown with no arg** — signature is `WithBreakGlass(on bool)`; snippet
+  wouldn't compile.
+- **[Med] `config doctor` example invented a `value(redacted)` column + wrong layer labels** — real
+  output is two columns `KEY | LAYER` with labels `default|base-file|env-file|env|flag|secret`.
+- **[Low] two role/naming slips** (`httpx.Authenticate` vs `httpx.Authenticator`; role-list wording).
+
+*Why it happened:* signatures/CLI-flags/config-keys were recalled from earlier context instead of being
+re-read at write time; memory drifts from source. *Why the mechanical gate missed it:* `review_gate.sh`
+checks tags/skips/overclaims/binaries, not doc-vs-source factual accuracy — only a source-grounded
+reviewer catches a hallucinated flag or signature.
+- → **Rule: every documented command/flag/signature/config-key/error-code MUST be verified against the
+  source file at write time** (quote `file:line`), and a fresh source-grounded reviewer must fact-check
+  docs before a docs goal is complete. New recurring class: **doc-not-grounded-in-source** (a
+  documentation-specific sibling of *deferred-claimed-as-done*, and its inverse *feature-claimed-as-gap*).
+- Recurrence of **stray generation artifacts**: the `</content>` tag reappeared on *every* newly-written
+  page this pass; the `review_gate.sh` stray-tag scan caught them all → strip is now a standard
+  post-write step for any batch of generated docs.
+
 ## How to add a learning
 Append: *what was found · why it happened · why the workflow missed it · prevention · which checklist/
 test/script/gate to update.* If the class already appears above, add the instance under it; if a new

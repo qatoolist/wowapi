@@ -29,12 +29,31 @@ type RateLimiter interface {
 	Allow(key string) (allowed bool, retryAfter time.Duration)
 }
 
+// RateLimitOption customizes the RateLimit middleware.
+type RateLimitOption func(*rateLimitCfg)
+
+type rateLimitCfg struct {
+	onDrop func(route string)
+}
+
+// OnRateLimitDrop registers a callback fired whenever a request is rejected
+// (429). The composition root wires this to a metrics counter — httpx must not
+// import kernel/observability (observability imports httpx), so the emission is
+// injected as a plain callback (roadmap CA-1). route is r.Pattern.
+func OnRateLimitDrop(fn func(route string)) RateLimitOption {
+	return func(c *rateLimitCfg) { c.onDrop = fn }
+}
+
 // RateLimit rejects requests that exceed the limiter with 429 + Retry-After. The
 // keyFn derives the bucket key from the request (see KeyByIP / KeyByActor). A nil
 // keyFn defaults to KeyByIP.
-func RateLimit(limiter RateLimiter, keyFn func(*http.Request) string) Middleware {
+func RateLimit(limiter RateLimiter, keyFn func(*http.Request) string, opts ...RateLimitOption) Middleware {
 	if keyFn == nil {
 		keyFn = KeyByIP
+	}
+	var cfg rateLimitCfg
+	for _, o := range opts {
+		o(&cfg)
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +61,9 @@ func RateLimit(limiter RateLimiter, keyFn func(*http.Request) string) Middleware
 			if !allowed {
 				secs := max(int(math.Ceil(retryAfter.Seconds())), 1)
 				w.Header().Set("Retry-After", strconv.Itoa(secs))
+				if cfg.onDrop != nil {
+					cfg.onDrop(r.Pattern)
+				}
 				WriteError(r.Context(), w, kerr.E(kerr.KindRateLimited, "rate_limited",
 					"rate limit exceeded; retry later"))
 				return

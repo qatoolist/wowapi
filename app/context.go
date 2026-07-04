@@ -13,9 +13,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"time"
 
+	"github.com/qatoolist/wowapi/kernel/artifact"
 	"github.com/qatoolist/wowapi/kernel/attachment"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/bulk"
 	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -29,6 +33,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/sequence"
 	"github.com/qatoolist/wowapi/kernel/validation"
 	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
@@ -45,6 +50,7 @@ type bootState struct {
 	openapi    map[string][]byte
 	health     map[string]func(context.Context) error
 	ports      map[string]any
+	recurring  []RecurringJob
 }
 
 func newBootState() *bootState {
@@ -88,6 +94,10 @@ type moduleContext struct {
 	webhooks  *webhook.Service
 	intReg    *integration.Registry
 	intStore  *integration.Store
+	audit     *kaudit.Writer
+	sequence  *sequence.Allocator
+	bulk      *bulk.Service
+	artifacts *artifact.Pipeline
 	boot      *bootState
 }
 
@@ -119,6 +129,10 @@ type moduleDeps struct {
 	webhooks  *webhook.Service
 	intReg    *integration.Registry
 	intStore  *integration.Store
+	audit     *kaudit.Writer
+	sequence  *sequence.Allocator
+	bulk      *bulk.Service
+	artifacts *artifact.Pipeline
 	boot      *bootState
 }
 
@@ -137,6 +151,7 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		comments: deps.comments, attaches: deps.attaches,
 		notifyReg: deps.notifyReg, notifySvc: deps.notifySvc, webhooks: deps.webhooks,
 		intReg: deps.intReg, intStore: deps.intStore,
+		audit: deps.audit, sequence: deps.sequence, bulk: deps.bulk, artifacts: deps.artifacts,
 		boot: deps.boot,
 	}
 }
@@ -208,6 +223,17 @@ func (c *moduleContext) Jobs() *jobs.Registry {
 	return c.jobs
 }
 
+// RecurringJob collects a leader-safe per-tenant recurring job; the worker's
+// scheduler runs it (roadmap E5/CA-5). The name is module-prefixed to avoid
+// collisions with kernel maintenance tasks and other modules.
+func (c *moduleContext) RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error) {
+	c.boot.recurring = append(c.boot.recurring, RecurringJob{
+		Name:  c.name + "." + name,
+		Every: every,
+		Run:   fn,
+	})
+}
+
 // Rules returns the rule-point registry; RulesResolver the resolver.
 func (c *moduleContext) Rules() *rules.Registry         { return c.rules }
 func (c *moduleContext) RulesResolver() *rules.Resolver { return c.resolver }
@@ -217,6 +243,12 @@ func (c *moduleContext) Workflows() *workflow.Registry      { return c.wfReg }
 func (c *moduleContext) WorkflowRuntime() *workflow.Runtime { return c.wfRT }
 
 func (c *moduleContext) RetentionClasses() *retention.Registry { return c.retClass }
+
+// Evidence-layer services (roadmap CA-11).
+func (c *moduleContext) Audit() *kaudit.Writer         { return c.audit }
+func (c *moduleContext) Sequence() *sequence.Allocator { return c.sequence }
+func (c *moduleContext) Bulk() *bulk.Service           { return c.bulk }
+func (c *moduleContext) Artifacts() *artifact.Pipeline { return c.artifacts }
 
 // DocumentClasses/DocumentHooks are the shared document registration pointers;
 // Documents/Comments/Attachments are the runtime services.

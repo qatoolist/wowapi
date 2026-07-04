@@ -10,11 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
+	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
 	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel/apikey"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/logging"
+	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 
 	"{{.Module}}/internal/appcfg"
@@ -42,6 +47,29 @@ func run(ctx context.Context) error {
 	}
 	logging.LogStartup(log, "api", cfg.Environment, fp)
 
+	// Metrics: a real Prometheus adapter is wired so the RED middleware, kernel
+	// components (webhook breaker, scheduler lag, DLQ depth, rate-limit drops),
+	// and the config-fingerprint info gauge actually export series at /metrics.
+	metrics := promadapter.New()
+	// Export the effective config fingerprint as an info gauge so a monitor can
+	// alert on config drift without a redeploy (roadmap O4/CA-1).
+	metrics.SetGauge("wowapi_config_fingerprint_info", 1,
+		map[string]string{"fingerprint": fp.Short()})
+
+	// Tracing: OFF (zero-cost NoOp) unless telemetry.trace_sample_ratio > 0. When
+	// enabled, export spans to OTEL_EXPORTER_OTLP_ENDPOINT (roadmap O1/CA-2). A
+	// failure to build the exporter degrades to NoOp rather than blocking startup.
+	tracer := observability.NoOpTracer
+	if cfg.Telemetry.TraceSampleRatio > 0 {
+		ot, terr := oteladapter.NewOTLP(ctx, cfg.Telemetry.TraceSampleRatio)
+		if terr != nil {
+			log.WarnContext(ctx, "tracing disabled: OTLP exporter init failed", "err", terr)
+		} else {
+			tracer = ot
+			defer func() { _ = ot.Shutdown(context.WithoutCancel(ctx)) }()
+		}
+	}
+
 	// Resolve the runtime DSN: prefer a resolved secretref, then DATABASE_URL.
 	dsn := cfg.DB.DSN.Reveal()
 	if dsn == "" {
@@ -66,7 +94,7 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
-	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm})
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm, Metrics: metrics})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
@@ -79,13 +107,31 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("boot: %w", err)
 	}
 
-	// Build the application mux with the RouteMeta permission gate ENFORCED on
-	// every non-Public route (deny-by-default: AuthN -> bind tenant/actor ->
-	// AuthZ(permission)). DenyAllAuthenticator is the SECURE DEFAULT — business
-	// routes return 401 until you wire a real Authenticator here (verify the
-	// bearer token via kernel/auth, resolve the tenant, return an authz.Actor).
+	// Composite authenticator (roadmap S1/CA-2): API keys first, then your user
+	// (OIDC) authenticator. API-key verification is cross-tenant (the tenant is
+	// unknown pre-auth), so it needs an app_platform connection.
+	platformDSN := cfg.DB.PlatformDSN.Reveal()
+	if platformDSN == "" {
+		platformDSN = dsn
+	}
+	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB, database.WithSetRole("app_platform"))
+	if err != nil {
+		return fmt.Errorf("db pool (platform): %w", err)
+	}
+	defer platformPool.Close()
+	platformTxM := database.NewManager(platformPool, cfg.DB, database.WithRole("app_platform"))
+	apiKeyAuth := apikey.NewAuthenticator(
+		apikey.NewStore(model.UUIDv7(), apikey.WithAudit(kaudit.New(model.UUIDv7(), nil))),
+		platformTxM,
+	)
+
+	// The RouteMeta permission gate is ENFORCED on every non-Public route
+	// (deny-by-default: AuthN -> bind tenant/actor -> AuthZ(permission)). Until you
+	// wire a real user authenticator the composite falls through to DenyAll, so
+	// non-key business requests return 401 — the secure default.
 	// TODO: replace httpx.DenyAllAuthenticator{} with your OIDC/tenant Authenticator.
-	mux := booted.Router.SecureHandler(httpx.DenyAllAuthenticator{}, booted.Kernel.Authz, booted.Kernel.Tx)
+	auth := httpx.Composite(apiKeyAuth, httpx.DenyAllAuthenticator{})
+	mux := booted.Router.SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
 
 	// Health endpoints are Public infrastructure, mounted directly.
 	health := app.Readiness(booted, fp, map[string]httpx.HealthCheck{
@@ -93,22 +139,41 @@ func run(ctx context.Context) error {
 	})
 	mux.Handle("/healthz", health.Liveness())
 	mux.Handle("/readyz", health.Readiness())
+	// Prometheus exposition. Mounted as Public infrastructure like the health
+	// endpoints; in production restrict it to an internal listener or scrape it
+	// through the reference proxy (see deployments/reference/) so it is not
+	// world-readable.
+	mux.Handle("/metrics", metrics.Handler())
 
 	// Middleware chain (blueprint 07 §1 order, outermost first). SecureHeaders +
 	// CORS + BodyLimit + Timeout are kernel-owned edge guardrails; the CORS
 	// allowlist and body/timeout caps come from configs/ (empty allowlist =
 	// deny all cross-origin).
-	handler := httpx.Chain(mux,
+	mws := []httpx.Middleware{
 		httpx.RequestID(),
 		httpx.Recover(log),
-		observability.Trace(observability.NoOpTracer), // swap in an OTel adapter to enable tracing
-		observability.Requests(observability.NoOp),
+		observability.Trace(tracer),     // OTel span per request when tracing is enabled
+		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),
+	}
+	// Rate limiting is ON by default (opt-out via http.rate_limit.disabled): an
+	// in-process per-IP token bucket returning 429 + Retry-After, with drops
+	// counted as rate_limit_dropped_total (roadmap S2/CA-2). Place a per-actor
+	// bucket AFTER the authz gate if you need per-principal limits.
+	if !cfg.HTTP.RateLimit.Disabled {
+		limiter := httpx.NewTokenBucket(cfg.HTTP.RateLimit.RequestsPerSecond, cfg.HTTP.RateLimit.Burst)
+		mws = append(mws, httpx.RateLimit(limiter, httpx.KeyByIP,
+			httpx.OnRateLimitDrop(func(route string) {
+				metrics.IncCounter("rate_limit_dropped_total", 1, map[string]string{"route": route})
+			})))
+	}
+	mws = append(mws,
 		httpx.SecureHeaders(),
 		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
 		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
 		httpx.Timeout(cfg.HTTP.RequestTimeout),
 	)
+	handler := httpx.Chain(mux, mws...)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTP.Addr,

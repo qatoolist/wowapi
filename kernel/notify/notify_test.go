@@ -693,6 +693,65 @@ func TestSendPendingRetriesAndDeadLetters(t *testing.T) {
 	}
 }
 
+// TestSendPendingUnregisteredChannelFailsLoudly is the CA-15 regression: a
+// queued delivery for a channel with NO registered sender must be recorded as a
+// terminal failure ('dead', with a clear last_error) — never silently marked
+// 'sent' by a no-op fallback sender (the prior silent-success hole).
+func TestSendPendingUnregisteredChannelFailsLoudly(t *testing.T) {
+	db := testkit.NewDB(t)
+	reg := notify.NewRegistry()
+	reg.Register("core", notify.TemplateSpec{
+		Key:      "core.notify.alert",
+		Vars:     []string{"Name"},
+		Channels: []string{"sms"},
+	})
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately register NO sender for the sms channel.
+	svc := notify.New(reg, model.UUIDv7())
+
+	tenant := testkit.CreateTenant(t, db).ID
+	actor := uuid.New()
+	ctx := database.WithActorID(testkit.TenantCtx(tenant), actor)
+	seedTemplate(t, db, nil, "core.notify.alert", "sms", "en", "", "Hi {{.Name}}")
+
+	var id uuid.UUID
+	if err := db.TxM.WithTenant(ctx, func(ctx context.Context, tx database.TenantDB) error {
+		var e error
+		id, e = svc.Send(ctx, tx, notify.Message{
+			TemplateKey:      "core.notify.alert",
+			RecipientPartyID: uuid.New(),
+			Variables:        map[string]any{"Name": "Frank"},
+			Channels:         []notify.ChannelDest{{Channel: notify.ChannelSMS, Destination: "+15551234567"}},
+		})
+		return e
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	n, err := svc.SendPending(context.Background(), db.PlatformTxM, tenant, time.Now())
+	if err != nil {
+		t.Fatalf("SendPending: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("unregistered-channel delivery must NOT count as sent, got %d", n)
+	}
+
+	var status, lastErr string
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT status, COALESCE(last_error,'') FROM notification_deliveries WHERE notification_id = $1`, id,
+	).Scan(&status, &lastErr); err != nil {
+		t.Fatalf("read delivery: %v", err)
+	}
+	if status != "dead" {
+		t.Fatalf("unregistered channel must go terminal 'dead', got %q", status)
+	}
+	if !strings.Contains(lastErr, "no sender registered") {
+		t.Fatalf("last_error should explain the misconfiguration, got %q", lastErr)
+	}
+}
+
 // checkDelivery asserts the status and attempts of the delivery for notification id.
 func checkDelivery(t *testing.T, db *testkit.DBHandle, notifID uuid.UUID, wantStatus string, wantAttempts int) {
 	t.Helper()

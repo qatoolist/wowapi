@@ -16,13 +16,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/qatoolist/wowapi/kernel/artifact"
 	"github.com/qatoolist/wowapi/kernel/attachment"
 	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/bulk"
 	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -30,6 +33,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/notify"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/relationship"
@@ -37,6 +41,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/kernel/sequence"
 	"github.com/qatoolist/wowapi/kernel/storage"
 	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
@@ -84,7 +89,25 @@ type Kernel struct {
 	IntegrationProviders *integration.Registry
 	Integrations         *integration.Store
 
-	audit authz.AuditSink
+	// Metrics is the observability sink shared by kernel components (RED
+	// middleware, scheduler lag, DLQ depth, webhook breaker, rate-limit drops).
+	// Never nil — defaults to observability.NoOp when no adapter is wired.
+	Metrics observability.Metrics
+
+	// AuthzCache is the per-actor assignment cache wrapping the evaluator's store
+	// when Deps.AuthzCacheTTL > 0; nil when caching is disabled. Call Invalidate/
+	// InvalidateTenant on it from role grant/revoke paths for immediate effect.
+	AuthzCache *authz.CachingStore
+
+	// Evidence-layer services exposed to modules via module.Context (roadmap CA-11):
+	// Audit (field-level audit + hash chain), Sequence (gap-free numbering), Bulk
+	// (chunked resumable ops), Artifacts (immutable versioned artifacts).
+	Audit     *kaudit.Writer
+	Sequence  *sequence.Allocator
+	Bulk      *bulk.Service
+	Artifacts *artifact.Pipeline
+
+	auditSink authz.AuditSink
 }
 
 // Deps injects the pools/tx (built by the product main, or provided by testkit)
@@ -103,6 +126,15 @@ type Deps struct {
 	Secrets secrets.Provider
 	// WebhookSender delivers outbound webhooks. Optional; nil → the real HTTP sender.
 	WebhookSender webhook.Sender
+	// Metrics is the observability sink (Prometheus adapter in production).
+	// Optional; nil → observability.NoOp so call sites never nil-check.
+	Metrics observability.Metrics
+	// AuthzCacheTTL, when > 0, wraps the authorization store in a per-actor
+	// ActiveAssignments cache with this TTL (roadmap R1/CA-2). DEFAULT OFF
+	// (zero) — enabling it accepts up-to-TTL stale-allow after a revocation on
+	// another pod, so keep the TTL short and call Kernel.AuthzCache.Invalidate
+	// from your role grant/revoke paths for immediate effect on this pod.
+	AuthzCacheTTL time.Duration
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -110,6 +142,17 @@ type Deps struct {
 // into during boot; the evaluator reads them at decision time.
 func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	idgen := model.UUIDv7()
+
+	// Metrics sink: NoOp unless a product wires an adapter (e.g. Prometheus),
+	// so every emission call site is nil-safe.
+	metrics := deps.Metrics
+	if metrics == nil {
+		metrics = observability.NoOp
+	}
+
+	// Shared audit writer: used both as the durable authz-denial sink below and
+	// exposed to modules via Kernel.Audit / module.Context.Audit (roadmap CA-11).
+	auditWriter := kaudit.New(idgen, nil)
 
 	// Audit sink: unless a product injects one, denials are written DURABLY to
 	// audit_logs (not just logged) whenever a runtime TxManager is available — the
@@ -119,7 +162,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	audit := deps.Audit
 	if audit == nil {
 		if deps.Tx != nil {
-			audit = durableAudit{log: log, txm: deps.Tx, writer: kaudit.New(idgen, nil)}
+			audit = durableAudit{log: log, txm: deps.Tx, writer: auditWriter}
 		} else {
 			audit = loggingAudit{log: log}
 		}
@@ -127,8 +170,18 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	perms := authz.NewRegistry()
 	resources := resource.NewRegistry()
 
+	// Authorization store: the DB-backed store, optionally wrapped in the
+	// per-actor assignment cache when a TTL is configured (roadmap R1/CA-2).
+	// Off by default: caching accepts up-to-TTL stale-allow, so it is opt-in.
+	var authzStore authz.Store = authz.NewStore()
+	var authzCache *authz.CachingStore
+	if deps.AuthzCacheTTL > 0 {
+		authzCache = authz.NewCachingStore(authzStore, deps.AuthzCacheTTL)
+		authzStore = authzCache
+	}
+
 	eval := authz.New(authz.Options{
-		Store:         authz.NewStore(),
+		Store:         authzStore,
 		Registry:      perms,
 		Policies:      policy.New(),
 		Relationships: relationship.NewChecker(),
@@ -180,7 +233,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	if sender == nil {
 		sender = webhook.NewHTTPSender()
 	}
-	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen)
+	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen, webhook.WithMetrics(metrics))
 
 	// Integrations: provider adapter registry + config/credential store.
 	intReg := integration.NewRegistry()
@@ -211,7 +264,13 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Webhooks:             webhookSvc,
 		IntegrationProviders: intReg,
 		Integrations:         intStore,
-		audit:                audit,
+		Metrics:              metrics,
+		AuthzCache:           authzCache,
+		Audit:                auditWriter,
+		Sequence:             sequence.New(idgen),
+		Bulk:                 bulk.New(idgen),
+		Artifacts:            artifact.New(idgen),
+		auditSink:            audit,
 	}, nil
 }
 

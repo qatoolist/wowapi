@@ -1,0 +1,77 @@
+# Reference Prometheus alerting rules for a wowapi-based product (roadmap CA-1/O4).
+#
+# Every rule below targets a metric the framework now ACTUALLY exports (before
+# CA-1 the observability port had zero emission sites, so these rules would have
+# matched nothing). Load with a `rule_files:` entry in prometheus.yml, and scrape
+# the api's public `/metrics` and the worker's internal `/metrics`
+# (WORKER_METRICS_ADDR, default :9090) — see prometheus-scrape.yml.
+#
+# Metrics exported today:
+#   http_request_duration_seconds{route,method,status}  (RED, api)
+#   wowapi_config_fingerprint_info{fingerprint}          (api + worker)
+#   scheduler_lag_seconds{task}                          (worker)
+#   scheduler_task_errors_total{task}                    (worker)
+#   webhook_breaker_state{endpoint_id}  0=closed 1=open 2=half-open (worker)
+#   rate_limit_dropped_total{route}     (api, once RateLimit is in the chain — CA-2)
+#
+# NOT yet exported (documented CA-1 follow-up): dead-letter-queue depth.
+
+groups:
+  - name: wowapi-framework
+    rules:
+      # O4 config drift: replicas disagree on the effective config fingerprint,
+      # i.e. a config change reached some pods without a coordinated deploy.
+      - alert: WowapiConfigFingerprintDrift
+        expr: count(count by (fingerprint) (wowapi_config_fingerprint_info)) > 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Config fingerprint drift across replicas"
+          description: "More than one distinct config fingerprint is live — a config change was not rolled out uniformly."
+
+      # R3 sweeper lag: a leader-safe maintenance task is running far behind its
+      # interval (stuck worker, contention, or a slow sweep).
+      - alert: WowapiSchedulerLagHigh
+        expr: scheduler_lag_seconds > 300
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Scheduler task {{ $labels.task }} lagging"
+          description: "Maintenance task {{ $labels.task }} is >5m behind schedule."
+
+      - alert: WowapiSchedulerTaskErrors
+        expr: increase(scheduler_task_errors_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Scheduler task {{ $labels.task }} failing"
+          description: "A maintenance sweep returned an error in the last 15m."
+
+      # R8 webhook breaker open: an outbound endpoint has tripped its circuit.
+      - alert: WowapiWebhookBreakerOpen
+        expr: webhook_breaker_state == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Webhook breaker open for endpoint {{ $labels.endpoint_id }}"
+          description: "Outbound deliveries to this endpoint are being skipped (circuit open)."
+
+      # RED: elevated server-error rate on the API.
+      - alert: WowapiHighServerErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / sum(rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "API 5xx rate above 5%"
+          description: "More than 5% of requests are returning 5xx over the last 5m."
+
+      # S2 rate-limit drops (activates once RateLimit + OnRateLimitDrop are wired
+      # into the default chain — CA-2).
+      - alert: WowapiRateLimitDropSpike
+        expr: sum(rate(rate_limit_dropped_total[5m])) by (route) > 1
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "Sustained rate-limit drops on {{ $labels.route }}"
+          description: "Requests are being throttled at a sustained rate; review the bucket size or the caller."

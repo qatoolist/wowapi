@@ -58,6 +58,20 @@ func (b *breakerState) recordFailure(now time.Time) {
 	}
 }
 
+// stateValue reports the breaker state as a metric-friendly number at now:
+// 0 = closed, 1 = open (blocking), 2 = half-open (probing).
+func (b *breakerState) stateValue(now time.Time) float64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.openedAt.IsZero() {
+		return 0
+	}
+	if now.Sub(b.openedAt) >= BreakerCooldown {
+		return 2 // half-open
+	}
+	return 1 // open
+}
+
 // isOpen reports whether the breaker is in the blocking (open) state at now.
 func (b *breakerState) isOpen(now time.Time) bool {
 	b.mu.Lock()

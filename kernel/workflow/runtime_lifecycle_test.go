@@ -275,6 +275,33 @@ func TestIntegrationWorkflowOpenTasksForNoSkip(t *testing.T) {
 	}
 }
 
+// TestIntegrationWorkflowOpenTasksForRejectsForeignCursor is the R7/CA-2
+// regression: OpenTasksFor now mints signed (sort-versioned) cursors, so a
+// cursor carrying a different sort-spec signature must be rejected loudly with
+// KindValidation instead of silently mis-paging.
+func TestIntegrationWorkflowOpenTasksForRejectsForeignCursor(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
+	rt := buildRuntime(t, h, cap, linearDef)
+	act := actor(tn.ID, userID, cap)
+
+	foreign, err := pagination.EncodeCursorWithSig("some-other-sort", map[string]any{
+		"t.created_at": time.Now(), "t.id": uuid.New(),
+	})
+	if err != nil {
+		t.Fatalf("mint foreign cursor: %v", err)
+	}
+	req, err := pagination.Parse("2", foreign, pagination.Defaults{PerPage: 2, MaxPerPage: 100})
+	if err != nil {
+		t.Fatalf("pagination.Parse: %v", err)
+	}
+	if _, err := rt.OpenTasksFor(testkit.TenantCtx(tn.ID), act, req); kerr.KindOf(err) != kerr.KindValidation {
+		t.Fatalf("foreign-sort cursor should be rejected with KindValidation, got %v", err)
+	}
+}
+
 func TestIntegrationWorkflowGatewayRouting(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)

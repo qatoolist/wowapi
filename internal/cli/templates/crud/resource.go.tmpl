@@ -2,9 +2,16 @@
 package {{.Package}}
 
 import (
+	"context"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/filtering"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/pagination"
 	"github.com/qatoolist/wowapi/module"
 )
 
@@ -16,37 +23,126 @@ type {{.ResourceTitle}}DTO struct {
 {{- end}}
 }
 
-// Register{{.ResourceTitle}}Routes wires {{.Resource}} CRUD routes into mc.
-func Register{{.ResourceTitle}}Routes(mc module.Context) {
-	r := mc.Routes()
-	r.Handle("POST", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.create"}, create{{.ResourceTitle}})
-	r.Handle("GET", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.read"}, get{{.ResourceTitle}})
-	r.Handle("GET", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.list"}, list{{.ResourceTitle}})
-	r.Handle("PUT", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.update"}, update{{.ResourceTitle}})
-	r.Handle("DELETE", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.delete"}, delete{{.ResourceTitle}})
+// {{.ResourceTitle}}Handlers holds the collaborators every {{.Resource}} route needs.
+type {{.ResourceTitle}}Handlers struct {
+	tx database.TxManager
 }
 
-func create{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
-	// TODO: implement create {{.Resource}}.
+// list{{.ResourceTitle}}Sort is the fixed (created_at, id) keyset order. Building it
+// through the filtering allowlist gives every cursor a sort-spec signature, so a
+// forged or stale cursor is rejected loudly on decode (roadmap R7) instead of
+// silently mis-paging.
+var list{{.ResourceTitle}}Sort = func() filtering.Sort {
+	s, err := filtering.ParseSort("created_at,id", filtering.SortAllowlist{
+		"created_at": {Col: "created_at"},
+		"id":         {Col: "id"},
+	})
+	if err != nil {
+		panic("{{.Resource}}: invalid keyset sort: " + err.Error())
+	}
+	return s
+}()
+
+// Register{{.ResourceTitle}}Routes wires {{.Resource}} CRUD routes into mc.
+func Register{{.ResourceTitle}}Routes(mc module.Context) {
+	h := &{{.ResourceTitle}}Handlers{tx: mc.Tx()}
+	r := mc.Routes()
+	r.Handle("POST", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.create"}, h.create)
+	r.Handle("GET", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.read"}, h.get)
+	r.Handle("GET", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.list"}, h.list)
+	r.Handle("PUT", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.update"}, h.update)
+	r.Handle("DELETE", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.delete"}, h.delete)
+}
+
+func (h *{{.ResourceTitle}}Handlers) create(w http.ResponseWriter, _ *http.Request) {
+	// TODO: decode+validate the request, INSERT inside h.tx.WithTenant, return the DTO.
 	httpx.WriteJSON(w, http.StatusCreated, httpx.OK({{.ResourceTitle}}DTO{}))
 }
 
-func get{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
-	// TODO: implement get {{.Resource}}.
+func (h *{{.ResourceTitle}}Handlers) get(w http.ResponseWriter, _ *http.Request) {
+	// TODO: read one {{.Resource}} by id inside h.tx.WithTenantRO.
 	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
 }
 
-func list{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
-	// TODO: implement list {{.Resource}}.
-	httpx.WriteJSON(w, http.StatusOK, httpx.OK([]{{.ResourceTitle}}DTO{}))
+// list is a working keyset-paginated read: it is the canonical signed-cursor
+// example (roadmap CA-2). Adjust the SELECT/scan for your columns.
+func (h *{{.ResourceTitle}}Handlers) list(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	req, err := pagination.Parse(r.URL.Query().Get("per_page"), r.URL.Query().Get("cursor"),
+		pagination.Defaults{PerPage: 50, MaxPerPage: 200})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
+
+	page := pagination.CursorPage[{{.ResourceTitle}}DTO]{Items: []{{.ResourceTitle}}DTO{}}
+	// createdAts/ids parallel page.Items so the cursor is minted from the last
+	// RETURNED row, never the dropped lookahead row.
+	var createdAts []time.Time
+	var ids []uuid.UUID
+
+	err = h.tx.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		args := []any{req.Limit + 1}
+		// KeysetClause verifies the cursor's sort signature and builds the
+		// injection-safe "rows after the cursor" predicate ($1 is the limit).
+		clause, cargs, _, cerr := filtering.KeysetClause(list{{.ResourceTitle}}Sort, req.Cursor, 2)
+		if cerr != nil {
+			return cerr
+		}
+		where := ""
+		if clause != "" {
+			where = " WHERE " + clause
+			args = append(args, cargs...)
+		}
+		rows, qerr := db.Query(ctx,
+			`SELECT id{{range .Fields}}, {{.Name}}{{end}}, created_at
+			   FROM {{.Table}}`+where+`
+			  ORDER BY created_at, id
+			  LIMIT $1`, args...)
+		if qerr != nil {
+			return qerr
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var dto {{.ResourceTitle}}DTO
+			var id uuid.UUID
+			var createdAt time.Time
+			if serr := rows.Scan(&id{{range .Fields}}, &dto.{{.GoName}}{{end}}, &createdAt); serr != nil {
+				return serr
+			}
+			dto.ID = id.String()
+			page.Items = append(page.Items, dto)
+			createdAts = append(createdAts, createdAt)
+			ids = append(ids, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
+
+	if len(page.Items) > req.Limit {
+		page.Items = page.Items[:req.Limit]
+		page.HasMore = true
+		next, cerr := filtering.NextCursor(list{{.ResourceTitle}}Sort, map[string]any{
+			"created_at": createdAts[req.Limit-1], "id": ids[req.Limit-1],
+		})
+		if cerr != nil {
+			httpx.WriteError(ctx, w, cerr)
+			return
+		}
+		page.NextCursor = next
+	}
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK(page))
 }
 
-func update{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
-	// TODO: implement update {{.Resource}}.
+func (h *{{.ResourceTitle}}Handlers) update(w http.ResponseWriter, _ *http.Request) {
+	// TODO: optimistic-concurrency UPDATE inside h.tx.WithTenant.
 	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
 }
 
-func delete{{.ResourceTitle}}(w http.ResponseWriter, _ *http.Request) {
-	// TODO: implement delete {{.Resource}}.
+func (h *{{.ResourceTitle}}Handlers) delete(w http.ResponseWriter, _ *http.Request) {
+	// TODO: soft-delete/status transition inside h.tx.WithTenant.
 	w.WriteHeader(http.StatusNoContent)
 }

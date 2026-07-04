@@ -17,9 +17,13 @@ import (
 	"io/fs"
 	"log/slog"
 	"regexp"
+	"time"
 
+	"github.com/qatoolist/wowapi/kernel/artifact"
 	"github.com/qatoolist/wowapi/kernel/attachment"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/bulk"
 	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -33,6 +37,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/sequence"
 	"github.com/qatoolist/wowapi/kernel/validation"
 	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
@@ -128,6 +133,14 @@ type Context interface {
 	// job commits atomically with the write (Phase 6).
 	Jobs() *jobs.Registry
 
+	// RecurringJob registers a leader-safe recurring job (roadmap E5/CA-5): the
+	// worker's scheduler runs fn once per active tenant every `every`, giving fn a
+	// tenant-bound DB in that tenant's transaction. The job name is prefixed with
+	// the module name to avoid collisions. Registration happens during Register;
+	// execution requires the worker process (the scheduler runs there). Interval
+	// scheduling ships first; cron syntax may follow.
+	RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error)
+
 	// Rules returns the rule-point registry (declare configurable rule points);
 	// RulesResolver returns the resolver for reading effective rule values.
 	// Workflows returns the workflow definition/action registry; WorkflowRuntime
@@ -141,6 +154,17 @@ type Context interface {
 	// dispose/export/erase callbacks into during Register (roadmap E2); the kernel
 	// engine drives scheduled disposition and DSR fulfilment over them.
 	RetentionClasses() *retention.Registry
+
+	// Evidence-layer services (roadmap CA-11), all operating in the caller's tenant
+	// transaction:
+	//   Audit     — field-level change capture + per-tenant hash chain (S6/E1).
+	//   Sequence  — gap-free per-tenant numbered series (receipts/vouchers) (E3).
+	//   Bulk      — chunked, resumable bulk operations with a failure ledger (E6).
+	//   Artifacts — immutable versioned artifacts (PDF/A + sidecar + hash) (E4).
+	Audit() *kaudit.Writer
+	Sequence() *sequence.Allocator
+	Bulk() *bulk.Service
+	Artifacts() *artifact.Pipeline
 
 	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
 	// registry a module declares its document classes into during Register;

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -121,7 +122,7 @@ func (s *Store) Resolve(ctx context.Context, db database.TenantDB, key string) (
 		if err != nil {
 			return Config{}, kerr.Wrapf(err, "integration.Resolve", "resolve credential for %s", key)
 		}
-		cfg.Credential = val
+		cfg.Credential = config.NewSecret(*credRef, val)
 	}
 	return cfg, nil
 }

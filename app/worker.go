@@ -75,8 +75,17 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	sched.OnRun(func(name string, lag time.Duration, err error) {
 		log.InfoContext(ctx, "scheduler ran maintenance task",
 			"task", name, "lag_ms", lag.Milliseconds(), "ok", err == nil)
+		// Export scheduler/sweeper lag as a gauge and task failures as a counter
+		// (roadmap R3/CA-1). NoOp unless a metrics adapter is wired.
+		k.Metrics.SetGauge("scheduler_lag_seconds", lag.Seconds(),
+			map[string]string{"task": name})
+		if err != nil {
+			k.Metrics.IncCounter("scheduler_task_errors_total", 1,
+				map[string]string{"task": name})
+		}
 	})
 	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval)
+	registerModuleRecurring(sched, k, b.Recurring)
 
 	// Both loops respect ctx cancellation and drain in-flight work themselves.
 	// StartWorker blocks until ctx is cancelled and both have returned — but with

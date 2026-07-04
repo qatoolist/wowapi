@@ -31,6 +31,36 @@ func TestValidateCollectsAllErrors(t *testing.T) {
 	}
 }
 
+// TestTelemetryAndRateLimitValidation covers the CA-2 config keys: the trace
+// sample ratio must be in [0,1], and an ENABLED rate limiter needs a positive
+// rate and burst — while a DISABLED limiter skips those checks entirely.
+func TestTelemetryAndRateLimitValidation(t *testing.T) {
+	f := Defaults()
+	f.Telemetry.TraceSampleRatio = 1.5
+	f.HTTP.RateLimit.RequestsPerSecond = 0
+	f.HTTP.RateLimit.Burst = 0
+	err := f.Validate()
+	if err == nil {
+		t.Fatal("out-of-range ratio and zero rate/burst (enabled) must fail")
+	}
+	for _, want := range []string{
+		"telemetry.trace_sample_ratio:",
+		"http.rate_limit.requests_per_second:",
+		"http.rate_limit.burst:",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in: %v", want, err)
+		}
+	}
+
+	// Disabling the limiter waives its rate/burst checks (opt-out with no knobs).
+	off := Defaults()
+	off.HTTP.RateLimit = RateLimit{Disabled: true}
+	if err := off.Validate(); err != nil {
+		t.Fatalf("disabled rate limiter must validate without rate/burst: %v", err)
+	}
+}
+
 func TestProdSafetyFloor(t *testing.T) {
 	f := Defaults()
 	f.Environment = EnvProd
