@@ -241,6 +241,54 @@ func TestIntegrationLegalHoldBlocksSweep(t *testing.T) {
 	}
 }
 
+// TestIntegrationLegalHoldRaceSurvivesSweep is the R6 regression: a legal hold
+// applied concurrently with a running sweep must win — the document survives. The
+// hold transaction takes the documents row lock first, so the sweep's FOR UPDATE
+// blocks; when the hold commits, the sweep re-checks legal_hold and skips the
+// document. Before the fix (no FOR UPDATE, unguarded void UPDATE) the sweep saw
+// legal_hold=false in its snapshot and voided the row anyway.
+func TestIntegrationLegalHoldRaceSurvivesSweep(t *testing.T) {
+	a := newHarness(t, document.Class{Key: "core.doc", Retention: time.Hour})
+	docID, _ := a.uploadVersion(t, "core.doc", document.SensitivityInternal, []byte("racy"), "text/plain; charset=utf-8")
+
+	ctx := context.Background()
+	// Hold transaction: set legal_hold and KEEP the row lock (do not commit yet).
+	tx, err := a.h.Admin.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE documents SET legal_hold = true WHERE id = $1`, docID); err != nil {
+		t.Fatal(err)
+	}
+
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := a.svc.SweepRetention(ctx, a.h.PlatformTxM, a.tn, time.Now().Add(2*time.Hour))
+		done <- result{n, err}
+	}()
+
+	// Let the sweep reach and block on the locked row, then let the hold win.
+	time.Sleep(300 * time.Millisecond)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("sweep errored: %v", res.err)
+	}
+	if res.n != 0 {
+		t.Fatalf("a hold applied mid-sweep must save the document, but %d version(s) were voided", res.n)
+	}
+	if _, err := a.download(t, a.actor, docID); err != nil {
+		t.Fatalf("held document must survive the race: %v", err)
+	}
+}
+
 // TestIntegrationDownloadInReadOnlyTx is the ARCH-65 regression: Download is a
 // read and must succeed inside a WithTenantRO transaction (it emits no event).
 func TestIntegrationDownloadInReadOnlyTx(t *testing.T) {

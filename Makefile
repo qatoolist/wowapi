@@ -115,6 +115,15 @@ test-security: ## Security-critical tests: authz, RLS, secrets, redaction, unsaf
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" \
 		$(GO) test -run '$(SECURITY_TESTS)' -count=1 $(PKGS)
 
+# Adversarial fuzzing drill (roadmap S8). CI runs the seed corpus as ordinary
+# tests; this target drives the go native fuzzer against the two highest-value
+# untrusted-input parsers. FUZZTIME is overridable (e.g. FUZZTIME=5m for nightly).
+FUZZTIME ?= 30s
+test-fuzz: ## Fuzz the filter DSL parser and cursor decoder (FUZZTIME=30s default)
+	$(GO) test ./kernel/filtering/ -run '^$$' -fuzz=FuzzFilterParse  -fuzztime=$(FUZZTIME)
+	$(GO) test ./kernel/filtering/ -run '^$$' -fuzz=FuzzParseSort     -fuzztime=$(FUZZTIME)
+	$(GO) test ./kernel/pagination/ -run '^$$' -fuzz=FuzzDecodeCursor -fuzztime=$(FUZZTIME)
+
 # Hot-path benchmarks (criterion #17).
 # bench:        run all package benchmarks; outputs raw go test -bench lines.
 # bench-budget: pipe bench output through the budget gate tool and fail on violation.

@@ -87,6 +87,10 @@ type HTTP struct {
 	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"5s" json:"read_header_timeout" doc:"maximum time to read request headers"`
 	RequestTimeout    time.Duration `conf:"request_timeout" default:"30s" json:"request_timeout" doc:"per-request handler timeout"`
 	MaxBodyBytes      int64         `conf:"max_body_bytes" default:"1048576" json:"max_body_bytes" doc:"maximum request body size in bytes"`
+	// CORSAllowedOrigins is the exact-match CORS allowlist (deny-by-default when
+	// empty). Set per environment, e.g. modules-free base leaves it empty and the
+	// prod overlay lists the product's web origins.
+	CORSAllowedOrigins []string `conf:"cors_allowed_origins" json:"cors_allowed_origins" doc:"exact-match CORS origin allowlist (empty = deny all cross-origin)"`
 }
 
 // Log configures structured logging.

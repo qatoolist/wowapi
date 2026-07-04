@@ -293,6 +293,40 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0061 — Hardening H1: edge middleware, cursor sort-spec versioning, sweeps, legal-hold race
+- **Context:** ROADMAP-wowapi.md hardening backlog. A three-track code audit verified each item's
+  "current state" claim before any work; the H1 phase closes the self-contained P0/P1 gaps
+  (plan: `docs/implementation/hardening-plan.md`).
+- **Decisions:**
+  - **Edge middleware (S7).** The blueprint's fixed chain lists `SecureHeaders → CORS → BodyLimit →
+    Timeout`, but none existed and `HTTP.MaxBodyBytes`/`RequestTimeout` were dead config. Added them to
+    `kernel/httpx` (kernel-owned so every product ships the posture) and a `HTTP.CORSAllowedOrigins`
+    config field (deny-by-default). Generated api wires the chain. A reference nginx + smoke.sh + a
+    deployment checklist cover the proxy/TLS layer; the in-process headers are unit-tested, the nginx
+    stack is a deploy/quarterly drill (adding nginx to core CI was out of proportion).
+  - **Cursor sort-spec versioning (R7).** `KeysetClause` already rejected a changed column *set* but not
+    a direction flip or reorder (same keys, silently wrong pages). Cursors now optionally carry a sort
+    signature (`EncodeCursorWithSig`; two-key `__s`/`__v` envelope, backward-compatible with flat
+    cursors), minted via `filtering.NextCursor`, validated loudly in `KeysetClause`.
+  - **Idempotency sweep (S5).** `expires_at` existed but nothing purged rows. Added
+    `IdemStore.SweepExpired` running cross-tenant as app_platform (migration 00012 adds a permissive
+    platform policy + DELETE grant, mirroring `outbox_relay_all`). Periodic scheduling lands in H2.
+  - **Retention legal-hold race (R6).** `SweepRetention` checked `legal_hold` once in an unlocked
+    SELECT; a hold committed before the void was ignored. Fixed with `FOR UPDATE` (EvalPlanQual
+    re-checks the qual on the locked tuple under READ COMMITTED) + a `legal_hold=false` guard on the
+    void UPDATE. Proven by revert-test.
+  - **Adversarial fuzzing (S8).** Native Go fuzz targets for the filter DSL parser and cursor decoder;
+    seed corpus runs in CI, `make test-fuzz` drives deep runs. 1.7M/478K execs clean.
+  - **Config-drift convention (O4).** The `/readyz` fingerprint had no consumer; documented an alerting
+    convention + reference Prometheus rule in the deployment checklist (no framework code needed).
+  - **Not gaps (roadmap inaccurate):** S4 (creds already `credential_ref` + compiler-redacted), R2, R8.
+- **Tradeoffs:** `config.HTTP` now holds a slice → non-comparable; two tests moved to
+  `reflect.DeepEqual`. `Timeout` keeps stdlib `TimeoutHandler`'s plain-text 503 body for now.
+- **Affected:** `kernel/httpx/edge.go`, `kernel/pagination/cursor.go`, `kernel/filtering/{sort,keyset}.go`,
+  `kernel/database/idempotency.go`, `kernel/document/service.go`, `kernel/config/config.go`,
+  generated `cmd/api/main.go.tmpl`, `migrations/00012_idempotency_sweep.sql`, `deployments/reference/*`,
+  `docs/operations/deployment-checklist.md`, `Makefile` (`test-fuzz`), evidence/hardening-H1.
+
 ## D-0060 — Review-findings pass: runtime authz gate, deploy/config-scaffold fixes, CI DB gate
 - **Context:** an external review reproduced six findings against the Goal-2 framework; five were real
   (one a false-premise-free but expected deferral). Fixed each with existing conventions + regression tests.

@@ -143,7 +143,7 @@ func TestNewAPIConfig_Fields(t *testing.T) {
 	if c.Environment != testFramework.Environment {
 		t.Errorf("Environment = %v, want %v", c.Environment, testFramework.Environment)
 	}
-	if c.HTTP != testFramework.HTTP {
+	if !reflect.DeepEqual(c.HTTP, testFramework.HTTP) {
 		t.Errorf("HTTP = %v, want %v", c.HTTP, testFramework.HTTP)
 	}
 	if c.Log != testFramework.Log {

@@ -94,11 +94,19 @@ func run(ctx context.Context) error {
 	mux.Handle("/healthz", health.Liveness())
 	mux.Handle("/readyz", health.Readiness())
 
+	// Middleware chain (blueprint 07 §1 order, outermost first). SecureHeaders +
+	// CORS + BodyLimit + Timeout are kernel-owned edge guardrails; the CORS
+	// allowlist and body/timeout caps come from configs/ (empty allowlist =
+	// deny all cross-origin).
 	handler := httpx.Chain(mux,
 		httpx.RequestID(),
 		httpx.Recover(log),
 		observability.Requests(observability.NoOp),
 		observability.AccessLog(log),
+		httpx.SecureHeaders(),
+		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
+		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
+		httpx.Timeout(cfg.HTTP.RequestTimeout),
 	)
 
 	srv := &http.Server{

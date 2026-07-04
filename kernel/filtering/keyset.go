@@ -34,6 +34,14 @@ func KeysetClause(s Sort, cur pagination.Cursor, startArg int) (sql string, args
 	}
 	values := cur.Values()
 
+	// If the cursor was minted with a sort-spec signature (NextCursor), reject it
+	// loudly when the current sort differs — this catches a direction flip or
+	// column reorder that the column-set check below cannot see (roadmap R7). A
+	// legacy cursor without a signature falls back to the column-set check only.
+	if sig := cur.Sig(); sig != "" && sig != s.Signature() {
+		return "", nil, startArg, validationErr("cursor was minted for a different sort order")
+	}
+
 	// Validate that the cursor provides exactly the sort columns — no more, no
 	// less. Extra keys mean a forged/mismatched cursor.
 	if len(values) != len(terms) {
@@ -72,6 +80,14 @@ func KeysetClause(s Sort, cur pagination.Cursor, startArg int) (sql string, args
 		ors = append(ors, "("+strings.Join(conj, " AND ")+")")
 	}
 	return "(" + strings.Join(ors, " OR ") + ")", args, arg, nil
+}
+
+// NextCursor mints the opaque keyset cursor for the last row returned under sort
+// s, binding s's signature so KeysetClause rejects it if a later request changes
+// the sort order (roadmap R7). values must carry exactly one entry per sort
+// column. An empty sort yields a signatureless cursor.
+func NextCursor(s Sort, values map[string]any) (string, error) {
+	return pagination.EncodeCursorWithSig(s.Signature(), values)
 }
 
 // itoa is a tiny local int→string to avoid pulling strconv for one call.

@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com); this proj
 so the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
 may still make breaking changes between minor versions.
 
+## [Unreleased]
+
+Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-plan.md`). Phase H1:
+
+### Added
+- `kernel/httpx` edge middleware — `SecureHeaders`, `CORS`, `BodyLimit`, `Timeout` — completing the
+  blueprint's fixed chain. `BodyLimit`/`Timeout` now enforce the previously dead `http.max_body_bytes`
+  / `http.request_timeout` config. New `http.cors_allowed_origins` config (deny-by-default allowlist).
+  The generated api wires the full chain.
+- Keyset cursors can carry a sort-spec signature (`pagination.EncodeCursorWithSig`, `Cursor.Sig`,
+  `filtering.Sort.Signature`, `filtering.NextCursor`); `KeysetClause` now rejects a cursor minted under
+  a different sort **order/direction** with a validation error instead of silently returning wrong pages.
+- `database.IdemStore.SweepExpired` — cross-tenant purge of expired idempotency keys (migration 00012).
+- Native fuzz targets for the filter DSL parser and cursor decoder (`make test-fuzz`).
+- Reference reverse-proxy deployment (`deployments/reference/`) and an operations deployment checklist
+  (security headers, TLS, config-drift alerting convention).
+
+### Fixed
+- Retention sweep legal-hold race: a hold applied concurrently with `SweepRetention` could be voided.
+  The candidate scan now locks rows `FOR UPDATE` and the void re-asserts `legal_hold = false`.
+
 ## [0.1.0] — 2026-07-04 — initial framework release
 
 The first complete framework build (Goal 2, Phases 0–12). Everything below is domain-neutral: the

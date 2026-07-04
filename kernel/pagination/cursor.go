@@ -37,7 +37,22 @@ const maxCursorLen = 4096
 // clause where the column type drives the parameter binding.
 type Cursor struct {
 	values map[string]any
+	sig    string // sort-spec signature; "" for a legacy flat cursor
 }
+
+// Reserved envelope keys for a signed cursor. A signed cursor encodes as the
+// two-key object {"__s": <sig>, "__v": {<values>}}; a legacy cursor encodes the
+// values map flat. DB column names never take these double-underscore forms, so
+// the two encodings are unambiguous on decode.
+const (
+	keySig  = "__s"
+	keyVals = "__v"
+)
+
+// Sig returns the sort-spec signature the cursor was minted under, or "" if it
+// carries none (a legacy flat cursor). Callers that know the current sort should
+// reject a cursor whose Sig does not match — see filtering.KeysetClause.
+func (c Cursor) Sig() string { return c.sig }
 
 // EncodeCursor encodes a keyset tuple (last-row column values) into an opaque
 // cursor string. An empty/nil map encodes to "" (the zero cursor). An
@@ -47,15 +62,46 @@ func EncodeCursor(values map[string]any) (string, error) {
 	if len(values) == 0 {
 		return "", nil
 	}
+	norm, err := normalizeMap(values)
+	if err != nil {
+		return "", err
+	}
+	return encode(norm)
+}
+
+// EncodeCursorWithSig encodes a keyset tuple together with the signature of the
+// sort it was minted under, so a later request can detect that the sort order
+// changed (a direction flip or column reorder that the column-set check alone
+// would miss — roadmap R7). An empty sig produces the legacy flat encoding, so
+// this is a drop-in for EncodeCursor when no sort binding is desired.
+func EncodeCursorWithSig(sig string, values map[string]any) (string, error) {
+	if sig == "" {
+		return EncodeCursor(values)
+	}
+	if len(values) == 0 {
+		return "", nil
+	}
+	norm, err := normalizeMap(values)
+	if err != nil {
+		return "", err
+	}
+	return encode(map[string]any{keySig: sig, keyVals: norm})
+}
+
+func normalizeMap(values map[string]any) (map[string]any, error) {
 	norm := make(map[string]any, len(values))
 	for k, v := range values {
 		nv, err := normalize(v)
 		if err != nil {
-			return "", fmt.Errorf("pagination: cursor key %q: %w", k, err)
+			return nil, fmt.Errorf("pagination: cursor key %q: %w", k, err)
 		}
 		norm[k] = nv
 	}
-	b, err := json.Marshal(norm)
+	return norm, nil
+}
+
+func encode(payload map[string]any) (string, error) {
+	b, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("pagination: encode cursor: %w", err)
 	}
@@ -89,12 +135,28 @@ func DecodeCursor(s string) (Cursor, error) {
 	if m == nil {
 		return Cursor{}, badCursor()
 	}
+	// Signed envelope: exactly {"__s": string, "__v": object}. Anything else is a
+	// legacy flat cursor whose keys are the value columns directly.
+	if len(m) == 2 {
+		if sv, ok := m[keySig].(string); ok {
+			if vv, ok := m[keyVals].(map[string]any); ok {
+				convertNumbers(vv)
+				return Cursor{values: vv, sig: sv}, nil
+			}
+		}
+	}
+	convertNumbers(m)
+	return Cursor{values: m}, nil
+}
+
+// convertNumbers rewrites json.Number values in place back to int64/float64 so
+// round-trips preserve the encoded scalar kind.
+func convertNumbers(m map[string]any) {
 	for k, v := range m {
 		if n, ok := v.(json.Number); ok {
 			m[k] = convertNumber(n)
 		}
 	}
-	return Cursor{values: m}, nil
 }
 
 // Values returns a copy of the decoded keyset tuple. Mutating the result does

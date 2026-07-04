@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -608,7 +609,7 @@ func TestLoadReproducesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f != config.Defaults() {
+	if !reflect.DeepEqual(f, config.Defaults()) {
 		t.Errorf("tag defaults drifted from Defaults():\n got %+v\nwant %+v", f, config.Defaults())
 	}
 }

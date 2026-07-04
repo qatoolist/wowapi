@@ -98,6 +98,22 @@ func (s Sort) SQL() string {
 // IsEmpty reports whether the sort carries no terms.
 func (s Sort) IsEmpty() bool { return len(s.keys) == 0 }
 
+// Signature is a canonical, stable string identifying this exact sort order —
+// ordered columns and their directions, e.g. "created_at:desc,id:asc". Two sorts
+// share a signature iff they produce the same ORDER BY. Keyset cursors carry it
+// so a later request under a changed sort fails loudly instead of silently
+// returning wrong pages (roadmap R7). An empty Sort has the empty signature.
+func (s Sort) Signature() string {
+	if len(s.keys) == 0 {
+		return ""
+	}
+	parts := make([]string, len(s.keys))
+	for i, k := range s.keys {
+		parts[i] = k.col + ":" + string(k.dir)
+	}
+	return strings.Join(parts, ",")
+}
+
 // Term is one resolved sort term exposed for keyset pagination: the physical
 // column and its direction. Terms come only from allowlisted SortSpecs.
 type Term struct {

@@ -460,10 +460,18 @@ func (s *Service) SweepRetention(ctx context.Context, plat database.TxManager, t
 	var toDelete []string
 	err := plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
 		toDelete = toDelete[:0] // reset if the tx retries
+		// FOR UPDATE locks each candidate row and, under READ COMMITTED, re-checks
+		// the WHERE against the latest committed tuple after acquiring the lock
+		// (EvalPlanQual). So a legal hold applied and committed before we lock
+		// excludes the document; a hold attempted after we lock blocks until this
+		// sweep finishes — closing the check-then-void race (roadmap R6). ORDER BY
+		// id gives a stable lock order across concurrent runs.
 		rows, err := db.Query(ctx,
 			`SELECT id FROM documents
 			  WHERE status = 'active' AND legal_hold = false
-			    AND retention_until IS NOT NULL AND retention_until <= $1`, at)
+			    AND retention_until IS NOT NULL AND retention_until <= $1
+			  ORDER BY id
+			  FOR UPDATE`, at)
 		if err != nil {
 			return kerr.Wrapf(err, "document.SweepRetention", "find expired")
 		}
@@ -511,8 +519,12 @@ func (s *Service) SweepRetention(ctx context.Context, plat database.TxManager, t
 				}
 				toDelete = append(toDelete, v.key)
 			}
+			// Re-assert legal_hold = false in the write itself: defense in depth
+			// behind the FOR UPDATE lock, so a hold can never be voided even under
+			// a stricter isolation level or a future refactor of the lock above.
 			if _, err := db.Exec(ctx,
-				`UPDATE documents SET status = 'voided', updated_at = $2 WHERE id = $1`, docID, at); err != nil {
+				`UPDATE documents SET status = 'voided', updated_at = $2
+				  WHERE id = $1 AND legal_hold = false`, docID, at); err != nil {
 				return kerr.Wrapf(err, "document.SweepRetention", "void document")
 			}
 		}

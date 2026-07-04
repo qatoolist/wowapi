@@ -136,6 +136,28 @@ func (s *PgIdemStore) Begin(ctx context.Context, db TenantDB, actorScope, key, r
 		"a request with this idempotency key is still being processed")
 }
 
+// SweepExpired deletes every idempotency key whose expires_at has passed, across
+// ALL tenants, in a single platform transaction (roadmap S5). It runs as
+// app_platform via TxManager.Platform — the tenant-scoped app_rt lifecycle is
+// unchanged; only this cross-tenant maintenance path may purge other tenants'
+// rows (migration 00012). Returns the number of rows removed. Safe alongside
+// request traffic: DELETE takes row locks, so a key still held by a live claim
+// blocks until that request commits rather than vanishing under it. Schedule it
+// periodically (the recurring scheduler lands in hardening H2).
+func (s *PgIdemStore) SweepExpired(ctx context.Context, plat TxManager, before time.Time) (int64, error) {
+	var n int64
+	err := plat.Platform(ctx, func(ctx context.Context, db DB) error {
+		tag, err := db.Exec(ctx,
+			`DELETE FROM idempotency_keys WHERE expires_at <= $1`, before)
+		if err != nil {
+			return kerr.Wrapf(err, "IdemStore.SweepExpired", "delete expired keys")
+		}
+		n = tag.RowsAffected()
+		return nil
+	})
+	return n, err
+}
+
 // Discard removes an in_progress claim so the operation stays retryable.
 func (s *PgIdemStore) Discard(ctx context.Context, db TenantDB, actorScope, key string) error {
 	if _, err := db.Exec(ctx,

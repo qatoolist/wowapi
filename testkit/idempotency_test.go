@@ -76,6 +76,75 @@ func TestIntegrationIdempotencyStore(t *testing.T) {
 	}
 }
 
+// TestIntegrationIdempotencySweepExpired is the S5 regression: SweepExpired
+// purges past-expiry keys across ALL tenants in one platform pass, while live
+// keys survive. Without a sweep the table grew without bound.
+func TestIntegrationIdempotencySweepExpired(t *testing.T) {
+	h := NewDB(t)
+	store := database.NewIdemStore()
+	t1, t2 := uuid.New(), uuid.New()
+
+	seed := func(tenant uuid.UUID, key string, ttl time.Duration) {
+		t.Helper()
+		ctx := database.WithTenantID(context.Background(), tenant)
+		if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+			rep, err := store.Begin(ctx, db, "actor-1", key, "h", ttl)
+			if err != nil {
+				return err
+			}
+			if !rep.Fresh {
+				t.Fatalf("seed %s should be fresh", key)
+			}
+			return store.Complete(ctx, db, "actor-1", key, 200, []byte("{}"))
+		}); err != nil {
+			t.Fatalf("seed %s: %v", key, err)
+		}
+	}
+
+	// A negative TTL seeds an already-expired row; positive stays live.
+	seed(t1, "expired-1", -time.Hour)
+	seed(t2, "expired-2", -time.Hour) // different tenant — proves cross-tenant sweep
+	seed(t1, "live-1", time.Hour)
+
+	n, err := store.SweepExpired(context.Background(), h.PlatformTxM, time.Now())
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if n < 2 {
+		t.Fatalf("sweep removed %d rows; want >= 2 (both tenants' expired keys)", n)
+	}
+
+	// The live key survives — a fresh Begin replays the stored response.
+	if err := h.TxM.WithTenant(database.WithTenantID(context.Background(), t1),
+		func(ctx context.Context, db database.TenantDB) error {
+			rep, err := store.Begin(ctx, db, "actor-1", "live-1", "h", time.Hour)
+			if err != nil {
+				return err
+			}
+			if !rep.Found {
+				t.Fatalf("live key must survive the sweep and replay, got %+v", rep)
+			}
+			return nil
+		}); err != nil {
+		t.Fatalf("post-sweep live check: %v", err)
+	}
+
+	// The other tenant's expired key is gone — a fresh Begin no longer replays.
+	if err := h.TxM.WithTenant(database.WithTenantID(context.Background(), t2),
+		func(ctx context.Context, db database.TenantDB) error {
+			rep, err := store.Begin(ctx, db, "actor-1", "expired-2", "h", time.Hour)
+			if err != nil {
+				return err
+			}
+			if rep.Found {
+				t.Fatal("a swept expired key must not replay")
+			}
+			return nil
+		}); err != nil {
+		t.Fatalf("post-sweep expired check: %v", err)
+	}
+}
+
 // TestIntegrationIdempotencyInFlight proves a key claimed but not completed is
 // reported in-flight to a concurrent request (retry_later / 409).
 func TestIntegrationIdempotencyInFlight(t *testing.T) {
