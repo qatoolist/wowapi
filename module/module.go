@@ -31,6 +31,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
 	"github.com/qatoolist/wowapi/kernel/webhook"
@@ -135,6 +136,11 @@ type Context interface {
 	RulesResolver() *rules.Resolver
 	Workflows() *workflow.Registry
 	WorkflowRuntime() *workflow.Runtime
+
+	// RetentionClasses is the record-class registry a module declares its
+	// dispose/export/erase callbacks into during Register (roadmap E2); the kernel
+	// engine drives scheduled disposition and DSR fulfilment over them.
+	RetentionClasses() *retention.Registry
 
 	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
 	// registry a module declares its document classes into during Register;

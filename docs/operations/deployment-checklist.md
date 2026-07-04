@@ -48,15 +48,35 @@ Reference Prometheus rule (adapt to your fingerprint exporter):
     summary: "config fingerprint changed without a deploy on {{ $labels.instance }}"
 ```
 
-## 3. Backup / restore
+## 3. Distributed tracing (O1)
+
+The kernel exposes a `Tracer` port with a zero-cost `NoOpTracer` default (tracing is off until wired).
+To turn it on, wire the OpenTelemetry adapter in the api/worker mains and add the `Trace` middleware to
+the chain:
+
+```go
+tr, _ := oteladapter.NewOTLP(ctx, cfg.TraceSampleRatio) // OTLP → OTEL_EXPORTER_OTLP_ENDPOINT
+defer tr.Shutdown(ctx)
+// api chain: httpx.Chain(mux, httpx.RequestID(), httpx.Recover(log), observability.Trace(tr), …)
+```
+
+- [ ] Run a tracing backend that speaks OTLP. Local dev: the compose stack includes **Jaeger**
+      (`make up`); its UI is at http://localhost:16686 and it receives OTLP on `:4318`. Production: point
+      `OTEL_EXPORTER_OTLP_ENDPOINT` at your managed collector (Tempo/Jaeger/vendor).
+- [ ] Set the sample ratio per environment (1.0 in dev, a small fraction in high-traffic prod).
+- [ ] Propagation is automatic: the `Trace` middleware continues an inbound `traceparent`, and
+      `Tracer.Inject`/`Extract` carry trace context across process boundaries (embed the traceparent in
+      outbox events / job payloads to connect API → relay → worker).
+
+## 4. Backup / restore
 
 PITR + object-storage restore procedure and the quarterly drill: [backup-restore.md](backup-restore.md).
 
-## 4. Schema migrations
+## 5. Schema migrations
 
 Zero-downtime expand/contract pattern and the CI reversibility drill: [migrations.md](migrations.md).
 
-## 5. Rate limiting
+## 6. Rate limiting
 
 The kernel ships an in-process token-bucket limiter (`kernel/httpx.RateLimit` + `NewTokenBucket`).
 It is opt-in — limits are product-specific. Wire it in the api chain and pick a key strategy:

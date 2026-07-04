@@ -19,12 +19,21 @@ func (s *fakeSpan) End()                  { s.ended = true }
 func (s *fakeSpan) SetAttr(k, v string)   { s.attrs[k] = v }
 func (s *fakeSpan) RecordError(err error) { s.attrs["error"] = err.Error() }
 
-type fakeTracer struct{ spans []*fakeSpan }
+type fakeTracer struct {
+	spans     []*fakeSpan
+	extracted string
+}
 
 func (f *fakeTracer) StartSpan(ctx context.Context, name string) (context.Context, observability.Span) {
 	s := &fakeSpan{name: name, attrs: map[string]string{}}
 	f.spans = append(f.spans, s)
 	return ctx, s
+}
+
+func (f *fakeTracer) Inject(context.Context) string { return "" }
+func (f *fakeTracer) Extract(ctx context.Context, carrier string) context.Context {
+	f.extracted = carrier
+	return ctx
 }
 
 func TestTraceMiddlewareSpansRequest(t *testing.T) {
@@ -36,8 +45,13 @@ func TestTraceMiddlewareSpansRequest(t *testing.T) {
 	h := observability.Trace(tr)(mux)
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/things/42", nil))
+	req := httptest.NewRequest(http.MethodGet, "/things/42", nil)
+	req.Header.Set("traceparent", "00-trace-span-01")
+	h.ServeHTTP(rec, req)
 
+	if tr.extracted != "00-trace-span-01" {
+		t.Errorf("inbound traceparent not extracted: %q", tr.extracted)
+	}
 	if len(tr.spans) != 1 {
 		t.Fatalf("started %d spans, want 1", len(tr.spans))
 	}

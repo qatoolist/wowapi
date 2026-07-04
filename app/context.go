@@ -27,6 +27,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/validation"
 	"github.com/qatoolist/wowapi/kernel/webhook"
@@ -76,6 +77,7 @@ type moduleContext struct {
 	resolver  *rules.Resolver
 	wfReg     *workflow.Registry
 	wfRT      *workflow.Runtime
+	retClass  *retention.Registry
 	docClass  *document.Registry
 	docHooks  *document.Hooks
 	docs      *document.Service
@@ -106,6 +108,7 @@ type moduleDeps struct {
 	resolver  *rules.Resolver
 	wfReg     *workflow.Registry
 	wfRT      *workflow.Runtime
+	retClass  *retention.Registry
 	docClass  *document.Registry
 	docHooks  *document.Hooks
 	docs      *document.Service
@@ -129,6 +132,7 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		eval: deps.eval, tx: deps.tx, idgen: deps.idgen,
 		events: deps.events, writer: deps.writer, jobs: deps.jobs,
 		rules: deps.rules, resolver: deps.resolver, wfReg: deps.wfReg, wfRT: deps.wfRT,
+		retClass: deps.retClass,
 		docClass: deps.docClass, docHooks: deps.docHooks, docs: deps.docs,
 		comments: deps.comments, attaches: deps.attaches,
 		notifyReg: deps.notifyReg, notifySvc: deps.notifySvc, webhooks: deps.webhooks,
@@ -211,6 +215,8 @@ func (c *moduleContext) RulesResolver() *rules.Resolver { return c.resolver }
 // Workflows returns the workflow registry; WorkflowRuntime the runtime.
 func (c *moduleContext) Workflows() *workflow.Registry      { return c.wfReg }
 func (c *moduleContext) WorkflowRuntime() *workflow.Runtime { return c.wfRT }
+
+func (c *moduleContext) RetentionClasses() *retention.Registry { return c.retClass }
 
 // DocumentClasses/DocumentHooks are the shared document registration pointers;
 // Documents/Comments/Attachments are the runtime services.

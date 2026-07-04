@@ -70,6 +70,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			eval: k.Authz, tx: k.Tx, idgen: idgen,
 			events: events, writer: writer, jobs: jobReg,
 			rules: k.Rules, resolver: k.RulesResolver, wfReg: k.Workflows, wfRT: k.WorkflowRuntime,
+			retClass: k.RetentionClasses,
 			docClass: k.DocumentClasses, docHooks: k.DocumentHooks, docs: k.Documents,
 			comments: k.Comments, attaches: k.Attachments,
 			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,

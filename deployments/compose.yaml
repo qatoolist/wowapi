@@ -42,6 +42,18 @@ services:
       - "1025:1025"   # SMTP sink
       - "8025:8025"   # web UI
 
+  # Distributed-tracing backend (roadmap O1): Jaeger all-in-one receives OTLP
+  # spans and serves a trace-explorer UI. The api/worker wire the OTel adapter
+  # (adapters/tracing/otel) with an OTLP exporter pointed at OTEL_EXPORTER_OTLP_ENDPOINT.
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # trace UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+
   # Containerized toolbox: run tests/lint without host Go.
   #   docker compose -f deployments/compose.yaml run --rm tools make ci
   tools:
@@ -58,6 +70,7 @@ services:
       DATABASE_URL: postgres://wowapi:wowapi-local-only@postgres:5432/wowapi?sslmode=disable
       S3_ENDPOINT: http://minio:9000
       SMTP_ADDR: mailpit:1025
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318   # OTLP HTTP receiver (Jaeger)
     depends_on:
       postgres:
         condition: service_healthy

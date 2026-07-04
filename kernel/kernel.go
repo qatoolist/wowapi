@@ -34,6 +34,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/relationship"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/secrets"
 	"github.com/qatoolist/wowapi/kernel/storage"
@@ -56,6 +57,13 @@ type Kernel struct {
 	RulesResolver   *rules.Resolver
 	Workflows       *workflow.Registry
 	WorkflowRuntime *workflow.Runtime
+
+	// Data lifecycle (roadmap E2). RetentionClasses is the shared record-class
+	// registry modules register their dispose/export/erase callbacks into during
+	// boot; Retention is the engine that drives scheduled disposition and DSR
+	// fulfilment over them.
+	RetentionClasses *retention.Registry
+	Retention        *retention.Engine
 
 	// Document / file framework (Phase 8). DocumentClasses + DocumentHooks are the
 	// shared registration pointers modules write into during Register; Documents is
@@ -144,6 +152,11 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	// Documents: the class registry + hook set modules register into, plus the
 	// service (only when an object-storage adapter is wired). The two document
 	// permissions are kernel-owned so the download gate can Evaluate them.
+	// Data lifecycle: the record-class registry modules register into, and the
+	// engine that drives disposition/DSR over it (roadmap E2).
+	retClasses := retention.NewRegistry()
+	retEngine := retention.NewEngine(retClasses, retention.NewDSR(idgen))
+
 	docClasses := document.NewRegistry()
 	docHooks := document.NewHooks()
 	perms.Register(authz.Permission{Key: document.PermRead})
@@ -186,6 +199,8 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		RulesResolver:        ruleResolver,
 		Workflows:            wfReg,
 		WorkflowRuntime:      wfRuntime,
+		RetentionClasses:     retClasses,
+		Retention:            retEngine,
 		DocumentClasses:      docClasses,
 		DocumentHooks:        docHooks,
 		Documents:            docSvc,

@@ -46,6 +46,26 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 		}
 		return nil
 	})
+
+	// Data-lifecycle disposition: fan out per active tenant, running each
+	// registered record class's Dispose (roadmap E2). A no-op until a product
+	// registers record classes; one tenant's failure never blocks the rest.
+	sched.Register("kernel.retention.disposition", slaEvery, func(ctx context.Context) error {
+		tenants, err := activeTenants(ctx, k)
+		if err != nil {
+			return err
+		}
+		for _, tid := range tenants {
+			tctx := database.WithTenantID(ctx, tid)
+			if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+				_, serr := k.Retention.SweepDisposition(ctx, db, time.Now())
+				return serr
+			}); err != nil {
+				k.Log.WarnContext(ctx, "scheduler: disposition sweep failed for tenant", "tenant", tid, "err", err)
+			}
+		}
+		return nil
+	})
 }
 
 // activeTenants lists tenant ids eligible for per-tenant maintenance. Read on the

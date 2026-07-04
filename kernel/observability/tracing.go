@@ -18,6 +18,15 @@ type Tracer interface {
 	// StartSpan begins a span named `name` as a child of any span in ctx and
 	// returns a context carrying it plus the Span to End.
 	StartSpan(ctx context.Context, name string) (context.Context, Span)
+	// Inject returns the opaque cross-process carrier (a W3C traceparent) for the
+	// span active in ctx, to embed in an outgoing event or job so a downstream
+	// process continues the same trace. It returns "" when no span is active (or
+	// for the NoOp tracer).
+	Inject(ctx context.Context) string
+	// Extract returns a context continuing the trace named by carrier (a
+	// traceparent taken from an inbound request, event, or job). ctx is returned
+	// unchanged when carrier is "".
+	Extract(ctx context.Context, carrier string) context.Context
 }
 
 // Span is one unit of a trace. Implementations must be safe to End exactly once.
@@ -39,6 +48,8 @@ type noopTracer struct{}
 func (noopTracer) StartSpan(ctx context.Context, _ string) (context.Context, Span) {
 	return ctx, noopSpan{}
 }
+func (noopTracer) Inject(context.Context) string                         { return "" }
+func (noopTracer) Extract(ctx context.Context, _ string) context.Context { return ctx }
 
 type noopSpan struct{}
 
@@ -55,7 +66,9 @@ func (noopSpan) RecordError(error)   {}
 func Trace(tr Tracer) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx, span := tr.StartSpan(r.Context(), "HTTP "+r.Method)
+			// Continue an inbound distributed trace when the caller sent one.
+			ctx := tr.Extract(r.Context(), r.Header.Get("traceparent"))
+			ctx, span := tr.StartSpan(ctx, "HTTP "+r.Method)
 			defer span.End()
 			span.SetAttr("http.method", r.Method)
 			if id := httpx.RequestIDFrom(ctx); id != "" {
