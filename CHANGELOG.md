@@ -29,6 +29,10 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
 
+- Gap-free per-tenant sequence allocator (`kernel/sequence`, migration 00015): transactional
+  statutory numbered series (receipts/vouchers/certificates) with audited voids — gap-free (a
+  rolled-back tx frees the number) and race-free (concurrent allocations serialize), replacing
+  hand-rolled `MAX()+1`.
 - Recurring scheduler (`jobs.Scheduler` + `schedules` table, migration 00014): fixed-interval kernel
   maintenance tasks, leader-safe across worker replicas via an atomic per-row claim. Wires the workflow
   SLA sweep (per-tenant) and the idempotency-key expiry sweep so they now actually run on a schedule

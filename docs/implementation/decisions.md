@@ -293,6 +293,21 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0066 — Hardening H5 (E3): gap-free per-tenant sequence allocator
+- **Context:** no framework primitive for statutory numbered series (receipts/vouchers/certificates);
+  a product would hand-roll `MAX()+1`, which races and leaves gaps — the wowsociety.app failure (E3).
+- **Decision:** `kernel/sequence.Allocator` over `sequences` (per-(tenant,series) counter) +
+  `sequence_allocations` (audited ledger), migration 00015, RLS tenant-scoped. `Allocate` runs the
+  `INSERT … ON CONFLICT DO UPDATE next_value+1 RETURNING` inside the CALLER's tenant tx, so the number
+  commits/rolls back with the business write (gap-free) and concurrent callers serialize on the row lock
+  (race-free). `Void` marks an allocation voided (audited) and never renumbers — a voided statutory
+  number leaves a traceable gap. `Peek` reads the last issued value.
+- **Tradeoffs:** deliberately not a Postgres sequence (`nextval()` doesn't roll back → gaps). Allocations
+  on one series serialize — inherent to gap-free numbering; use distinct series keys to parallelize.
+  Exposed as a constructable primitive; a `module.Context` accessor is a small follow-up.
+- **Affected:** `kernel/sequence/sequence.go` (+`_test.go`), `migrations/00015_sequences.sql`,
+  evidence/hardening-H5.
+
 ## D-0065 — Hardening H2 (E5, R3): recurring scheduler + leader-safe kernel sweeps
 - **Context:** the workflow SLA sweeper and the idempotency-key sweep existed as methods but nothing ran
   them periodically, and nothing stopped N worker replicas from all firing at once (roadmap E5 + R3).

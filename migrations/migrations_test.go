@@ -27,6 +27,7 @@ var expectedFiles = []string{
 	"00012_idempotency_sweep.sql",
 	"00013_dlq_admin.sql",
 	"00014_schedules.sql",
+	"00015_sequences.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the
