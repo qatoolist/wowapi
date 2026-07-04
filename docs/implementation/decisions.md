@@ -303,6 +303,21 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0072 — Hardening H5 (E2): data lifecycle — generalized legal hold + DSR ledger
+- **Context:** legal hold was a per-document flag (R6); no generalized hold across entities, no DSR
+  primitive, no statutory-override for refusing erasure (roadmap E2, DPDP Rules live 2026).
+- **Decision:** `kernel/retention` over `legal_holds` + `dsr_requests` (migration 00020). Holds
+  (`Place`/`Release`/`IsHeld`/`List`) generalize hold to any `(entity_type, entity_id)` — at most one
+  active hold per entity via a partial unique index — consultable by any retention sweep. DSR ledger
+  (`Open`/`Complete`/`Reject`/`Get`) tracks export/erasure with a required statutory-override reason on
+  rejection. All tenant-scoped under RLS.
+- **Scope/tradeoffs:** the two concrete data-integrity primitives are complete + tested. Per-record-class
+  disposition over arbitrary product tables is left as a registry+callback pattern (the H2 scheduler
+  orchestrates; products supply per-class dispose/export/erase callbacks — no dynamic-table SQL,
+  preserving the allowlist-only discipline). Wiring that registry is a documented follow-up.
+- **Affected:** `kernel/retention/{retention,dsr}.go` (+`_test.go`), `migrations/00020_retention_dsr.sql`,
+  evidence/hardening-H5.
+
 ## D-0071 — Hardening H3 (S1): machine authentication (API keys / service principals)
 - **Context:** only OIDC user JWTs existed; non-human callers had no credential (roadmap S1).
 - **Decision:** `kernel/apikey` over an `api_keys` table (migration 00019): issuable, scoped, rotatable,

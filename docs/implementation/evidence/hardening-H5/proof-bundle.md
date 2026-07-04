@@ -5,8 +5,25 @@ delivered as individually QA-gated commits:
 
 - **E3 — gap-free per-tenant sequence allocator** — DONE (D-0066).
 - **E6 — bulk-operation framework** — DONE (D-0068).
-- E2 — generalized retention / disposition + DSR — pending.
-- E4 — snapshot/artifact pipeline — pending.
+- **E2 — data lifecycle: generalized legal hold + DSR ledger** — DONE (D-0072).
+- E4 — snapshot/artifact pipeline — pending (needs a PDF/A library).
+
+## E2 — data lifecycle (generalized legal hold + DSR)
+
+| Verdict | Fix |
+|---|---|
+| real (P0) — legal hold was a per-document flag; no generalized hold, no DSR primitive, no statutory-override | `kernel/retention` over `legal_holds` + `dsr_requests` (migration 00020). **Holds** (`Place`/`Release`/`IsHeld`/`List`) generalize hold to any `(entity_type, entity_id)` — at most one active hold per entity (partial unique index), consultable by any retention sweep. **DSR** ledger (`Open`/`Complete`/`Reject`/`Get`) tracks export/erasure requests with a **statutory-override reason** for refusing an erasure a retention obligation forbids. |
+
+Scope note: the two concrete, framework-owned primitives are fully implemented. Per-record-class
+disposition *over arbitrary product tables* is delivered as an orchestration pattern (the H2 scheduler
+drives it; products register per-class dispose/export/erase callbacks — no dynamic-table SQL, keeping the
+framework's allowlist-only discipline). The registry+callback wiring is a documented follow-up; the
+data-integrity primitives (holds, DSR request lifecycle) are done and tested.
+
+Tests (`kernel/retention/retention_test.go`): hold lifecycle (place→held, duplicate-active conflict,
+release→not-held, double-release not-found, re-place after release); tenant isolation; DSR (export
+open→complete, re-complete conflict, erasure reject requires+records an override reason). Gate: 0 FAIL,
+0 SKIP, 84 packages; boundary lint + 00020 reversibility pass.
 
 ## E6 — bulk-operation framework
 

@@ -31,6 +31,9 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   DELETE on the queue tables.
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
+- Data lifecycle (`kernel/retention`, migration 00020): generalized legal hold over any entity
+  (`Place`/`Release`/`IsHeld`/`List`, not just documents) + a DSR ledger (`Open`/`Complete`/`Reject`)
+  for export/erasure requests with a statutory-override reason.
 - Machine authentication (`kernel/apikey`, migration 00019): issuable, scoped, rotatable, revocable,
   expirable API keys / service principals (only sha256(secret) stored). `apikey.Authenticator`
   satisfies the httpx gate port; a verified key becomes an `ActorSystem` whose scopes authorize it
