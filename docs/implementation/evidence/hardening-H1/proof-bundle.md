@@ -37,4 +37,3 @@ slice-bearing `config.HTTP`.
 All P0/P1 items in scope closed with tests. `make ci` + `make ci-container` green: **0 FAIL, 0 SKIP,
 74 packages**, DB tests forced (`WOWAPI_REQUIRE_DB=1`). R6 fix proven by revert (buggy → "1 version(s)
 were voided"; fixed → pass). Fuzzers ran 1.7M (filter) / 478K (cursor) execs with no crash.
-</content>

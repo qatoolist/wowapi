@@ -14,4 +14,3 @@ Roadmap acceptance criteria → code/test/command evidence.
 | O4 | reference monitoring rule (alert on fingerprint change w/o deploy) | `docs/operations/deployment-checklist.md` §2 + `WowapiConfigDrift` Prometheus rule |
 
 Gate: `make ci` + `make ci-container` exit 0 — 0 FAIL, 0 SKIP, 74 packages, DB tests forced.
-</content>

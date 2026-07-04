@@ -83,4 +83,3 @@ series)`); a `module.Context` convenience accessor is a small follow-up.
 
 Gate: `make ci` + `make ci-container` green — 0 FAIL, 0 SKIP, 76 packages, DB tests forced; boundary
 lint + migration reversibility (00015 Down) pass.
-</content>

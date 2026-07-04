@@ -42,4 +42,3 @@ Follow-ups: automatic trigger-based field capture; a `module.Context` accessor.
 **Closed in the post-hardening review (D-0077):** bridging `authz` denials to durable audit rows — the
 `kernel.durableAudit` sink writes an `authz.denied` row in its own tenant tx (the read-only eval tx
 cannot). S6 hash-chaining is delivered above.
-</content>

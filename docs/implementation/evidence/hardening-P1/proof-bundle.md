@@ -80,4 +80,3 @@ wiring step.
 Tests (`kernel/observability/tracing_test.go`): the middleware starts exactly one span per request, ends
 it, and tags http.route/method/status; `NoOpTracer` returns ctx unchanged and swallows all calls. Gate:
 84 packages; the generated api template still parses with the `Trace` line.
-</content>

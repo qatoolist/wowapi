@@ -80,5 +80,3 @@ receipts API + channel prefs · O1 OTel tracing · O2 expand/contract helper DSL
 
 S4, O3, R2, R5 (core), R8. Each gets a one-line note in the relevant evidence bundle explaining why the
 roadmap's "current state" was wrong, with the file:line proving the capability already exists.
-</content>
-</invoke>

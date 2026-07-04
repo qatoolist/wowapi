@@ -19,4 +19,3 @@ Residual risk: the S7 reference nginx stack is smoke-tested via `deployments/ref
 (a deploy-time/quarterly drill), not in core CI — adding nginx to the CI image was judged out of
 proportion for this phase. The in-process header posture IS unit-tested (`kernel/httpx/edge_test.go`),
 so CI still proves the application-layer contract.
-</content>

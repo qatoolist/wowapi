@@ -59,4 +59,3 @@ Note on coverage: the `wowapi dlq` DB path (`dlqPool` → kernel funcs) is thin;
 carry the integration coverage. An end-to-end CLI-through-`Run()` DB test was dropped because
 `testkit.NewDB` isolates each test in its own database while the CLI connects via `DATABASE_URL` (the
 base DB) — wiring the per-test DSN into the CLI was judged not worth the testkit surface.
-</content>

@@ -36,4 +36,3 @@ Guidelines: keep each migration small and single-purpose; additive changes are a
 before code; destructive changes always deploy after code that stopped using the old shape; prefer
 `CONCURRENTLY` for indexes on hot tables; batch backfills so a single statement never locks a large
 table. Every migration must have a correct Down (the drill enforces it).
-</content>

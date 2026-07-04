@@ -30,4 +30,3 @@ reversibility pass; all pre-existing authz tests still green with the `Scopes` a
 
 Follow-ups (documented): rotation convenience (issue-new + revoke-old is available today via the two
 calls); a `wowapi apikey` CLI; per-key rate limits (composes with S2 `KeyByActor`).
-</content>

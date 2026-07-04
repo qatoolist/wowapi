@@ -40,4 +40,3 @@ SRC_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi ./scripts/back
 It is a **logical** dump/restore round-trip — enough to validate the procedure and catch a broken dump
 pipeline. It does NOT exercise provider PITR/WAL; rehearse that against a real snapshot in staging at
 least once per release train. Record each drill (date, RTO/RPO observed, issues) in your ops log.
-</content>

@@ -17,4 +17,3 @@ No import-law violations: edge middleware stays in `kernel/httpx`; the cursor si
 `kernel/pagination` with the sort-aware mint/verify in `kernel/filtering` (which already depends on
 pagination — no new edge). `SweepExpired` uses the existing `TxManager.Platform` seam. `make ci`
 boundary lint passed.
-</content>
