@@ -303,6 +303,19 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0074 — Hardening P1 (R1): authz decision caching
+- **Context:** every `Evaluate` hit the DB for the actor's assignments (roadmap R1).
+- **Decision:** `authz.CachingStore`, an OPT-IN `Store` decorator caching `ActiveAssignments` per
+  `(tenant, actor)` for a short TTL (default 1s). Unwrapped = current behavior (zero risk).
+  `Invalidate`/`InvalidateTenant` give immediate same-pod effect on a role change; the TTL bounds
+  cross-pod staleness. Other reads pass through (narrow invalidation surface).
+- **Correctness:** the R1 "no stale-allow after revocation" requirement is met by explicit invalidation
+  (immediate) — tested: revoke bounded-stale within TTL, then denied right after `Invalidate`.
+- **Tradeoffs:** in-process per pod (Redis is a later adapter behind the same seam). Read-replica routing
+  (R1's other half) is a deployment seam — point the Manager's `WithTenantRO` at a replica pool; the
+  evaluator already reads in that read-only tx.
+- **Affected:** `kernel/authz/caching.go` (+caching_internal_test), evidence/hardening-P1.
+
 ## D-0073 — Hardening P1 (S3): step-up / MFA hooks
 - **Context:** the token was the only factor; the authz layer could not demand elevated auth per
   permission (roadmap S3, blueprint 07 §1 "env.mfa conditions").

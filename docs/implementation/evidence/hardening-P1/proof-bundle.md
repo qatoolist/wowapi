@@ -45,4 +45,19 @@ the IdP's job; the framework gates on the surfaced `amr`.
 Tests (`kernel/authz/step_up_test.go`): a granted actor without a strong factor gets a step-up challenge
 and is admitted once AMR includes `mfa`; an ungranted actor on a StepUp perm gets a plain `default_deny`
 (no step-up). All pre-existing authz + gate tests still green with the additions. Gate: 84 packages.
+
+## R1 — Authz decision caching (D-0074)
+
+| Verdict | Fix |
+|---|---|
+| real (P1) — every `Evaluate` hit the DB for the actor's assignments | `authz.CachingStore` — an **opt-in** `Store` decorator caching the hot read (`ActiveAssignments`) per `(tenant, actor)` for a short TTL (default 1s). Unwrapped, the evaluator behaves exactly as before (zero risk to existing deployments). `Invalidate(tenant, actor)` / `InvalidateTenant(tenant)` make a role revoke take effect immediately on the pod; the TTL is only the cross-pod bound. Other Store reads pass through. |
+
+Correctness (the R1 requirement "no stale-allow after revocation"): proven by test — a revoke served
+bounded-stale within the TTL, then **immediately denied after `Invalidate`** (no stale-allow), and a
+cache hit serves 2 reads with 1 DB call. Read-replica routing (R1's second half) is a deployment seam:
+point the Manager's `WithTenantRO` path at a replica pool — the evaluator already runs its reads in that
+read-only transaction (documented on `CachingStore`).
+
+Test (`kernel/authz/caching_internal_test.go`): 2 reads → 1 DB call; revoke bounded-stale within TTL;
+`Invalidate` → immediate reload/deny; TTL expiry → reload. Gate: 84 packages.
 </content>
