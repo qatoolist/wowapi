@@ -55,3 +55,16 @@ PITR + object-storage restore procedure and the quarterly drill: [backup-restore
 ## 4. Schema migrations
 
 Zero-downtime expand/contract pattern and the CI reversibility drill: [migrations.md](migrations.md).
+
+## 5. Rate limiting
+
+The kernel ships an in-process token-bucket limiter (`kernel/httpx.RateLimit` + `NewTokenBucket`).
+It is opt-in — limits are product-specific. Wire it in the api chain and pick a key strategy:
+
+- [ ] Per-IP limit at the edge (`httpx.RateLimit(httpx.NewTokenBucket(rate, burst), httpx.KeyByIP)`)
+      to blunt unauthenticated floods. Behind the reference proxy, supply a keyFn reading
+      `X-Forwarded-For` rather than `RemoteAddr`.
+- [ ] Per-actor limit after the authz gate (`httpx.KeyByActor`) for authenticated abuse.
+- [ ] A tighter, dedicated bucket on expensive/PII-export routes (custom keyFn per permission).
+- [ ] Note: limits are **per pod** (in-memory); size them per-replica, or plug a shared limiter behind
+      the `httpx.RateLimiter` interface. Over-limit responses are `429` + `Retry-After` + RFC 7807.

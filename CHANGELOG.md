@@ -29,6 +29,8 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
 
+- In-process rate limiting: `kernel/httpx.RateLimit` middleware + `TokenBucket` limiter
+  (`NewTokenBucket`), `KeyByIP` / `KeyByActor` strategies, 429 + `Retry-After` + RFC 7807. Opt-in.
 - Migration reversibility: `database.MigrateReset` (goose down-to-0) and a CI forward→down→forward drill
   (`TestIntegrationMigrationsReversible`). Operations docs for zero-downtime expand/contract migrations
   and a backup/restore runbook + `scripts/backup_restore_drill.sh`.

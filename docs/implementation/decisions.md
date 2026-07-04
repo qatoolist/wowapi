@@ -293,6 +293,19 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0064 — Hardening P1 (S2): in-process rate limiting
+- **Context:** rate limiting was proxy-delegated with only middleware hooks; no in-process limiter for
+  per-principal / per-permission guardrails (roadmap S2, blueprint 07 §1).
+- **Decision:** `kernel/httpx.RateLimit(limiter, keyFn)` middleware + a `TokenBucket` limiter
+  (`NewTokenBucket(rate, burst)`), returning 429 + `Retry-After` + RFC 7807 (reusing the existing
+  `KindRateLimited`). Key strategies `KeyByIP` (edge) and `KeyByActor` (after the authz gate); products
+  supply a custom keyFn for per-permission buckets. Idle buckets are swept so the key map cannot grow
+  unbounded. In-memory per pod; a shared (Redis) limiter is a later adapter behind `RateLimiter`.
+- **Tradeoffs:** opt-in (limits are product-specific; a forced default could throttle legitimate
+  traffic) — wiring documented in the deployment checklist. Per-pod counting, not global.
+- **Affected:** `kernel/httpx/ratelimit.go` (+`_test.go`), `docs/operations/deployment-checklist.md`,
+  evidence/hardening-P1.
+
 ## D-0063 — Hardening H2 (O2, O5): migration reversibility drill + backup/restore
 - **Context:** migrations had structure tests but no forward/down drill (roadmap O2), and there was no
   backup/restore procedure or rehearsal (O5).
