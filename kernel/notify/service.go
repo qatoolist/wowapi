@@ -309,6 +309,54 @@ func (s *Service) ListForParty(ctx context.Context, db database.TenantDB, partyI
 	return out, nil
 }
 
+// DeliveryReceipt is the per-channel delivery record for a notification: its
+// status, attempt count, the provider's message id (receipt), and the last
+// error. It answers "did this notification actually go out, on which channels,
+// and what did the provider say" (roadmap R5).
+type DeliveryReceipt struct {
+	ID            uuid.UUID
+	Channel       Channel
+	Destination   string
+	Status        string // queued | sent | delivered | failed | dead
+	Attempts      int
+	ProviderMsgID string
+	LastError     string
+	CreatedAt     time.Time
+	UpdatedAt     *time.Time
+}
+
+// Deliveries returns the delivery receipts for a notification, one per channel
+// fan-out, newest state first-written order. Runs in the caller's tenant tx
+// (RLS-scoped), so a caller only ever sees its own tenant's receipts.
+func (s *Service) Deliveries(ctx context.Context, db database.TenantDB, notificationID uuid.UUID) ([]DeliveryReceipt, error) {
+	rows, err := db.Query(ctx,
+		`SELECT id, channel, destination, status, attempts,
+		        COALESCE(provider_message_id,''), COALESCE(last_error,''), created_at, updated_at
+		   FROM notification_deliveries
+		  WHERE notification_id = $1
+		  ORDER BY created_at`, notificationID)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "notify.Deliveries", "query deliveries")
+	}
+	defer rows.Close()
+
+	var out []DeliveryReceipt
+	for rows.Next() {
+		var r DeliveryReceipt
+		var channel string
+		if err := rows.Scan(&r.ID, &channel, &r.Destination, &r.Status, &r.Attempts,
+			&r.ProviderMsgID, &r.LastError, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, kerr.Wrapf(err, "notify.Deliveries", "scan delivery")
+		}
+		r.Channel = Channel(channel)
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, kerr.Wrapf(err, "notify.Deliveries", "iterate deliveries")
+	}
+	return out, nil
+}
+
 // --- platform-privileged operations (run on a tenant-bound app_platform tx) ---
 
 // SendPending is the async worker step. It runs as app_platform (tenant-bound):

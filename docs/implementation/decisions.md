@@ -293,6 +293,16 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0067 — Hardening P1 (R5): notification delivery receipts query
+- **Context:** the roadmap called notifications "fire-and-forget," but the audit found delivery status
+  IS tracked in `notification_deliveries` — what was missing is a query API to read it per notification.
+- **Decision:** `notify.Service.Deliveries(ctx, db, notificationID) []DeliveryReceipt` returns the
+  per-channel receipts (status, attempts, provider message id, last error, timestamps), RLS-scoped to
+  the caller's tenant. No schema change — it reads existing columns.
+- **Tradeoffs:** closes "delivery status queryable per notification; provider receipts stored". Per-user
+  channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
+- **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
+
 ## D-0066 — Hardening H5 (E3): gap-free per-tenant sequence allocator
 - **Context:** no framework primitive for statutory numbered series (receipts/vouchers/certificates);
   a product would hand-roll `MAX()+1`, which races and leaves gaps — the wowsociety.app failure (E3).

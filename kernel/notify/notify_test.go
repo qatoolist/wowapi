@@ -282,6 +282,54 @@ func TestSendRejectsIncompleteVariables(t *testing.T) {
 	}
 }
 
+// TestIntegrationDeliveriesReceipts is the R5 receipts API: delivery status is
+// queryable per notification, one receipt per channel, carrying the provider
+// message id and last error.
+func TestIntegrationDeliveriesReceipts(t *testing.T) {
+	a := newHarness(t)
+	id, err := a.send(t, notify.Message{
+		TemplateKey:      "core.notify.welcome",
+		RecipientPartyID: uuid.New(),
+		Variables:        map[string]any{"Name": "Bo", "Amount": "9"},
+		Channels: []notify.ChannelDest{
+			{Channel: notify.ChannelInApp},
+			{Channel: notify.ChannelEmail, Destination: "bo@example.test"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	var receipts []notify.DeliveryReceipt
+	if err := a.db.TxM.WithTenantRO(a.ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		receipts, e = a.svc.Deliveries(ctx, db, id)
+		return e
+	}); err != nil {
+		t.Fatalf("Deliveries: %v", err)
+	}
+	if len(receipts) != 2 {
+		t.Fatalf("got %d receipts, want 2 (inapp + email)", len(receipts))
+	}
+	byChannel := make(map[notify.Channel]notify.DeliveryReceipt, 2)
+	for _, r := range receipts {
+		byChannel[r.Channel] = r
+	}
+	if _, ok := byChannel[notify.ChannelInApp]; !ok {
+		t.Error("missing an inapp delivery receipt")
+	}
+	email, ok := byChannel[notify.ChannelEmail]
+	if !ok {
+		t.Fatal("missing an email delivery receipt")
+	}
+	if email.Destination != "bo@example.test" {
+		t.Errorf("email destination = %q, want bo@example.test", email.Destination)
+	}
+	if email.Status != "queued" {
+		t.Errorf("fresh email delivery status = %q, want queued", email.Status)
+	}
+}
+
 func TestSendWritesNotificationAndDeliveries(t *testing.T) {
 	a := newHarness(t)
 	party := uuid.New()

@@ -18,4 +18,17 @@ Tests (`kernel/httpx/ratelimit_test.go`): burst-then-limit, refill over time, in
 + Retry-After header, allow path, actor-key with IP fallback.
 
 Gate: `make ci` + `make ci-container` green — 0 FAIL, 0 SKIP, 74 packages.
+
+## R5 — Notification delivery receipts (D-0067)
+
+| Verdict | Fix |
+|---|---|
+| partial (roadmap overstated "fire-and-forget") — delivery status WAS tracked in `notification_deliveries`, but there was no query API to read it per notification | `notify.Service.Deliveries(ctx, db, notificationID) []DeliveryReceipt` — per-channel status, attempts, provider message id (receipt), last error, timestamps; RLS-scoped to the caller's tenant |
+
+Closes the concrete R5 gap ("delivery status queryable per notification; provider receipts stored").
+**Per-user channel preferences** (opt-out per channel) remains a follow-up — it needs a preferences
+table + a send-path check, out of scope for this small increment.
+
+Test (`kernel/notify/notify_test.go::TestIntegrationDeliveriesReceipts`): a 2-channel send yields 2
+receipts (inapp + email) with the email destination + queued status. Gate green (76 packages).
 </content>

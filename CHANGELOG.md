@@ -29,6 +29,8 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
 
+- Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
+  delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
 - Gap-free per-tenant sequence allocator (`kernel/sequence`, migration 00015): transactional
   statutory numbered series (receipts/vouchers/certificates) with audited voids — gap-free (a
   rolled-back tx frees the number) and race-free (concurrent allocations serialize), replacing
