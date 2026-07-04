@@ -45,6 +45,11 @@ type Actor struct {
 	// BreakGlass marks an actor operating under an activated break-glass grant;
 	// every decision it produces is audited and bannered.
 	BreakGlass bool
+	// Scopes is the explicit permission set of a machine principal (API key /
+	// service principal). It is meaningful only for ActorSystem actors: a scope
+	// authorizes like an RBAC grant but remains subject to ABAC deny policies.
+	// Human and internal-system actors leave it empty and are unaffected.
+	Scopes []string
 }
 
 // ScopeKind is the granularity of an authorization target.

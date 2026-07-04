@@ -96,6 +96,17 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 		}
 	}
 
+	// --- Machine scope: a service principal / API key (ActorSystem with an
+	// explicit scope set) is authorized by its scopes, which act like an RBAC
+	// grant — still subject to the ABAC deny pass below (a deny policy overrides a
+	// scope). Internal system actors carry no scopes and are unaffected, so this
+	// never widens their authority. Deny-by-default holds: allow only on an
+	// explicit scope match. ---
+	if !decision.Allowed && a.Kind == ActorSystem && slices.Contains(a.Scopes, perm) {
+		decision.Allowed = true
+		decision.Reason = "machine_scope"
+	}
+
 	// --- ReBAC: if RBAC did not allow and the permission declares a
 	// granted_via relationship, check it against the resource target. ---
 	if !decision.Allowed && pdef.GrantedVia != "" && e.rels != nil && !t.Resource.IsZero() {

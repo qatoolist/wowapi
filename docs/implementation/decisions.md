@@ -303,6 +303,25 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0071 — Hardening H3 (S1): machine authentication (API keys / service principals)
+- **Context:** only OIDC user JWTs existed; non-human callers had no credential (roadmap S1).
+- **Decision:** `kernel/apikey` over an `api_keys` table (migration 00019): issuable, scoped, rotatable,
+  revocable, expirable keys; only `sha256(secret)` stored, public prefix is the lookup handle. Management
+  (Issue/Revoke/List) is tenant-scoped app_rt; Verify is cross-tenant app_platform (tenant unknown
+  pre-auth) via a permissive platform policy. `apikey.Authenticator` satisfies the H1 `httpx.Authenticator`
+  port and maps a verified key to an `ActorSystem` with the key's scopes.
+- **Authz integration (the flagged decision):** chose a machine-scope fast-path over capacity coupling.
+  `authz.Actor` gains `Scopes []string`; `Evaluate` allows a machine actor when the perm is in its scopes
+  — placed after the RBAC loop so ABAC deny still overrides, deny-by-default preserved, and scopeless
+  internal system actors are unaffected (tested). Minimal, additive change to the security-critical
+  evaluator.
+- **Security:** constant-time secret compare (`crypto/subtle`), hash compared even for unknown prefixes
+  (no timing oracle), single non-specific `KindUnauthenticated` on any failure.
+- **Tradeoffs:** rotation = issue-new + revoke-old (two calls); a `wowapi apikey` CLI and per-key rate
+  limits are follow-ups.
+- **Affected:** `kernel/apikey/apikey.go` (+`_test.go`), `kernel/authz/{authz,evaluator}.go` (+machine_scope_test),
+  `migrations/00019_api_keys.sql`, evidence/hardening-H3.
+
 ## D-0070 — Hardening H4 (S6): audit tamper-evidence via hash-chaining
 - **Context:** audit_logs was append-only by grant (E1/D-0069) but had no cryptographic proof against an
   owner/DBA who bypasses the runtime role (roadmap S6).
