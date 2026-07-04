@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# ghgit — run a git command against GitHub as the qatoolist identity, inside a
+# hermetic container that uses ONLY the mounted SSH key (no ssh-agent, no
+# 1Password), so it can never authenticate as the wrong account.
+#
+# Usage:
+#   ghgit push -u origin main
+#   ghgit fetch --all
+#   ghgit ls-remote origin        # read-only auth check
+#
+# Env overrides:
+#   GHGIT_KEY   path to the private key (default: ~/.ssh/qatoolist_personal)
+#               (its .pub must sit next to it)
+#   GHGIT_IMAGE image tag (default: wowapi-ghgit:latest)
+#   GIT_USER_NAME / GIT_USER_EMAIL   commit identity (defaults: qatoolist / qatoolist@gmail.com)
+#
+# Signing: this container does NOT sign commits (network git ops only). Make and
+# sign commits on the host (1Password); push them with ghgit.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE="${GHGIT_IMAGE:-wowapi-ghgit:latest}"
+KEY="${GHGIT_KEY:-$HOME/.ssh/qatoolist_personal}"
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+[ -f "$KEY" ]     || { echo "ghgit: private key not found: $KEY (set GHGIT_KEY)" >&2; exit 1; }
+[ -f "$KEY.pub" ] || { echo "ghgit: public key not found: $KEY.pub" >&2; exit 1; }
+
+# Build the image on first use (or when the Dockerfile changes and it's absent).
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  docker build -t "$IMAGE" "$HERE" >&2
+fi
+
+# Interactive TTY only when attached to one (so it also works in scripts/CI).
+tty_flags=(-i)
+[ -t 0 ] && tty_flags+=(-t)
+
+# commit.gpgsign is forced OFF here: the host repo's local config points at the
+# 1Password signer, which does not exist in the container. Sign on the host.
+exec docker run --rm "${tty_flags[@]}" \
+  -v "$REPO":/repo -w /repo \
+  -v "$KEY":/keys/id:ro \
+  -v "$KEY.pub":/keys/id.pub:ro \
+  -e GIT_USER_NAME -e GIT_USER_EMAIL \
+  "$IMAGE" git -c commit.gpgsign=false -c tag.gpgsign=false "$@"
