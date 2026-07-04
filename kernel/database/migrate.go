@@ -56,3 +56,31 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, src fs.FS, source string) 
 	}
 	return MigrateResult{Version: v, Applied: len(applied)}, nil
 }
+
+// MigrateReset rolls every applied migration in src back to version 0 (goose
+// Down, newest-first). It is the mirror of Migrate for the migration
+// reversibility drill (roadmap O2) and for tearing a test database down; it must
+// NEVER run against a production database. Returns the version afterwards
+// (0 on a full rollback). Down blocks (`-- +goose Down`) must be present and
+// correct for every migration, which is exactly what the drill verifies.
+func MigrateReset(ctx context.Context, pool *pgxpool.Pool, src fs.FS, source string) (int64, error) {
+	if source == "" {
+		return 0, fmt.Errorf("database: migrate source name is required")
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = db.Close() }()
+
+	p, err := goose.NewProvider(goose.DialectPostgres, db, src,
+		goose.WithTableName(versionTablePrefix+source))
+	if err != nil {
+		return 0, fmt.Errorf("database: migration provider (%s): %w", source, err)
+	}
+	if _, err := p.DownTo(ctx, 0); err != nil {
+		return 0, fmt.Errorf("database: migrate down (%s): %w", source, err)
+	}
+	v, err := p.GetDBVersion(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("database: read migration version (%s): %w", source, err)
+	}
+	return v, nil
+}

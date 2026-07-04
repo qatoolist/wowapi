@@ -152,3 +152,8 @@ DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS document_access_grants;
 DROP TABLE IF EXISTS document_versions;
 DROP TABLE IF EXISTS documents;
+-- Drop the function this migration created (its Up does CREATE FUNCTION, so a
+-- rollback that leaves it behind makes a subsequent re-apply fail — caught by
+-- the O2 reversibility drill). Safe: it is created here and only referenced by
+-- the document policies dropped above; later migrations' Down runs first.
+DROP FUNCTION IF EXISTS app_actor_id();

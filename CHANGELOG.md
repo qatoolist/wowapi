@@ -29,9 +29,15 @@ Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-pla
   `outbox.{ListDeadEvents,ReplayDeadEvent,DiscardDeadEvent}`). Migration 00013 grants app_platform
   DELETE on the queue tables.
 
+- Migration reversibility: `database.MigrateReset` (goose down-to-0) and a CI forward→down→forward drill
+  (`TestIntegrationMigrationsReversible`). Operations docs for zero-downtime expand/contract migrations
+  and a backup/restore runbook + `scripts/backup_restore_drill.sh`.
+
 ### Fixed
 - Retention sweep legal-hold race: a hold applied concurrently with `SweepRetention` could be voided.
   The candidate scan now locks rows `FOR UPDATE` and the void re-asserts `legal_hold = false`.
+- Migration 00010 down: it created `app_actor_id()` but never dropped it, so a rollback + re-apply
+  failed ("function already exists"). Caught by the new reversibility drill.
 
 ## [0.1.0] — 2026-07-04 — initial framework release
 

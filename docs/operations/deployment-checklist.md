@@ -50,4 +50,8 @@ Reference Prometheus rule (adapt to your fingerprint exporter):
 
 ## 3. Backup / restore
 
-PITR + object-storage restore drill (O5) is documented in hardening phase H2 (`backup-restore.md`).
+PITR + object-storage restore procedure and the quarterly drill: [backup-restore.md](backup-restore.md).
+
+## 4. Schema migrations
+
+Zero-downtime expand/contract pattern and the CI reversibility drill: [migrations.md](migrations.md).

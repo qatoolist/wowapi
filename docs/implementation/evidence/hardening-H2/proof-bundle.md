@@ -3,10 +3,24 @@
 Plan: [../../hardening-plan.md](../../hardening-plan.md). H2 closes the async-operability gaps. It is
 delivered in coherent, individually QA-gated commits:
 
-- **R4 — DLQ operability** — DONE (D-0062). This bundle.
+- **R4 — DLQ operability** — DONE (D-0062).
+- **O2 — migration forward/down CI drill + expand/contract doc** — DONE (D-0063).
+- **O5 — backup/restore runbook + drill** — DONE (D-0063).
 - R3 — SLA sweeper registration + leader-safe scheduling — pending (paired with the E5 scheduler).
-- O2 — migration forward/down CI drill + expand/contract doc — pending.
-- O5 — backup/restore runbook + drill — pending.
+
+## O2 — migration safety harness
+
+`database.MigrateReset` (goose Down-to-0) + `TestIntegrationMigrationsReversible` run the full
+forward→down→forward cycle on an isolated DB in `make ci-container`. **The drill caught a real defect:**
+migration 00010 created `app_actor_id()` but its Down did not drop it, so re-apply failed
+("function already exists") — fixed in the 00010 Down. Expand/contract guidance: `docs/operations/migrations.md`.
+
+## O5 — backup/restore
+
+`scripts/backup_restore_drill.sh` proves the dump→restore round-trip against a seeded instance (verified
+locally: 43 tables restored, marker row intact; the verify step is authoritative over non-fatal
+pg_restore version-skew warnings). Runbook: `docs/operations/backup-restore.md` (PITR + object-store
+restore order).
 
 ## R4 — DLQ operability
 

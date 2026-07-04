@@ -293,6 +293,25 @@ Blueprint deviations MUST land here before the code that implements them.
   test DB.
 - **Affected:** kernel/workflow, testkit/workflowsim.
 
+## D-0063 — Hardening H2 (O2, O5): migration reversibility drill + backup/restore
+- **Context:** migrations had structure tests but no forward/down drill (roadmap O2), and there was no
+  backup/restore procedure or rehearsal (O5).
+- **Decisions:**
+  - **O2.** Added `database.MigrateReset` (goose Down-to-0) and `TestIntegrationMigrationsReversible`,
+    which runs forward→down→forward on an isolated DB in `make ci-container`. It immediately found a real
+    bug — migration 00010 created `app_actor_id()` but its Down did not drop it, breaking re-apply —
+    fixed in the 00010 Down. Documented the zero-downtime expand/contract pattern in
+    `docs/operations/migrations.md`. Rule enforced: every object an Up creates, its Down must drop; never
+    drop cluster-scoped roles/extensions.
+  - **O5.** `scripts/backup_restore_drill.sh` proves the dump→restore round-trip against a seeded
+    instance (marker row + schema verified; the verify step is authoritative over non-fatal client/server
+    version-skew warnings). Runbook `docs/operations/backup-restore.md` documents PITR + object-store
+    restore order (DB ≤ object-store timestamp, never the reverse).
+- **Tradeoffs:** the drill is a logical dump/restore, not provider PITR/WAL (rehearse that in staging per
+  release). `MigrateReset` is test/ops-only and must never run in production.
+- **Affected:** `kernel/database/migrate.go`, `migrations/reversible_test.go`, `migrations/00010_documents.sql`
+  (Down fix), `scripts/backup_restore_drill.sh`, `docs/operations/{migrations,backup-restore,deployment-checklist}.md`.
+
 ## D-0062 — Hardening H2 (R4): dead-letter-queue operability
 - **Context:** dead-lettering worked (jobs → `status='discarded'`, events → `dispatch_status='dead'`)
   but there was no inspect/replay/discard path (roadmap R4). Operators could not recover poison work.
