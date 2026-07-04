@@ -17,6 +17,11 @@ FROM base AS dev
 # `go test -race` needs cgo, and alpine ships no C toolchain by default —
 # without these the containerized CI gate cannot run the race suite.
 RUN apk add --no-cache gcc musl-dev
+# The repo is bind-mounted at /src owned by the host/runner uid, while this
+# container runs as root — git would refuse it as "dubious ownership", making
+# `go` VCS stamping fail ("error obtaining VCS status: exit status 128") and
+# breaking lint-boundaries/build in the containerized gate. Trust the mount.
+RUN git config --global --add safe.directory '*'
 ENV CGO_ENABLED=1
 CMD ["sleep", "infinity"]
 
