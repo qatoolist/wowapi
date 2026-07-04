@@ -60,4 +60,21 @@ read-only transaction (documented on `CachingStore`).
 
 Test (`kernel/authz/caching_internal_test.go`): 2 reads → 1 DB call; revoke bounded-stale within TTL;
 `Invalidate` → immediate reload/deny; TTL expiry → reload. Gate: 84 packages.
+
+## O1 — Distributed tracing seam (D-0075)
+
+| Verdict | Fix |
+|---|---|
+| real (P1) — request-id propagation only; no tracing | `kernel/observability.Tracer`/`Span` port + `NoOpTracer` (a sibling of the `Metrics` port) + a `Trace` HTTP middleware that opens a server span per request (route/method/status/request-id attrs). Wired into the generated api chain with `NoOpTracer` — **zero-cost when disabled**. |
+
+Consistent with the framework's port/adapter split (metrics ships the port in the kernel, prometheus in
+`adapters/metrics/`): the kernel owns the dependency-free tracing port; the **OpenTelemetry SDK binding is
+a thin adapter** (`adapters/tracing/otel`, the documented vendor integration) so the kernel adds no otel
+dependency. A span started via the port nests under any span in ctx, so once the adapter propagates trace
+context across process boundaries (API→relay→worker — the cross-process propagation follow-up), traces
+connect end to end.
+
+Tests (`kernel/observability/tracing_test.go`): the middleware starts exactly one span per request, ends
+it, and tags http.route/method/status; `NoOpTracer` returns ctx unchanged and swallows all calls. Gate:
+84 packages; the generated api template still parses with the `Trace` line.
 </content>

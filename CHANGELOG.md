@@ -31,6 +31,9 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   DELETE on the queue tables.
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
+- Distributed-tracing seam: `kernel/observability.Tracer`/`Span` port + `NoOpTracer` + a `Trace`
+  HTTP middleware (server span per request), wired into the generated api with the NoOp tracer
+  (zero-cost when disabled). The OpenTelemetry SDK binding is a thin adapter (kernel stays otel-free).
 - Authz decision caching: `authz.CachingStore` (opt-in `Store` decorator) caches the hot
   `ActiveAssignments` read per (tenant, actor) with a short TTL + explicit `Invalidate` so a role
   revoke applies immediately (no stale-allow). Unwrapped, behavior is unchanged.

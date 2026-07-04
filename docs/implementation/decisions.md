@@ -303,6 +303,19 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0075 — Hardening P1 (O1): distributed-tracing seam
+- **Context:** only request-id propagation; no tracing (roadmap O1: "behind the metrics/observability
+  port; zero-cost when disabled").
+- **Decision:** a `kernel/observability.Tracer`/`Span` port + `NoOpTracer` (sibling of `Metrics`) + a
+  `Trace` HTTP middleware opening a server span per request (route/method/status/request-id). Wired into
+  the generated api chain with `NoOpTracer` — zero-cost when disabled. The OpenTelemetry SDK binding is a
+  thin adapter (`adapters/tracing/otel`), keeping the kernel otel-free, exactly as metrics keeps
+  prometheus in an adapter.
+- **Tradeoffs:** cross-process trace propagation (injecting/extracting traceparent through outbox events
+  and job payloads for API→relay→worker) is the follow-up; the port + HTTP spans + nesting are in place.
+- **Affected:** `kernel/observability/tracing.go` (+`_test.go`), generated `cmd/api/main.go.tmpl`,
+  evidence/hardening-P1.
+
 ## D-0074 — Hardening P1 (R1): authz decision caching
 - **Context:** every `Evaluate` hit the DB for the actor's assignments (roadmap R1).
 - **Decision:** `authz.CachingStore`, an OPT-IN `Store` decorator caching `ActiveAssignments` per

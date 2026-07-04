@@ -101,6 +101,7 @@ func run(ctx context.Context) error {
 	handler := httpx.Chain(mux,
 		httpx.RequestID(),
 		httpx.Recover(log),
+		observability.Trace(observability.NoOpTracer), // swap in an OTel adapter to enable tracing
 		observability.Requests(observability.NoOp),
 		observability.AccessLog(log),
 		httpx.SecureHeaders(),
