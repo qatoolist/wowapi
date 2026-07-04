@@ -31,6 +31,9 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   DELETE on the queue tables.
 - Notification delivery receipts: `notify.Service.Deliveries(notificationID)` returns per-channel
   delivery status + provider message ids (RLS-scoped), making delivery queryable per notification.
+- Bulk-operation framework (`kernel/bulk`, migration 00016): chunked processing of large item sets
+  with progress reporting, a partial-failure ledger, and resumability — each item isolated in its own
+  transaction (success commits atomically with the done mark; a failure rolls back but is ledgered).
 - Gap-free per-tenant sequence allocator (`kernel/sequence`, migration 00015): transactional
   statutory numbered series (receipts/vouchers/certificates) with audited voids — gap-free (a
   rolled-back tx frees the number) and race-free (concurrent allocations serialize), replacing

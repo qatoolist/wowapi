@@ -303,6 +303,21 @@ Blueprint deviations MUST land here before the code that implements them.
   channel preferences (opt-out) is deferred — it needs a preferences table + send-path enforcement.
 - **Affected:** `kernel/notify/service.go` (+`notify_test.go`), evidence/hardening-P1.
 
+## D-0068 — Hardening H5 (E6): bulk-operation framework
+- **Context:** the job runner processed items one at a time; a compliance product needs chunked bulk
+  operations with progress, a partial-failure ledger, and resumability (roadmap E6).
+- **Decision:** `kernel/bulk.Service` over `bulk_operations` + `bulk_items` (migration 00016, RLS
+  tenant-scoped). `Start` records the op + one pending item per payload in the caller's tx. `Process`
+  runs up to `limit` pending items (chunked; resumable — it only ever touches still-pending items),
+  each in its own tenant tx: on success `fn`'s work commits atomically with the `done` mark; on failure
+  that tx rolls back and a second tx records `failed` + the error. So a partial write never lingers, one
+  item's failure never stops the run, and a crash resumes from the pending remainder. `Progress` reports
+  Total/Done/Failed/Pending/Status. Runs as app_rt tenant-bound (bulk items are tenant data).
+- **Tradeoffs:** single-processor per operation (a `FOR UPDATE SKIP LOCKED` claim would fan out across
+  workers — noted follow-up). Item work must be idempotent (at-least-once, like a job worker).
+- **Affected:** `kernel/bulk/bulk.go` (+`_test.go`), `migrations/00016_bulk_operations.sql`,
+  evidence/hardening-H5.
+
 ## D-0066 — Hardening H5 (E3): gap-free per-tenant sequence allocator
 - **Context:** no framework primitive for statutory numbered series (receipts/vouchers/certificates);
   a product would hand-roll `MAX()+1`, which races and leaves gaps — the wowsociety.app failure (E3).

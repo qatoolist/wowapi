@@ -3,10 +3,26 @@
 Plan: [../../hardening-plan.md](../../hardening-plan.md). H5 builds the compliance evidence primitives,
 delivered as individually QA-gated commits:
 
-- **E3 — gap-free per-tenant sequence allocator** — DONE (D-0066). This bundle.
+- **E3 — gap-free per-tenant sequence allocator** — DONE (D-0066).
+- **E6 — bulk-operation framework** — DONE (D-0068).
 - E2 — generalized retention / disposition + DSR — pending.
-- E6 — bulk-operation framework — pending.
 - E4 — snapshot/artifact pipeline — pending.
+
+## E6 — bulk-operation framework
+
+| Verdict | Fix |
+|---|---|
+| real (P0) — jobs were per-item only; no chunking, progress, partial-failure ledger, or resumability | `kernel/bulk.Service` over `bulk_operations` + `bulk_items` (migration 00016, RLS). `Start` creates the op + one pending item per payload; `Process(txm, tenant, id, limit, fn)` runs up to `limit` pending items (chunked, resumable — picks up only pending), each in its own tenant tx; `Progress` reports Total/Done/Failed/Pending/Status |
+
+Per-item isolation: on success, `fn`'s work commits ATOMICALLY with the `done` mark (one tx); on
+failure, that tx rolls back and a second tx records `failed` + the error — so a partial write never
+lingers, one item's failure never stops the run (partial-failure ledger), and a crash resumes from the
+remaining pending items. Item work must be idempotent (at-least-once, like a job worker).
+
+Tests (`kernel/bulk/bulk_test.go`): all-succeed → completed; **partial-failure ledger** (2 of 5 fail →
+Done3/Failed2, errors recorded, and a scratch-table check proves the failed items' writes rolled back
+while the 3 successes persisted); **chunked/resumable** (2+2+1 across separate `Process` calls); empty
+op → immediately completed. Gate: 0 FAIL, 0 SKIP, 78 packages; boundary lint + 00016 reversibility pass.
 
 ## E3 — gap-free per-tenant sequence allocator
 
