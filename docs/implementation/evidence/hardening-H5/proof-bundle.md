@@ -33,10 +33,12 @@ packages; boundary lint + 00021 reversibility pass.
 | real (P0) — legal hold was a per-document flag; no generalized hold, no DSR primitive, no statutory-override | `kernel/retention` over `legal_holds` + `dsr_requests` (migration 00020). **Holds** (`Place`/`Release`/`IsHeld`/`List`) generalize hold to any `(entity_type, entity_id)` — at most one active hold per entity (partial unique index), consultable by any retention sweep. **DSR** ledger (`Open`/`Complete`/`Reject`/`Get`) tracks export/erasure requests with a **statutory-override reason** for refusing an erasure a retention obligation forbids. |
 
 Scope note: the two concrete, framework-owned primitives are fully implemented. Per-record-class
-disposition *over arbitrary product tables* is delivered as an orchestration pattern (the H2 scheduler
-drives it; products register per-class dispose/export/erase callbacks — no dynamic-table SQL, keeping the
-framework's allowlist-only discipline). The registry+callback wiring is a documented follow-up; the
-data-integrity primitives (holds, DSR request lifecycle) are done and tested.
+disposition *over arbitrary product tables* uses an orchestration pattern (the H2 scheduler drives it;
+products register per-class dispose/export/erase callbacks — no dynamic-table SQL, keeping the
+framework's allowlist-only discipline). **The registry+callback engine was implemented in the
+post-hardening review (D-0077):** `retention.Registry` + `retention.Engine`
+(`SweepDisposition`/`RunExport`/`RunErasure`), wired into the kernel + module `Context` + a scheduled
+per-tenant disposition sweep.
 
 Tests (`kernel/retention/retention_test.go`): hold lifecycle (place→held, duplicate-active conflict,
 release→not-held, double-release not-found, re-place after release); tenant isolation; DSR (export

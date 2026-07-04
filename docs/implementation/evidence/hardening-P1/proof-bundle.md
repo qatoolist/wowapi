@@ -26,8 +26,9 @@ Gate: `make ci` + `make ci-container` green — 0 FAIL, 0 SKIP, 74 packages.
 | partial (roadmap overstated "fire-and-forget") — delivery status WAS tracked in `notification_deliveries`, but there was no query API to read it per notification | `notify.Service.Deliveries(ctx, db, notificationID) []DeliveryReceipt` — per-channel status, attempts, provider message id (receipt), last error, timestamps; RLS-scoped to the caller's tenant |
 
 Closes the concrete R5 gap ("delivery status queryable per notification; provider receipts stored").
-**Per-user channel preferences** (opt-out per channel) remains a follow-up — it needs a preferences
-table + a send-path check, out of scope for this small increment.
+**Per-user channel preferences** were added in the post-hardening review (D-0077):
+`notification_channel_prefs` (migration 00022) + `notify.SetChannelPref`; `Send` skips a recipient's
+opted-out channels.
 
 Test (`kernel/notify/notify_test.go::TestIntegrationDeliveriesReceipts`): a 2-channel send yields 2
 receipts (inapp + email) with the email destination + queued status. Gate green (76 packages).
@@ -68,11 +69,13 @@ Test (`kernel/authz/caching_internal_test.go`): 2 reads → 1 DB call; revoke bo
 | real (P1) — request-id propagation only; no tracing | `kernel/observability.Tracer`/`Span` port + `NoOpTracer` (a sibling of the `Metrics` port) + a `Trace` HTTP middleware that opens a server span per request (route/method/status/request-id attrs). Wired into the generated api chain with `NoOpTracer` — **zero-cost when disabled**. |
 
 Consistent with the framework's port/adapter split (metrics ships the port in the kernel, prometheus in
-`adapters/metrics/`): the kernel owns the dependency-free tracing port; the **OpenTelemetry SDK binding is
-a thin adapter** (`adapters/tracing/otel`, the documented vendor integration) so the kernel adds no otel
-dependency. A span started via the port nests under any span in ctx, so once the adapter propagates trace
-context across process boundaries (API→relay→worker — the cross-process propagation follow-up), traces
-connect end to end.
+`adapters/metrics/`): the kernel owns the tracing port; the OpenTelemetry binding is a thin adapter.
+**The post-hardening review (D-0077, F3) delivered the end-to-end pieces:** the real
+`adapters/tracing/otel` adapter (configurable ratio sampler, `NewOTLP` OTLP exporter), the `Tracer` port's
+`Inject`/`Extract` for W3C-traceparent cross-process propagation (the HTTP middleware continues an inbound
+trace), and the tracing infra — a Jaeger service in the compose stack + a deployment-checklist section.
+Carrying the traceparent through outbox events / job payloads (the relay→worker leg) remains the last
+wiring step.
 
 Tests (`kernel/observability/tracing_test.go`): the middleware starts exactly one span per request, ends
 it, and tags http.route/method/status; `NoOpTracer` returns ctx unchanged and swallows all calls. Gate:

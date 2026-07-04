@@ -3,6 +3,36 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0077 — Post-hardening review: close six deferrals
+- **Context:** a review of the hardening pass found six items whose deferrals left roadmap gaps
+  incompletely closed. All were verified real and fixed (commits `d22ff7f`, `54abec1`).
+- **Decisions:**
+  - **F1 durable authz-denial audit.** Denials were only WARN-logged. Since `Evaluate` runs in a
+    read-only tx, added `kernel.durableAudit` (default when a TxManager is present) that writes an
+    `authz.denied` `audit_logs` row in its own tenant tx — persisting even if the request rolls back.
+  - **F2 data-lifecycle engine.** Implemented the per-record-class disposition + DSR export/erasure that
+    was "future orchestration": `retention.Registry` (Dispose/Export/Erase callbacks — no dynamic-table
+    SQL) + `retention.Engine`; wired into the kernel (`RetentionClasses`/`Retention`), the module
+    `Context`, and a per-tenant scheduled disposition sweep.
+  - **F3 end-to-end OTel.** Added `adapters/tracing/otel` (real OTel adapter, configurable ratio
+    sampler, `NewOTLP` OTLP/HTTP exporter), extended the `Tracer` port with `Inject`/`Extract` (W3C
+    traceparent) with the HTTP middleware continuing an inbound trace, and added the tracing INFRA — a
+    Jaeger all-in-one service in the compose stack (OTLP + UI) and a deployment-checklist section.
+  - **F4 channel preferences.** `notification_channel_prefs` (migration 00022) + `notify.SetChannelPref`;
+    `Send` skips opted-out channels and fails loudly if all are opted out. (Failure surfacing to caller
+    = the existing `Deliveries` receipts API.)
+  - **F5 config CLI delegation.** `wowapi config validate|print|schema|doctor` now exec the product-local
+    `tools/configcheck` when present (framework-only fallback); added `config diff` + expanded the
+    generated checker.
+  - **F6 worker platform DSN.** Added `config db.platform_dsn` (dedicated app_platform login); the
+    generated worker uses it, falling back to the runtime DSN + SET ROLE for local.
+  - **Prior issue (workflow vote/min_approval/self_approval):** confirmed expected — fail-closed at
+    definition validation (D-0054). No change.
+- **Affected:** `kernel/kernel.go`, `kernel/retention/{engine}.go`, `kernel/observability/tracing.go`,
+  `adapters/tracing/otel/`, `kernel/notify/service.go`, `internal/cli/config_*.go`, generated worker +
+  configcheck templates, `kernel/config/config.go`, `module/module.go`, `app/{context,boot,maintenance}.go`,
+  `deployments/compose.yaml`, migrations 00022, `docs/operations/deployment-checklist.md`.
+
 ## D-0001 — Preflight: `kernel/secrets` added to the package map
 - **Context:** 12-configuration-and-deployment referenced `kernel/secrets` types but the 04 package
   map never defined the package (Goal 2 preflight item).

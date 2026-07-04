@@ -38,6 +38,8 @@ DELETE both denied); redaction (an `ssn` redactor masks the stored values); tena
 cannot see tenant 1's rows). Gate: 0 FAIL, 0 SKIP, 80 packages; boundary lint + 00017 reversibility pass.
 
 Usable today: a service records with its own `database.TenantDB` (`audit.New(idgen, redactor).Record(...)`).
-Follow-ups (documented, not this pass): a `module.Context` accessor; bridging `authz` denials to durable
-rows (the `AuthzDenial` sink lacks a tx handle); automatic trigger-based field capture; S6 hash-chaining.
+Follow-ups: automatic trigger-based field capture; a `module.Context` accessor.
+**Closed in the post-hardening review (D-0077):** bridging `authz` denials to durable audit rows — the
+`kernel.durableAudit` sink writes an `authz.denied` row in its own tenant tx (the read-only eval tx
+cannot). S6 hash-chaining is delivered above.
 </content>

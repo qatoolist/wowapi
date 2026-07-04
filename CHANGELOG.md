@@ -75,7 +75,19 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
   (`TestIntegrationMigrationsReversible`). Operations docs for zero-downtime expand/contract migrations
   and a backup/restore runbook + `scripts/backup_restore_drill.sh`.
 
+- Data-lifecycle disposition/DSR engine (`kernel/retention.Registry`/`Engine`): per-record-class
+  Dispose/Export/Erase callbacks, a scheduled per-tenant disposition sweep, and DSR export/erasure
+  fulfilment. Exposed via `module.Context.RetentionClasses()`.
+- OpenTelemetry tracing adapter (`adapters/tracing/otel`) with a configurable ratio sampler and an
+  OTLP exporter; the `Tracer` port gains `Inject`/`Extract` (W3C traceparent) and the HTTP middleware
+  continues an inbound trace. Compose stack gains a Jaeger backend (OTLP + UI).
+- Per-user notification channel preferences (`notify.SetChannelPref`, migration 00022).
+- `wowapi config` delegates to the product `tools/configcheck`; new `config diff` subcommand.
+- `db.platform_dsn` config so the worker can use a dedicated app_platform login.
+
 ### Fixed
+- Authorization denials are now written to the durable `audit_logs` (not only WARN-logged):
+  the default sink writes an `authz.denied` row in its own tenant tx.
 - Retention sweep legal-hold race: a hold applied concurrently with `SweepRetention` could be voided.
   The candidate scan now locks rows `FOR UPDATE` and the void re-asserts `legal_hold = false`.
 - Migration 00010 down: it created `app_actor_id()` but never dropped it, so a rollback + re-apply
