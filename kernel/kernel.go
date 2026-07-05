@@ -248,7 +248,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	// Notifications: template registry (module-declared) + service. Channel sender
 	// adapters (smtp/sms/…) are infra registered by the product on Notify.
 	notifyReg := notify.NewRegistry()
-	notifySvc := notify.New(notifyReg, idgen)
+	notifySvc := notify.New(notifyReg, idgen, notify.WithTracer(tracer))
 
 	// Webhooks: a service over a Sender (real HTTP by default) and a secret-ref
 	// resolver adapting the kernel secrets provider. Modules register verifiers +

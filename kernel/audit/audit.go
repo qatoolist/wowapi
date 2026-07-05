@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -260,6 +261,53 @@ func (w *Writer) Anchor(ctx context.Context, db database.TenantDB) (seq int64, h
 		return 0, "", kerr.Wrapf(err, "audit.Anchor", "read chain head")
 	}
 	return seq, headHash, nil
+}
+
+// CheckAnchor reports whether the tenant's LIVE chain still contains the row at
+// anchored seq with anchored hash — the offline verifier's primitive against a
+// previously exported anchor (roadmap CA-11). It closes Verify's blind spot: a
+// tail truncation (drop the last k rows and rewind audit_chain.head_hash) leaves
+// the remaining chain internally consistent, so Verify still returns OK; but the
+// anchored (seq, hash) is gone, so CheckAnchor returns false. present=false means
+// the tail was truncated or the anchored row rewritten after the anchor was taken.
+// Read-only; safe in a read-only transaction.
+func (w *Writer) CheckAnchor(ctx context.Context, db database.TenantDB, seq int64, headHash string) (present bool, err error) {
+	if seq <= 0 { // the genesis/empty anchor covers nothing to check
+		return true, nil
+	}
+	err = db.QueryRow(ctx,
+		`SELECT EXISTS (
+		   SELECT 1 FROM audit_logs
+		    WHERE tenant_id = app_tenant_id() AND seq = $1 AND row_hash = $2)`,
+		seq, headHash).Scan(&present)
+	if err != nil {
+		return false, kerr.Wrapf(err, "audit.CheckAnchor", "probe anchored row")
+	}
+	return present, nil
+}
+
+// ExportAnchors snapshots every tenant's current audit-chain head into the
+// append-only audit_anchors table as immutable tamper-evidence (roadmap CA-11),
+// returning the number of anchors written. Drive it from the leader-safe
+// scheduler (a single replica claims each interval) so anchors are written once,
+// not once per replica. It runs cross-tenant as app_platform (one INSERT..SELECT
+// for all tenants, mirroring the idempotency sweep) on the platform pool.
+//
+// A tenant is anchored only when its chain head advanced past its last anchored
+// seq, so re-running within an interval (or on a quiescent chain) writes nothing
+// and the table stays bounded — one anchor per burst of audit activity.
+func ExportAnchors(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+	tag, err := pool.Exec(ctx,
+		`INSERT INTO audit_anchors (tenant_id, anchor_seq, chain_head_hash, row_count)
+		 SELECT c.tenant_id, c.next_seq - 1, c.head_hash, c.next_seq - 1
+		   FROM audit_chain c
+		  WHERE c.next_seq > 1
+		    AND c.next_seq - 1 > COALESCE(
+		        (SELECT max(a.anchor_seq) FROM audit_anchors a WHERE a.tenant_id = c.tenant_id), 0)`)
+	if err != nil {
+		return 0, kerr.Wrapf(err, "audit.ExportAnchors", "write anchors")
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // Filter narrows a Query. Zero-valued fields are ignored; Limit defaults to 100.

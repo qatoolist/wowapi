@@ -15,6 +15,22 @@ Down did not drop it, so a re-apply failed with "function already exists". Rule 
 **every object your Up creates (table, function, type, policy, index), your Down must drop** — and only
 those; never drop cluster-scoped objects (roles, extensions) that sibling databases share.
 
+### Schema-snapshot diffing (B-4)
+
+The goose-version round-trip above proves *versions* return to head, but not that the *schema* does — a
+Down that drops a table yet leaves an index, policy, default, or a stray object behind keeps goose happy
+(versions match) while the physical schema silently drifts. [`scripts/migration_reversibility_drill.sh`](../../scripts/migration_reversibility_drill.sh)
+(`make drill-reversibility`) closes that gap: on a throwaway database it migrates **up (clean) → down to
+0 → up again**, captures a normalized `pg_dump --schema-only` snapshot at head both times, and **diffs
+them byte-for-byte**. Any difference fails the drill with a non-zero exit and prints the offending DDL.
+The snapshot strips comments, session GUCs, and the pg18 `\restrict` guard tokens so only real DDL is
+compared; `pg_dump`'s stable type+name ordering makes a clean up and a round-trip up identical unless a
+Down leg is genuinely asymmetric.
+
+```sh
+DATABASE_URL=postgres://…/wowapi make drill-reversibility
+```
+
 ## Zero-downtime expand/contract
 
 Never rewrite a column or table in place while old and new code run side by side. Split every breaking

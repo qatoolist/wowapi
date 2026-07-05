@@ -22,6 +22,7 @@ type WorkerConfigOpts struct {
 	SLAInterval         time.Duration // workflow SLA sweep interval (default 1m)
 	IdempotencyInterval time.Duration // idempotency-key expiry sweep interval (default 1h)
 	DLQDepthInterval    time.Duration // dlq_depth gauge refresh interval (default 1m)
+	AuditAnchorInterval time.Duration // audit-chain anchor-export interval (default 1h)
 }
 
 // StartWorker runs the background worker process for a booted app: the outbox
@@ -63,13 +64,18 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if opts.DLQDepthInterval <= 0 {
 		opts.DLQDepthInterval = time.Minute
 	}
+	if opts.AuditAnchorInterval <= 0 {
+		opts.AuditAnchorInterval = time.Hour
+	}
 
 	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch, outbox.WithRelayTracer(k.Tracer))
 	var runnerOpts []jobs.RunnerOpt
 	if opts.JobPoolSize > 0 {
 		runnerOpts = append(runnerOpts, jobs.WithPoolSize(opts.JobPoolSize))
 	}
-	runnerOpts = append(runnerOpts, jobs.WithDrainTimeout(opts.ShutdownDrain), jobs.WithLogger(log))
+	// WithRunnerTracer continues each job's originating request trace across the
+	// async boundary (roadmap O1/CA-9), mirroring the outbox relay tracer above.
+	runnerOpts = append(runnerOpts, jobs.WithDrainTimeout(opts.ShutdownDrain), jobs.WithLogger(log), jobs.WithRunnerTracer(k.Tracer))
 	runner := jobs.NewRunner(k.Platform, k.Tx, b.Jobs, runnerOpts...)
 
 	// Scheduler: leader-safe kernel maintenance sweeps (SLA timers, idempotency
@@ -88,7 +94,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 				map[string]string{"task": name})
 		}
 	})
-	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval)
+	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval, opts.AuditAnchorInterval)
 	registerModuleRecurring(sched, k, b.Recurring)
 
 	// Both loops respect ctx cancellation and drain in-flight work themselves.

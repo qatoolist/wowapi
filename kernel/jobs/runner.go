@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,12 +15,14 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // enqueueConfig is the per-enqueue overrides set by Opts.
 type enqueueConfig struct {
 	runAt       *time.Time
 	maxAttempts *int
+	tracer      observability.Tracer
 }
 
 // Opt customizes a single Enqueue/EnqueueGlobal call.
@@ -41,8 +44,23 @@ func WithMaxAttempts(n int) Opt {
 	}
 }
 
-func applyOpts(opts []Opt) enqueueConfig {
-	var c enqueueConfig
+// WithTracer wires a tracer so this enqueue captures the current request's W3C
+// traceparent (roadmap O1/CA-9) into the job's trace_context; the runner
+// continues that trace when it later executes the job. Default: NoOpTracer
+// (empty trace context — no behavior change). Mirrors outbox.WithWriterTracer.
+func WithTracer(tr observability.Tracer) Opt {
+	return func(c *enqueueConfig) {
+		if tr != nil {
+			c.tracer = tr
+		}
+	}
+}
+
+// applyOpts folds the enqueue options over a config seeded with the caller's
+// default tracer (NoOp for the tenant Enqueue free function; the Runner's tracer
+// for EnqueueGlobal).
+func applyOpts(defaultTracer observability.Tracer, opts []Opt) enqueueConfig {
+	c := enqueueConfig{tracer: defaultTracer}
 	for _, o := range opts {
 		o(&c)
 	}
@@ -54,11 +72,11 @@ func applyOpts(opts []Opt) enqueueConfig {
 // the same tenant as the surrounding business tx and RLS/grants line up) or NULL
 // for a global job. run_at/max_attempts fall back to the table defaults when the
 // bound params are NULL. Casts pin the param types so pgx never fails inference.
-const enqueueSQLTenant = `INSERT INTO jobs_queue (kind, tenant_id, payload, run_at, max_attempts)
-     VALUES ($1, app_tenant_id(), $2::jsonb, COALESCE($3::timestamptz, now()), COALESCE($4::int, 5))`
+const enqueueSQLTenant = `INSERT INTO jobs_queue (kind, tenant_id, payload, run_at, max_attempts, trace_context)
+     VALUES ($1, app_tenant_id(), $2::jsonb, COALESCE($3::timestamptz, now()), COALESCE($4::int, 5), $5)`
 
-const enqueueSQLGlobal = `INSERT INTO jobs_queue (kind, tenant_id, payload, run_at, max_attempts)
-     VALUES ($1, NULL, $2::jsonb, COALESCE($3::timestamptz, now()), COALESCE($4::int, 5))`
+const enqueueSQLGlobal = `INSERT INTO jobs_queue (kind, tenant_id, payload, run_at, max_attempts, trace_context)
+     VALUES ($1, NULL, $2::jsonb, COALESCE($3::timestamptz, now()), COALESCE($4::int, 5), $5)`
 
 // Enqueue inserts j into jobs_queue in the caller's tenant transaction. Because
 // the INSERT rides the caller's tx (app_rt has INSERT on jobs_queue), the job is
@@ -73,9 +91,22 @@ func Enqueue(ctx context.Context, db database.TenantDB, j Job, opts ...Opt) erro
 	if err != nil {
 		return kerr.E(kerr.KindInternal, "invalid_job", "job payload is not JSON-encodable")
 	}
-	c := applyOpts(opts)
-	if _, err := db.Exec(ctx, enqueueSQLTenant, j.Kind(), payload, c.runAt, c.maxAttempts); err != nil {
+	c := applyOpts(observability.NoOpTracer, opts)
+	// Capture the current distributed-trace context (W3C traceparent) so the
+	// runner can continue the SAME trace when it executes the job asynchronously
+	// (roadmap O1/CA-9). Empty string (NoOp / no active span) → NULL trace_context.
+	if _, err := db.Exec(ctx, enqueueSQLTenant, j.Kind(), payload, c.runAt, c.maxAttempts, traceContext(ctx, c.tracer)); err != nil {
 		return kerr.Wrapf(err, "jobs.Enqueue", "insert job %s", j.Kind())
+	}
+	return nil
+}
+
+// traceContext returns the injected W3C traceparent for the span active in ctx,
+// or a nil any when tracing is disabled (so the DB stores NULL, not an empty
+// string).
+func traceContext(ctx context.Context, tr observability.Tracer) any {
+	if tc := tr.Inject(ctx); tc != "" {
+		return tc
 	}
 	return nil
 }
@@ -93,8 +124,11 @@ func (r *Runner) EnqueueGlobal(ctx context.Context, j Job, opts ...Opt) error {
 	if err != nil {
 		return kerr.E(kerr.KindInternal, "invalid_job", "job payload is not JSON-encodable")
 	}
-	c := applyOpts(opts)
-	if _, err := r.pool.Exec(ctx, enqueueSQLGlobal, j.Kind(), payload, c.runAt, c.maxAttempts); err != nil {
+	// Seed with the runner's tracer so a global enqueue captures trace context by
+	// default (the tenant Enqueue free function defaults to NoOp); WithTracer still
+	// overrides per call.
+	c := applyOpts(r.tracer, opts)
+	if _, err := r.pool.Exec(ctx, enqueueSQLGlobal, j.Kind(), payload, c.runAt, c.maxAttempts, traceContext(ctx, c.tracer)); err != nil {
 		return kerr.Wrapf(err, "jobs.EnqueueGlobal", "insert global job %s", j.Kind())
 	}
 	return nil
@@ -117,11 +151,12 @@ type DeadJob struct {
 // a bounded fixed-size worker pool — never one goroutine per job (blueprint: no
 // unbounded goroutines; the `go` keyword is permitted in kernel/jobs).
 type Runner struct {
-	pool  *pgxpool.Pool
-	txm   database.TxManager
-	reg   *Registry
-	idgen model.IDGen
-	log   *slog.Logger
+	pool   *pgxpool.Pool
+	txm    database.TxManager
+	reg    *Registry
+	idgen  model.IDGen
+	log    *slog.Logger
+	tracer observability.Tracer
 
 	poolSize       int           // max concurrent workers and claim batch size
 	stalledTimeout time.Duration // running jobs older than this are reclaimable
@@ -209,6 +244,19 @@ func WithLogger(l *slog.Logger) RunnerOpt {
 	}
 }
 
+// WithRunnerTracer wires a tracer so the runner continues each job's originating
+// request trace when it executes the job (roadmap O1/CA-9): it extracts the
+// traceparent captured at enqueue and runs the worker under a child span, and it
+// is also the default tracer for EnqueueGlobal. Default: NoOpTracer. Mirrors
+// outbox.WithRelayTracer.
+func WithRunnerTracer(tr observability.Tracer) RunnerOpt {
+	return func(r *Runner) {
+		if tr != nil {
+			r.tracer = tr
+		}
+	}
+}
+
 // NewRunner wires a Runner. platformPool must authenticate as app_platform (the
 // role granted claim/complete on jobs_queue + job_runs); txm runs worker
 // transactions per tenant; reg supplies the workers.
@@ -219,6 +267,7 @@ func NewRunner(platformPool *pgxpool.Pool, txm database.TxManager, reg *Registry
 		reg:            reg,
 		idgen:          model.UUIDv7(),
 		log:            slog.Default(),
+		tracer:         observability.NoOpTracer,
 		poolSize:       10,
 		stalledTimeout: 5 * time.Minute,
 		reclaimEvery:   time.Minute,
@@ -246,6 +295,7 @@ type claimedJob struct {
 	payload     []byte
 	attempts    int
 	maxAttempts int
+	trace       *string // W3C traceparent captured at enqueue (CA-9); nil when absent
 }
 
 // claimSQL atomically selects up to $1 eligible jobs (available, run_at reached)
@@ -265,7 +315,7 @@ const claimSQL = `WITH claimed AS (
        SET status = 'running', locked_at = now()
       FROM claimed
      WHERE q.id = claimed.id
-    RETURNING q.id, q.kind, q.tenant_id, q.payload, q.attempts, q.max_attempts`
+    RETURNING q.id, q.kind, q.tenant_id, q.payload, q.attempts, q.max_attempts, q.trace_context`
 
 // ClaimOnce claims up to poolSize available jobs (marking each 'running' in a
 // committed statement), then executes them concurrently on the bounded worker
@@ -281,7 +331,7 @@ func (r *Runner) ClaimOnce(ctx context.Context) (int, error) {
 	var batch []claimedJob
 	for rows.Next() {
 		var jb claimedJob
-		if err := rows.Scan(&jb.id, &jb.kind, &jb.tenant, &jb.payload, &jb.attempts, &jb.maxAttempts); err != nil {
+		if err := rows.Scan(&jb.id, &jb.kind, &jb.tenant, &jb.payload, &jb.attempts, &jb.maxAttempts, &jb.trace); err != nil {
 			rows.Close()
 			return 0, kerr.Wrapf(err, "jobs.ClaimOnce", "scan claimed job")
 		}
@@ -334,6 +384,18 @@ func (r *Runner) execOne(ctx context.Context, jb claimedJob) {
 	if jb.tenant != nil {
 		tenant = *jb.tenant
 	}
+
+	// Continue the originating request's trace across the async boundary (roadmap
+	// O1/CA-9): extract the traceparent captured at enqueue, then run the worker
+	// under a child span (the job-runner span). Zero-cost with NoOpTracer.
+	if jb.trace != nil && *jb.trace != "" {
+		ctx = r.tracer.Extract(ctx, *jb.trace)
+	}
+	ctx, span := r.tracer.StartSpan(ctx, "jobs.run "+jb.kind)
+	span.SetAttr("job.kind", jb.kind)
+	span.SetAttr("job.id", strconv.FormatInt(jb.id, 10))
+	defer span.End()
+
 	// The worker runs under a per-job timeout. The outcome (success/failure)
 	// is persisted with a SEPARATE fresh, short-lived context so a job whose
 	// worker ctx expired can still record its status rather than being left
@@ -348,6 +410,7 @@ func (r *Runner) execOne(ctx context.Context, jb claimedJob) {
 	outCtx, outCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer outCancel()
 	if werr != nil {
+		span.RecordError(werr)
 		r.recordFailure(outCtx, jb, werr)
 		return
 	}

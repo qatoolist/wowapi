@@ -23,6 +23,17 @@ import (
 )
 
 func main() {
+	// Subcommand: default "up" applies all pending migrations; "reset" rolls the
+	// kernel source back to version 0 (goose Down, newest-first). "reset" exists
+	// only for local/CI drills — notably the migration reversibility drill
+	// (scripts/migration_reversibility_drill.sh, backlog B-4) which needs a
+	// shell-drivable down-to-0. Like Up here, it connects as the raw DATABASE_URL
+	// login and MUST NEVER be pointed at a production database (see database.MigrateReset).
+	mode := "up"
+	if len(os.Args) > 1 {
+		mode = os.Args[1]
+	}
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		fmt.Fprintln(os.Stderr, "migrate: DATABASE_URL is not set (run `make up`, or use `make migrate` which supplies the compose default)")
@@ -39,11 +50,25 @@ func main() {
 	}
 	defer pool.Close()
 
-	res, err := database.Migrate(ctx, pool, migrations.Kernel(), migrations.SourceName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
-		os.Exit(1)
+	switch mode {
+	case "up":
+		res, err := database.Migrate(ctx, pool, migrations.Kernel(), migrations.SourceName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("kernel migrations applied (%d this run); %s source at version %d\n",
+			res.Applied, migrations.SourceName, res.Version)
+	case "reset":
+		v, err := database.MigrateReset(ctx, pool, migrations.Kernel(), migrations.SourceName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("kernel migrations rolled back; %s source at version %d\n",
+			migrations.SourceName, v)
+	default:
+		fmt.Fprintf(os.Stderr, "migrate: unknown mode %q (want \"up\" or \"reset\")\n", mode)
+		os.Exit(2)
 	}
-	fmt.Printf("kernel migrations applied (%d this run); %s source at version %d\n",
-		res.Applied, migrations.SourceName, res.Version)
 }

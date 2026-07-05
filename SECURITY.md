@@ -41,6 +41,10 @@ The framework's security controls are structurally enforced (types, middleware, 
 invariants (deny-by-default authz, fail-closed RLS, append-only tamper-evident audit, structural secret
 redaction) are described in [`docs/SRS.md`](docs/SRS.md) §5.1 and exercised by the test suite behind the CI gate.
 
+### Operational runbooks
+- **Rotating a per-tenant integration-provider credential** (zero-downtime, secretref-only):
+  [`docs/operations/integration-credential-rotation.md`](docs/operations/integration-credential-rotation.md).
+
 ### Supply-chain integrity
 Releases are built by GitHub Actions and published with:
 - **cosign keyless signature** (Sigstore/Fulcio/Rekor) on the `checksums.txt` file, which in turn pins the

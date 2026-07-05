@@ -292,6 +292,148 @@ func TestIntegrationAuditChainDetectsDeletion(t *testing.T) {
 	}
 }
 
+// TestIntegrationAuditExportAnchors proves the CA-11 scheduled anchor-export
+// primitive: the platform-role ExportAnchors snapshots the tenant's live chain
+// head (last seq + head hash) into the append-only audit_anchors table, the
+// snapshot matches Anchor(), app_rt can read its own anchor back (tenant-scoped),
+// re-running is a no-op until the chain advances, and the anchored (seq, hash)
+// verifies against the live chain.
+func TestIntegrationAuditExportAnchors(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "r")
+	recordN(t, h, w, ctx, 5)
+
+	// The scheduled export (app_platform, cross-tenant) writes one anchor.
+	if n, err := audit.ExportAnchors(context.Background(), h.Platform); err != nil {
+		t.Fatalf("ExportAnchors: %v", err)
+	} else if n != 1 {
+		t.Fatalf("ExportAnchors wrote %d anchors, want 1", n)
+	}
+
+	// The anchor must equal the live chain head (Anchor()).
+	var wantSeq int64
+	var wantHead string
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		wantSeq, wantHead, e = w.Anchor(ctx, db)
+		return e
+	}); err != nil {
+		t.Fatalf("Anchor: %v", err)
+	}
+
+	// app_rt reads its own anchor row back (tenant-scoped SELECT grant).
+	var gotSeq, gotRows int64
+	var gotHead string
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(ctx,
+			`SELECT anchor_seq, chain_head_hash, row_count FROM audit_anchors
+			  WHERE tenant_id = app_tenant_id() ORDER BY anchor_seq DESC LIMIT 1`).
+			Scan(&gotSeq, &gotHead, &gotRows)
+	}); err != nil {
+		t.Fatalf("read anchor as app_rt: %v", err)
+	}
+	if gotSeq != wantSeq || gotHead != wantHead || gotRows != 5 || wantSeq != 5 {
+		t.Fatalf("anchor = (seq %d, head %q, rows %d), want (5, %q, 5)", gotSeq, gotHead, gotRows, wantHead)
+	}
+
+	// Re-running without new audit activity is a no-op (bounded evidence).
+	if n, err := audit.ExportAnchors(context.Background(), h.Platform); err != nil {
+		t.Fatalf("ExportAnchors (2nd): %v", err)
+	} else if n != 0 {
+		t.Fatalf("2nd ExportAnchors wrote %d anchors, want 0 (chain unchanged)", n)
+	}
+
+	// The anchored (seq, hash) verifies against the untouched live chain.
+	var present bool
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		present, e = w.CheckAnchor(ctx, db, gotSeq, gotHead)
+		return e
+	}); err != nil {
+		t.Fatalf("CheckAnchor: %v", err)
+	}
+	if !present {
+		t.Fatal("CheckAnchor false on an untouched chain — anchor should verify")
+	}
+
+	// app_rt is read-only: it may SELECT its anchors but never forge one.
+	insErr := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, e := db.Exec(ctx,
+			`INSERT INTO audit_anchors (tenant_id, anchor_seq, chain_head_hash, row_count)
+			 VALUES (app_tenant_id(), 99, 'forged', 99)`)
+		return e
+	})
+	if insErr == nil || !strings.Contains(strings.ToLower(insErr.Error()), "denied") {
+		t.Fatalf("app_rt INSERT on audit_anchors must be denied, got %v", insErr)
+	}
+}
+
+// TestIntegrationAuditAnchorDetectsTailTruncation is the CA-11 payoff: a tail
+// truncation (drop the last rows AND rewind the chain head so the shortened
+// chain stays internally consistent) is UNDETECTABLE by Verify alone, but the
+// exported anchor catches it — CheckAnchor finds the anchored (seq, hash) gone.
+func TestIntegrationAuditAnchorDetectsTailTruncation(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "r")
+	recordN(t, h, w, ctx, 5)
+
+	if _, err := audit.ExportAnchors(context.Background(), h.Platform); err != nil {
+		t.Fatalf("ExportAnchors: %v", err)
+	}
+	var anchoredSeq int64
+	var anchoredHead string
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		anchoredSeq, anchoredHead, e = w.Anchor(ctx, db)
+		return e
+	}); err != nil {
+		t.Fatalf("Anchor: %v", err)
+	}
+
+	// Simulate an attacker with write access truncating the tail: delete seq 4,5
+	// and rewind audit_chain to seq 3 (its head_hash = row_hash of seq 3). Done via
+	// Admin (app_rt cannot; audit_logs is append-only for it).
+	bg := context.Background()
+	var seq3Hash string
+	if err := h.Admin.QueryRow(bg,
+		`SELECT row_hash FROM audit_logs WHERE tenant_id = $1 AND seq = 3`, tenant).Scan(&seq3Hash); err != nil {
+		t.Fatalf("read seq3 hash: %v", err)
+	}
+	if _, err := h.Admin.Exec(bg,
+		`DELETE FROM audit_logs WHERE tenant_id = $1 AND seq > 3`, tenant); err != nil {
+		t.Fatalf("truncate tail: %v", err)
+	}
+	if _, err := h.Admin.Exec(bg,
+		`UPDATE audit_chain SET next_seq = 4, head_hash = $2 WHERE tenant_id = $1`, tenant, seq3Hash); err != nil {
+		t.Fatalf("rewind chain head: %v", err)
+	}
+
+	// Verify alone is fooled: the shortened chain is internally consistent.
+	var res audit.VerifyResult
+	var present bool
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		if res, e = w.Verify(ctx, db); e != nil {
+			return e
+		}
+		present, e = w.CheckAnchor(ctx, db, anchoredSeq, anchoredHead)
+		return e
+	}); err != nil {
+		t.Fatalf("verify/check: %v", err)
+	}
+	if !res.OK || res.HeadSeq != 3 {
+		t.Fatalf("Verify = %+v, want OK with HeadSeq 3 (truncation hidden from Verify)", res)
+	}
+	// The anchor catches what Verify could not.
+	if present {
+		t.Fatal("CheckAnchor passed after tail truncation — anchor evidence failed to detect it")
+	}
+}
+
 func TestIntegrationAuditTenantIsolation(t *testing.T) {
 	h := testkit.NewDB(t)
 	w := audit.New(model.UUIDv7(), nil)

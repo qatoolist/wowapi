@@ -14,6 +14,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
@@ -114,10 +115,27 @@ type Service struct {
 	idgen   model.IDGen
 	now     func() time.Time
 	senders map[string]ChannelSender
+	tracer  observability.Tracer
+}
+
+// Option customizes the notify Service.
+type Option func(*Service)
+
+// WithTracer wires a tracer so each queued delivery captures the current
+// request's W3C traceparent (roadmap O1/CA-9) into the delivery envelope; the
+// async sender (SendPending) continues that trace when it delivers. Default:
+// NoOpTracer (empty trace context — no behavior change). Mirrors the outbox
+// writer/relay tracer seam.
+func WithTracer(tr observability.Tracer) Option {
+	return func(s *Service) {
+		if tr != nil {
+			s.tracer = tr
+		}
+	}
 }
 
 // New wires the service. reg and idgen are required.
-func New(reg *Registry, idgen model.IDGen) *Service {
+func New(reg *Registry, idgen model.IDGen, opts ...Option) *Service {
 	if reg == nil || idgen == nil {
 		panic("notify.New: reg and idgen are required")
 	}
@@ -126,9 +144,13 @@ func New(reg *Registry, idgen model.IDGen) *Service {
 		idgen:   idgen,
 		now:     time.Now,
 		senders: map[string]ChannelSender{},
+		tracer:  observability.NoOpTracer,
 	}
 	// Built-in in-app sender: "delivering" inapp is a no-op (row already written).
 	s.senders[string(ChannelInApp)] = inAppSender{}
+	for _, o := range opts {
+		o(s)
+	}
 	return s
 }
 
@@ -268,14 +290,22 @@ func (s *Service) Send(ctx context.Context, db database.TenantDB, msg Message) (
 		return uuid.Nil, kerr.Wrapf(err, "notify.Send", "insert notification")
 	}
 
+	// Capture the current distributed-trace context (W3C traceparent) so the async
+	// sender can continue the SAME trace when it delivers (roadmap O1/CA-9). Empty
+	// (NoOp / no active span) → NULL trace_context.
+	var traceCtx any
+	if tc := s.tracer.Inject(ctx); tc != "" {
+		traceCtx = tc
+	}
+
 	// 8. INSERT one notification_deliveries row per resolved channel.
 	for _, rc := range channels {
 		delID := s.idgen.New()
 		_, err = db.Exec(ctx,
 			`INSERT INTO notification_deliveries
-			    (id, tenant_id, notification_id, channel, destination, status)
-			 VALUES ($1, app_tenant_id(), $2, $3, $4, 'queued')`,
-			delID, notifID, string(rc.channel), rc.destination)
+			    (id, tenant_id, notification_id, channel, destination, status, trace_context)
+			 VALUES ($1, app_tenant_id(), $2, $3, $4, 'queued', $5)`,
+			delID, notifID, string(rc.channel), rc.destination, traceCtx)
 		if err != nil {
 			return uuid.Nil, kerr.Wrapf(err, "notify.Send", "insert delivery for channel %s", rc.channel)
 		}
@@ -433,7 +463,7 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 		// deadline (ARCH-75). JOIN notifications for importance (legal audit note).
 		rows, err := db.Query(ctx,
 			`SELECT d.id, d.notification_id, d.channel, d.destination, d.attempts,
-			        n.importance
+			        n.importance, d.trace_context
 			   FROM notification_deliveries d
 			   JOIN notifications n ON n.id = d.notification_id
 			  WHERE d.status IN ('queued', 'failed')
@@ -453,12 +483,13 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 			dest       string
 			attempts   int
 			importance string
+			trace      *string // W3C traceparent captured at Send (CA-9); nil when absent
 		}
 		var deliveries []claimed
 		for rows.Next() {
 			var d claimed
 			if err := rows.Scan(&d.id, &d.notifID, &d.channel, &d.dest,
-				&d.attempts, &d.importance); err != nil {
+				&d.attempts, &d.importance, &d.trace); err != nil {
 				rows.Close()
 				return kerr.Wrapf(err, "notify.SendPending", "scan delivery")
 			}
@@ -480,6 +511,17 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 				Attempts:       d.attempts,
 			}
 
+			// Continue the originating request's trace across the async boundary
+			// (roadmap O1/CA-9): extract the traceparent captured at Send, then
+			// deliver under a child span. Zero-cost with NoOpTracer.
+			sendCtx := ctx
+			if d.trace != nil && *d.trace != "" {
+				sendCtx = s.tracer.Extract(ctx, *d.trace)
+			}
+			sendCtx, span := s.tracer.StartSpan(sendCtx, "notify.send "+d.channel)
+			span.SetAttr("notify.channel", d.channel)
+			span.SetAttr("notify.delivery_id", d.id.String())
+
 			// An unregistered channel is a configuration error, not a transient
 			// fault: fail the delivery loudly (and terminally) instead of routing
 			// it to a no-op sender that would mark it 'sent' (roadmap CA-15).
@@ -494,8 +536,12 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 					"no sender registered for channel "+string(del.Channel))
 				permanent = true
 			} else {
-				providerMsgID, sendErr = sender.Send(ctx, del)
+				providerMsgID, sendErr = sender.Send(sendCtx, del)
 			}
+			if sendErr != nil {
+				span.RecordError(sendErr)
+			}
+			span.End()
 
 			newAttempts := d.attempts + 1
 			if sendErr == nil {

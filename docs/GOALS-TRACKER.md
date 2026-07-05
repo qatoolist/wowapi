@@ -80,9 +80,9 @@ From `VERIFICATION-wowapi-hardening.md` §6 (closure matrix), reconciled with po
 | CA-9 | P1 | Async trace propagation (`events_outbox.trace_context`, child spans) | ✅ Closed (residual: jobs/notify reuse same tracer seam) |
 | CA-10 | P1 | Read-replica routing | ⏸️ **Rescoped** — deploy-time pool wiring, not kernel behavior (`WithTenantRO` exists); rationale recorded |
 | CA-11 | P1 | Audit completeness (Context accessors, `tx_id`, `audit verify` CLI) | 🟡 Closed **except** scheduled **anchor-export** (⏸️ deferred, small/low-risk) |
-| CA-12 | P1 | O2/O3/O5 ops finishers | 🟡 O3 upgrade/deprecation policy ✅; **O2** schema-snapshot diff + **O5** scripted PITR restore ⏸️ deferred (ops polish) |
+| CA-12 | P1 | O2/O3/O5 ops finishers | ✅ Closed — O3 upgrade/deprecation policy ✅; **O2** schema-snapshot diff drill ✅ (B-4); **O5** scripted PITR + object-storage restore drills ✅ (B-5); production PITR provider-owned per D-0080 |
 | CA-13 | P1 | Step-up gate test + API-key×step-up decision | ✅ Closed |
-| CA-14 | P1 | Integration credential → `config.Secret` (structural redaction) | ✅ Closed |
+| CA-14 | P1 | Integration credential → `config.Secret` (structural redaction) | ✅ Closed (residual: per-tenant credential rotation runbook — `docs/operations/integration-credential-rotation.md` — ✅) |
 | CA-15 | P1 | Unregistered notification channel fails loudly (no silent `sent`) | ✅ Closed |
 
 ---
@@ -96,8 +96,8 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 | B-1 | **golangci-lint backlog (~160)** — 154 production `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert` | Code hygiene | `docs/working/lint-backlog.md` | Gate blocks **new** code (`make lint-new`); backlog burned down package-by-package, never blanket-`//nolint`. |
 | B-2 | ~~Perf budgets for new hot paths~~ | Perf gate | `bench-budgets.txt` | ✅ **Done** — benchmarks + budgets added for audit Record/chain, sequence Allocate, token bucket, CachingStore hit/miss, edge middleware; `make bench-budget` now enforces them (30 benches). |
 | B-3 | **CA-11 anchor-export job** — scheduled audit-chain anchor for offline tail-truncation detection | Feature | CA-11 | Chain verify exists in-DB; anchor-export adds out-of-band tamper evidence. |
-| B-4 | **CA-12 O2** — schema-snapshot diffing in the reversibility drill | Ops | CA-12 | Reversibility drill runs; add snapshot diff assertion. |
-| B-5 | **CA-12 O5** — scripted PITR / object-storage restore legs (or rescope to a staging drill) | Ops | CA-12 | Runbook exists; scripted restore rehearsal outstanding. |
+| B-4 | ~~**CA-12 O2** — schema-snapshot diffing in the reversibility drill~~ | Ops | CA-12 / D-0080 | ✅ **Done** — `scripts/migration_reversibility_drill.sh` (`make drill-reversibility`) diffs normalized `pg_dump --schema-only` snapshots after up→down→up; fails on asymmetric Down. |
+| B-5 | ~~**CA-12 O5** — scripted PITR / object-storage restore legs~~ | Ops | CA-12 / D-0080 | ✅ **Done** — real scripted round-trips: `scripts/pitr_restore_drill.sh` (throwaway PG + WAL replay to target) + `scripts/object_storage_restore_drill.sh` (MinIO). Production PITR stays provider-owned (D-0080). |
 | B-6 | **CA-10 read-replica router** (if ever needed in-kernel) | Feature | CA-10 | Rescoped to deployment; only revisit if a product needs kernel-level RO routing. |
 | B-7 | **CA-6 reference-stack app-smoke** — nginx header smoke against a scaffolded running product | CI | CA-6 residual | Header posture already unit-tested (`kernel/httpx/edge_test.go`); needs a scaffolded product in CI. |
 | B-8 | ~~CA-1 DLQ-depth gauge~~ | Metrics | CA-1 residual | ✅ **Done** — `dlq_depth{queue="jobs"\|"events"}` emitted on the leader-safe scheduler; alert `WowapiDLQDepthHigh` added. |

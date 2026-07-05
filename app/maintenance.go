@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/jobs"
@@ -18,7 +19,7 @@ import (
 // per-tenant workflow SLA sweep. Both are idempotent, so the scheduler's
 // leader-safe at-most-once-per-interval guarantee is sufficient — N worker
 // replicas will not double-fire.
-func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery time.Duration) {
+func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery time.Duration) {
 	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
 	// k.Platform pool already connects AS app_platform, so Platform() runs with
 	// the cross-tenant sweep policy (migration 00012).
@@ -77,6 +78,17 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 			return err
 		}
 		return outbox.PublishDLQDepth(ctx, k.Platform, k.Metrics)
+	})
+
+	// Audit anchor-export: durably persist each tenant's audit-chain head into the
+	// append-only audit_anchors table (roadmap CA-11). One cross-tenant
+	// INSERT..SELECT as app_platform, so anchors are written once per interval
+	// across replicas — an offline verifier can later detect tail-truncation of
+	// the hash chain (which Verify alone cannot) by checking the live chain still
+	// contains the last anchored (seq, hash).
+	sched.Register("kernel.audit.anchor", anchorEvery, func(ctx context.Context) error {
+		_, err := audit.ExportAnchors(ctx, k.Platform)
+		return err
 	})
 }
 

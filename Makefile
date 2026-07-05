@@ -72,6 +72,27 @@ migrate: ## Apply kernel migrations to the local compose database
 seed:
 	@echo "make seed: available in Phase 5 (seed loader) — see docs/implementation/phase-plan.md" >&2; exit 2
 
+##@ Operational drills (backup/restore & migration reversibility)
+
+.PHONY: drill-reversibility
+drill-reversibility: ## O2/B-4: up->down->up on a scratch DB, DIFF the schema snapshots (fails on asymmetric Down). Needs pg_dump+go+DB.
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" scripts/migration_reversibility_drill.sh
+
+.PHONY: drill-restore
+drill-restore: ## O5: logical pg_dump -> pg_restore round-trip into a scratch DB. Needs pg_dump/psql+DB.
+	SRC_URL="$${DATABASE_URL:-$(TEST_DSN)}" scripts/backup_restore_drill.sh
+
+.PHONY: drill-pitr
+drill-pitr: ## O5/B-5: real PITR — base backup + WAL replay to a target time in a throwaway PG container. Needs docker.
+	scripts/pitr_restore_drill.sh
+
+.PHONY: drill-object-storage
+drill-object-storage: ## O5/B-5: object-storage backup/restore round-trip against compose MinIO. Needs docker + `make up`.
+	scripts/object_storage_restore_drill.sh
+
+.PHONY: drills
+drills: drill-reversibility drill-restore drill-pitr drill-object-storage ## Run every backup/restore & reversibility drill
+
 ##@ Quality
 
 .PHONY: fmt

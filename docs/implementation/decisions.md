@@ -1104,3 +1104,33 @@ Blueprint deviations MUST land here before the code that implements them.
   and no-tenant-context failure. Each later migration adding tenant tables reuses the same
   assertion catalog-driven.
 - **Affected:** migrations/, testkit/asserts.go, kernel/database integration tests.
+
+## D-0080 — CA-12: reversibility schema-diff + PITR/object-storage restore legs are scripted in-repo; production PITR stays provider-owned (B-4/B-5)
+- **Context:** CA-12's O2/O5 finishers had two gaps. B-4: the reversibility drill only checked the
+  goose-version round-trip + one sentinel table, so a migration whose Down is *schema*-asymmetric
+  (drops a table but leaves an index/policy/default/stray object) passed while the physical schema
+  drifted. B-5: the PITR + object-storage restore legs were unscripted — only described in the runbook.
+- **Decision:**
+  - **B-4 (done):** `scripts/migration_reversibility_drill.sh` (`make drill-reversibility`) migrates
+    up → down-to-0 → up on a throwaway DB and **diffs normalized `pg_dump --schema-only` snapshots**
+    at head; any byte difference fails with a non-zero exit. This required a `reset` (down-to-0) mode
+    on `internal/tools/migrate` so a shell drill can drive `MigrateReset`. Verified: passes on head,
+    and catches an injected asymmetric Down that the goose-version round-trip does not.
+  - **B-5 (done — real round-trips, NOT rescoped):** both legs are scripted against the local stack.
+    `scripts/pitr_restore_drill.sh` (`make drill-pitr`) runs a genuine PITR — a throwaway
+    `postgres:16-alpine` primary with `archive_mode=on`, physical `pg_basebackup`, then restore +
+    `recovery_target_time` WAL replay + promote, asserting recovery stops exactly at the target.
+    `scripts/object_storage_restore_drill.sh` (`make drill-object-storage`) runs a MinIO blob
+    backup→loss→restore round-trip with a byte-identity + `storage_key`-resolves check.
+  - **Scoping (the only thing NOT built in-repo):** *production* PITR — continuous WAL archiving,
+    retention, and cross-region object replication — remains a **managed-provider capability**, not the
+    ephemeral compose DB's job (whose `archive_mode` is intentionally off). The compose stack cannot
+    stand up a production-representative WAL archive/retention tier, so that layer stays a staging/
+    provider rehearsal per release train (backup-restore.md). The drills prove the *recovery procedure*
+    against real WAL/blobs; the provider owns the durability substrate.
+- **Rationale:** preferred real scripted round-trips over a rescope wherever the stack allowed it (both
+  legs did). The residual provider-owned piece is a genuine deploy-environment concern, recorded here so
+  it is a deliberate boundary, not an untracked gap.
+- **Affected:** scripts/migration_reversibility_drill.sh, scripts/pitr_restore_drill.sh,
+  scripts/object_storage_restore_drill.sh, internal/tools/migrate/main.go, Makefile (drill-* targets),
+  docs/operations/{migrations,backup-restore}.md.
