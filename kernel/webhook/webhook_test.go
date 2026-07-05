@@ -449,9 +449,9 @@ func TestIntegrationDispatchOutbound_NonMatchingEventType(t *testing.T) {
 // Circuit breaker tests (use injectable clock via fakes.Clock)
 // =============================================================================
 
-// TestUnitBreakerOpensAfterNFailures proves the circuit breaker opens after
+// TestIntegrationBreakerOpensAfterNFailures proves the circuit breaker opens after
 // BreakerFailureThreshold consecutive delivery failures and blocks further POSTs.
-func TestUnitBreakerOpensAfterNFailures(t *testing.T) {
+func TestIntegrationBreakerOpensAfterNFailures(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/cb")
@@ -482,9 +482,9 @@ func TestUnitBreakerOpensAfterNFailures(t *testing.T) {
 	}
 }
 
-// TestUnitBreakerHalfOpenAfterCooldown proves the breaker allows exactly one
+// TestIntegrationBreakerHalfOpenAfterCooldown proves the breaker allows exactly one
 // probe after BreakerCooldown elapses, and closes on a successful probe.
-func TestUnitBreakerHalfOpenAfterCooldown(t *testing.T) {
+func TestIntegrationBreakerHalfOpenAfterCooldown(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/cb2")
@@ -735,10 +735,10 @@ func TestIntegrationHandleInbound_FailedSigDoesNotBlockValid(t *testing.T) {
 	}
 }
 
-// TestUnitOutboundSignatureCoversTimestamp proves SEC-52 is fixed: the outbound
+// TestIntegrationOutboundSignatureCoversTimestamp proves SEC-52 is fixed: the outbound
 // X-Signature authenticates "<timestamp>.<body>", not the body alone, so a
 // forged X-Timestamp invalidates the signature.
-func TestUnitOutboundSignatureCoversTimestamp(t *testing.T) {
+func TestIntegrationOutboundSignatureCoversTimestamp(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/ts")

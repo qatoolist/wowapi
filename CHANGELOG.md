@@ -42,8 +42,11 @@ Closure of the exit-gate gaps found by `VERIFICATION-wowapi-hardening.md` (statu
 - **Correctness/security nits**: idempotency replay-after-expiry now errors (410, CA-8); gate step-up
   test (CA-13); `integration.Config.Credential` is a redacted `config.Secret` (CA-14); an unregistered
   notification channel fails terminally instead of silently reporting `sent` (CA-15).
-- Hosted CI workflow added (`.github/workflows/ci.yml`, CA-6). Remaining open/rescoped items (async trace
-  propagation, read-replica routing, O2/O3/O5 finishers) are tracked in VERIFICATION §6.
+- Hosted CI workflow added (`.github/workflows/ci.yml`, CA-6). A second independent review then closed the
+  remaining items — async trace propagation now covers jobs + notify (CA-9), the audit anchor-export ships
+  (CA-11), and the reversibility/PITR/object-storage restore drills are scripted (CA-12); read-replica
+  routing remains a recorded deployment-concern rescope. Full per-item status lives in
+  [docs/GOALS-TRACKER.md](docs/GOALS-TRACKER.md) §4.
 
 ### Added
 - `kernel/httpx` edge middleware — `SecureHeaders`, `CORS`, `BodyLimit`, `Timeout` — completing the

@@ -1,8 +1,13 @@
 # Hardening Implementation Plan
 
-> **STATUS (in progress — exit gate NOT met):** the H-phases below built and unit/DB-tested the kernel
+> **UPDATE (2026-07-05):** the corrective actions below have since been closed across two independent review
+> passes — current per-item status lives in [docs/GOALS-TRACKER.md](../GOALS-TRACKER.md) §4 (the canonical
+> tracker). The `VERIFICATION-wowapi-hardening.md` / `ROADMAP-wowapi.md` referenced below are retired local
+> review artifacts (git-ignored), not part of the repo. The historical banner below is preserved as-is.
+
+> **STATUS (historical — in progress at time of writing):** the H-phases below built and unit/DB-tested the kernel
 > primitives for H1–H5 and the P1 items S2/S3/R1/R5/O1 behind the `make ci` + `make ci-container` gate.
-> **An independent verification ([VERIFICATION-wowapi-hardening.md](../../VERIFICATION-wowapi-hardening.md))
+> **An independent verification (`VERIFICATION-wowapi-hardening.md`, retired — see the UPDATE above)
 > found the roadmap acceptance criteria and exit gate are NOT satisfied**: the dominant gap is
 > *built-but-not-wired* (metrics port has zero emission sites; rate limiter, authz cache, signed cursors,
 > OTel adapter, and several evidence primitives are not wired by default), plus no hosted CI, R2 load
@@ -17,7 +22,8 @@
 > cross-process trace propagation (CA-2/CA-9), `module.Context` accessors for the new primitives (CA-5/
 > CA-11), and a `wowapi apikey` CLI (CA-3).
 
-Companion to [ROADMAP-wowapi.md](../../ROADMAP-wowapi.md). Derived from a three-track code audit
+Companion to `ROADMAP-wowapi.md` (retired local artifact — see the UPDATE above; status now in
+[docs/GOALS-TRACKER.md](../GOALS-TRACKER.md)). Derived from a three-track code audit
 (security S1–S8, reliability R1–R8, operational O1–O5, evidence E1–E6) run 2026-07-04 against the
 v0.1.0 tree. Each roadmap "current state" claim was verified against the actual code; the table below
 records the **verified** verdict, which sometimes differs from the roadmap's assumption.
