@@ -3,6 +3,39 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0084 — Open-ended-review follow-ups: what the confirm-scoped gates missed
+- **Context:** after D-0082/D-0083 were declared done (each behind a review gate *scoped to confirm the fix I
+  had just written*), two **open-ended** reviewers — told to find problems, not to confirm anything, with the
+  target unchosen by me — found four more real issues in already-"done" code. That is the point of the entry:
+  a confirm-shaped gate inherits the author's frame; only an unscoped adversarial pass reaches the sibling paths
+  and the delivered-artifact behaviour the author never thought to check.
+- **Findings fixed:**
+  - **HIGH — deploy render omits `WOWAPI__DB__PLATFORM_DSN`.** api/worker fail closed without `db.platform_dsn`
+    (CF-1), but `deploy render` (both `compose` and `env`) emitted only DSN + MIGRATE_DSN — so the rendered
+    manifest crash-loops. Exact sibling of D-0083 F4 (which added MIGRATE_DSN and stopped there). Added the
+    platform DSN to both formats; the deploy unit test now asserts all three, and the e2e now boots the api
+    **from the rendered manifest** (mapped to real DSNs) so a missing required DSN fails the acceptance test.
+  - **HIGH — generated api middleware order.** `SecureHeaders`/`CORS` sat *inner* to `RateLimit`, which returns
+    429 without calling `next`; so 429 (and 413/timeout) responses shipped with no security or CORS headers — a
+    browser cross-origin client that is rate-limited couldn't read the 429 or `Retry-After`. Moved
+    `SecureHeaders`/`CORS` outermost (after Recover), keeping RateLimit/BodyLimit/Timeout inner.
+  - **HIGH (defense-in-depth) — M3 boot check ignored the platform pool.** `AssertRLSEnforced` ran only on
+    `k.Pool`, not `k.Platform`, which does all cross-tenant kernel work over FORCE-RLS tables. Extended the boot
+    check to `k.Platform` (+ integration test with a superuser platform pool), and added `WithConnRLSGuard()` to
+    the generated api/worker platform pools so the api's apikey platform pool (never wired into the kernel) is
+    guarded at connect time too.
+  - **Honesty — README onboarding + overstated claims.** The scaffold README's getting-started commands all
+    failed out of the box (no `APP_ENV`/DSN exports against the fail-closed runtime) — rewrote it. Corrected the
+    D-0082 "backstops a forgotten guard" overstatement (the check closes the over-privileged-role hole only; a
+    forgotten guard is separately fail-closed by `app_tenant_id()` raising). Made the GOALS-TRACKER CI claim
+    honest that commits after `329cc0e` are pending push + hosted CI.
+- **Process change (durable):** independent review moves to the front and stays unscoped — run a reviewer whose
+  job is "find what's wrong here," with the target not chosen by me, *before* declaring done, not as a closing
+  stamp. Assert mechanisms not outcomes; boot the delivered artifact, not a hand-assembled env.
+- **Affected:** internal/cli/deploy_cmd.go, internal/cli/cmds_test.go, internal/cli/templates/init/{cmd_api_main,
+  cmd_worker_main,README.md}.go.tmpl, app/boot.go, app/rls_boot_guard_test.go, internal/e2e/e2e_test.go,
+  docs/{GOALS-TRACKER.md, implementation/decisions.md (D-0082 correction)}.
+
 ## D-0083 — Generated-scaffold config/migrate/deploy correctness (consumer-facing review)
 - **Context:** a consumer-facing review of the *generated product* (not the kernel) found six real
   scaffold/config/deployment/release-honesty gaps. The kernel, migrations, testkit, CI, and container gate
@@ -41,10 +74,15 @@ Blueprint deviations MUST land here before the code that implements them.
 
 ## D-0082 — M3: boot-time RLS-enforcement check is safe-by-default (fail closed on an RLS-bypassing runtime pool)
 - **Context:** the follow-up flagged in D-0081 ("M3 guard-by-default"). Postgres `FORCE ROW LEVEL SECURITY`
-  does NOT apply to a superuser or a `BYPASSRLS` role. So a product that wires its tenant-serving pool over an
-  over-privileged DSN — or simply forgets the per-connection (`WithConnRLSGuard`) or per-tx (`WithRLSGuard`)
-  guards — would run every tenant query unfiltered, cross-tenant, with no signal. This was the last framework
-  lever that stayed "safe only if the operator remembers."
+  does NOT apply to a superuser or a `BYPASSRLS` role. So a product that wires a data-serving pool over an
+  over-privileged DSN would run tenant queries unfiltered, cross-tenant, with no signal. This was the last
+  framework lever that stayed "safe only if the operator remembers."
+- **Scope (precise, corrected per D-0084):** the check closes exactly the *over-privileged-role* hole — a
+  superuser/BYPASSRLS effective role. It does NOT detect a *forgotten* per-connection/per-tx guard on an
+  otherwise non-privileged role; that case is already fail-closed-and-loud elsewhere, because `app_tenant_id()`
+  reads `current_setting('app.tenant_id')` with no `missing_ok`, so a tenant query with no bound tenant *raises*
+  rather than leaking. Earlier wording here ("backstops a product that forgets the guards") conflated the two;
+  the accurate claim is narrower.
 - **Options:** (a) leave it on the product integration checklist (status quo — a plausible misconfig is a silent
   cross-tenant leak); (b) make the per-tx `WithRLSGuard` the default (per-query cost, and still bypassable by a
   pool that never enters the Manager); (c) assert enforcement once at boot, on the real pool, and fail closed.
@@ -54,9 +92,10 @@ Blueprint deviations MUST land here before the code that implements them.
     `SELECT current_setting('is_superuser') = 'off' AND NOT rolbypassrls FROM pg_roles WHERE rolname = current_user`.
     Because it runs on a live connection, `current_user`/`is_superuser` reflect the EFFECTIVE role — including a
     `SET ROLE app_rt` applied in `AfterConnect` (`WithSetRole`) — not just the DSN login. The error names the fix.
-  - `app.Boot` runs it after `validateAndOrder` whenever `k.Pool != nil` — **safe-by-default, no opt-in**. The
-    scaffolded api and worker binaries call `a.Boot(ctx, k, cfg.Modules)` with no options, so both are protected
-    automatically. This backstops `WithConnRLSGuard`/`WithRLSGuard` at the one path every deployment shares.
+  - `app.Boot` runs it after `validateAndOrder` for **both** `k.Pool` (runtime) and `k.Platform` (the
+    cross-tenant kernel pool) when non-nil — **safe-by-default, no opt-in**. The scaffolded api and worker call
+    `a.Boot(ctx, k, cfg.Modules)` with no options, so both are protected. (The platform-pool leg was added in
+    D-0084 after an open-ended review found it missing.)
   - Escape hatch `app.SkipRLSEnforcementCheck()` (a `BootOption`) is applied to **exactly one** caller — the
     scaffolded migrate command — which boots solely to COLLECT module migration sets, connects with privileged DDL
     creds by design, and never serves tenant traffic. Minimal, framework-controlled, backward-compatible (existing

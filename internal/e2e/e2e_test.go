@@ -181,10 +181,37 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		t.Fatalf("e2e: find free port: %v", err)
 	}
 
-	apiEnv := append(dbEnv, "WOWAPI__HTTP__ADDR=:"+port)
+	// Boot the api from the manifest `wowapi deploy render` ACTUALLY emits — mapped to
+	// real DSNs — not a hand-assembled env. This makes the acceptance proof cover the
+	// artifact a consumer deploys: if the rendered manifest omits a fail-closed
+	// requirement (e.g. db.platform_dsn), the api crash-loops here instead of the gap
+	// shipping silently.
+	manifestPath := filepath.Join(tmpDir, "app.env")
+	if err := runCmd(t, productDir, env, wowapiBin, "deploy", "render", "--format", "env", "--env", "local", "--out", manifestPath); err != nil {
+		t.Fatalf("e2e: deploy render: %v", err)
+	}
+	manifestBytes, rerr := os.ReadFile(manifestPath)
+	if rerr != nil {
+		t.Fatalf("e2e: read rendered manifest: %v", rerr)
+	}
+	// Take the manifest's WOWAPI__ config keys (secretref values) verbatim, then
+	// supply the referenced secret vars + a listen addr. No DATABASE_URL/PLATFORM_URL
+	// hand-injection — the manifest alone must carry every DSN the api requires.
+	renderedEnv := append([]string{}, os.Environ()...)
+	for line := range strings.SplitSeq(string(manifestBytes), "\n") {
+		if strings.HasPrefix(line, "WOWAPI__") {
+			renderedEnv = append(renderedEnv, line)
+		}
+	}
+	renderedEnv = append(renderedEnv,
+		"WOWAPI_DB_DSN="+dsn,
+		"WOWAPI_PLATFORM_DSN="+dsn,
+		"WOWAPI_MIGRATE_DSN="+dsn,
+		"WOWAPI__HTTP__ADDR=:"+port,
+	)
 	apiCmd := exec.Command(apiBin)
 	apiCmd.Dir = productDir
-	apiCmd.Env = apiEnv
+	apiCmd.Env = renderedEnv
 	apiCmd.Stdout = os.Stdout
 	apiCmd.Stderr = os.Stderr
 	if err := apiCmd.Start(); err != nil {
@@ -203,6 +230,38 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		t.Fatalf("e2e: api /healthz: %v (criterion #19 runtime FAIL)", err)
 	}
 	t.Logf("e2e: api /healthz 200 OK at %s (criterion #19 runtime ✓)", healthURL)
+
+	// H-1 regression: a rate-limited (429) response must STILL carry the security
+	// headers SecureHeaders sets — proving SecureHeaders/CORS are OUTER to RateLimit,
+	// which short-circuits without calling inner middleware. Fire a burst past the
+	// default capacity and require the first 429 to carry X-Content-Type-Options.
+	if err := assert429CarriesSecurityHeaders(healthURL); err != nil {
+		t.Fatalf("e2e: %v (middleware order regression)", err)
+	}
+	t.Log("e2e: rate-limited 429 still carries security headers (middleware order ✓)")
+}
+
+// assert429CarriesSecurityHeaders bursts requests past the default rate-limit
+// capacity (burst 40 / 20 rps) and verifies the first 429 still carries the
+// X-Content-Type-Options header SecureHeaders sets. If SecureHeaders were inner to
+// RateLimit (the H-1 bug), the short-circuited 429 would omit it.
+func assert429CarriesSecurityHeaders(url string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	for range 100 {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		code, hdr := resp.StatusCode, resp.Header.Get("X-Content-Type-Options")
+		_ = resp.Body.Close()
+		if code == http.StatusTooManyRequests {
+			if hdr != "nosniff" {
+				return fmt.Errorf("rate-limited 429 is missing X-Content-Type-Options (SecureHeaders is inner to RateLimit): got %q", hdr)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("could not trigger a 429 within 100 requests to exercise the rate-limit path")
 }
 
 // findRepoRoot walks up from the test package directory to find the go.mod.

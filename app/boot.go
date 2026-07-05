@@ -81,15 +81,25 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		return nil, err
 	}
 
-	// Safe-by-default RLS enforcement (finding M3): fail boot if the runtime pool
-	// runs as a superuser / BYPASSRLS role, which would silently defeat FORCE RLS
-	// and run every tenant query unfiltered. This backstops the per-connection
-	// (WithConnRLSGuard) and per-tx (WithRLSGuard) guards so a product that forgets
-	// to wire them can't ship an RLS-inert deployment. Skipped only for non-serving
-	// processes (migrate) that run privileged by design (SkipRLSEnforcementCheck).
-	if k.Pool != nil && !bo.skipRLSCheck {
-		if err := database.AssertRLSEnforced(ctx, k.Pool); err != nil {
-			return nil, err
+	// Safe-by-default RLS enforcement (finding M3): fail boot if a pool that serves
+	// data runs as a superuser / BYPASSRLS role, which would silently defeat FORCE
+	// RLS. This covers BOTH the tenant-serving runtime pool AND the platform pool —
+	// the platform pool does all cross-tenant kernel work (job runner, outbox relay,
+	// webhook dispatch) over FORCE-RLS tables and relies on app_platform being a
+	// non-privileged role served by permissive policies; a superuser platform DSN
+	// would bypass those policies with no signal. Backstops the per-connection
+	// (WithConnRLSGuard) and per-tx (WithRLSGuard) guards. Skipped only for
+	// non-serving processes (migrate) that run privileged by design.
+	if !bo.skipRLSCheck {
+		if k.Pool != nil {
+			if err := database.AssertRLSEnforced(ctx, k.Pool); err != nil {
+				return nil, err
+			}
+		}
+		if k.Platform != nil {
+			if err := database.AssertRLSEnforced(ctx, k.Platform); err != nil {
+				return nil, fmt.Errorf("platform pool: %w", err)
+			}
 		}
 	}
 

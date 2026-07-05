@@ -73,6 +73,9 @@ func run(ctx context.Context) error {
 	}
 	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
 		database.WithSetRole("app_platform"),
+		// Reject a superuser/BYPASSRLS platform DSN at connect time: app_platform
+		// reads cross-tenant via permissive RLS policies, not by bypassing RLS.
+		database.WithConnRLSGuard(),
 	)
 	if err != nil {
 		return fmt.Errorf("db pool (platform): %w", err)

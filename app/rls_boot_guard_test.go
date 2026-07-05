@@ -43,3 +43,26 @@ func TestIntegrationBootFailsOnRLSBypassRuntimePool(t *testing.T) {
 		t.Fatalf("Boot with an app_rt runtime pool should succeed: %v", err)
 	}
 }
+
+// TestIntegrationBootFailsOnRLSBypassPlatformPool extends the M3 backstop to the
+// platform pool: it does all cross-tenant kernel work (job runner, outbox relay,
+// webhook dispatch) over FORCE-RLS tables and relies on app_platform being a
+// non-privileged role served by permissive policies. A superuser/BYPASSRLS platform
+// DSN would bypass those policies with no signal, so Boot must refuse it even when
+// the runtime pool is correctly non-privileged.
+func TestIntegrationBootFailsOnRLSBypassPlatformPool(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// Runtime pool is the correct non-privileged app_rt; only the platform pool is
+	// the over-privileged superuser owner (h.Admin) — the misconfiguration M3 must catch.
+	kBad, err := kernel.New(config.Defaults(), log, kernel.Deps{Pool: h.Runtime, Platform: h.Admin, Tx: h.TxM})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.New().Boot(context.Background(), kBad, nil); err == nil {
+		t.Fatal("Boot must fail when the platform pool is a superuser/BYPASSRLS role — RLS would be inert on cross-tenant kernel tables")
+	} else if !strings.Contains(err.Error(), "platform pool") || !strings.Contains(err.Error(), "superuser or BYPASSRLS") {
+		t.Fatalf("expected a platform-pool RLS-enforcement error, got: %v", err)
+	}
+}

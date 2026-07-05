@@ -101,9 +101,10 @@ func runDeploy(args []string, stdout, stderr io.Writer) int {
 }
 
 const composeTemplate = `# Rendered by ` + "`wowapi deploy render`" + ` — deployment manifest for {{.Name}} ({{.Env}}).
-# The DB DSN is a secretref://env/… reference (config.DB.DSN is a Secret): the
-# real DSN lives in the WOWAPI_DB_DSN / WOWAPI_MIGRATE_DSN environment variable,
-# never inlined here. api/worker receive the runtime DSN; migrate the migrate DSN.
+# Every DB DSN is a secretref://env/… reference (config.DB.* are Secrets): the real
+# DSNs live in the environment, never inlined here. api/worker need BOTH the runtime
+# DSN (non-privileged app_rt) and the platform DSN (dedicated app_platform login) —
+# they fail closed at startup without db.platform_dsn. migrate needs the migrate DSN.
 services:
   {{.Name}}-api:
     image: {{.Image}}
@@ -111,6 +112,7 @@ services:
     environment:
       WOWAPI__ENVIRONMENT: {{.Env}}
       WOWAPI__DB__DSN: secretref://env/WOWAPI_DB_DSN
+      WOWAPI__DB__PLATFORM_DSN: secretref://env/WOWAPI_PLATFORM_DSN
     ports: ["8080:8080"]
     restart: unless-stopped
   {{.Name}}-worker:
@@ -119,6 +121,7 @@ services:
     environment:
       WOWAPI__ENVIRONMENT: {{.Env}}
       WOWAPI__DB__DSN: secretref://env/WOWAPI_DB_DSN
+      WOWAPI__DB__PLATFORM_DSN: secretref://env/WOWAPI_PLATFORM_DSN
     restart: unless-stopped
   {{.Name}}-migrate:
     image: {{.Image}}
@@ -130,11 +133,13 @@ services:
 `
 
 const envTemplate = `# Rendered by ` + "`wowapi deploy render`" + ` — {{.Name}} deployment env ({{.Env}}).
-# WOWAPI__DB__DSN and WOWAPI__DB__MIGRATE_DSN are secret REFERENCES: set the real
-# DSNs in WOWAPI_DB_DSN (api/worker runtime, non-privileged app_rt) and
-# WOWAPI_MIGRATE_DSN (the migrate job, privileged app_migrate). Never inline them.
+# All three WOWAPI__DB__* values are secret REFERENCES: set the real DSNs in the
+# named env vars, never inline them. api/worker need the runtime DSN (app_rt) AND
+# the platform DSN (app_platform) — they fail closed without db.platform_dsn; the
+# migrate job needs the migrate DSN (app_migrate).
 WOWAPI__ENVIRONMENT={{.Env}}
 WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN
+WOWAPI__DB__PLATFORM_DSN=secretref://env/WOWAPI_PLATFORM_DSN
 WOWAPI__DB__MIGRATE_DSN=secretref://env/WOWAPI_MIGRATE_DSN
 WOWAPI_IMAGE={{.Image}}
 `

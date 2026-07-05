@@ -124,7 +124,12 @@ func run(ctx context.Context) error {
 			"login (set db.platform_dsn, e.g. secretref://env/PLATFORM_URL). Reusing the runtime DSN would " +
 			"require app_rt to be a member of app_platform and defeat runtime/platform privilege separation")
 	}
-	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB, database.WithSetRole("app_platform"))
+	// WithConnRLSGuard rejects a superuser/BYPASSRLS platform DSN at connect time:
+	// app_platform reads cross-tenant via permissive RLS policies, not by bypassing RLS.
+	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
+		database.WithSetRole("app_platform"),
+		database.WithConnRLSGuard(),
+	)
 	if err != nil {
 		return fmt.Errorf("db pool (platform): %w", err)
 	}
@@ -176,20 +181,28 @@ func run(ctx context.Context) error {
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Middleware chain (blueprint 07 §1 order, outermost first). SecureHeaders +
-	// CORS + BodyLimit + Timeout are kernel-owned edge guardrails; the CORS
-	// allowlist and body/timeout caps come from configs/ (empty allowlist =
-	// deny all cross-origin).
+	// CORS must be OUTER to any middleware that can short-circuit a response
+	// (RateLimit 429, BodyLimit 413, Timeout 503): they set headers before calling
+	// next, so placing them outermost guarantees the headers are present on those
+	// error responses too. In particular a browser cross-origin client that is
+	// rate-limited must still receive CORS headers, or it cannot read the 429 or the
+	// Retry-After. The CORS allowlist / body / timeout caps come from configs/
+	// (empty allowlist = deny all cross-origin).
 	mws := []httpx.Middleware{
 		httpx.RequestID(),
 		httpx.Recover(log),
+		httpx.SecureHeaders(),
+		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
 		observability.Trace(tracer),     // OTel span per request when tracing is enabled
 		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),
 	}
 	// Rate limiting is ON by default (opt-out via http.rate_limit.disabled): an
 	// in-process per-IP token bucket returning 429 + Retry-After, with drops
-	// counted as rate_limit_dropped_total (roadmap S2/CA-2). Place a per-actor
-	// bucket AFTER the authz gate if you need per-principal limits.
+	// counted as rate_limit_dropped_total (roadmap S2/CA-2). It sits inner to
+	// SecureHeaders/CORS (so 429s carry those headers) but outer to BodyLimit/Timeout
+	// (a rejected request has no body to read and no handler work to time out). Place
+	// a per-actor bucket AFTER the authz gate if you need per-principal limits.
 	if !cfg.HTTP.RateLimit.Disabled {
 		limiter := httpx.NewTokenBucket(cfg.HTTP.RateLimit.RequestsPerSecond, cfg.HTTP.RateLimit.Burst)
 		mws = append(mws, httpx.RateLimit(limiter, httpx.KeyByIP,
@@ -198,8 +211,6 @@ func run(ctx context.Context) error {
 			})))
 	}
 	mws = append(mws,
-		httpx.SecureHeaders(),
-		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
 		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
 		httpx.Timeout(cfg.HTTP.RequestTimeout),
 	)

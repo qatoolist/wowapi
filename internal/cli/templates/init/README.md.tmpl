@@ -4,15 +4,25 @@ A product built on the [wowapi](https://github.com/qatoolist/wowapi) framework.
 
 ## Getting started
 
+The runtime is fail-closed: `environment` and the DB DSNs must be set explicitly —
+there is no silent default. Select the config overlay with `APP_ENV` and provide the
+DSN secrets the `secretref://env/…` values in `configs/local.yaml` point at:
+
 ```bash
-# Validate config
+# 1. Select the local overlay (configs/local.yaml) for every command below.
+export APP_ENV=local
+
+# 2. Provide the DSN secrets. app_rt is the non-privileged runtime login; app_platform
+#    is a dedicated cross-tenant login (api/worker fail closed without it); app_migrate
+#    owns the schema. For local dev these may all point at the same superuser DB.
+export DATABASE_URL="postgres://app_rt:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+export PLATFORM_URL="postgres://app_platform:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+export MIGRATE_URL="postgres://app_migrate:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+
+# 3. Validate config, run migrations, then the API server.
 wowapi config validate --dir configs --env local
-
-# Run API server
-go run ./cmd/api
-
-# Run migrations
 go run ./cmd/migrate up
+go run ./cmd/api
 ```
 
 ## Structure

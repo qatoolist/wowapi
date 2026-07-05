@@ -181,8 +181,15 @@ func TestDeployRenderCompose(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	got := out.String()
-	// The DSN must be a secretref reference (config.DB.DSN is a Secret), never ${VAR}.
-	for _, want := range []string{"acme-api", "acme-worker", "acme-migrate", "acme:1.0", "stage", "secretref://env/WOWAPI_DB_DSN"} {
+	// The DSNs must be secretref references (config.DB.* are Secrets), never ${VAR}.
+	// api/worker need the platform DSN too or they fail closed at startup (CF-1);
+	// migrate needs the migrate DSN. All three must be rendered.
+	for _, want := range []string{
+		"acme-api", "acme-worker", "acme-migrate", "acme:1.0", "stage",
+		"secretref://env/WOWAPI_DB_DSN",
+		"secretref://env/WOWAPI_PLATFORM_DSN",
+		"secretref://env/WOWAPI_MIGRATE_DSN",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("compose manifest missing %s:\n%s", want, got)
 		}
@@ -220,9 +227,13 @@ func TestDeployRenderEnvAndBadFormat(t *testing.T) {
 	if !strings.Contains(got, "WOWAPI__ENVIRONMENT=prod") {
 		t.Fatalf("env output missing environment: %s", got)
 	}
-	// Both the runtime DSN and the migrate DSN must be emitted as secret references —
-	// the migrate job needs WOWAPI__DB__MIGRATE_DSN or it cannot run migrations.
-	for _, want := range []string{"WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN", "WOWAPI__DB__MIGRATE_DSN=secretref://env/WOWAPI_MIGRATE_DSN"} {
+	// All three DSNs must be emitted as secret references: api/worker need the runtime
+	// AND platform DSN (they fail closed without db.platform_dsn), migrate the migrate DSN.
+	for _, want := range []string{
+		"WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN",
+		"WOWAPI__DB__PLATFORM_DSN=secretref://env/WOWAPI_PLATFORM_DSN",
+		"WOWAPI__DB__MIGRATE_DSN=secretref://env/WOWAPI_MIGRATE_DSN",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("env output missing %q:\n%s", want, got)
 		}
