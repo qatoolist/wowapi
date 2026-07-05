@@ -79,7 +79,7 @@ From `VERIFICATION-wowapi-hardening.md` §6 (closure matrix), reconciled with po
 | CA-8 | P1 | Idempotency-expired defined error (410 `KindIdempotencyExpired`) | ✅ Closed |
 | CA-9 | P1 | Async trace propagation (`events_outbox.trace_context`, child spans) | ✅ Closed (residual: jobs/notify reuse same tracer seam) |
 | CA-10 | P1 | Read-replica routing | ⏸️ **Rescoped** — deploy-time pool wiring, not kernel behavior (`WithTenantRO` exists); rationale recorded |
-| CA-11 | P1 | Audit completeness (Context accessors, `tx_id`, `audit verify` CLI) | 🟡 Closed **except** scheduled **anchor-export** (⏸️ deferred, small/low-risk) |
+| CA-11 | P1 | Audit completeness (Context accessors, `tx_id`, `audit verify` CLI, anchor-export) | ✅ Closed — scheduled **anchor-export** now ships (`audit.ExportAnchors` on the leader-safe scheduler → append-only `audit_anchors`, migration 00027; `audit.CheckAnchor` detects tail-truncation `Verify` misses; B-3 done) |
 | CA-12 | P1 | O2/O3/O5 ops finishers | ✅ Closed — O3 upgrade/deprecation policy ✅; **O2** schema-snapshot diff drill ✅ (B-4); **O5** scripted PITR + object-storage restore drills ✅ (B-5); production PITR provider-owned per D-0080 |
 | CA-13 | P1 | Step-up gate test + API-key×step-up decision | ✅ Closed |
 | CA-14 | P1 | Integration credential → `config.Secret` (structural redaction) | ✅ Closed (residual: per-tenant credential rotation runbook — `docs/operations/integration-credential-rotation.md` — ✅) |
@@ -95,7 +95,7 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 |---|---|---|---|---|
 | B-1 | **golangci-lint backlog (~160)** — 154 production `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert` | Code hygiene | `docs/working/lint-backlog.md` | Gate blocks **new** code (`make lint-new`); backlog burned down package-by-package, never blanket-`//nolint`. |
 | B-2 | ~~Perf budgets for new hot paths~~ | Perf gate | `bench-budgets.txt` | ✅ **Done** — benchmarks + budgets added for audit Record/chain, sequence Allocate, token bucket, CachingStore hit/miss, edge middleware; `make bench-budget` now enforces them (30 benches). |
-| B-3 | **CA-11 anchor-export job** — scheduled audit-chain anchor for offline tail-truncation detection | Feature | CA-11 | Chain verify exists in-DB; anchor-export adds out-of-band tamper evidence. |
+| B-3 | ~~CA-11 anchor-export job~~ | Feature | CA-11 | ✅ **Done** — `audit.ExportAnchors` on the leader-safe scheduler writes append-only anchors (migration 00027); `audit.CheckAnchor` detects offline tail-truncation. |
 | B-4 | ~~**CA-12 O2** — schema-snapshot diffing in the reversibility drill~~ | Ops | CA-12 / D-0080 | ✅ **Done** — `scripts/migration_reversibility_drill.sh` (`make drill-reversibility`) diffs normalized `pg_dump --schema-only` snapshots after up→down→up; fails on asymmetric Down. |
 | B-5 | ~~**CA-12 O5** — scripted PITR / object-storage restore legs~~ | Ops | CA-12 / D-0080 | ✅ **Done** — real scripted round-trips: `scripts/pitr_restore_drill.sh` (throwaway PG + WAL replay to target) + `scripts/object_storage_restore_drill.sh` (MinIO). Production PITR stays provider-owned (D-0080). |
 | B-6 | ~~CA-10 read-replica router~~ | Feature | CA-10 | ⏸️ **Rescoped** to deployment — RO routing is a deploy-time pool-wiring choice (`WithTenantRO` exists); revisit only if a product needs kernel-level RO routing. |
