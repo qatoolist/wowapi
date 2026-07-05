@@ -19,7 +19,7 @@ import (
 // per-tenant workflow SLA sweep. Both are idempotent, so the scheduler's
 // leader-safe at-most-once-per-interval guarantee is sufficient — N worker
 // replicas will not double-fire.
-func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery time.Duration) {
+func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery, notifyEvery, webhookEvery time.Duration) {
 	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
 	// k.Platform pool already connects AS app_platform, so Platform() runs with
 	// the cross-tenant sweep policy (migration 00012).
@@ -90,6 +90,52 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 		_, err := audit.ExportAnchors(ctx, k.Platform)
 		return err
 	})
+
+	// Notification send/retry: drive queued and retriable-failed deliveries per
+	// active tenant (Phase 9). Ships the async fan-out so products no longer
+	// hand-roll per-tenant polling (H3). The tenant is bound from the enumeration
+	// and passed straight to SendPending — never a caller-supplied param — and
+	// SendPending runs each tenant in its own app_platform tx. Leader-safe: the
+	// scheduler fires this once per interval across replicas. Guarded on Notify
+	// being wired (nil in api-only postures that skip the notification framework).
+	if k.Notify != nil {
+		sched.Register("kernel.notify.send_pending", notifyEvery, func(ctx context.Context) error {
+			tenants, err := activeTenants(ctx, k)
+			if err != nil {
+				return err
+			}
+			for _, tid := range tenants {
+				if _, serr := k.Notify.SendPending(ctx, platTxM, tid, time.Now()); serr != nil {
+					k.Log.WarnContext(ctx, "scheduler: notify send_pending failed for tenant", "tenant", tid, "err", serr)
+				}
+			}
+			return nil
+		})
+	}
+
+	// Webhook retry + inbound processing: re-drive failed outbound deliveries and
+	// run handlers for pending inbound events per active tenant (Phase 9, H3).
+	// Closes H2 by construction: the tenant comes from the enumeration and binds
+	// the whole dispatch, so no decoupled tenant param can reach the signing/
+	// endpoint-lookup path. One tenant's failure is logged and never blocks the
+	// rest. Guarded on Webhooks being wired.
+	if k.Webhooks != nil {
+		sched.Register("kernel.webhook.retry", webhookEvery, func(ctx context.Context) error {
+			tenants, err := activeTenants(ctx, k)
+			if err != nil {
+				return err
+			}
+			for _, tid := range tenants {
+				if rerr := k.Webhooks.RetryOutbound(ctx, platTxM, tid, time.Now()); rerr != nil {
+					k.Log.WarnContext(ctx, "scheduler: webhook retry failed for tenant", "tenant", tid, "err", rerr)
+				}
+				if perr := k.Webhooks.ProcessInbound(ctx, platTxM, tid, time.Now()); perr != nil {
+					k.Log.WarnContext(ctx, "scheduler: webhook process_inbound failed for tenant", "tenant", tid, "err", perr)
+				}
+			}
+			return nil
+		})
+	}
 }
 
 // registerModuleRecurring wires each module-registered recurring job onto the

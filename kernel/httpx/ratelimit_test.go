@@ -3,11 +3,13 @@ package httpx_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 )
@@ -116,17 +118,99 @@ func TestRateLimitMiddlewareAllows(t *testing.T) {
 }
 
 func TestKeyByActorFallsBackToIP(t *testing.T) {
-	// With an actor in context, KeyByActor keys on the actor id.
-	actor := uuid.New()
+	// With a capacity-bearing user in context, KeyByActor keys on tenant:capacity.
+	tenant := uuid.New()
+	cap := uuid.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req = req.WithContext(database.WithActorID(req.Context(), actor))
-	if got := httpx.KeyByActor(req); got != "actor:"+actor.String() {
-		t.Errorf("KeyByActor = %q, want actor:%s", got, actor)
+	ctx := database.WithTenantID(req.Context(), tenant)
+	ctx = httpx.WithActor(ctx, authz.Actor{Kind: authz.ActorUser, TenantID: tenant, CapacityID: cap})
+	req = req.WithContext(ctx)
+	if got, want := httpx.KeyByActor(req), "t:"+tenant.String()+"|cap:"+cap.String(); got != want {
+		t.Errorf("KeyByActor = %q, want %q", got, want)
 	}
-	// Without an actor, it falls back to the IP key.
+	// Without an actor or tenant, it falls back to a non-empty IP key.
 	plain := httptest.NewRequest(http.MethodGet, "/", nil)
 	if got := httpx.KeyByActor(plain); got == "" {
 		t.Error("KeyByActor must fall back to a non-empty IP key")
+	}
+}
+
+// TestKeyByActorNilCapacityNotCollapsed proves the H1 fix: two machine callers
+// (both nil-capacity API-key actors) in DIFFERENT tenants derive DIFFERENT bucket
+// keys, so they cannot share a limiter bucket. Before the fix both collapsed to
+// "actor:00000000-0000-0000-0000-000000000000".
+func TestKeyByActorNilCapacityNotCollapsed(t *testing.T) {
+	tenantA, tenantB := uuid.New(), uuid.New()
+	// Same api-key name in both tenants — only the tenant prefix distinguishes them.
+	actorA := authz.Actor{Kind: authz.ActorSystem, TenantID: tenantA, System: "apikey:relay"}
+	actorB := authz.Actor{Kind: authz.ActorSystem, TenantID: tenantB, System: "apikey:relay"}
+
+	keyFor := func(a authz.Actor) string {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		ctx := database.WithTenantID(req.Context(), a.TenantID)
+		ctx = database.WithActorID(ctx, a.CapacityID) // uuid.Nil, as the gate binds it
+		ctx = httpx.WithActor(ctx, a)
+		return httpx.KeyByActor(req.WithContext(ctx))
+	}
+
+	ka, kb := keyFor(actorA), keyFor(actorB)
+	if ka == kb {
+		t.Fatalf("distinct tenants must not share a key: both = %q", ka)
+	}
+	for _, k := range []string{ka, kb} {
+		if strings.Contains(k, uuid.Nil.String()) {
+			t.Errorf("key must not bucket on uuid.Nil: %q", k)
+		}
+	}
+}
+
+// TestRateLimitCrossTenantIndependence exhausts tenant A's per-actor bucket
+// through the real RateLimit middleware and proves tenant B's identical machine
+// caller is unaffected — 200-then-429 boundaries hold independently per tenant.
+func TestRateLimitCrossTenantIndependence(t *testing.T) {
+	clk := &fakeClock{t: time.Unix(0, 0)}
+	tb := httpx.NewTokenBucketWithClock(1, 2, clk.now) // 1/s, burst 2
+
+	served := 0
+	h := httpx.RateLimit(tb, httpx.KeyByActor)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			served++
+			w.WriteHeader(http.StatusOK)
+		}))
+
+	tenantA, tenantB := uuid.New(), uuid.New()
+	do := func(tenant uuid.UUID) int {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		// Nil-capacity machine actor, exactly as the gate binds an API-key caller.
+		a := authz.Actor{Kind: authz.ActorSystem, TenantID: tenant, System: "apikey:relay"}
+		ctx := database.WithTenantID(req.Context(), tenant)
+		ctx = database.WithActorID(ctx, a.CapacityID)
+		ctx = httpx.WithActor(ctx, a)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req.WithContext(ctx))
+		return rec.Code
+	}
+
+	// Drain tenant A's burst (2), then hit its limit.
+	if c := do(tenantA); c != http.StatusOK {
+		t.Fatalf("A req 1: got %d, want 200", c)
+	}
+	if c := do(tenantA); c != http.StatusOK {
+		t.Fatalf("A req 2: got %d, want 200", c)
+	}
+	if c := do(tenantA); c != http.StatusTooManyRequests {
+		t.Fatalf("A req 3: got %d, want 429 (A's bucket drained)", c)
+	}
+
+	// Tenant B's identical caller must still have a full, independent bucket.
+	if c := do(tenantB); c != http.StatusOK {
+		t.Fatalf("B req 1: got %d, want 200 (A's exhaustion must not affect B)", c)
+	}
+	if c := do(tenantB); c != http.StatusOK {
+		t.Fatalf("B req 2: got %d, want 200", c)
+	}
+	if c := do(tenantB); c != http.StatusTooManyRequests {
+		t.Fatalf("B req 3: got %d, want 429 (B's own bucket now drained)", c)
 	}
 }
 

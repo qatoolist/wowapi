@@ -61,6 +61,13 @@ func (s *Scheduler) Run(ctx context.Context, poll time.Duration) error {
 		poll = 30 * time.Second
 	}
 	if err := s.Ensure(ctx); err != nil {
+		// A canceled context during the startup upsert means shutdown raced
+		// startup — a clean exit, not a scheduler failure. (Otherwise the more
+		// schedules registered, the wider this race, e.g. StartWorker on a
+		// fast-cancelled worker.)
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 	t := time.NewTicker(poll)

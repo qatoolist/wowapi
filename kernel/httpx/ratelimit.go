@@ -8,6 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
@@ -84,13 +87,61 @@ func KeyByIP(r *http.Request) string {
 	return "ip:" + host
 }
 
-// KeyByActor keys on the authenticated actor (capacity) id when present, else
-// falls back to KeyByIP. Place RateLimit AFTER the authz gate to use this.
+// KeyByActor derives a per-principal, tenant-scoped bucket key so one tenant's
+// callers can never share a limiter bucket with another's (cross-tenant DoS). It
+// is stable per principal even for machine callers, whose audit CapacityID is
+// uuid.Nil for every API-key / system / webhook actor — keying on that id alone
+// would collapse ALL machine traffic across ALL tenants into one bucket.
+//
+// The key is always prefixed with the bound tenant id, then the strongest
+// available principal identifier: the user's capacity, else an api-key/system
+// name, else the JWT subject (user id). If no principal identifier is available
+// it falls back to per-IP — still tenant-prefixed when a tenant is bound — rather
+// than a single shared bucket. Place RateLimit AFTER the authz gate to use this.
 func KeyByActor(r *http.Request) string {
-	if actor, ok := database.ActorIDFrom(r.Context()); ok {
-		return "actor:" + actor.String()
+	ctx := r.Context()
+	actor, hasActor := ActorFrom(ctx)
+
+	// Tenant prefix: prefer the tenant bound in context (set by the gate), else
+	// the actor's own tenant. Every key is scoped to it so buckets never cross
+	// tenants.
+	tenant, ok := database.TenantIDFrom(ctx)
+	if !ok && hasActor && actor.TenantID != uuid.Nil {
+		tenant, ok = actor.TenantID, true
 	}
-	return KeyByIP(r)
+	prefix := ""
+	if ok {
+		prefix = "t:" + tenant.String() + "|"
+	}
+
+	if hasActor {
+		if id := principalID(actor); id != "" {
+			return prefix + id
+		}
+	} else if cid, ok := database.ActorIDFrom(ctx); ok && cid != uuid.Nil {
+		// No full actor bound but a non-nil audit capacity is — key on it.
+		return prefix + "cap:" + cid.String()
+	}
+
+	// No principal identifier at all: per-IP, still tenant-prefixed.
+	return prefix + KeyByIP(r)
+}
+
+// principalID returns the strongest stable identifier of a, or "" if a carries
+// none. A machine principal (api key / system / webhook) has a nil CapacityID but
+// a distinct System name; a human has a capacity; a bare token still has its
+// subject (user id).
+func principalID(a authz.Actor) string {
+	switch {
+	case a.CapacityID != uuid.Nil:
+		return "cap:" + a.CapacityID.String()
+	case a.System != "":
+		return "sys:" + a.System
+	case a.UserID != uuid.Nil:
+		return "usr:" + a.UserID.String()
+	default:
+		return ""
+	}
 }
 
 // --- token bucket ---

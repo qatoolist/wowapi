@@ -3,6 +3,36 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0081 — Third-review tenant-isolation footgun hardening (H1/H2/H3/M2/F-2)
+- **Context:** an adversarial tenant-isolation review (live-Postgres probes) rated the framework PASS — no
+  critical/high live cross-tenant leak — but flagged surfaces the framework delegates to the product where a
+  plausible integration bug becomes a leak/DoS. Decision: harden those in the framework so a product can't get
+  them wrong (convert "safe if careful" into "safe by default").
+- **Decisions:**
+  - **H1** rate-limit key: `KeyByActor` collapsed every nil-capacity caller (all API-key/system/webhook actors,
+    all tenants) into one bucket `actor:00000000-…`. New key `t:<tenant>|<principal>` (capacity → api-key/system
+    → subject → per-IP fallback), never buckets on `uuid.Nil`; the authz gate now binds the full actor.
+  - **H2** webhook: `DispatchOutbound` now binds the tenant from `ev.TenantID` and fails closed on a mismatched
+    passed tenant — closing the "A's payload delivered to B, signed with B's secret" path.
+  - **H3** safe async: shipped leader-safe per-tenant pollers (`kernel.notify.send_pending`, `kernel.webhook.retry`)
+    in `app/maintenance.go`, enumerating active tenants and binding the tenant from the enumeration — so products
+    don't hand-roll the loop where H2 happens.
+  - **M2** jobs RLS: migration `00028` enables RLS+FORCE on `jobs_queue`/`job_runs` with a strict tenant policy
+    `WITH CHECK (tenant_id = app_tenant_id())` + a permissive `app_platform` policy, **exactly** mirroring
+    `events_outbox` (write-integrity defense-in-depth; app_rt stays read-denied; global/NULL jobs are written by
+    `EnqueueGlobal` as app_platform under the permissive policy, so app_rt can't enqueue NULL/global rows).
+    Plus the F-3 grant-only test.
+  - **F-2** regression guard: a table-driven `AssertRLSIsolation` census over 34 strict tenant tables + a
+    self-maintaining completeness check (44 live = 34 probed + 10 excluded) that fails when a new tenant table
+    isn't registered.
+  - Also fixed a shutdown race the extra schedules exposed: `Scheduler.Run` treats a canceled-context `Ensure`
+    as clean shutdown, not an error.
+- **Not done (product responsibility, per the review's integration checklist):** M1 (JWT tenant claim trust),
+  M3–M8, documented in the local tenant-isolation report; M3 (guard-by-default) is a candidate follow-up.
+- **Affected:** kernel/httpx/{ratelimit,context,authz_gate}.go, kernel/webhook/service.go, app/{maintenance,worker}.go,
+  migrations/00028_jobs_rls.sql, kernel/jobs/{scheduler,rls_test}.go, testkit/{asserts,rls_isolation_all_test}.go,
+  kernel/config/config.go (doc-string).
+
 ## D-0079 — CA-2(b): authz-cache invalidation wired to the authorization-spine write
 - **Context:** `authz.CachingStore` was wireable (`kernel.Deps.AuthzCacheTTL` → `Kernel.AuthzCache`) but
   its `Invalidate`/`InvalidateTenant` had ZERO non-test callers, so a role/permission change could be

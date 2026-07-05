@@ -94,9 +94,13 @@ func gateRoute(meta RouteMeta, h http.Handler, auth Authenticator, eval authz.Ev
 		}
 
 		// 2. Bind tenant + actor so the tenant tx (RLS) and audit attribution are
-		//    set for both the authz decision and the downstream handler.
+		//    set for both the authz decision and the downstream handler. The full
+		//    principal is also bound so per-actor guardrails (KeyByActor) can key on
+		//    its strongest identifier rather than the uuid.Nil audit capacity a
+		//    machine caller carries.
 		ctx = database.WithTenantID(ctx, actor.TenantID)
 		ctx = database.WithActorID(ctx, actor.CapacityID)
+		ctx = WithActor(ctx, actor)
 
 		// 3. AuthZ — evaluate the route permission at tenant scope in the request's
 		//    tenant snapshot (deny-by-default; 403 on deny). Resource-scoped checks

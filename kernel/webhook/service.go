@@ -200,11 +200,26 @@ func (s *Service) ProcessInbound(ctx context.Context, plat database.TxManager, t
 }
 
 // DispatchOutbound fans ev to all active (or degraded) outbound endpoints for
-// tenantID whose subscribed_events contain ev.Type. For each matching endpoint
-// it upserts a delivery row, checks the circuit breaker, signs the body, POSTs
-// via Sender, then records the outcome. Open-circuit endpoints are skipped
+// the event's tenant whose subscribed_events contain ev.Type. For each matching
+// endpoint it upserts a delivery row, checks the circuit breaker, signs the body,
+// POSTs via Sender, then records the outcome. Open-circuit endpoints are skipped
 // silently (their delivery rows stay pending). Runs as app_platform.
+//
+// SEC/H2: the delivery tenant is authoritative from ev.TenantID, never the
+// decoupled tenantID param. Without this, a caller passing B's id with A's event
+// would look up B's endpoints and sign A's payload with B's secret — a
+// cross-tenant leak. When ev carries a tenant (relay/writer sets it), a
+// disagreeing tenantID is rejected fail-closed (KindValidation); the event's
+// tenant then binds the whole dispatch. A zero ev.TenantID falls back to the
+// passed tenantID (legacy callers that pre-bind the tenant themselves).
 func (s *Service) DispatchOutbound(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, ev outbox.Event, now time.Time) error {
+	if ev.TenantID != uuid.Nil {
+		if tenantID != uuid.Nil && tenantID != ev.TenantID {
+			return kerr.E(kerr.KindValidation, "tenant_mismatch",
+				"webhook dispatch tenant does not match event tenant")
+		}
+		tenantID = ev.TenantID
+	}
 	return plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
 		eps, err := s.loadOutboundEndpoints(ctx, db, ev.Type)
 		if err != nil {

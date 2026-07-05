@@ -772,3 +772,78 @@ func TestIntegrationOutboundSignatureCoversTimestamp(t *testing.T) {
 		t.Fatal("signature unchanged when timestamp is altered")
 	}
 }
+
+// TestIntegrationDispatchOutbound_TenantMismatchRejected is the H2 regression:
+// DispatchOutbound must derive the delivery tenant from ev.TenantID, never a
+// decoupled tenantID param. Here tenant B has a subscribed outbound endpoint but
+// the event belongs to tenant A. Passing B's id with A's event must be rejected
+// fail-closed (KindValidation) with ZERO cross-tenant delivery — otherwise A's
+// payload would be signed with B's secret and POSTed to B's endpoint.
+func TestIntegrationDispatchOutbound_TenantMismatchRejected(t *testing.T) {
+	h := testkit.NewDB(t)
+	tnA := testkit.CreateTenant(t, h)
+	tnB := testkit.CreateTenant(t, h)
+	epB := seedOutboundEndpoint(t, h, tnB.ID, "https://b.example.test/hook")
+	sender := &webhook.FakeSender{StatusCode: 200}
+	svc := newService(t, sender)
+
+	ev := outbox.Event{
+		ID:       uuid.New(),
+		Type:     "order.created",
+		Payload:  json.RawMessage(`{"order_id":"a-secret"}`),
+		TenantID: tnA.ID, // event belongs to A
+	}
+	// Caller lies: passes B's id with A's event.
+	err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tnB.ID, ev, time.Now())
+	if err == nil {
+		t.Fatal("DispatchOutbound accepted a tenant that disagrees with ev.TenantID (H2)")
+	}
+	if kerr.KindOf(err) != kerr.KindValidation {
+		t.Fatalf("want KindValidation on tenant mismatch, got kind=%v err=%v", kerr.KindOf(err), err)
+	}
+	// No cross-tenant delivery: B's endpoint must not have been POSTed to and no
+	// delivery row may exist for it.
+	if len(sender.Calls) != 0 {
+		t.Fatalf("cross-tenant delivery occurred: %d POSTs", len(sender.Calls))
+	}
+	var rows int
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM webhook_events WHERE endpoint_id = $1`, epB).Scan(&rows); err != nil {
+		t.Fatalf("count delivery rows: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("want 0 delivery rows for B's endpoint, got %d", rows)
+	}
+}
+
+// TestIntegrationDispatchOutbound_EventTenantAuthoritative proves the H2 fix's
+// happy path: when ev.TenantID matches the passed tenant, dispatch proceeds and
+// the delivery is signed/scoped to the event's own tenant.
+func TestIntegrationDispatchOutbound_EventTenantAuthoritative(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	epID := seedOutboundEndpoint(t, h, tn.ID, "https://ok.example.test/hook")
+	sender := &webhook.FakeSender{StatusCode: 200}
+	svc := newService(t, sender)
+
+	ev := outbox.Event{
+		ID:       uuid.New(),
+		Type:     "order.created",
+		Payload:  json.RawMessage(`{"order_id":"abc"}`),
+		TenantID: tn.ID,
+	}
+	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
+		t.Fatalf("DispatchOutbound: %v", err)
+	}
+	if len(sender.Calls) != 1 {
+		t.Fatalf("want 1 POST, got %d", len(sender.Calls))
+	}
+	var status string
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT delivery_status FROM webhook_events WHERE endpoint_id = $1`, epID).Scan(&status); err != nil {
+		t.Fatalf("query delivery row: %v", err)
+	}
+	if status != "delivered" {
+		t.Fatalf("want delivered, got %s", status)
+	}
+}

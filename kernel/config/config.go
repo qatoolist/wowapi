@@ -81,7 +81,7 @@ type Telemetry struct {
 type DB struct {
 	DSN         Secret `conf:"dsn" json:"dsn" doc:"runtime database DSN (app_rt role) as a secretref:// reference"`
 	MigrateDSN  Secret `conf:"migrate_dsn" json:"migrate_dsn" doc:"migration DSN (app_migrate role) as a secretref:// reference; only the migrate process receives it"`
-	PlatformDSN Secret `conf:"platform_dsn" json:"platform_dsn" doc:"cross-tenant platform DSN (app_platform login) as a secretref:// reference; the worker uses it for the relay/runner/scheduler. Unset falls back to the runtime DSN with SET ROLE app_platform (fine for local; production should provide a dedicated app_platform login)"`
+	PlatformDSN Secret `conf:"platform_dsn" json:"platform_dsn" doc:"cross-tenant platform DSN (a DEDICATED app_platform login) as a secretref:// reference; used by the api (API-key auth) and worker (relay/runner/scheduler). REQUIRED — the api/worker fail closed if it is unset. It must not reuse the runtime (app_rt) DSN: doing so would require app_rt to be a member of app_platform, a cluster-global grant that defeats runtime/platform privilege separation (CF-1)"`
 	Pool               // embedded: pool knobs stay flat under db.* and flow to every process view wholesale
 }
 
