@@ -111,8 +111,11 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	}
 
 	// DATABASE_URL is resolved by the secretref://env/DATABASE_URL in local.yaml.
-	// MIGRATE_URL falls back to DATABASE_URL inside the migrate main.
-	dbEnv := append(env, "DATABASE_URL="+dsn, "MIGRATE_URL="+dsn)
+	// MIGRATE_URL falls back to DATABASE_URL inside the migrate main. PLATFORM_URL
+	// is required since CF-1 (the api/worker fail closed without db.platform_dsn);
+	// the gate DSN is the superuser, which can SET ROLE app_platform for the
+	// platform pool just as it does SET ROLE app_rt for the runtime pool.
+	dbEnv := append(env, "DATABASE_URL="+dsn, "MIGRATE_URL="+dsn, "PLATFORM_URL="+dsn)
 
 	// Step 7: build and run cmd/migrate — criterion #22.
 	migrateBin := filepath.Join(tmpDir, "migrate")
