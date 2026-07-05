@@ -3,6 +3,37 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0087 — B-1 lint backlog closed: `make lint` = 0 with no behavior change
+- **Context:** the advisory `golangci-lint` backlog (B-1) had ~160 issues that `make lint-new` gated for new
+  code but never blocked (full `make lint` was advisory). Goal: close it to 0 without introducing any bug.
+- **Shape:** 150 of 160 were in `internal/cli`, all `fmt.Fprint*` (149) + one `tw.Flush` — best-effort writes
+  to stdout/stderr `io.Writer`s. The other 10 were scattered (errcheck `f.Close`/Format writes, 3 `unparam`,
+  2 dead test symbols, 1 `unconvert`).
+- **Decision (user chose the resolution for the 150 CLI writes):**
+  - **CLI terminal writes → one path-scoped `.golangci.yml` exclusion** (`path: internal/cli/` +
+    `source: fmt\.Fprint`). A failed write to os.Stdout/os.Stderr has no recovery, so ignoring it is correct —
+    the canonical errcheck-exempt case (mirrors the stdlib's own `fmt.Print*` exclusion). Scoped so genuine
+    errcheck issues in the CLI (pool/file/exec errors) are still caught. This is the burn-down plan's sanctioned
+    "scoped exclusion for a proven-safe stdlib call" — chosen over 150 `_ =` edits precisely to minimise churn
+    and thus bug risk. The single `tw.Flush` got an explicit `_ =` with a reason.
+  - **10 scattered → real code fixes, each behaviour-preserving:** read-only `defer f.Close()` →
+    `defer func() { _ = f.Close() }()`; `Secret.Format` writes (a `fmt.Formatter` can't return an error) →
+    `_, _ =`; `unparam` removed `webhook.truncate`'s always-500 `max` (const inside; 5 callers updated),
+    `workflow.createTask`'s unused `def` (1 caller), `testkit.newPoolDB`'s always-nil `opts` (no caller change);
+    `unused` removed a dead `type want` + `func run` in tests; `unconvert` dropped a redundant `int64()`.
+- **Verification (the "no new bugs" bar):** `make lint` 0; `go build`/`go vet` clean; the full real-DB suite
+  green incl. every touched package (webhook/workflow/testkit/model/config/benchbudget/buildinfo); coverage
+  91.6% ≥ 90%.
+- **Durability + follow-up:** `make lint-new` keeps changed code clean, so the tree stays at 0 for normal work.
+  Promoting full-tree `make lint` to the enforced CI gate (burn-down step 3) is deferred as a recommended
+  follow-up — CI installs golangci-lint `@latest`, so a full-tree enforced gate should be paired with a pinned
+  version first to avoid breaking on a future upstream check (that pairing would itself be a gate change, out
+  of scope for "close the backlog without new errors").
+- **Affected:** .golangci.yml, internal/cli/config_cmd.go, internal/buildinfo/buildinfo.go,
+  internal/tools/benchbudget/main.go, kernel/config/secret.go, kernel/webhook/{service,internals_test}.go,
+  kernel/workflow/runtime.go, testkit/{db.go,consumer_test.go}, kernel/model/model_test.go, Makefile,
+  docs/working/lint-backlog.md, docs/GOALS-TRACKER.md.
+
 ## D-0086 — Doc-drift sweep: user-facing docs re-grounded in the hardened runtime contract
 - **Context:** a broad review found **no** Critical/High code defects (the scaffold/runtime hardening holds) but
   real Medium/Low doc drift: the D-0083/D-0084 runtime changes (platform_dsn now required; `migrate down` is a

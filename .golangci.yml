@@ -37,6 +37,17 @@ linters:
         linters:
           - errcheck
           - unparam
+      # CLI commands write user-facing output to stdout/stderr (the io.Writer args
+      # are os.Stdout/os.Stderr in production, bytes.Buffer in tests). A failed
+      # terminal write has no meaningful recovery, so errcheck on fmt.Fprint* in the
+      # CLI is noise, not a defect — this mirrors the stdlib's own fmt.Print*
+      # exclusion. Scoped to internal/cli AND to fmt.Fprint* only, so genuine
+      # errcheck issues in that package (pool/file/exec errors) are still caught.
+      # See docs/working/lint-backlog.md (B-1).
+      - path: internal/cli/
+        linters:
+          - errcheck
+        source: 'fmt\.Fprint(f|ln)?\('
 
 # golangci-lint v2 bundles the formatters, so `golangci-lint fmt` = gofumpt +
 # goimports (no separate binaries to install). `run` also reports format drift.

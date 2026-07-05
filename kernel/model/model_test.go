@@ -18,9 +18,6 @@ func TestTemporalActiveAt(t *testing.T) {
 	t1 := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
 	t2 := time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC)
 
-	type want struct {
-		active bool
-	}
 	tests := []struct {
 		name       string
 		temporal   model.Temporal

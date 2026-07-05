@@ -57,7 +57,7 @@ func main() {
 		if budget.maxNsPerOp >= 0 && res.nsPerOp > float64(budget.maxNsPerOp) {
 			v = append(v, fmt.Sprintf("ns/op %.1f > budget %d", res.nsPerOp, budget.maxNsPerOp))
 		}
-		if budget.maxAllocsPerOp >= 0 && res.allocsPerOp > int64(budget.maxAllocsPerOp) {
+		if budget.maxAllocsPerOp >= 0 && res.allocsPerOp > budget.maxAllocsPerOp {
 			v = append(v, fmt.Sprintf("allocs/op %d > budget %d", res.allocsPerOp, budget.maxAllocsPerOp))
 		}
 		if len(v) > 0 {
@@ -93,7 +93,7 @@ func loadBudgets(path string) (map[string]budget, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only file; a close error loses no data
 
 	budgets := make(map[string]budget)
 	sc := bufio.NewScanner(f)

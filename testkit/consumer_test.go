@@ -98,15 +98,6 @@ func writeFile(t *testing.T, dir, rel, body string) {
 	}
 }
 
-func run(t *testing.T, dir, name string, args ...string) {
-	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
-	}
-}
-
 // A tiny external module: a "widgets" resource with one route + seeds + a
 // migration, using only wowapi/module + wowapi/kernel/* public packages.
 const scratchModuleSrc = `package acme

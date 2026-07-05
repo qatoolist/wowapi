@@ -291,7 +291,7 @@ func runConfigDoctor(args []string, stdout, stderr io.Writer) int {
 	for _, k := range keys {
 		fmt.Fprintf(tw, "%s\t%s\n", k, loaded.Provenance[k])
 	}
-	tw.Flush()
+	_ = tw.Flush() // best-effort flush to stdout; a terminal write error has no recovery
 
 	fmt.Fprintf(stdout, "fingerprint=%s\n", loaded.Fingerprint.Short())
 	for _, w := range loaded.Warnings {

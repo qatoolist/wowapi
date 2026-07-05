@@ -5,8 +5,8 @@ Cross-checked against the tree on 2026-07-05 (Go 1.26; 329 Go files; 184 test fi
 The authoritative gate (`make ci` in containers, `WOWAPI_REQUIRE_DB=1`) is green on the current tree. The
 D-0083→D-0085 review-follow-up commits (through `a1ee245`) are pushed and hosted GitHub CI is **green on
 `a1ee245`** (all 5 workflows: ci, govulncheck, codeql, scorecard, security-scan). Note: `make ci` runs vet +
-boundary lint (not the full advisory `golangci-lint`); the ~154-item errcheck backlog (B-1) is tracked below and
-gated for *new* code via `make lint-new`.
+boundary lint (not the full `golangci-lint`); the B-1 lint backlog is **closed** (2026-07-05, D-0087) — full
+`make lint` now reports 0, and `make lint-new` keeps changed code clean.
 
 **Legend:** ✅ Done · 🟡 Partial · ⏸️ Deferred/Rescoped (documented, low-risk) · ⬜ Pending/backlog.
 
@@ -95,7 +95,7 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 
 | # | Item | Type | Where tracked | Notes |
 |---|---|---|---|---|
-| B-1 | **golangci-lint backlog (~160)** — 154 production `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert` | Code hygiene | `docs/working/lint-backlog.md` | Gate blocks **new** code (`make lint-new`); backlog burned down package-by-package, never blanket-`//nolint`. |
+| B-1 | ~~**golangci-lint backlog (~160)** — 154 `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert`~~ | Code hygiene | `docs/working/lint-backlog.md` | ✅ **Closed 2026-07-05 (D-0087)** — `make lint` = 0. 149 CLI `fmt.Fprint*` terminal writes via one scoped `.golangci.yml` exclusion; 11 real code fixes (behavior-preserving, tests green). `make lint-new` keeps it closed. |
 | B-2 | ~~Perf budgets for new hot paths~~ | Perf gate | `bench-budgets.txt` | ✅ **Done** — benchmarks + budgets added for audit Record/chain, sequence Allocate, token bucket, CachingStore hit/miss, edge middleware; `make bench-budget` now enforces them (30 benches). |
 | B-3 | ~~CA-11 anchor-export job~~ | Feature | CA-11 | ✅ **Done** — `audit.ExportAnchors` on the leader-safe scheduler writes append-only anchors (migration 00027); `audit.CheckAnchor` detects offline tail-truncation. |
 | B-4 | ~~**CA-12 O2** — schema-snapshot diffing in the reversibility drill~~ | Ops | CA-12 / D-0080 | ✅ **Done** — `scripts/migration_reversibility_drill.sh` (`make drill-reversibility`) diffs normalized `pg_dump --schema-only` snapshots after up→down→up; fails on asymmetric Down. |
@@ -115,9 +115,11 @@ printed (verified) ✅ · generated module compiles + passes contract from an ex
 containers ✅ · hosted CI green on `329cc0e` (all 5 workflows) ✅ · no open critical/high review
 findings ✅.
 
-**Outstanding for a clean `v1.0.0` tag:** burn down B-1 (lint backlog, ~154 `errcheck`) to zero. The ops
-finishers B-2…B-5 are all closed (see the backlog table); the generated-scaffold config/migrate/deploy
-correctness gaps raised in the latest consumer-facing review are fixed (D-0083). None are architectural.
+**Outstanding for a clean `v1.0.0` tag:** none of the tracked backlog items remain — B-1 (lint) is closed
+(D-0087, `make lint` = 0) and the ops finishers B-2…B-5 are closed (see the backlog table); the
+generated-scaffold config/migrate/deploy correctness gaps (D-0083) and the review follow-ups (D-0084/D-0085)
+are fixed. Recommended pre-tag hardening (not a defect): promote full-tree `make lint` into the enforced CI
+gate after pinning golangci-lint (currently `@latest`). None are architectural.
 
 ---
 

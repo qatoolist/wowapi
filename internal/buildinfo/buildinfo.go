@@ -71,7 +71,7 @@ func parseGoMod(path string) (GoMod, error) {
 	if err != nil {
 		return GoMod{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only file; a close error loses no data
 
 	var g GoMod
 	sc := bufio.NewScanner(f)

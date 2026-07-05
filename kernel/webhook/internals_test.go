@@ -17,11 +17,11 @@ import (
 // TestTruncate covers both branches of truncate: the short-circuit return when
 // len <= max, and the actual cut when the string is longer than max.
 func TestTruncate(t *testing.T) {
-	if got := truncate("short", 500); got != "short" {
+	if got := truncate("short"); got != "short" {
 		t.Fatalf("short string should pass through unchanged, got %q", got)
 	}
 	long := strings.Repeat("x", 600)
-	got := truncate(long, 500)
+	got := truncate(long)
 	if len(got) != 500 {
 		t.Fatalf("want truncated length 500, got %d", len(got))
 	}
@@ -30,7 +30,7 @@ func TestTruncate(t *testing.T) {
 	}
 	// Exactly at the boundary is not truncated.
 	exact := strings.Repeat("y", 500)
-	if truncate(exact, 500) != exact {
+	if truncate(exact) != exact {
 		t.Fatal("string of length == max must not be truncated")
 	}
 }

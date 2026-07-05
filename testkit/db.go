@@ -382,9 +382,9 @@ const (
 )
 
 // newPoolDB builds a pool against the base DSN with the database swapped and a
-// small MaxConns; opts apply to the pgx config.
-func newPoolDB(ctx context.Context, dsn, dbname string, maxConns int32, opts ...database.Option) (*pgxpool.Pool, error) {
-	return buildPool(ctx, dsn, dbname, "", "", maxConns, opts...)
+// small MaxConns.
+func newPoolDB(ctx context.Context, dsn, dbname string, maxConns int32) (*pgxpool.Pool, error) {
+	return buildPool(ctx, dsn, dbname, "", "", maxConns)
 }
 
 // runtimePoolDB builds a pool that authenticates as runtimeRole instead of the

@@ -165,7 +165,7 @@ func (s *Service) ProcessInbound(ctx context.Context, plat database.TxManager, t
 			herr := s.runInboundHandler(ctx, db, ev)
 			next := r.attempts + 1
 			if herr != nil {
-				msg := truncate(herr.Error(), 500)
+				msg := truncate(herr.Error())
 				if next >= MaxAttempts {
 					if _, uerr := db.Exec(ctx,
 						`UPDATE webhook_events
@@ -428,7 +428,7 @@ func (s *Service) deliverToEndpoint(
 
 	var errMsg string
 	if postErr != nil {
-		errMsg = truncate(postErr.Error(), 500)
+		errMsg = truncate(postErr.Error())
 	} else {
 		errMsg = fmt.Sprintf("non-2xx status: %d", statusCode)
 	}
@@ -593,11 +593,14 @@ func backoff(attempt int) time.Duration {
 
 // --- misc ---
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+// truncate caps a stored error message at maxErrLen bytes (every call site uses
+// the same cap, so it is a constant rather than a parameter).
+func truncate(s string) string {
+	const maxErrLen = 500
+	if len(s) <= maxErrLen {
 		return s
 	}
-	return s[:max]
+	return s[:maxErrLen]
 }
 
 // dedupExtID returns the replay-dedup id for an inbound event: the provider's

@@ -450,7 +450,7 @@ func (rt *Runtime) enterStep(ctx context.Context, db database.TenantDB, inst *In
 	}
 	switch step.Type {
 	case StepApproval, StepTask, StepVote:
-		if err := rt.createTask(ctx, db, inst, def, stepKey, step, actor); err != nil {
+		if err := rt.createTask(ctx, db, inst, stepKey, step, actor); err != nil {
 			return err
 		}
 		return rt.emit(ctx, db, *inst, def, "task_created", map[string]any{
@@ -572,7 +572,7 @@ func (rt *Runtime) gatewayTarget(step Step, ctxMap map[string]any) string {
 }
 
 // createTask inserts a task and its resolved assignees, applying the step SLA.
-func (rt *Runtime) createTask(ctx context.Context, db database.TenantDB, inst *Instance, def Definition, stepKey string, step Step, actor uuid.UUID) error {
+func (rt *Runtime) createTask(ctx context.Context, db database.TenantDB, inst *Instance, stepKey string, step Step, actor uuid.UUID) error {
 	assignees, err := rt.resolveAssignees(ctx, step.Assignees, ResolveInput{
 		InstanceID: inst.ID.String(), Resource: inst.Resource, Step: stepKey, Context: inst.Context,
 	})

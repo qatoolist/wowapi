@@ -108,7 +108,7 @@ vet: ## go vet
 	$(GO) vet $(PKGS)
 
 .PHONY: lint
-lint: ## Full golangci-lint (ADVISORY — includes the pre-existing backlog; see docs/working/lint-backlog.md)
+lint: ## Full golangci-lint across the whole tree (backlog B-1 closed 2026-07-05 — now 0; see docs/working/lint-backlog.md)
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run; else echo "golangci-lint not installed; running go vet"; $(GO) vet $(PKGS); fi
 
 .PHONY: lint-new

@@ -5,19 +5,32 @@ but nothing ran the *full* set in CI, so a backlog of pre-existing issues accumu
 on **changed code only** (`make lint-new`), so this backlog does not block work — but it is tracked here
 and burned down incrementally. See [quality-gates.md](quality-gates.md).
 
-## Snapshot (2026-07-04, after config fixes + auto-fixes)
+## Status: CLOSED (2026-07-05) — `make lint` reports **0 issues** (D-0087)
 
-`make lint` (full `golangci-lint run ./...`) reports **~160** issues:
+The full advisory backlog (B-1) is burned down. Closed with **no behavior change** — full test suite green,
+coverage 91.6% ≥ 90% floor.
 
-| Linter | Count | Notes |
-|---|---:|---|
-| `errcheck` | 154 | Unchecked error returns in production code. The bulk of the backlog. Many are `defer x.Close()` / best-effort writes; each needs a real check or an explicit `_ =` with justification — never a blanket ignore. |
-| `unused` | 3 | Dead code (`kernel/workflow/registry.go` `latestVersion`; two test-only symbols). Remove once confirmed no future use. |
-| `unparam` | 2 | Params/results with a constant value (`runtime.go` `createTask` `def`; `testkit/db.go` `connectDB` `dbname`). |
-| `unconvert` | 1 | Unnecessary conversion in `internal/tools/benchbudget`. |
+- **149 `internal/cli` `fmt.Fprint*` issues → one path-scoped exclusion.** Every one was a best-effort write
+  to a stdout/stderr `io.Writer` (os.Stdout/os.Stderr in prod, bytes.Buffer in tests) where a failed terminal
+  write has no recovery — the canonical errcheck-exempt case (mirrors the stdlib's own `fmt.Print*` exclusion).
+  A single scoped rule in `.golangci.yml` (`path: internal/cli/` + `source: fmt\.Fprint`) covers them, so
+  genuine errcheck issues in that package (pool/file/exec errors) are still caught. This is the burn-down
+  plan's sanctioned "scoped exclusion for a proven-safe stdlib call."
+- **1 `internal/cli` `tw.Flush`** → explicit `_ =` with a one-line reason.
+- **10 scattered issues → real code fixes**, each verified behavior-preserving: read-only `defer f.Close()`
+  (`buildinfo`, `benchbudget`) → `defer func() { _ = f.Close() }()`; `Secret.Format` writes (a `fmt.Formatter`
+  cannot return an error) → `_, _ =`; `unparam` (`webhook.truncate` dropped its always-500 `max`;
+  `workflow.createTask` dropped its unused `def`; `testkit.newPoolDB` dropped its always-nil `opts`);
+  `unused` (dead `type want` + `func run` in tests); `unconvert` in `benchbudget`.
 
-Already resolved in the wiring pass: 31 `depguard` false positives (test files importing testkit — the
-rule now excludes `*_test.go`), 10 `gofumpt` formatting, `misspell`, and most `staticcheck` quick-fixes.
+**Snapshot before closure (2026-07-04):** ~160 — 154 `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert`. An
+earlier wiring pass had already cleared 31 `depguard` false positives, 10 `gofumpt`, `misspell`, and most
+`staticcheck` quick-fixes.
+
+**Keeping it closed:** `make lint-new` blocks any new/changed code that adds an issue, so the tree stays at 0
+for normal development. Promoting `make lint` (full tree) into the enforced CI gate (step 3 below) is a
+recommended follow-up — pin golangci-lint to a fixed version first, since CI installs `@latest` and a
+full-tree enforced gate would otherwise break on any new upstream check.
 
 ## Burn-down plan
 

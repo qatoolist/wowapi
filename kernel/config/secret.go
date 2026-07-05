@@ -49,11 +49,13 @@ func (s Secret) GoString() string { return "config.Secret(" + s.redacted() + ")"
 // Format implements fmt.Formatter so every fmt verb (%v, %+v, %s, %q, %x, …)
 // renders the redaction marker.
 func (s Secret) Format(f fmt.State, verb rune) {
+	// A fmt.Formatter cannot return an error; the fmt package surfaces write
+	// failures on the caller's side, so ignoring the write result here is correct.
 	switch verb {
 	case 'q':
-		fmt.Fprintf(f, "%q", s.redacted())
+		_, _ = fmt.Fprintf(f, "%q", s.redacted())
 	default:
-		fmt.Fprint(f, s.redacted())
+		_, _ = fmt.Fprint(f, s.redacted())
 	}
 }
 
