@@ -3,6 +3,34 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0085 — Third open-ended sweep (over the D-0084 commit itself): the sweep it claimed to have done
+- **Context:** the user asked for one more unscoped sweep over the D-0084 commit `dd5085f` before trusting it.
+  Two unscoped reviewers confirmed the four D-0084 fixes were real and revert-sensitive, but found that
+  D-0084's own "swept every platform pool / covers both pools" story was itself incomplete — the same
+  sibling-completeness failure, one level up.
+- **Findings fixed:**
+  - **C-1 (was the sharp one) — the api's `k.Platform` boot leg was dead code.** The generated api built its
+    platform pool *after* `Boot` and never wired it into the kernel, so `app.Boot`'s new `k.Platform` check
+    never ran for the api (only the worker wired it). The api's pool was still guarded by `WithConnRLSGuard`,
+    so no live hole — but the framework backstop the M3 design exists to provide was absent, and D-0082's
+    "both are protected" was misleading. Fix: build the api platform pool BEFORE `kernel.New` and pass
+    `Platform: platformPool`, mirroring the worker — so the boot check genuinely covers both processes.
+  - **F1 — `internal/cli/dlq_cmd.go` app_platform pool lacked `WithConnRLSGuard`.** The one platform-role CLI
+    pool the D-0084 sweep missed (audit/apikey CLIs already had it). Added it.
+  - **F2 — the 429 e2e proof was narrower than the claim.** It asserted only `X-Content-Type-Options`, not the
+    CORS header the commit also claimed. Strengthened it: the manifest now sets an allowed origin and the test
+    sends `Origin` and asserts the 429 carries **both** `X-Content-Type-Options` and `Access-Control-Allow-Origin`.
+  - **I-1 — documented a real trade-off the reorder introduced.** With CORS outer to RateLimit, allowed-origin
+    OPTIONS preflights are answered before the limiter, so they are not rate-limited/metered. Deliberate
+    (rate-limiting preflights breaks browsers), now documented in the api template as an edge/WAF concern.
+  - **F3 (honesty) — corrected D-0082's "both are protected" to describe the actual mechanism** (now accurate
+    after C-1: both processes wire `Platform` before Boot).
+- **Process note:** this is the pattern compounding — each unscoped sweep found the *previous* fix's missed
+  sibling. The durable rule (now in the review-learnings log): when fixing one instance, grep every sibling of
+  the same shape and fix or explicitly clear each, and boot the delivered artifact rather than the boot path.
+- **Affected:** internal/cli/templates/init/cmd_api_main.go.tmpl, internal/cli/dlq_cmd.go, internal/e2e/e2e_test.go,
+  docs/implementation/decisions.md (D-0082 correction).
+
 ## D-0084 — Open-ended-review follow-ups: what the confirm-scoped gates missed
 - **Context:** after D-0082/D-0083 were declared done (each behind a review gate *scoped to confirm the fix I
   had just written*), two **open-ended** reviewers — told to find problems, not to confirm anything, with the
@@ -93,9 +121,12 @@ Blueprint deviations MUST land here before the code that implements them.
     Because it runs on a live connection, `current_user`/`is_superuser` reflect the EFFECTIVE role — including a
     `SET ROLE app_rt` applied in `AfterConnect` (`WithSetRole`) — not just the DSN login. The error names the fix.
   - `app.Boot` runs it after `validateAndOrder` for **both** `k.Pool` (runtime) and `k.Platform` (the
-    cross-tenant kernel pool) when non-nil — **safe-by-default, no opt-in**. The scaffolded api and worker call
-    `a.Boot(ctx, k, cfg.Modules)` with no options, so both are protected. (The platform-pool leg was added in
-    D-0084 after an open-ended review found it missing.)
+    cross-tenant kernel pool) when non-nil — **safe-by-default, no opt-in**. Both the scaffolded api and worker
+    build their platform pool BEFORE Boot and wire it as `kernel.Deps.Platform`, so the boot check covers every
+    serving pool in both processes; each pool's per-connection `WithConnRLSGuard` is defense-in-depth on top.
+    (The platform-pool boot leg + the api/worker `WithConnRLSGuard` were added in D-0084; wiring the api's
+    platform pool *before* Boot — so the `k.Platform` leg is actually reached in the api, not dead code — was
+    added in D-0085 after a third open-ended review found the api built its platform pool after Boot.)
   - Escape hatch `app.SkipRLSEnforcementCheck()` (a `BootOption`) is applied to **exactly one** caller — the
     scaffolded migrate command — which boots solely to COLLECT module migration sets, connects with privileged DDL
     creds by design, and never serves tenant traffic. Minimal, framework-controlled, backward-compatible (existing

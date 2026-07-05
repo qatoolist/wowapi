@@ -96,7 +96,30 @@ func run(ctx context.Context) error {
 		database.WithRLSGuard(),
 	)
 
-	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm, Metrics: metrics, Tracer: tracer})
+	// Platform pool (app_platform): cross-tenant API-key verification (the tenant is
+	// unknown pre-auth) and any kernel cross-tenant work. It MUST use a dedicated
+	// app_platform login (db.platform_dsn), NOT the runtime DSN + SET ROLE app_platform:
+	// that would require app_rt to be a (cluster-global) member of app_platform and
+	// collapse runtime/platform privilege separation on an internet-facing process
+	// (CF-1). Fail closed. Built BEFORE Boot and wired into the kernel so app.Boot's
+	// RLS-enforcement check (M3) covers it as a framework-level backstop; the
+	// per-connection WithConnRLSGuard is defense-in-depth on top.
+	platformDSN := cfg.DB.PlatformDSN.Reveal()
+	if platformDSN == "" {
+		return fmt.Errorf("db.platform_dsn is required: the platform pool needs a dedicated app_platform " +
+			"login (set db.platform_dsn, e.g. secretref://env/PLATFORM_URL). Reusing the runtime DSN would " +
+			"require app_rt to be a member of app_platform and defeat runtime/platform privilege separation")
+	}
+	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
+		database.WithSetRole("app_platform"),
+		database.WithConnRLSGuard(),
+	)
+	if err != nil {
+		return fmt.Errorf("db pool (platform): %w", err)
+	}
+	defer platformPool.Close()
+
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Platform: platformPool, Tx: txm, Metrics: metrics, Tracer: tracer})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
@@ -111,29 +134,7 @@ func run(ctx context.Context) error {
 
 	// Composite authenticator (roadmap S1/CA-2): API keys first, then your user
 	// (OIDC) authenticator. API-key verification is cross-tenant (the tenant is
-	// unknown pre-auth), so it needs an app_platform connection.
-	//
-	// The platform pool MUST use a dedicated app_platform login (db.platform_dsn),
-	// NOT the runtime DSN. Reusing the runtime (app_rt) DSN + SET ROLE app_platform
-	// would require app_rt to be a member of app_platform — a cluster-global grant
-	// that collapses runtime/platform privilege separation on an internet-facing
-	// process (CF-1). Fail closed rather than silently escalate.
-	platformDSN := cfg.DB.PlatformDSN.Reveal()
-	if platformDSN == "" {
-		return fmt.Errorf("db.platform_dsn is required: the platform pool needs a dedicated app_platform " +
-			"login (set db.platform_dsn, e.g. secretref://env/PLATFORM_URL). Reusing the runtime DSN would " +
-			"require app_rt to be a member of app_platform and defeat runtime/platform privilege separation")
-	}
-	// WithConnRLSGuard rejects a superuser/BYPASSRLS platform DSN at connect time:
-	// app_platform reads cross-tenant via permissive RLS policies, not by bypassing RLS.
-	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
-		database.WithSetRole("app_platform"),
-		database.WithConnRLSGuard(),
-	)
-	if err != nil {
-		return fmt.Errorf("db pool (platform): %w", err)
-	}
-	defer platformPool.Close()
+	// unknown pre-auth), so it runs on the app_platform pool built above.
 	platformTxM := database.NewManager(platformPool, cfg.DB, database.WithRole("app_platform"))
 	apiKeyAuth := apikey.NewAuthenticator(
 		apikey.NewStore(model.UUIDv7(), apikey.WithAudit(kaudit.New(model.UUIDv7(), nil))),
@@ -203,6 +204,13 @@ func run(ctx context.Context) error {
 	// SecureHeaders/CORS (so 429s carry those headers) but outer to BodyLimit/Timeout
 	// (a rejected request has no body to read and no handler work to time out). Place
 	// a per-actor bucket AFTER the authz gate if you need per-principal limits.
+	//
+	// TRADE-OFF: because CORS is outer, an allowed-origin OPTIONS preflight is
+	// answered (204) before reaching the limiter, so preflights are NOT rate-limited
+	// or metered. That is deliberate — rate-limiting preflights breaks legitimate
+	// browsers (every cross-origin request emits one) — but it means volumetric
+	// preflight protection is an edge concern (LB/WAF + ReadHeaderTimeout), not this
+	// bucket's job.
 	if !cfg.HTTP.RateLimit.Disabled {
 		limiter := httpx.NewTokenBucket(cfg.HTTP.RateLimit.RequestsPerSecond, cfg.HTTP.RateLimit.Burst)
 		mws = append(mws, httpx.RateLimit(limiter, httpx.KeyByIP,

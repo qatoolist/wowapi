@@ -194,6 +194,7 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("e2e: read rendered manifest: %v", rerr)
 	}
+	const corsOrigin = "https://e2e.example"
 	// Take the manifest's WOWAPI__ config keys (secretref values) verbatim, then
 	// supply the referenced secret vars + a listen addr. No DATABASE_URL/PLATFORM_URL
 	// hand-injection — the manifest alone must carry every DSN the api requires.
@@ -208,6 +209,8 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		"WOWAPI_PLATFORM_DSN="+dsn,
 		"WOWAPI_MIGRATE_DSN="+dsn,
 		"WOWAPI__HTTP__ADDR=:"+port,
+		// Allow one origin so the 429 CORS-header assertion below has an allowlist hit.
+		"WOWAPI__HTTP__CORS_ALLOWED_ORIGINS="+corsOrigin,
 	)
 	apiCmd := exec.Command(apiBin)
 	apiCmd.Dir = productDir
@@ -231,37 +234,48 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	}
 	t.Logf("e2e: api /healthz 200 OK at %s (criterion #19 runtime ✓)", healthURL)
 
-	// H-1 regression: a rate-limited (429) response must STILL carry the security
-	// headers SecureHeaders sets — proving SecureHeaders/CORS are OUTER to RateLimit,
-	// which short-circuits without calling inner middleware. Fire a burst past the
-	// default capacity and require the first 429 to carry X-Content-Type-Options.
-	if err := assert429CarriesSecurityHeaders(healthURL); err != nil {
+	// H-1 regression: a rate-limited (429) response must STILL carry BOTH the security
+	// header SecureHeaders sets AND the CORS header CORS sets for an allowed Origin —
+	// proving both are OUTER to RateLimit, which short-circuits without calling inner
+	// middleware. Fire a burst past the default capacity and check the first 429.
+	if err := assert429CarriesEdgeHeaders(healthURL, corsOrigin); err != nil {
 		t.Fatalf("e2e: %v (middleware order regression)", err)
 	}
-	t.Log("e2e: rate-limited 429 still carries security headers (middleware order ✓)")
+	t.Log("e2e: rate-limited 429 still carries security + CORS headers (middleware order ✓)")
 }
 
-// assert429CarriesSecurityHeaders bursts requests past the default rate-limit
-// capacity (burst 40 / 20 rps) and verifies the first 429 still carries the
-// X-Content-Type-Options header SecureHeaders sets. If SecureHeaders were inner to
-// RateLimit (the H-1 bug), the short-circuited 429 would omit it.
-func assert429CarriesSecurityHeaders(url string) error {
+// assert429CarriesEdgeHeaders bursts requests (with an allowed Origin) past the
+// default rate-limit capacity (burst 40 / 20 rps) and verifies the first 429 still
+// carries BOTH X-Content-Type-Options (SecureHeaders) and Access-Control-Allow-Origin
+// (CORS). If either were inner to RateLimit (the H-1 bug), the short-circuited 429
+// would omit that header.
+func assert429CarriesEdgeHeaders(url, origin string) error {
 	client := &http.Client{Timeout: 2 * time.Second}
-	for range 100 {
-		resp, err := client.Get(url)
+	for range 120 {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Origin", origin)
+		resp, err := client.Do(req)
 		if err != nil {
 			continue
 		}
-		code, hdr := resp.StatusCode, resp.Header.Get("X-Content-Type-Options")
+		code := resp.StatusCode
+		xcto := resp.Header.Get("X-Content-Type-Options")
+		acao := resp.Header.Get("Access-Control-Allow-Origin")
 		_ = resp.Body.Close()
 		if code == http.StatusTooManyRequests {
-			if hdr != "nosniff" {
-				return fmt.Errorf("rate-limited 429 is missing X-Content-Type-Options (SecureHeaders is inner to RateLimit): got %q", hdr)
+			if xcto != "nosniff" {
+				return fmt.Errorf("rate-limited 429 missing X-Content-Type-Options (SecureHeaders inner to RateLimit): got %q", xcto)
+			}
+			if acao != origin {
+				return fmt.Errorf("rate-limited 429 missing Access-Control-Allow-Origin (CORS inner to RateLimit): got %q, want %q", acao, origin)
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("could not trigger a 429 within 100 requests to exercise the rate-limit path")
+	return fmt.Errorf("could not trigger a 429 within 120 requests to exercise the rate-limit path")
 }
 
 // findRepoRoot walks up from the test package directory to find the go.mod.

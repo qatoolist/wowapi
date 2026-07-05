@@ -99,7 +99,11 @@ func dlqPool(ctx context.Context) (*pgxpool.Pool, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("DATABASE_URL is not set")
 	}
-	return database.NewPool(ctx, dsn, config.Defaults().DB, database.WithSetRole("app_platform"))
+	// Reject a superuser/BYPASSRLS DSN at connect time: app_platform reads
+	// cross-tenant via permissive RLS policies, not by bypassing RLS. Mirrors the
+	// app_rt guard on the audit/apikey CLIs and the generated api/worker platform pools.
+	return database.NewPool(ctx, dsn, config.Defaults().DB,
+		database.WithSetRole("app_platform"), database.WithConnRLSGuard())
 }
 
 func dlqLimit(rest []string) int {
