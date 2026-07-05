@@ -111,7 +111,7 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make openapi` | Merge OpenAPI fragments. |
 | `make config-validate` / `make config-doctor` | Validate config / show provenance. |
 | `make build` | Build all packages + the CLI. |
-| `make ci` | Full local CI: vet+lint, boundaries, unit, race, perf budgets, build. |
+| `make ci` | Full local CI: vet, boundary lint, unit, race, perf budgets, build (golangci-lint = `make lint-new`). |
 | **`make ci-container`** | Run `make ci` inside the toolbox container — **the authoritative gate**. |
 
 > Product repos get a **smaller** generated `Makefile` — `build`, `test`, `lint`, `migrate-up`

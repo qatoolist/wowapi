@@ -194,13 +194,15 @@ wowapi init --module github.com/acme/myapp --name myapp
 go mod tidy
 ```
 
-**3. Start a database and set the env vars the local overlay expects** (`configs/local.yaml` uses
-`secretref://env/DATABASE_URL` and `secretref://env/MIGRATE_URL`):
+**3. Start a database and set the env vars the local overlay expects** (`configs/local.yaml` references
+`secretref://env/DATABASE_URL`, `secretref://env/MIGRATE_URL`, and `secretref://env/PLATFORM_URL` — all three
+are required; api/worker fail closed without `platform_dsn`):
 
 ```bash
 export APP_ENV=local
 export DATABASE_URL="postgres://app_rt:secret@localhost:5432/myapp?sslmode=disable"
 export MIGRATE_URL="postgres://app_migrate:secret@localhost:5432/myapp?sslmode=disable"
+export PLATFORM_URL="postgres://app_platform:secret@localhost:5432/myapp?sslmode=disable"
 ```
 
 **4. Validate config, migrate, run:**
@@ -234,7 +236,7 @@ git clone https://github.com/qatoolist/wowapi && cd wowapi
 make setup                  # install host tools + go mod download
 make up                     # start postgres + minio + mailpit + jaeger + toolbox
 make migrate                # apply kernel migrations to the local DB
-make ci                     # host CI: vet, lint, boundaries, unit, race, perf budgets, build
+make ci                     # host CI: vet, boundary lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
 make ci-container           # AUTHORITATIVE gate: runs `make ci` in the toolbox with DB tests FORCED
 ```
 
@@ -277,7 +279,7 @@ run — a green host suite can hide skipped DB tests). See
 |---|---|
 | `make up` / `make down` / `make reset` | Start / stop / wipe the local stack |
 | `make migrate` | Apply kernel migrations to the local DB |
-| `make ci` | Host CI (vet, lint, boundaries, unit, race, perf budgets, build) |
+| `make ci` | Host CI (vet, boundary lint, unit, race, perf budgets, build; golangci-lint = `make lint-new`) |
 | `make ci-container` | **Authoritative** gate (DB tests forced) |
 | `make test-integration` / `make test-security` / `make test-fuzz` | Focused suites |
 | `make shell` / `make db-shell` | Toolbox shell / `psql` |

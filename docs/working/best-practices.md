@@ -48,7 +48,7 @@ deviations from a blueprint/convention go in `docs/implementation/decisions.md` 
   RLS isolation (cross-tenant must see nothing), append-only denial, expiry/revocation, injection (fuzz).
 
 ## Run regression checks (the authoritative gate)
-- `make ci` (host: vet, lint, boundaries, unit, race, perf budgets, build) AND `make ci-container`
+- `make ci` (host: vet, boundary lint, unit, race, perf budgets, build; golangci-lint = `make lint-new`) AND `make ci-container`
   (authoritative — DB/integration tests forced via `WOWAPI_REQUIRE_DB=1`). Both must be 0 FAIL / 0 SKIP.
 - `make lint-boundaries` after any new package/import. `make test-fuzz` for parser changes.
 - Confirm pre-existing tests still pass (no regressions), and `gofmt -l` is clean.

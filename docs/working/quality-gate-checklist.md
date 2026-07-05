@@ -37,7 +37,7 @@ Run this before declaring any goal/PR done. It is the project-specific instantia
 - [ ] No duplicate tests — `miscellaneous/find_duplicate_tests.sh`.
 
 ## F. Regressions & the authoritative gate
-- [ ] `make ci` green (vet, lint, boundaries, unit, race, perf budgets, build).
+- [ ] `make ci` green (vet, boundary lint, unit, race, perf budgets, build; golangci-lint via `make lint-new`).
 - [ ] `make ci-container` green — **0 FAIL, 0 SKIP**, DB tests forced. (`miscellaneous/review_gate.sh`
       can run and grep this.)
 - [ ] `gofmt -l` clean; `make lint-boundaries` clean; pre-existing tests still pass.

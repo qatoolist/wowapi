@@ -2,10 +2,11 @@
 
 Companion to [SRS.md](SRS.md). Tracks every goal and work item by status: **Done · Deferred/Rescoped · Pending**.
 Cross-checked against the tree on 2026-07-05 (Go 1.26; 329 Go files; 184 test files; 28 migrations).
-The authoritative gate (`make ci` in containers, `WOWAPI_REQUIRE_DB=1`) is green locally on the current tree. The
-hosted GitHub CI last ran green on `329cc0e` (all 5 workflows: ci, govulncheck, codeql, scorecard, security-scan);
-the commits after it (D-0083 scaffold fixes, D-0084 review follow-ups) are verified locally and **pending push**,
-after which hosted CI re-runs on them.
+The authoritative gate (`make ci` in containers, `WOWAPI_REQUIRE_DB=1`) is green on the current tree. The
+D-0083→D-0085 review-follow-up commits (through `a1ee245`) are pushed and hosted GitHub CI is **green on
+`a1ee245`** (all 5 workflows: ci, govulncheck, codeql, scorecard, security-scan). Note: `make ci` runs vet +
+boundary lint (not the full advisory `golangci-lint`); the ~154-item errcheck backlog (B-1) is tracked below and
+gated for *new* code via `make lint-new`.
 
 **Legend:** ✅ Done · 🟡 Partial · ⏸️ Deferred/Rescoped (documented, low-risk) · ⬜ Pending/backlog.
 

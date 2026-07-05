@@ -3,6 +3,31 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0086 — Doc-drift sweep: user-facing docs re-grounded in the hardened runtime contract
+- **Context:** a broad review found **no** Critical/High code defects (the scaffold/runtime hardening holds) but
+  real Medium/Low doc drift: the D-0083/D-0084 runtime changes (platform_dsn now required; `migrate down` is a
+  guarded full reset, not a stepwise rollback) never propagated into the framework-repo user docs, and the local
+  `make ci` gate was described as running full lint when it runs vet + boundary lint only.
+- **Fixed (proof-driven — the reviewer reproduced each against a fresh generated product):**
+  - **platform_dsn required, not optional:** README quick-start, `getting-started.md`, and `configuration.md`
+    (prose + config table) omitted `PLATFORM_URL` / called `platform_dsn` optional, yet api/worker fail closed
+    without it. Added it to every getting-started env block and a `db.platform_dsn is required` troubleshooting row.
+  - **migrate down semantics:** `database-migrations.md` said "roll back the last migration"; corrected to
+    "FULL reset to version 0; refuses outside local/dev" (matches the generated runner + Makefile, D-0083 F2).
+  - **`make ci` scope:** README (×2), `cli-reference.md`, `testing.md`, `best-practices.md`,
+    `quality-gate-checklist.md`, and the Makefile `##` help all said `make ci` runs "lint"/"vet+lint"; it runs
+    vet + boundary lint, with golangci-lint gated separately via `make lint-new` / hosted CI. Reworded all.
+  - **Honesty/status:** GOALS-TRACKER CI line updated from "pending push" to "green on `a1ee245`"; local
+    (git-ignored) `Goal 2.md` marker flipped from ACTIVE to ACCOMPLISHED to match `progress.md`.
+- **Sibling completeness:** rather than fix only the reviewer's cited line numbers, grepped the whole docs tree
+  for each drift pattern and fixed every instance (several the review did not enumerate); confirmed the actual
+  product-dev harness (`deployments/product-dev.yaml`) already sets `PLATFORM_URL` (only the historical design
+  spec omits it — left as a point-in-time artifact), and left append-only evidence logs untouched.
+- **Not changed:** the ~154-item advisory `errcheck` backlog (B-1) stays open and tracked (per the F5 decision
+  in D-0083); no code changed in this entry.
+- **Affected:** README.md, docs/user-guide/{getting-started,configuration,database-migrations,testing,cli-reference,
+  troubleshooting-faq}.md, docs/working/{best-practices,quality-gate-checklist}.md, docs/GOALS-TRACKER.md, Makefile.
+
 ## D-0085 — Third open-ended sweep (over the D-0084 commit itself): the sweep it claimed to have done
 - **Context:** the user asked for one more unscoped sweep over the D-0084 commit `dd5085f` before trusting it.
   Two unscoped reviewers confirmed the four D-0084 fixes were real and revert-sensitive, but found that

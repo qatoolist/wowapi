@@ -261,7 +261,7 @@ build: ## Build all packages and the CLI
 	$(GO) build -o bin/wowapi ./cmd/wowapi
 
 .PHONY: ci
-ci: ## Full local CI: vet+lint, boundaries, unit, race, perf budgets, build
+ci: ## Full local CI: vet + boundary lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
 	$(GO) vet $(PKGS)
 	$(MAKE) lint-boundaries
 	$(MAKE) test-unit

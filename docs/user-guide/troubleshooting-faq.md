@@ -12,7 +12,8 @@ real behavior of the framework, not a hypothetical.
 | `secretref resolution failed` | env var behind `secretref://env/<VAR>` not set | Export the named var. |
 | Boot refuses with flags in prod | local flag overrides used with `environment: prod` | Remove flags; use env vars/overlays. |
 | Unknown config key error | typo in a `modules.<name>.*` key | Fix the key — unknown keys are rejected by design. |
-| `db.dsn required` | `DATABASE_URL`/`MIGRATE_URL` unset or wrong `APP_ENV` | Export both; set the right `APP_ENV`. |
+| `db.dsn required` | `DATABASE_URL`/`MIGRATE_URL` unset or wrong `APP_ENV` | Export them; set the right `APP_ENV`. |
+| `db.platform_dsn is required` | `PLATFORM_URL` unset — api/worker fail closed without a dedicated `app_platform` login | Export `PLATFORM_URL` (never reuse the `app_rt` DSN). |
 
 ## Database & tenancy
 

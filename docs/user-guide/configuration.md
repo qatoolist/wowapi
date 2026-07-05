@@ -56,7 +56,7 @@ environment: local                # local | dev | stage | prod  (REQUIRED, no de
 db:
   dsn: secretref://env/DATABASE_URL          # runtime role (app_rt)
   migrate_dsn: secretref://env/MIGRATE_URL   # migration role (app_migrate)
-  # platform_dsn: secretref://env/PLATFORM_URL  # cross-tenant role (app_platform), when needed
+  platform_dsn: secretref://env/PLATFORM_URL # cross-tenant role (app_platform) — REQUIRED; api/worker fail closed without it
 ```
 
 | Key | Type | Default | Notes |
@@ -72,7 +72,7 @@ db:
 | `log.format` | string | `json` | `json` for prod; `text` for local. |
 | `db.dsn` | secret | — | Runtime DSN (`app_rt`). |
 | `db.migrate_dsn` | secret | — | Migration DSN (`app_migrate`). |
-| `db.platform_dsn` | secret | — | Cross-tenant DSN (`app_platform`), optional. |
+| `db.platform_dsn` | secret | — | Cross-tenant DSN (`app_platform`); **required** — api/worker fail closed without it. |
 | `db.max_conns` | int | `16` | Pool size, clamped to 2–200. |
 | `db.query_timeout` | duration | `5s` | Server-side statement ceiling, clamped 100ms–60s. |
 

@@ -68,20 +68,21 @@ myapp/
 
 ## Step 3 — Provide a database
 
-The generated `configs/local.yaml` expects two env vars (it references `secretref://env/DATABASE_URL` and
-`secretref://env/MIGRATE_URL`):
+The generated `configs/local.yaml` references three secretref env vars — `DATABASE_URL`, `MIGRATE_URL`, and
+`PLATFORM_URL` — all required (api/worker fail closed without `platform_dsn`):
 
 ```bash
 export APP_ENV=local
 export DATABASE_URL="postgres://app_rt:secret@localhost:5432/myapp?sslmode=disable"
 export MIGRATE_URL="postgres://app_migrate:secret@localhost:5432/myapp?sslmode=disable"
+export PLATFORM_URL="postgres://app_platform:secret@localhost:5432/myapp?sslmode=disable"
 ```
 
 You need a PostgreSQL 16 instance. The **first kernel migration creates `app_rt` and `app_platform`**
 (the runtime + cross-tenant roles); **`app_migrate` is not created for you** — it's the role the migration
 runner connects as, so point `MIGRATE_URL` at a role that can create roles (a superuser/owner, or a
 pre-created `app_migrate` with `CREATEROLE`) for the first `migrate up`. For pure local experimentation you
-can also point both DSNs at a single dev superuser; production must use the dedicated least-privilege roles
+can also point all three DSNs at a single dev superuser; production must use the dedicated least-privilege roles
 (see
 [Database & migrations](database-migrations.md) and the
 [deployment checklist](../operations/deployment-checklist.md)).

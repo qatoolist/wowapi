@@ -75,7 +75,7 @@ From a product repo (generated `Makefile` + `cmd/migrate`):
 
 ```bash
 make migrate-up          # go run ./cmd/migrate up    — apply all pending
-make migrate-down        # go run ./cmd/migrate down  — roll back the last migration
+make migrate-down        # go run ./cmd/migrate down  — FULL reset to version 0 (not a stepwise rollback); refuses outside local/dev
 ```
 
 Migrations are embedded, so the compiled `migrate` binary is self-contained — no loose `.sql` files to

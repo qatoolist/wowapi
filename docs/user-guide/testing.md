@@ -23,7 +23,7 @@ harness, the authoritative gate, and regression/fuzz testing. (`testkit/`, root 
 Two commands, one authoritative:
 
 ```bash
-make ci             # host CI: vet + lint, boundaries, unit, race, perf budgets, build
+make ci             # host CI: vet + boundary lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
 make ci-container   # runs `make ci` INSIDE the toolbox container — the authoritative gate
 ```
 
