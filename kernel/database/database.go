@@ -86,6 +86,30 @@ func WithConnRLSGuard() Option {
 	}
 }
 
+// AssertRLSEnforced verifies that a runtime pool's effective role cannot bypass
+// row-level security. FORCE RLS does not apply to superusers or BYPASSRLS roles,
+// so a runtime pool wired over an over-privileged DSN (or with no runtime role
+// set) would silently run every tenant query with RLS disabled and no signal.
+// app.Boot calls this so that misconfiguration fails LOUDLY at startup rather than
+// leaking at runtime — making RLS enforcement safe-by-default even when a product
+// forgets the per-connection (WithConnRLSGuard) or per-tx (WithRLSGuard) guards
+// (SEC-12, finding M3). It probes a real pooled connection, so it reflects the
+// effective role (incl. any WithSetRole applied at connect time).
+func AssertRLSEnforced(ctx context.Context, pool *pgxpool.Pool) error {
+	var enforced bool
+	if err := pool.QueryRow(ctx,
+		`SELECT current_setting('is_superuser') = 'off' AND NOT rolbypassrls
+           FROM pg_roles WHERE rolname = current_user`).Scan(&enforced); err != nil {
+		return fmt.Errorf("database: RLS enforcement check failed: %w", err)
+	}
+	if !enforced {
+		return fmt.Errorf("database: the runtime pool's effective role is superuser or BYPASSRLS — FORCE " +
+			"RLS would NOT be enforced and every tenant query would run unfiltered. Wire the runtime pool as a " +
+			"non-privileged app_rt login (or WithSetRole(\"app_rt\") + WithConnRLSGuard); never over a superuser DSN")
+	}
+	return nil
+}
+
 func chainAfterConnect(pc *pgxpool.Config, step func(context.Context, *pgx.Conn) error) {
 	prev := pc.AfterConnect
 	pc.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {

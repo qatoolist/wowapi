@@ -46,6 +46,20 @@ type RecurringJob struct {
 	Run   func(ctx context.Context, db database.TenantDB) error
 }
 
+// BootOption tunes Boot. See SkipRLSEnforcementCheck.
+type BootOption func(*bootOpts)
+
+type bootOpts struct{ skipRLSCheck bool }
+
+// SkipRLSEnforcementCheck disables the boot-time assertion that the runtime pool
+// cannot bypass row-level security. Use it ONLY for a process that does not serve
+// tenant traffic and runs as a privileged role by design — namely the migrate
+// command, which boots the app merely to COLLECT module migration sets and
+// connects with DDL (app_migrate/superuser) credentials. api/worker processes must
+// NOT use it: their tenant-serving runtime pool must be a non-privileged app_rt
+// role, and the default check keeps that safe-by-default (finding M3).
+func SkipRLSEnforcementCheck() BootOption { return func(o *bootOpts) { o.skipRLSCheck = true } }
+
 // Boot runs the module lifecycle up to (not including) Start: it registers every
 // module against a capability-scoped context built from k — in dependency order
 // so a module's ports are available to its dependents — then validates the whole
@@ -56,10 +70,27 @@ type RecurringJob struct {
 //
 // namespaces is the loaded product config's module.* subtree; each module sees
 // only its own slice via Context.Config().
-func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Namespaces) (*Booted, error) {
+func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Namespaces, opts ...BootOption) (*Booted, error) {
+	var bo bootOpts
+	for _, o := range opts {
+		o(&bo)
+	}
+
 	ordered, err := a.validateAndOrder()
 	if err != nil {
 		return nil, err
+	}
+
+	// Safe-by-default RLS enforcement (finding M3): fail boot if the runtime pool
+	// runs as a superuser / BYPASSRLS role, which would silently defeat FORCE RLS
+	// and run every tenant query unfiltered. This backstops the per-connection
+	// (WithConnRLSGuard) and per-tx (WithRLSGuard) guards so a product that forgets
+	// to wire them can't ship an RLS-inert deployment. Skipped only for non-serving
+	// processes (migrate) that run privileged by design (SkipRLSEnforcementCheck).
+	if k.Pool != nil && !bo.skipRLSCheck {
+		if err := database.AssertRLSEnforced(ctx, k.Pool); err != nil {
+			return nil, err
+		}
 	}
 
 	boot := newBootState()

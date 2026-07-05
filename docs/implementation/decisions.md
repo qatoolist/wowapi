@@ -3,6 +3,35 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0082 — M3: boot-time RLS-enforcement check is safe-by-default (fail closed on an RLS-bypassing runtime pool)
+- **Context:** the follow-up flagged in D-0081 ("M3 guard-by-default"). Postgres `FORCE ROW LEVEL SECURITY`
+  does NOT apply to a superuser or a `BYPASSRLS` role. So a product that wires its tenant-serving pool over an
+  over-privileged DSN — or simply forgets the per-connection (`WithConnRLSGuard`) or per-tx (`WithRLSGuard`)
+  guards — would run every tenant query unfiltered, cross-tenant, with no signal. This was the last framework
+  lever that stayed "safe only if the operator remembers."
+- **Options:** (a) leave it on the product integration checklist (status quo — a plausible misconfig is a silent
+  cross-tenant leak); (b) make the per-tx `WithRLSGuard` the default (per-query cost, and still bypassable by a
+  pool that never enters the Manager); (c) assert enforcement once at boot, on the real pool, and fail closed.
+  Chose (c): one check at the single chokepoint every deployment passes through, zero per-query cost.
+- **Decision:**
+  - `database.AssertRLSEnforced(ctx, pool)` probes a real pooled connection with
+    `SELECT current_setting('is_superuser') = 'off' AND NOT rolbypassrls FROM pg_roles WHERE rolname = current_user`.
+    Because it runs on a live connection, `current_user`/`is_superuser` reflect the EFFECTIVE role — including a
+    `SET ROLE app_rt` applied in `AfterConnect` (`WithSetRole`) — not just the DSN login. The error names the fix.
+  - `app.Boot` runs it after `validateAndOrder` whenever `k.Pool != nil` — **safe-by-default, no opt-in**. The
+    scaffolded api and worker binaries call `a.Boot(ctx, k, cfg.Modules)` with no options, so both are protected
+    automatically. This backstops `WithConnRLSGuard`/`WithRLSGuard` at the one path every deployment shares.
+  - Escape hatch `app.SkipRLSEnforcementCheck()` (a `BootOption`) is applied to **exactly one** caller — the
+    scaffolded migrate command — which boots solely to COLLECT module migration sets, connects with privileged DDL
+    creds by design, and never serves tenant traffic. Minimal, framework-controlled, backward-compatible (existing
+    callers pass no options).
+- **Tradeoffs:** converts a delegated-responsibility item into "safe unless deliberately disabled," mirroring the
+  CF-1 fail-closed-DSN philosophy (D-0078). The only opt-out is the migrate path, recorded here so the boundary is
+  deliberate, not an untracked hole. Cost is one round-trip at boot; none at request time.
+- **Affected:** kernel/database/database.go (`AssertRLSEnforced`), app/boot.go (`BootOption`,
+  `SkipRLSEnforcementCheck`, the default check), internal/cli/templates/init/cmd_migrate_main.go.tmpl (opt-out),
+  app/rls_boot_guard_test.go (integration test: superuser pool fails, app_rt pool boots clean).
+
 ## D-0081 — Third-review tenant-isolation footgun hardening (H1/H2/H3/M2/F-2)
 - **Context:** an adversarial tenant-isolation review (live-Postgres probes) rated the framework PASS — no
   critical/high live cross-tenant leak — but flagged surfaces the framework delegates to the product where a
@@ -28,7 +57,7 @@ Blueprint deviations MUST land here before the code that implements them.
   - Also fixed a shutdown race the extra schedules exposed: `Scheduler.Run` treats a canceled-context `Ensure`
     as clean shutdown, not an error.
 - **Not done (product responsibility, per the review's integration checklist):** M1 (JWT tenant claim trust),
-  M3–M8, documented in the local tenant-isolation report; M3 (guard-by-default) is a candidate follow-up.
+  M3–M8, documented in the local tenant-isolation report; M3 (guard-by-default) was folded into the framework — see D-0082.
 - **Affected:** kernel/httpx/{ratelimit,context,authz_gate}.go, kernel/webhook/service.go, app/{maintenance,worker}.go,
   migrations/00028_jobs_rls.sql, kernel/jobs/{scheduler,rls_test}.go, testkit/{asserts,rls_isolation_all_test}.go,
   kernel/config/config.go (doc-string).

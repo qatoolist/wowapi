@@ -74,8 +74,12 @@ func run(ctx context.Context) error {
 	)
 
 	// Boot the app to collect module migration sets. Boot wires only in-memory
-	// registries during Register — it does not query the database — so it
-	// succeeds on a fresh DB that has just had kernel migrations applied.
+	// registries during Register, so it succeeds on a fresh DB that has just had
+	// kernel migrations applied. The migrate process connects with DDL (privileged)
+	// credentials by design and never serves tenant traffic, so it opts out of the
+	// runtime RLS-enforcement check (SkipRLSEnforcementCheck) — that check is for
+	// the tenant-serving api/worker runtime pool, which must be a non-privileged
+	// app_rt role.
 	txm := database.NewManager(pool, cfg.DB)
 	k, err := kernel.New(cfg, log, kernel.Deps{Pool: pool, Tx: txm})
 	if err != nil {
@@ -83,7 +87,7 @@ func run(ctx context.Context) error {
 	}
 	a := app.New()
 	a.Register(wire.Modules()...)
-	booted, err := a.Boot(ctx, k, nil)
+	booted, err := a.Boot(ctx, k, nil, app.SkipRLSEnforcementCheck())
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}
