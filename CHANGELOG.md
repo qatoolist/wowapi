@@ -4,14 +4,59 @@ All notable changes to wowapi are documented here. wowapi is a domain-neutral, r
 kernel distributed as a third-party dependency (`go get github.com/qatoolist/wowapi`) with an installable
 CLI (`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com); this project is pre-1.0 (v0),
-so the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
-may still make breaking changes between minor versions.
+The format is based on [Keep a Changelog](https://keepachangelog.com) and this project follows
+[Semantic Versioning](https://semver.org). As of **v1.0.0** the public surface
+(`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking
+changes to it require a new major version.
 
 ## [Unreleased]
 
-Hardening pass against ROADMAP-wowapi.md (see `docs/implementation/hardening-plan.md`) — phases H1, H2,
-and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` + `make ci-container` gate.
+_Nothing yet._
+
+## [1.0.0] — 2026-07-06 — first stable release
+
+wowapi is now **API-stable and production-hardened**. Beyond the 0.1.0 framework build, this release adds
+exhaustive multi-tenant isolation hardening, safe-by-default RLS enforcement, generated-scaffold correctness
+fixes, a full enterprise supply-chain release pipeline, and a clean, enforced lint gate.
+
+### Security & tenant-isolation hardening
+
+- **Safe-by-default RLS enforcement**: `app.Boot` fails closed if the runtime **or** platform pool's effective
+  role can bypass row-level security (superuser / `BYPASSRLS`), so a misconfigured DSN cannot ship an
+  RLS-inert deployment. Backstops the per-connection (`WithConnRLSGuard`) and per-tx (`WithRLSGuard`) guards;
+  connect-time guards are wired on every serving pool (api/worker runtime + platform, and the `dlq` CLI).
+- **Tenant-isolation footgun hardening**: rate-limit keys are tenant-prefixed (no cross-tenant bucket
+  collapse); webhook `DispatchOutbound` binds the tenant from the event and fails closed on a mismatch;
+  leader-safe per-tenant `notify`/`webhook` pollers; `jobs_queue` / `job_runs` gain RLS + FORCE with a strict
+  `app_tenant_id()` `WITH CHECK`; and a table-driven RLS-isolation census guards every tenant table.
+- Error strings stored in `last_error` / `job_runs` are truncated on a **UTF-8 rune boundary** (never invalid
+  UTF-8 that a Postgres `text` column would reject).
+
+### Generated product scaffold — correctness
+
+- `wowapi config validate --env <e>` now honours `--env` (previously validated whatever `APP_ENV` pointed at)
+  and fails closed when the composed environment doesn't match.
+- `cmd/migrate` fails closed on a bad config and has real `up` / `down` — `down` is a guarded full reset,
+  **refused outside local/dev** (production schema change is forward-only, expand-contract).
+- `config diff` is delegated to the product checker with the secret provider wired; `deploy render` emits all
+  three DSN references (runtime + **platform** + migrate) so the rendered manifest actually boots; the api
+  middleware sets security/CORS headers even on rate-limited (429) responses; and the scaffold README's
+  getting-started works out of the box.
+
+### Delivery & supply chain
+
+- **Tag-driven release**: GoReleaser builds cross-platform CLI archives + checksums + SBOMs, **cosign**
+  keyless-signs them, and attaches **SLSA** build provenance; a multi-arch distroless GHCR image ships with
+  provenance + SBOM attestations. Hosted CI adds actionlint, CodeQL, Scorecard, govulncheck, and secret scanning.
+- **Lint gate closed and enforced**: the pre-existing golangci-lint backlog is fully burned down
+  (`make lint` = 0); golangci-lint and actionlint are pinned; the **full-tree** `make lint` is the enforced CI gate.
+- **Reference-stack header smoke** in CI: a scaffolded product runs behind the reference nginx over TLS and its
+  security-header posture is smoke-tested through the proxy.
+- Test coverage is enforced at a **90 % floor** against the real database.
+
+### Earlier hardening pass (ROADMAP-wowapi.md — H1/H2 + selected H5/P1)
+
+All domain-neutral; each shipped behind the `make ci` + `make ci-container` gate.
 
 ### Hardening remediation — corrective actions CA-1…CA-15
 
