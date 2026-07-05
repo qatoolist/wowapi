@@ -103,7 +103,7 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 | B-6 | ~~CA-10 read-replica router~~ | Feature | CA-10 | ⏸️ **Rescoped** to deployment — RO routing is a deploy-time pool-wiring choice (`WithTenantRO` exists); revisit only if a product needs kernel-level RO routing. |
 | B-7 | **CA-6 reference-stack app-smoke** — nginx header smoke against a scaffolded running product | CI | CA-6 residual | Header posture already unit-tested (`kernel/httpx/edge_test.go`); needs a scaffolded product in CI. |
 | B-8 | ~~CA-1 DLQ-depth gauge~~ | Metrics | CA-1 residual | ✅ **Done** — `dlq_depth{queue="jobs"\|"events"}` emitted on the leader-safe scheduler; alert `WowapiDLQDepthHigh` added. |
-| B-9 | **CA-9 jobs/notify trace sub-paths** — extend async trace propagation beyond the outbox seam | Observability | CA-9 residual | Outbox is the primary fan-out; same tracer seam reused. |
+| B-9 | ~~CA-9 jobs/notify trace sub-paths~~ | Observability | CA-9 residual | ✅ **Done (D-0088)** — jobs (`jobs.WithTracer`, `kernel/jobs/trace_test.go`) and notify (`notify.WithTracer`, `kernel/notify/trace_test.go`) capture the current request's W3C traceparent into the job/delivery envelope and continue it when the async runner/sender executes. |
 
 ---
 
@@ -115,11 +115,13 @@ printed (verified) ✅ · generated module compiles + passes contract from an ex
 containers ✅ · hosted CI green on `329cc0e` (all 5 workflows) ✅ · no open critical/high review
 findings ✅.
 
-**Outstanding for a clean `v1.0.0` tag:** none of the tracked backlog items remain — B-1 (lint) is closed
-(D-0087, `make lint` = 0) and the ops finishers B-2…B-5 are closed (see the backlog table); the
-generated-scaffold config/migrate/deploy correctness gaps (D-0083) and the review follow-ups (D-0084/D-0085)
-are fixed. Recommended pre-tag hardening (not a defect): promote full-tree `make lint` into the enforced CI
-gate after pinning golangci-lint (currently `@latest`). None are architectural.
+**Outstanding for a clean `v1.0.0` tag:** one tracked item remains — **B-7** (CA-6 reference-stack app-smoke:
+nginx header posture is unit-tested but not yet smoke-tested against a scaffolded running product in CI). B-1
+(lint) is closed (D-0087, `make lint` = 0); the ops finishers B-2…B-5 and B-8 are closed and B-9 is now closed
+(D-0088, jobs/notify trace propagation shipped + tested); B-6 is rescoped to deployment (see the backlog table).
+The generated-scaffold correctness gaps (D-0083) and review follow-ups (D-0084/D-0085) are fixed. Recommended
+pre-tag hardening (not a defect): promote full-tree `make lint` into the enforced CI gate after pinning
+golangci-lint (currently `@latest`). None are architectural.
 
 ---
 

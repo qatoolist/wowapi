@@ -1,7 +1,7 @@
 # Design: Enterprise-grade CI/CD & GitHub Actions for wowapi
 
 - **Date:** 2026-07-05
-- **Status:** Approved (design), implementation pending
+- **Status:** Implemented — `.github/workflows/` ships the workflows described here (validated by `actionlint` + green CI).
 - **Author:** framework maintainer (qatoolist)
 - **Scope:** Replace the single "newbie" `ci.yml` with an enterprise CI/CD posture: security scanning,
   supply-chain integrity, signed releases, dependency hygiene, and repo governance.

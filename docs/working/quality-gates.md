@@ -22,7 +22,7 @@ formatter binaries to install.
 | `make fmt` | Apply **gofumpt + goimports** to the tree | manual |
 | `make fmt-check` | Fail if any file needs formatting | pre-commit, CI |
 | `make vet` | `go vet ./...` | pre-push, CI |
-| `make lint` | **Full** golangci-lint — *advisory*; includes the pre-existing backlog | manual |
+| `make lint` | **Full** golangci-lint across the tree — now **clean** (backlog B-1 closed 2026-07-05, D-0087); still `manual` until golangci-lint is pinned and it is promoted to CI | manual |
 | `make lint-new` | golangci-lint on **changed code only** (`--new-from-merge-base`) — **the enforced gate** | pre-commit, pre-push, CI |
 | `make tidy` / `tidy-check` | `go mod tidy` / fail if `go.mod`/`go.sum` drift | pre-push, CI |
 | `make check` | `fmt-check vet lint-new tidy-check test-unit` — fast local pre-flight | manual |

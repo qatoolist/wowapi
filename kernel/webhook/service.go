@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -594,13 +595,19 @@ func backoff(attempt int) time.Duration {
 // --- misc ---
 
 // truncate caps a stored error message at maxErrLen bytes (every call site uses
-// the same cap, so it is a constant rather than a parameter).
+// the same cap, so it is a constant rather than a parameter). It backs the cut up
+// to a UTF-8 rune boundary so the stored string is never invalid UTF-8 — which a
+// Postgres text column would reject.
 func truncate(s string) string {
 	const maxErrLen = 500
 	if len(s) <= maxErrLen {
 		return s
 	}
-	return s[:maxErrLen]
+	n := maxErrLen
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // dedupExtID returns the replay-dedup id for an inbound event: the provider's

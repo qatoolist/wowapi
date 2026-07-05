@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -576,10 +577,14 @@ func (r *Runner) Run(ctx context.Context, poll time.Duration) error {
 }
 
 // truncate caps s at n bytes so a pathological error string cannot bloat
-// last_error / job_runs.error.
+// last_error / job_runs.error. It backs the cut up to a UTF-8 rune boundary so the
+// stored string is never invalid UTF-8 — which a Postgres text column would reject.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
 	}
 	return s[:n]
 }

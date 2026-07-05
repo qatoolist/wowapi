@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -32,6 +33,16 @@ func TestTruncate(t *testing.T) {
 	exact := strings.Repeat("y", 500)
 	if truncate(exact) != exact {
 		t.Fatal("string of length == max must not be truncated")
+	}
+	// A multibyte rune straddling the cut must not yield invalid UTF-8: the cut
+	// backs up to the rune boundary rather than splitting the rune.
+	multibyte := strings.Repeat("a", 499) + "世" // '世' is 3 bytes at offsets 499..501
+	mb := truncate(multibyte)
+	if !utf8.ValidString(mb) {
+		t.Fatalf("truncate produced invalid UTF-8: %q", mb)
+	}
+	if mb != strings.Repeat("a", 499) {
+		t.Fatalf("truncate should drop the straddling rune, got %q (len %d)", mb, len(mb))
 	}
 }
 

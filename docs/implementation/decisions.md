@@ -3,6 +3,29 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0088 — Pre-v1.0.0 review: UTF-8-safe error truncation + tracker/doc accuracy
+- **Context:** a review after D-0087 confirmed the B-1 parameter removals broke no behavior, but found a real
+  (pre-existing) bug and honesty drift — including one overclaim D-0087 itself introduced.
+- **Fixed:**
+  - **Bug (Medium) — byte truncation could split a UTF-8 rune.** `kernel/jobs/runner.go` `truncate(s, n)` and
+    `kernel/webhook/service.go` `truncate(s)` both did `s[:n]`, so an error message with a multibyte character at
+    the cut could be stored as invalid UTF-8 — which a Postgres `text` update rejects. Both now back the cut up to
+    a rune boundary (`utf8.RuneStart`). Added revert-sensitive tests: a `世` straddling the cut must yield valid
+    UTF-8 with the straddling rune dropped (asserts `utf8.ValidString` AND exact content, so byte-slicing fails
+    the test). New `kernel/jobs/internals_test.go` (`package jobs`) for the unexported jobs helper.
+  - **Honesty — D-0087's tracker line overclaimed.** GOALS-TRACKER said "none of the tracked backlog items
+    remain," but **B-7** (CA-6 reference-stack app-smoke in CI) is genuinely open. Corrected: B-7 is the one
+    remaining item.
+  - **Stale — B-9 was still marked active** though jobs/notify trace propagation shipped and is tested
+    (`jobs.WithTracer` + `kernel/jobs/trace_test.go`; `notify.WithTracer` + `kernel/notify/trace_test.go`).
+    Closed the B-9 row with that evidence.
+  - **Stale doc wording:** `quality-gates.md` still called full `make lint` an advisory backlog (it's now clean);
+    the enterprise-CI/CD design spec still said "implementation pending" (the workflows ship). Both corrected.
+    (The hardening-P1 evidence bundle's now-stale trace note is left as a point-in-time append-only record.)
+- **Affected:** kernel/jobs/{runner.go,internals_test.go}, kernel/webhook/{service.go,internals_test.go},
+  docs/GOALS-TRACKER.md, docs/working/quality-gates.md,
+  docs/superpowers/specs/2026-07-05-enterprise-cicd-design.md.
+
 ## D-0087 — B-1 lint backlog closed: `make lint` = 0 with no behavior change
 - **Context:** the advisory `golangci-lint` backlog (B-1) had ~160 issues that `make lint-new` gated for new
   code but never blocked (full `make lint` was advisory). Goal: close it to 0 without introducing any bug.
