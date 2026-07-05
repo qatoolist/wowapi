@@ -26,7 +26,18 @@ formatter binaries to install.
 | `make lint-new` | golangci-lint on **changed code only** (`--new-from-merge-base`) — **the enforced gate** | pre-commit, pre-push, CI |
 | `make tidy` / `tidy-check` | `go mod tidy` / fail if `go.mod`/`go.sum` drift | pre-push, CI |
 | `make check` | `fmt-check vet lint-new tidy-check test-unit` — fast local pre-flight | manual |
+| `make coverage` | Statement coverage against the **real DB** (`WOWAPI_REQUIRE_DB=1`), over the measured package set | manual |
+| `make coverage-check` | Fail if total coverage drops below `COVERAGE_FLOOR` (**90%**) | CI coverage job |
 | `make ci` / `ci-container` | Authoritative correctness gate (vet, boundaries, unit, race, bench, build); `ci-container` runs it with a real DB (`WOWAPI_REQUIRE_DB=1`) | CI gate job |
+
+## Coverage floor
+
+`make coverage-check` enforces a **90%** statement-coverage floor (`COVERAGE_FLOOR`, override to raise it).
+Coverage is measured **with a real Postgres** — much of the kernel (RLS, outbox, jobs, audit) only executes
+against the DB, so a no-DB run understates it. The measured set **excludes** packages that cannot be
+meaningfully unit-tested: `cmd/wowapi` (process main), `internal/tools/migrate` (tool main),
+`internal/testmodules` (test fixture), and `module` (interface-only) — see `COVER_EXCLUDE` in the `Makefile`.
+The CI `coverage` job runs `make coverage-check` inside the toolbox container so DB-backed tests contribute.
 
 ## When each check runs
 
@@ -35,6 +46,7 @@ formatter binaries to install.
 - **In CI** (`.github/workflows/ci.yml`):
   - *unit job* (no DB): `fmt-check` + `vet` + `lint-new` + `tidy-check` + boundaries + unit tests + build.
   - *gate job* (authoritative): `make ci-container` (full suite against a real DB) + fuzz seeds.
+  - *coverage job*: `make coverage-check` inside the toolbox (real DB) — enforces the 90% floor.
 
 Bypass a hook only in a genuine emergency: `git commit --no-verify` / `git push --no-verify`.
 

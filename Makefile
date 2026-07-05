@@ -179,10 +179,17 @@ bench-budget: ## Enforce performance budgets (fails if any benchmark exceeds ben
 		| $(GO) run ./internal/tools/benchbudget bench-budgets.txt
 
 .PHONY: coverage
-coverage: ## Unit coverage report
-	$(GO) test -coverprofile=coverage.out $(PKGS) && $(GO) tool cover -func=coverage.out | tail -1
+# Packages measured for coverage. Excludes process/tool mains and test-only
+# fixtures that cannot be meaningfully unit-tested (decision 2026-07-05: the
+# coverage floor applies to the aggregate of the remaining packages).
+COVER_EXCLUDE := /cmd/wowapi|/internal/tools/migrate|/internal/testmodules|/module$$
+COVER_PKGS = $(shell $(GO) list ./... | grep -vE '$(COVER_EXCLUDE)')
 
-COVERAGE_FLOOR ?= 35.0
+coverage: ## Unit coverage report — runs against the real DB (needs `make up` or DATABASE_URL)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 \
+		$(GO) test -coverprofile=coverage.out $(COVER_PKGS) && $(GO) tool cover -func=coverage.out | tail -1
+
+COVERAGE_FLOOR ?= 90.0
 .PHONY: coverage-check
 coverage-check: coverage ## Enforce the coverage floor (raise COVERAGE_FLOOR as coverage grows)
 	@$(GO) tool cover -html=coverage.out -o coverage.html

@@ -93,9 +93,13 @@ func GrantRole(t *testing.T, h *DBHandle, tenant, capacity, role uuid.UUID, scop
 	if scopeType != "" {
 		scopeTypeArg = scopeType
 	}
+	// valid_from is backdated a minute so an assignment is immediately effective:
+	// the DB clock (DEFAULT now()) can run slightly ahead of the host clock the
+	// authz evaluator uses for time.Now(), and a grant seeded at exactly now()
+	// could otherwise be excluded by a tight grant→evaluate window (flaky 403).
 	execAdmin(t, h, `INSERT INTO actor_assignments
-		(id, tenant_id, capacity_id, role_id, scope_kind, scope_id, scope_type, granted_by, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		(id, tenant_id, capacity_id, role_id, scope_kind, scope_id, scope_type, granted_by, created_by, valid_from)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now() - interval '1 minute')`,
 		uuid.New(), tenant, capacity, role, scopeKind, scopeIDArg, scopeTypeArg, uuid.Nil, uuid.Nil)
 }
 

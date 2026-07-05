@@ -79,14 +79,17 @@ func TestIntegrationWorkerEndToEnd(t *testing.T) {
 		t.Fatalf("emit+enqueue: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	// Generous ceilings: a normal run finishes in ~1s, but coverage
+	// instrumentation and a loaded CI box slow the relay→job pipeline, so keep
+	// the timeouts well above the happy path to avoid a flaky deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
 		done <- app.StartWorker(ctx, booted, app.WorkerConfigOpts{RelayPoll: 100 * time.Millisecond, JobPoll: 100 * time.Millisecond})
 	}()
 
-	deadline := time.After(8 * time.Second)
+	deadline := time.After(30 * time.Second)
 	for eventSeen.Load() == 0 || jobRan.Load() == 0 {
 		select {
 		case <-deadline:
@@ -100,7 +103,7 @@ func TestIntegrationWorkerEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("StartWorker returned error: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("StartWorker did not shut down within the drain window")
 	}
 }
