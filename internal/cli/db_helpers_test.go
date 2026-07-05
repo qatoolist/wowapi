@@ -2,30 +2,52 @@ package cli
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/qatoolist/wowapi/testkit"
 )
 
-// requireDSN resolves the admin DSN for DB-backed CLI tests and ensures the
-// command under test reads the same value from DATABASE_URL. It mirrors testkit's
-// policy: skip locally when no DSN is configured, but FAIL when WOWAPI_REQUIRE_DB
-// is set (the CI/release gate) so DB-backed tests can never silently vanish.
+// requireDSN gives a DB-backed CLI test a migrated database and points the
+// command under test at it via DATABASE_URL.
+//
+// The apikey/audit/dlq commands connect to DATABASE_URL directly and need a
+// migrated schema. The CI compose database is pristine — only testkit's template
+// clones are migrated — so instead of the raw base DSN we provision an exclusive,
+// migrated clone with testkit.NewDB (dropped automatically at the end of the
+// test) and rewrite DATABASE_URL to point at it. This keeps the base database
+// untouched and mirrors how the rest of the suite acquires a database.
+//
+// It mirrors testkit's policy: skip locally when no DSN is configured, but FAIL
+// when WOWAPI_REQUIRE_DB is set (the CI/release gate) so DB-backed tests can
+// never silently vanish.
 func requireDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = os.Getenv("WOWAPI_TEST_DSN")
+	base := os.Getenv("DATABASE_URL")
+	if base == "" {
+		base = os.Getenv("WOWAPI_TEST_DSN")
 	}
-	if dsn == "" {
+	if base == "" {
 		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
 			t.Fatal("WOWAPI_REQUIRE_DB is set but neither DATABASE_URL nor WOWAPI_TEST_DSN is available")
 		}
 		t.Skip("no DATABASE_URL/WOWAPI_TEST_DSN configured; skipping DB-backed CLI test")
 	}
-	// The apikey/audit/dlq commands read DATABASE_URL directly; keep it aligned.
+
+	// Migrated, exclusive clone (uses the base DSN to provision, dropped on cleanup).
+	h := testkit.NewDB(t)
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("parse base DSN: %v", err)
+	}
+	u.Path = "/" + h.Name
+	dsn := u.String()
+
+	// The apikey/audit/dlq commands read DATABASE_URL directly; point them at the clone.
 	t.Setenv("DATABASE_URL", dsn)
 	return dsn
 }
@@ -51,7 +73,8 @@ func execAdmin(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
 }
 
 // cleanupTenant removes every row a DB-backed test could have written for a
-// throwaway tenant so the shared database is left as it was found.
+// throwaway tenant. The clone database is dropped at test end regardless, so
+// this is belt-and-suspenders for any test that shares a database.
 func cleanupTenant(t *testing.T, pool *pgxpool.Pool, tenant uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
