@@ -65,15 +65,22 @@ The CLI is installed inside the box from `/wowapi`, stamped `v0.0.0-dev`. Helper
   never co-locate these. This box is for local testing only.
 - **Read-only framework.** Edit the framework from your host (not inside the box); the product picks up the
   change on its next `go build`/`go run` (the `replace` points at the live checkout).
-- The box runs commands non-interactively too: `docker compose -f deployments/compose.yaml -f
-  deployments/product-dev.yaml run --rm devbox -c '<cmds>'`.
+- The box runs commands non-interactively too (any compose command that includes the `product-dev.yaml`
+  overlay needs `PRODUCT_DIR` set, since the `devbox` volume requires it):
+  `PRODUCT_DIR=/path/to/product docker compose -f deployments/compose.yaml -f deployments/product-dev.yaml
+  run --rm devbox -c '<cmds>'`.
+- **Local / trusted networks only.** The base stack publishes Postgres on `0.0.0.0:5432` and the bootstrap
+  gives `app_rt` a LOGIN with a well-known local password (`app-local-only`), so on an untrusted network the
+  database would be reachable with known credentials. Run this on your own machine, not a shared host.
 
 ## Reset / teardown
+Use the **base** compose file only for teardown — the `devbox` overlay requires `PRODUCT_DIR` at parse time,
+and you don't need it just to remove volumes or run `psql`:
 ```bash
 # stop services and wipe all data (incl. the product database):
-docker compose -f deployments/compose.yaml -f deployments/product-dev.yaml down -v
+docker compose -f deployments/compose.yaml down -v
 # just drop the product database (keep other data):
-docker compose -f deployments/compose.yaml -f deployments/product-dev.yaml exec -T postgres \
+docker compose -f deployments/compose.yaml exec -T postgres \
   psql -U wowapi -d postgres -c "DROP DATABASE IF EXISTS wowproduct;"
 ```
 Your scaffolded product files remain in the working directory you provided.

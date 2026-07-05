@@ -28,11 +28,13 @@ framework's public API. This is a dev harness under `deployments/` + `scripts/` 
    that adds one `devbox` service to the running stack (Postgres 16 + MinIO + Mailpit).
 2. **`scripts/product-dev.sh <path>`** — host launcher: validates/creates `<path>`, brings up the services,
    runs the one-time DB/role bootstrap, then drops the developer into an interactive shell in `/workspace`.
-3. **In-container helpers on `PATH`** (installed by the devbox image/entrypoint):
+3. **In-container helper on `PATH`** + the CLI (both surfaced by the entrypoint):
    - **`wow-link`** — after `wowapi init`, wires the local framework:
      `go mod edit -replace github.com/qatoolist/wowapi=/wowapi && go mod tidy`.
-   - **`wow-dbinit`** — idempotent role + database bootstrap (see Service wiring).
    - the **`wowapi`** CLI itself, installed from `/wowapi`.
+   - The idempotent **DB/role bootstrap** is **not** a separate helper — it lives inline in the host launcher
+     `scripts/product-dev.sh` (it needs the postgres container's `psql`, which the devbox image lacks; see
+     Service wiring).
 
 ### The devbox service
 - Builds from the existing `dev` Dockerfile stage (Go 1.26, git, make, bash; `safe.directory '*'`).
@@ -56,8 +58,9 @@ module proxy and sumdb, so the product builds directly against the read-only che
 ### Service wiring (faithful RLS-enabled run)
 The framework's roles matter: migration `00001` creates `app_rt`/`app_platform` **NOLOGIN** (login is an
 out-of-band ops grant) and does **not** create `app_migrate` (the migrate runner just needs DDL rights). To
-demonstrate tenant isolation, the API must run as a non-superuser `app_rt` login. `wow-dbinit` (run once by the
-launcher, idempotent) connects to Postgres as the `wowapi` superuser and:
+demonstrate tenant isolation, the API must run as a non-superuser `app_rt` login. The host launcher
+`scripts/product-dev.sh` (idempotent; runs the postgres container's `psql`) connects as the `wowapi` superuser
+and:
 1. creates a fresh product database `wowproduct` (owner `wowapi`),
 2. creates roles `app_rt` and `app_platform` **with LOGIN + a local password** *before* migrations run — so
    `00001`'s `CREATE ROLE IF NOT EXISTS … NOLOGIN` sees them present and preserves the LOGIN (the migration
@@ -105,7 +108,7 @@ under `/Users/qatoolist/wowtestdir`.
 ## Files
 - `deployments/product-dev.yaml` (new)
 - `scripts/product-dev.sh` (new)
-- `scripts/devbox/entrypoint.sh`, `scripts/devbox/wow-link`, `scripts/devbox/wow-dbinit` (new helpers; live in
-  the repo, ride into the devbox via the read-only `/wowapi` mount and are added to `PATH` — no framework
-  Dockerfile change)
+- `scripts/devbox/entrypoint.sh`, `scripts/devbox/wow-link` (new helpers; live in the repo, ride into the
+  devbox via the read-only `/wowapi` mount and are added to `PATH` — no framework Dockerfile change). The
+  DB/role bootstrap is inline in `scripts/product-dev.sh` (host-side, uses the postgres container's `psql`).
 - `docs/operations/product-dev-container.md` (new — how to use it)
