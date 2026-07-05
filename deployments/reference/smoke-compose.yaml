@@ -1,0 +1,76 @@
+# B-7 / CA-6 reference-stack header smoke.
+#
+# Stands up postgres + a scaffolded product's migrate/api + the reference nginx
+# reverse-proxy (TLS), so deployments/reference/smoke.sh can assert the security-
+# header posture is delivered THROUGH the proxy (the in-process posture is unit-
+# tested in kernel/httpx/edge_test.go). Driven by scripts/smoke_reference_stack.sh,
+# which scaffolds the product, builds the linux static api/migrate binaries, and
+# generates the self-signed cert — this file only wires them together.
+#
+# The api/migrate services run the host-built static binaries (CGO_ENABLED=0) on a
+# minimal alpine image via bind mounts, and connect to postgres as the superuser +
+# SET ROLE app_rt/app_platform (the local-dev pattern; the pools' WithConnRLSGuard
+# still passes because the effective role is non-privileged).
+name: wowapi-smoke
+
+x-dsn: &dsn "postgres://wowapi:wowapi-local-only@postgres:5432/smoke?sslmode=disable"
+
+x-app-env: &app-env
+  APP_ENV: local
+  DATABASE_URL: *dsn
+  MIGRATE_URL: *dsn
+  PLATFORM_URL: *dsn
+
+x-app-mounts: &app-mounts
+  - ${SMOKE_BIN_DIR}:/app/bin:ro
+  - ${SMOKE_CFG_DIR}:/app/configs:ro
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wowapi
+      POSTGRES_PASSWORD: wowapi-local-only
+      POSTGRES_DB: smoke
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wowapi -d smoke"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: alpine:3.20
+    working_dir: /app
+    volumes: *app-mounts
+    environment: *app-env
+    command: ["/app/bin/migrate", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: alpine:3.20
+    working_dir: /app
+    volumes: *app-mounts
+    environment: *app-env
+    command: ["/app/bin/api"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/readyz >/dev/null 2>&1 || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${SMOKE_TLS_DIR}/fullchain.pem:/etc/nginx/tls/fullchain.pem:ro
+      - ${SMOKE_TLS_DIR}/privkey.pem:/etc/nginx/tls/privkey.pem:ro
+    ports:
+      - "${SMOKE_HTTPS_PORT:-8443}:443"
+    depends_on:
+      api:
+        condition: service_healthy

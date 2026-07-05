@@ -9,6 +9,14 @@ PKGS    := ./...
 # only issues introduced since the merge-base with this ref, so the large
 # pre-existing backlog does not block while all NEW code is fully linted.
 LINT_BASE ?= origin/main
+# Pinned golangci-lint version — the single source of truth for local `make tools`
+# and CI (see .github/workflows/ci.yml GOLANGCI_VERSION). Pinned (not @latest) so
+# the enforced full-tree `make lint` gate is deterministic: a new upstream release
+# can't fail CI until this is bumped deliberately. Bump in lockstep with CI.
+GOLANGCI_VERSION ?= v2.11.4
+# actionlint is pinned for the same reason (lockstep with ci.yml ACTIONLINT_VERSION):
+# the workflow lint must not fail non-deterministically on a new actionlint release.
+ACTIONLINT_VERSION ?= v1.7.12
 
 .DEFAULT_GOAL := help
 
@@ -23,9 +31,11 @@ setup: tools hooks ## One-time developer setup (tools + git hooks + go mod downl
 	$(GO) mod download
 
 .PHONY: tools
-tools: ## Install host dev tools (golangci-lint; more per phase)
-	@command -v golangci-lint >/dev/null 2>&1 || \
-		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+tools: ## Install host dev tools (pinned golangci-lint $(GOLANGCI_VERSION))
+	@if ! golangci-lint version 2>/dev/null | grep -q "$(patsubst v%,%,$(GOLANGCI_VERSION))"; then \
+		echo "installing golangci-lint $(GOLANGCI_VERSION)"; \
+		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION); \
+	fi
 
 ##@ Local infrastructure (containers)
 
@@ -92,6 +102,10 @@ drill-object-storage: ## O5/B-5: object-storage backup/restore round-trip agains
 
 .PHONY: drills
 drills: drill-reversibility drill-restore drill-pitr drill-object-storage ## Run every backup/restore & reversibility drill
+
+.PHONY: smoke-reference
+smoke-reference: ## B-7/CA-6: scaffold a product, run it behind the reference nginx (TLS), smoke-test the security headers THROUGH the proxy. Needs go + docker + openssl.
+	scripts/smoke_reference_stack.sh
 
 ##@ Quality
 
@@ -276,17 +290,24 @@ ci-container: ## Run `make ci` inside the toolbox container (authoritative gate:
 ##@ Security & Release (CI-enforced)
 
 .PHONY: actionlint
-actionlint: ## Lint GitHub Actions workflows (installs actionlint on demand)
-	@command -v actionlint >/dev/null 2>&1 || $(GO) install github.com/rhysd/actionlint/cmd/actionlint@latest
+actionlint: ## Lint GitHub Actions workflows (pinned actionlint $(ACTIONLINT_VERSION))
+	@if ! actionlint --version 2>/dev/null | grep -q "$(patsubst v%,%,$(ACTIONLINT_VERSION))"; then \
+		$(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
+	fi
 	actionlint -color
 
+# govulncheck / goreleaser install @latest DELIBERATELY (unlike the lint tools):
+# govulncheck is a security scanner and must track the newest vuln database + checks
+# (pinning it would freeze detection — the opposite of what we want); the authoritative
+# release build is pinned in .github/workflows/release.yml (SHA-pinned goreleaser-action
+# + version "~> v2"), so these local convenience targets need no pin.
 .PHONY: govulncheck
-govulncheck: ## Scan for known Go vulnerabilities reachable by our code
+govulncheck: ## Scan for known Go vulnerabilities reachable by our code (govulncheck@latest — tracks newest checks)
 	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
 	govulncheck ./...
 
 .PHONY: goreleaser-check
-goreleaser-check: ## Validate the GoReleaser release config
+goreleaser-check: ## Validate the GoReleaser release config (release itself is pinned in release.yml)
 	@command -v goreleaser >/dev/null 2>&1 || $(GO) install github.com/goreleaser/goreleaser/v2@latest
 	goreleaser check
 

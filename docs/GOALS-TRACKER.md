@@ -101,7 +101,7 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 | B-4 | ~~**CA-12 O2** — schema-snapshot diffing in the reversibility drill~~ | Ops | CA-12 / D-0080 | ✅ **Done** — `scripts/migration_reversibility_drill.sh` (`make drill-reversibility`) diffs normalized `pg_dump --schema-only` snapshots after up→down→up; fails on asymmetric Down. |
 | B-5 | ~~**CA-12 O5** — scripted PITR / object-storage restore legs~~ | Ops | CA-12 / D-0080 | ✅ **Done** — real scripted round-trips: `scripts/pitr_restore_drill.sh` (throwaway PG + WAL replay to target) + `scripts/object_storage_restore_drill.sh` (MinIO). Production PITR stays provider-owned (D-0080). |
 | B-6 | ~~CA-10 read-replica router~~ | Feature | CA-10 | ⏸️ **Rescoped** to deployment — RO routing is a deploy-time pool-wiring choice (`WithTenantRO` exists); revisit only if a product needs kernel-level RO routing. |
-| B-7 | **CA-6 reference-stack app-smoke** — nginx header smoke against a scaffolded running product | CI | CA-6 residual | Header posture already unit-tested (`kernel/httpx/edge_test.go`); needs a scaffolded product in CI. |
+| B-7 | ~~CA-6 reference-stack app-smoke~~ | CI | CA-6 residual | ✅ **Done (D-0089)** — `make smoke-reference` (CI job `reference-smoke`) scaffolds a product, runs it behind the reference nginx over TLS (`deployments/reference/smoke-compose.yaml`), and asserts the security-header posture is delivered THROUGH the proxy (`deployments/reference/smoke.sh`): the app's headers forwarded, TLS terminated, and HSTS owned authoritatively at the edge (nginx `proxy_hide_header`+`add_header`). This exercises the proxy/TLS wiring; the in-process posture is separately unit-tested in `kernel/httpx/edge_test.go`. |
 | B-8 | ~~CA-1 DLQ-depth gauge~~ | Metrics | CA-1 residual | ✅ **Done** — `dlq_depth{queue="jobs"\|"events"}` emitted on the leader-safe scheduler; alert `WowapiDLQDepthHigh` added. |
 | B-9 | ~~CA-9 jobs/notify trace sub-paths~~ | Observability | CA-9 residual | ✅ **Done (D-0088)** — jobs (`jobs.WithTracer`, `kernel/jobs/trace_test.go`) and notify (`notify.WithTracer`, `kernel/notify/trace_test.go`) capture the current request's W3C traceparent into the job/delivery envelope and continue it when the async runner/sender executes. |
 
@@ -115,13 +115,14 @@ printed (verified) ✅ · generated module compiles + passes contract from an ex
 containers ✅ · hosted CI green on `329cc0e` (all 5 workflows) ✅ · no open critical/high review
 findings ✅.
 
-**Outstanding for a clean `v1.0.0` tag:** one tracked item remains — **B-7** (CA-6 reference-stack app-smoke:
-nginx header posture is unit-tested but not yet smoke-tested against a scaffolded running product in CI). B-1
-(lint) is closed (D-0087, `make lint` = 0); the ops finishers B-2…B-5 and B-8 are closed and B-9 is now closed
-(D-0088, jobs/notify trace propagation shipped + tested); B-6 is rescoped to deployment (see the backlog table).
-The generated-scaffold correctness gaps (D-0083) and review follow-ups (D-0084/D-0085) are fixed. Recommended
-pre-tag hardening (not a defect): promote full-tree `make lint` into the enforced CI gate after pinning
-golangci-lint (currently `@latest`). None are architectural.
+**Outstanding for a clean `v1.0.0` tag:** none — every tracked backlog item is closed or rescoped. **B-7**
+(CA-6 reference-stack app-smoke) is now closed (D-0089): a CI job runs a scaffolded product behind the reference
+nginx over TLS and smoke-tests the security headers through the proxy. B-1 (lint) is closed (D-0087, `make lint`
+= 0); the ops finishers B-2…B-5 and B-8 are closed and B-9 is closed (D-0088, jobs/notify trace propagation
+shipped + tested); B-6 is rescoped to deployment (see the backlog table). The generated-scaffold correctness
+gaps (D-0083) and review follow-ups (D-0084/D-0085) are fixed. Pre-tag hardening is **done (D-0089)**:
+golangci-lint is pinned (`GOLANGCI_VERSION`) and full-tree `make lint` is now
+the enforced CI gate. None are architectural.
 
 ---
 

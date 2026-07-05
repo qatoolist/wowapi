@@ -3,6 +3,49 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0089 — Pre-v1.0.0 close-out: pinned lint gate + full-tree enforcement + B-7 reference-stack smoke
+- **Context:** the last three tracked pre-tag items, finished to enterprise standard: pin golangci-lint,
+  promote full-tree `make lint` to the enforced gate, and close B-7 (reference-stack header smoke in CI).
+- **Decisions:**
+  - **Pinned golangci-lint** — a single-source-of-truth `GOLANGCI_VERSION` (`v2.11.4`) in the Makefile and
+    `.github/workflows/ci.yml` (was `@latest` in both). The `tools` target reinstalls only if the installed
+    version differs. Pinning is the prerequisite for enforcing full-tree lint: a new upstream release can no
+    longer fail CI until the version is bumped deliberately.
+  - **Full-tree `make lint` is now the enforced CI gate** — the `unit` job runs `make lint` (whole tree)
+    instead of `make lint-new`. Safe now that B-1 is closed (D-0087) and the binary is pinned (deterministic 0).
+    `make lint-new` stays as the fast local pre-push pre-check; docs (quality-gates.md) updated to match.
+  - **B-7 (CA-6) reference-stack header smoke** — `make smoke-reference` +
+    `scripts/smoke_reference_stack.sh` + `deployments/reference/smoke-compose.yaml` + a CI job `reference-smoke`.
+    It scaffolds a product with `wowapi init`, builds its **linux static** api/migrate binaries
+    (`CGO_ENABLED=0`), stands up postgres + a one-shot migrate + the api + the reference nginx (TLS, self-signed
+    cert) via compose, then runs the existing `deployments/reference/smoke.sh` against `https://localhost` —
+    asserting `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy`, and
+    `Strict-Transport-Security` are delivered THROUGH the proxy. This exercises the proxy/TLS *wiring* — TLS
+    termination + the app's headers forwarded unstripped — which the in-process `kernel/httpx/edge_test.go`
+    doesn't cover (it tests `SecureHeaders` in isolation, incl. HSTS). The api/migrate connect as the postgres
+    superuser + `SET ROLE app_rt`/`app_platform` (the local-dev pattern; `WithConnRLSGuard` still passes on the
+    demoted effective role). **Verified end-to-end locally with Docker** before wiring CI.
+- **Independent-gate fixes (before finalizing):** (1) the app already emits HSTS by default, so nginx's
+  `add_header` produced a *duplicate* HSTS and the smoke's HSTS check couldn't attribute it to the edge — added
+  `proxy_hide_header Strict-Transport-Security` so nginx owns HSTS authoritatively (one header; the app still
+  sets its own for no-proxy/other-proxy deployments), and corrected the earlier "edge HSTS the in-process test
+  can't cover" overclaim. (2) The nginx service had no healthcheck, so `compose up --wait` could release before
+  :443 was listening — the script now polls the TLS endpoint before smoking (no CI flake). (3) Pinned actionlint
+  (`ACTIONLINT_VERSION`) too, for the same determinism reason as golangci-lint.
+- **Second cleanup pass (a follow-up review):** the actionlint pin was applied in CI but not the Makefile
+  `actionlint` target (the same sibling-completeness gap) — pinned it there too (`ACTIONLINT_VERSION`, matching
+  CI). `docs/working/quality-gates.md` still said the CI unit job runs `lint-new` and had a "why lint-new not
+  full lint" section — updated to reflect full `make lint` is now the enforced gate (lint-new is the fast local
+  pre-check). The other `@latest` installs are left deliberately and now documented as such: `govulncheck` must
+  track the newest checks (a security scanner), and the authoritative goreleaser release is pinned in
+  `release.yml` (the Makefile targets are local convenience).
+- **Result:** every tracked backlog item (B-1…B-9) is now closed or rescoped; nothing outstanding before a
+  `v1.0.0` tag.
+- **Affected:** Makefile (GOLANGCI_VERSION, tools, smoke-reference), .github/workflows/ci.yml (golangci +
+  actionlint pins, full lint, reference-smoke job), scripts/smoke_reference_stack.sh,
+  deployments/reference/{smoke-compose.yaml, nginx.conf}, docs/{GOALS-TRACKER.md, working/quality-gates.md,
+  operations/deployment-checklist.md}.
+
 ## D-0088 — Pre-v1.0.0 review: UTF-8-safe error truncation + tracker/doc accuracy
 - **Context:** a review after D-0087 confirmed the B-1 parameter removals broke no behavior, but found a real
   (pre-existing) bug and honesty drift — including one overclaim D-0087 itself introduced.

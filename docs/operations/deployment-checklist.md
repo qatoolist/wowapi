@@ -22,7 +22,9 @@ The reverse proxy still owns TLS termination and edge-level limits. Use
 - [ ] Proxy read/send timeouts ≥ `http.request_timeout` (so the proxy does not cut first).
 - [ ] `server_tokens off`; version banners suppressed.
 - [ ] Run `BASE=https://<host> deployments/reference/smoke.sh` post-deploy — it fails if any
-      required security header is missing. Re-run quarterly as a drill.
+      required security header is missing. Re-run quarterly as a drill. (CI already runs this smoke against
+      a scaffolded product behind the reference nginx over TLS via `make smoke-reference` — the `reference-smoke`
+      job — so the config + header wiring is regression-gated; this checklist item verifies your *live* host.)
 
 ## 2. Config-drift alerting (O4)
 

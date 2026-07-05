@@ -9,10 +9,10 @@ name: ci
 #                   against the real compose Postgres with WOWAPI_REQUIRE_DB=1, so
 #                   DB-backed tests MUST run, plus the fuzz seed corpus.
 #   coverage      — publishes a coverage profile artifact and enforces a floor.
-#
-# NOTE: the reference-stack (nginx) header smoke in deployments/reference/smoke.sh
-# requires a running product API (generated from templates, not built in this
-# repo); the in-process header posture is unit-tested in kernel/httpx/edge_test.go.
+#   reference-smoke — B-7/CA-6: scaffolds a product, runs it behind the reference
+#                   nginx (TLS) via compose, and asserts the security-header posture
+#                   is delivered THROUGH the proxy (in-process posture is also
+#                   unit-tested in kernel/httpx/edge_test.go).
 
 on:
   push:
@@ -30,6 +30,13 @@ permissions:
 
 env:
   GO_VERSION: "1.26"
+  # Pinned (not @latest) so the enforced full-tree `make lint` gate is
+  # deterministic — a new upstream golangci-lint release cannot fail CI until this
+  # is bumped deliberately (in lockstep with the Makefile GOLANGCI_VERSION).
+  GOLANGCI_VERSION: "v2.11.4"
+  # Pinned for the same reason: a new actionlint release must not fail workflow-lint
+  # non-deterministically.
+  ACTIONLINT_VERSION: "v1.7.12"
 
 jobs:
   workflow-lint:
@@ -42,8 +49,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - name: install actionlint
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@latest
+      - name: install actionlint (pinned)
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@${{ env.ACTIONLINT_VERSION }}
       - name: actionlint
         run: actionlint -color
 
@@ -59,14 +66,14 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      - name: install golangci-lint (pinned)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_VERSION }}
       - name: format check (gofumpt + goimports)
         run: make fmt-check
       - name: go vet
         run: make vet
-      - name: lint changed code (golangci-lint, new-from-merge-base)
-        run: make lint-new
+      - name: lint (full tree — enforced; backlog B-1 closed, D-0087)
+        run: make lint
       - name: go.mod tidy check
         run: make tidy-check
       - name: boundaries
@@ -95,6 +102,23 @@ jobs:
       - name: tear down
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
+
+  reference-smoke:
+    name: reference-stack header smoke (nginx TLS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # B-7/CA-6: scaffold a product, build its linux static api/migrate, stand up
+      # postgres + api + the reference nginx (TLS, self-signed) via compose, and run
+      # deployments/reference/smoke.sh through the proxy. docker/compose/openssl are
+      # preinstalled on ubuntu-latest.
+      - name: reference-stack header smoke (through nginx over TLS)
+        run: make smoke-reference
 
   coverage:
     name: coverage (profile + floor)

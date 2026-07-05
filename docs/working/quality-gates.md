@@ -22,8 +22,8 @@ formatter binaries to install.
 | `make fmt` | Apply **gofumpt + goimports** to the tree | manual |
 | `make fmt-check` | Fail if any file needs formatting | pre-commit, CI |
 | `make vet` | `go vet ./...` | pre-push, CI |
-| `make lint` | **Full** golangci-lint across the tree — now **clean** (backlog B-1 closed 2026-07-05, D-0087); still `manual` until golangci-lint is pinned and it is promoted to CI | manual |
-| `make lint-new` | golangci-lint on **changed code only** (`--new-from-merge-base`) — **the enforced gate** | pre-commit, pre-push, CI |
+| `make lint` | **Full** golangci-lint across the whole tree — **enforced** (pinned `GOLANGCI_VERSION`; backlog B-1 closed, D-0087/D-0089) | CI, manual |
+| `make lint-new` | golangci-lint on **changed code only** (`--new-from-merge-base`) — fast local pre-check (CI enforces the full `make lint` above) | pre-commit, pre-push |
 | `make tidy` / `tidy-check` | `go mod tidy` / fail if `go.mod`/`go.sum` drift | pre-push, CI |
 | `make check` | `fmt-check vet lint-new tidy-check test-unit` — fast local pre-flight | manual |
 | `make coverage` | Statement coverage against the **real DB** (`WOWAPI_REQUIRE_DB=1`), over the measured package set | manual |
@@ -44,19 +44,24 @@ The CI `coverage` job runs `make coverage-check` inside the toolbox container so
 - **On commit** (`.githooks/pre-commit`, fast): `fmt-check` + `lint-new` on the staged Go changes.
 - **On push** (`.githooks/pre-push`): `go vet` + `lint-new` + `go test ./...` + `go.mod` tidy check.
 - **In CI** (`.github/workflows/ci.yml`):
-  - *unit job* (no DB): `fmt-check` + `vet` + `lint-new` + `tidy-check` + boundaries + unit tests + build.
+  - *unit job* (no DB): `fmt-check` + `vet` + full `make lint` + `tidy-check` + boundaries + unit tests + build.
   - *gate job* (authoritative): `make ci-container` (full suite against a real DB) + fuzz seeds.
   - *coverage job*: `make coverage-check` inside the toolbox (real DB) — enforces the 90% floor.
+  - *reference-smoke job*: `make smoke-reference` — a scaffolded product behind the reference nginx (TLS),
+    with the security headers smoke-tested through the proxy (B-7).
 
 Bypass a hook only in a genuine emergency: `git commit --no-verify` / `git push --no-verify`.
 
-## Why `lint-new` and not full `lint` as the gate
+## Full `make lint` is the gate; `lint-new` is the fast local pre-check
 
-golangci-lint was not previously wired into `make ci`, so a backlog of pre-existing issues accumulated
-(see [lint-backlog.md](lint-backlog.md)). Blocking on the *full* set would either force a large risky
-cleanup or invite blanket `//nolint`. Instead we gate on **new/changed code**
-(`--new-from-merge-base=origin/main`): every new line is fully linted immediately, while the backlog is
-burned down incrementally and honestly. Run `make lint` any time to see the full picture.
+CI enforces the **full** `make lint` across the whole tree, on a **pinned** golangci-lint
+(`GOLANGCI_VERSION`, so the gate is deterministic — a new upstream release can't fail CI until it's bumped).
+This is safe because the pre-existing backlog (B-1) is closed (D-0087) — `make lint` is a clean 0.
+
+`make lint-new` (`--new-from-merge-base=origin/main`) stays wired into the pre-commit/pre-push hooks as a
+**fast local pre-check** — it lints only changed code, giving quick feedback before the full-tree gate runs in
+CI. Historically (before B-1 was burned down) `lint-new` was itself the enforced gate, to avoid a large risky
+cleanup or blanket `//nolint`; that history is recorded in [lint-backlog.md](lint-backlog.md).
 
 ## Adding/adjusting linters
 
