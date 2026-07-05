@@ -3,6 +3,26 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0078 — CF-1: fail-closed platform DSN (runtime/platform separation)
+- **Context:** an independent review (CF-1) found the generated api/worker platform pool fell back to the
+  runtime DSN + `SET ROLE app_platform` when `db.platform_dsn` was unset. That fallback structurally requires
+  `app_rt` to be a (cluster-global) member of `app_platform`. The product-dev harness enacted exactly that
+  membership on the shared compose cluster, which poisoned every database on it (incl. testkit clones) and made
+  the framework's own self-grant/legal-hold guards fail.
+- **Options:** (a) warn only; (b) fail closed in prod, dev opt-in; (c) fail closed always.
+- **Decision (c):** the api/worker templates now **require** a distinct `db.platform_dsn` (a dedicated
+  `app_platform` login) and return a boot error when it is unset — the `platformDSN = dsn` fallback is removed.
+  The scaffold's `configs/local.yaml` wires `platform_dsn: secretref://env/PLATFORM_URL` by default. The
+  product-dev harness connects the platform pool directly as an `app_platform` LOGIN (via `PLATFORM_URL`) and no
+  longer runs `GRANT app_platform TO app_rt`. A regression guard,
+  `authz.TestIntegrationRuntimeRoleNotMemberOfPlatform`, fails red if `app_rt` is ever a member of
+  `app_platform`, converting environment poisoning into a caught test.
+- **Tradeoffs:** consumers must configure two runtime DSNs (runtime + platform) instead of one; accepted as the
+  correct security posture (privilege separation is the whole point of the two roles).
+- **Affected:** internal/cli/templates/init/{cmd_api_main.go.tmpl,cmd_worker_main.go.tmpl,configs_local.yaml.tmpl},
+  scripts/product-dev.sh, deployments/product-dev.yaml, kernel/authz/escalation_test.go,
+  docs/operations/product-dev-container.md.
+
 ## D-0077 — Post-hardening review: close six deferrals
 - **Context:** a review of the hardening pass found six items whose deferrals left roadmap gaps
   incompletely closed. All were verified real and fixed (commits `d22ff7f`, `54abec1`).

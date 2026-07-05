@@ -3,6 +3,9 @@
 # Secret fields require secretref://env/<VAR>; set the vars before starting:
 #   export DATABASE_URL="postgres://app_rt:secret@localhost:5432/{{.DBName}}?sslmode=disable"
 #   export MIGRATE_URL="postgres://app_migrate:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+#   export PLATFORM_URL="postgres://app_platform:secret@localhost:5432/{{.DBName}}?sslmode=disable"
+# platform_dsn MUST be a dedicated app_platform login — never the runtime (app_rt)
+# DSN. The api/worker fail closed when it is unset (runtime/platform separation).
 environment: local
 
 log:
@@ -12,3 +15,4 @@ log:
 db:
   dsn: "secretref://env/DATABASE_URL"
   migrate_dsn: "secretref://env/MIGRATE_URL"
+  platform_dsn: "secretref://env/PLATFORM_URL"

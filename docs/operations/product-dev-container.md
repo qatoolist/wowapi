@@ -49,6 +49,7 @@ curl localhost:8080/readyz    # {"checks":{"db":"ok"},...,"status":"ready"}
 | Workspace | your dir → `/workspace` (bind mount; files persist on the host) |
 | Framework | this checkout → `/wowapi` (**read-only**); product links via `replace … => /wowapi` |
 | Runtime DSN (`DATABASE_URL`) | `app_rt@wowproduct` — non-superuser, RLS enforced |
+| Platform DSN (`PLATFORM_URL`) | `app_platform@wowproduct` — **dedicated login** for cross-tenant catalog work (no role membership) |
 | Migrate DSN (`MIGRATE_URL`) | `wowapi@wowproduct` — superuser, runs DDL |
 | Config env (`APP_ENV`) | `local` → loads `configs/local.yaml` (which references the DSNs above) |
 | Object storage | MinIO at `minio:9000` (`S3_ENDPOINT`) |
@@ -59,10 +60,12 @@ The CLI is installed inside the box from `/wowapi`, stamped `v0.0.0-dev`. Helper
 (add/refresh the `replace` to the local framework — re-run after editing `go.mod`) and the **`wowapi`** CLI.
 
 ## Notes & caveats
-- **Local-only credentials.** `app_rt` / `app_platform` use a throwaway local password (`app-local-only`) and
-  `app_rt` is granted membership in `app_platform` so the scaffold's default single-DSN platform pool works. In
-  production you would instead give the platform process its own `app_platform` login via `db.platform_dsn`, and
-  never co-locate these. This box is for local testing only.
+- **Runtime/platform separation (CF-1).** `app_rt` (runtime) and `app_platform` (cross-tenant catalog) are
+  **separate LOGIN roles**; the product's platform pool connects directly as `app_platform` via `db.platform_dsn`
+  (`PLATFORM_URL`). The box does **not** grant `app_platform` membership to `app_rt` — that grant is
+  cluster-global and would collapse privilege separation in every database on the cluster (including the test
+  suite's). The api/worker **fail closed** if `db.platform_dsn` is unset, so this separation can't be skipped.
+- **Local-only credentials.** Both roles use a throwaway local password (`app-local-only`); fine for a local box.
 - **Read-only framework.** Edit the framework from your host (not inside the box); the product picks up the
   change on its next `go build`/`go run` (the `replace` points at the live checkout).
 - The box runs commands non-interactively too (any compose command that includes the `product-dev.yaml`

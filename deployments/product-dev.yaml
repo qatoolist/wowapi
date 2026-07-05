@@ -31,6 +31,9 @@ services:
       # row-level security is enforced, not bypassed.
       MIGRATE_URL: postgres://wowapi:wowapi-local-only@postgres:5432/${PRODUCT_DB:-wowproduct}?sslmode=disable
       DATABASE_URL: postgres://app_rt:${APP_RT_PASSWORD:-app-local-only}@postgres:5432/${PRODUCT_DB:-wowproduct}?sslmode=disable
+      # Dedicated app_platform LOGIN (NOT app_rt + SET ROLE) — keeps runtime and
+      # platform privileges separate without any cluster-global role membership.
+      PLATFORM_URL: postgres://app_platform:${APP_RT_PASSWORD:-app-local-only}@postgres:5432/${PRODUCT_DB:-wowproduct}?sslmode=disable
       # Object storage + mail (only needed once the product uses documents/notifications).
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: wowapi

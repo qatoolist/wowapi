@@ -110,9 +110,17 @@ func run(ctx context.Context) error {
 	// Composite authenticator (roadmap S1/CA-2): API keys first, then your user
 	// (OIDC) authenticator. API-key verification is cross-tenant (the tenant is
 	// unknown pre-auth), so it needs an app_platform connection.
+	//
+	// The platform pool MUST use a dedicated app_platform login (db.platform_dsn),
+	// NOT the runtime DSN. Reusing the runtime (app_rt) DSN + SET ROLE app_platform
+	// would require app_rt to be a member of app_platform — a cluster-global grant
+	// that collapses runtime/platform privilege separation on an internet-facing
+	// process (CF-1). Fail closed rather than silently escalate.
 	platformDSN := cfg.DB.PlatformDSN.Reveal()
 	if platformDSN == "" {
-		platformDSN = dsn
+		return fmt.Errorf("db.platform_dsn is required: the platform pool needs a dedicated app_platform " +
+			"login (set db.platform_dsn, e.g. secretref://env/PLATFORM_URL). Reusing the runtime DSN would " +
+			"require app_rt to be a member of app_platform and defeat runtime/platform privilege separation")
 	}
 	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB, database.WithSetRole("app_platform"))
 	if err != nil {

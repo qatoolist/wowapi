@@ -61,12 +61,15 @@ func run(ctx context.Context) error {
 	defer pool.Close()
 
 	// Platform pool for the outbox relay, job runner, and scheduler (cross-tenant
-	// kernel work). Prefer a dedicated app_platform login (db.platform_dsn) so the
-	// worker holds platform privileges under a locked-down production role; when
-	// unset, fall back to the runtime DSN with SET ROLE app_platform (fine locally).
+	// kernel work). This MUST use a dedicated app_platform login (db.platform_dsn),
+	// never the runtime DSN: reusing app_rt + SET ROLE app_platform would require
+	// app_rt to be a (cluster-global) member of app_platform and collapse runtime/
+	// platform privilege separation (CF-1). Fail closed rather than silently escalate.
 	platformDSN := cfg.DB.PlatformDSN.Reveal()
 	if platformDSN == "" {
-		platformDSN = dsn
+		return fmt.Errorf("db.platform_dsn is required: the platform pool needs a dedicated app_platform " +
+			"login (set db.platform_dsn, e.g. secretref://env/PLATFORM_URL). Reusing the runtime DSN would " +
+			"require app_rt to be a member of app_platform and defeat runtime/platform privilege separation")
 	}
 	platformPool, err := database.NewPool(ctx, platformDSN, cfg.DB,
 		database.WithSetRole("app_platform"),

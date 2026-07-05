@@ -60,11 +60,11 @@ if ! "${COMPOSE[@]}" exec -T postgres \
 fi
 "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U wowapi -d postgres \
   -c "GRANT CONNECT ON DATABASE ${PRODUCT_DB} TO app_rt, app_platform;"
-# The scaffolded api's platform pool defaults to the runtime DSN + SET ROLE
-# app_platform, so app_rt must be a member of app_platform. (In production you'd
-# instead give the platform process its own app_platform login via db.platform_dsn.)
-"${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U wowapi -d postgres \
-  -c "GRANT app_platform TO app_rt;"
+# NOTE: we deliberately do NOT `GRANT app_platform TO app_rt`. Role membership is
+# cluster-global, so that grant would let app_rt inherit app_platform's writes in
+# EVERY database on this cluster (incl. testkit clones) and collapse privilege
+# separation (CF-1). Instead the product's platform pool connects directly as the
+# dedicated app_platform LOGIN via db.platform_dsn (PLATFORM_URL in the devbox).
 
 echo "==> entering devbox shell (workspace: $PRODUCT_DIR)"
 exec "${COMPOSE[@]}" run --rm --service-ports devbox

@@ -67,6 +67,26 @@ func TestIntegrationNoSelfGrantViaRelationships(t *testing.T) {
 	}
 }
 
+// TestIntegrationRuntimeRoleNotMemberOfPlatform is the CF-1 backstop: the runtime
+// role app_rt must NOT be a member of app_platform. Role membership is
+// cluster-global, so if some dev script ran `GRANT app_platform TO app_rt` on this
+// cluster, app_rt would inherit app_platform's writes on the authorization spine
+// in EVERY database (incl. testkit clones) and the self-grant guards above would
+// silently pass through. This turns that environment poisoning into a red test.
+func TestIntegrationRuntimeRoleNotMemberOfPlatform(t *testing.T) {
+	h := testkit.NewDB(t)
+	var isMember bool
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT pg_has_role('app_rt', 'app_platform', 'MEMBER')`).Scan(&isMember); err != nil {
+		t.Fatal(err)
+	}
+	if isMember {
+		t.Fatal("app_rt is a member of app_platform — runtime/platform privilege separation is broken " +
+			"(CF-1). Some script likely ran `GRANT app_platform TO app_rt` on this cluster; run " +
+			"`REVOKE app_platform FROM app_rt;` as the superuser. Role membership is cluster-global.")
+	}
+}
+
 // TestIntegrationScopeCheckConstraints proves the DB CHECKs (SEC-26/SEC-29): a
 // resource_type-scoped assignment with a NULL scope_type, or an org/resource
 // scope with a NULL scope_id, is rejected — closing the covers() over-grant at
