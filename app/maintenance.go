@@ -10,6 +10,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 )
 
 // registerMaintenance wires the kernel's periodic sweeps onto the scheduler
@@ -17,7 +18,7 @@ import (
 // per-tenant workflow SLA sweep. Both are idempotent, so the scheduler's
 // leader-safe at-most-once-per-interval guarantee is sufficient — N worker
 // replicas will not double-fire.
-func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery time.Duration) {
+func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery time.Duration) {
 	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
 	// k.Platform pool already connects AS app_platform, so Platform() runs with
 	// the cross-tenant sweep policy (migration 00012).
@@ -65,6 +66,17 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 			}
 		}
 		return nil
+	})
+
+	// DLQ depth: export dead-lettered jobs + outbox events as the dlq_depth
+	// gauge (roadmap CA-1 / backlog B-8). Runs on the leader-safe scheduler, so
+	// the depth is counted once per interval across replicas rather than
+	// double-counted per replica. k.Metrics is NoOp unless an adapter is wired.
+	sched.Register("kernel.dlq.depth", dlqEvery, func(ctx context.Context) error {
+		if err := jobs.PublishDLQDepth(ctx, k.Platform, k.Metrics); err != nil {
+			return err
+		}
+		return outbox.PublishDLQDepth(ctx, k.Platform, k.Metrics)
 	})
 }
 

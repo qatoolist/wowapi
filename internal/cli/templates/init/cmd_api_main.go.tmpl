@@ -10,11 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
 	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
 	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel/apikey"
 	kaudit "github.com/qatoolist/wowapi/kernel/audit"
+	kauth "github.com/qatoolist/wowapi/kernel/auth"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
@@ -133,12 +135,32 @@ func run(ctx context.Context) error {
 		platformTxM,
 	)
 
+	// User (OIDC/JWT bearer) leg of the composite. It is wired only when
+	// auth.oidc.issuer is configured; otherwise it stays DenyAll so non-key
+	// business requests return 401 — the secure default (deny-by-default). The
+	// authenticator verifies bearer JWTs against the issuer's JWKS (RS256/ES256,
+	// cached) and resolves the framework principal (subject -> user, capacity
+	// check) via the platform + runtime pools.
+	var userAuth httpx.Authenticator = httpx.DenyAllAuthenticator{}
+	if cfg.Auth.OIDC.Issuer != "" {
+		jwks, jerr := kauth.NewJWKSKeySource(kauth.JWKSConfig{
+			Issuer:  cfg.Auth.OIDC.Issuer,
+			JWKSURI: cfg.Auth.OIDC.JWKSURI,
+		})
+		if jerr != nil {
+			return fmt.Errorf("auth: jwks source: %w", jerr)
+		}
+		verifier := kauth.NewVerifier(jwks, kauth.Config{
+			Issuer:   cfg.Auth.OIDC.Issuer,
+			Audience: cfg.Auth.OIDC.Audience,
+		})
+		userAuth = kauth.NewAuthenticator(verifier, pgprincipal.New(platformTxM, txm))
+	}
+
 	// The RouteMeta permission gate is ENFORCED on every non-Public route
-	// (deny-by-default: AuthN -> bind tenant/actor -> AuthZ(permission)). Until you
-	// wire a real user authenticator the composite falls through to DenyAll, so
-	// non-key business requests return 401 — the secure default.
-	// TODO: replace httpx.DenyAllAuthenticator{} with your OIDC/tenant Authenticator.
-	auth := httpx.Composite(apiKeyAuth, httpx.DenyAllAuthenticator{})
+	// (deny-by-default: AuthN -> bind tenant/actor -> AuthZ(permission)): API keys
+	// first, then the user (OIDC) leg above.
+	auth := httpx.Composite(apiKeyAuth, userAuth)
 	mux := booted.Router.SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
 
 	// Health endpoints are Public infrastructure, mounted directly.

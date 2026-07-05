@@ -33,12 +33,27 @@
 #   BenchmarkCursorDecode                   967 ns/op  18 allocs/op
 #   BenchmarkCursorDecodeEmpty              1.1 ns/op   0 allocs/op
 #   BenchmarkCursorRoundTrip               1586 ns/op  32 allocs/op
+#   BenchmarkCachingStoreHit                136 ns/op   4 allocs/op
+#   BenchmarkCachingStoreMiss               208 ns/op   5 allocs/op
+#   BenchmarkTokenBucketAllow                26 ns/op   0 allocs/op
+#   BenchmarkEdgeMiddlewareChain           2908 ns/op  28 allocs/op
+#
+# DB-backed hot paths (backlog B-2 / CA-7). Measured against local Postgres 16 on
+# localhost; each op includes a real BEGIN/COMMIT and the query round trips, so
+# these carry MUCH higher variance than the in-memory benches. Budgets keep extra
+# headroom (~10x local) so a slower CI database does not flake the gate while
+# still catching an order-of-magnitude regression in the SQL or hashing path:
+#   BenchmarkAuditRecord              1678783 ns/op 169 allocs/op
+#   BenchmarkSequenceAllocate         1737863 ns/op  67 allocs/op
 #
 # ── kernel/authz ──────────────────────────────────────────────────────────────
 BenchmarkEvaluateDenyByDefault        300    0
 BenchmarkEvaluateRBACTenantAllow      600    5
 BenchmarkEvaluateABACDenyPolicy      8000   80
 BenchmarkCovers                       600    5
+# CachingStore fronts the hottest authz read (ActiveAssignments) per (tenant,actor).
+BenchmarkCachingStoreHit             1500   15
+BenchmarkCachingStoreMiss            2500   20
 # ── kernel/policy ─────────────────────────────────────────────────────────────
 BenchmarkPolicyMatchesEq             2000   15
 BenchmarkPolicyMatchesIn             4000   40
@@ -48,6 +63,10 @@ BenchmarkPolicyMatchesMultiCondition 6000   50
 BenchmarkRouterHandle                6000   50
 BenchmarkRouterRoutes                5000   20
 BenchmarkRouteMetaValidate           1500   15
+# Per-request rate-limit decision + the fixed edge chain (SecureHeaders→CORS→
+# BodyLimit→Timeout). TokenBucket.Allow is zero-alloc on the steady-state path.
+BenchmarkTokenBucketAllow             300    0
+BenchmarkEdgeMiddlewareChain        30000  120
 # ── kernel/config ─────────────────────────────────────────────────────────────
 # Field reads must be zero-alloc; tight ns/op ceiling proves no map/reflection.
 BenchmarkConfigFieldReadMaxBodyBytes   50    0
@@ -65,3 +84,9 @@ BenchmarkCursorEncode                7000   50
 BenchmarkCursorDecode               12000   60
 BenchmarkCursorDecodeEmpty            100    0
 BenchmarkCursorRoundTrip            20000  110
+# ── kernel/audit ──────────────────────────────────────────────────────────────
+# DB-backed: Writer.Record inside a tenant tx (chain-hash + 3 round trips).
+BenchmarkAuditRecord             17000000  700
+# ── kernel/sequence ───────────────────────────────────────────────────────────
+# DB-backed: gap-free Allocate inside a tenant tx (counter bump + ledger insert).
+BenchmarkSequenceAllocate        18000000  300

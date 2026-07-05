@@ -21,3 +21,13 @@ db:
   # See configs/local.yaml for the local-dev pattern.
   max_conns: 16
   query_timeout: 5s
+
+# auth.oidc — user (OIDC/JWT bearer) authentication. Leave unset to keep the
+# user leg deny-by-default (only API keys authenticate); set issuer + audience
+# (and optionally jwks_uri) in an env overlay to enable it. When jwks_uri is
+# empty it is discovered from the issuer's /.well-known/openid-configuration.
+# auth:
+#   oidc:
+#     issuer: "https://idp.example.com/"
+#     audience: "{{.Name}}"
+#     jwks_uri: ""

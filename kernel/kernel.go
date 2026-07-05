@@ -99,8 +99,18 @@ type Kernel struct {
 	Tracer observability.Tracer
 
 	// AuthzCache is the per-actor assignment cache wrapping the evaluator's store
-	// when Deps.AuthzCacheTTL > 0; nil when caching is disabled. Call Invalidate/
-	// InvalidateTenant on it from role grant/revoke paths for immediate effect.
+	// when Deps.AuthzCacheTTL > 0; nil when caching is disabled. It caches
+	// ActiveAssignments (which pre-join role_permissions), so BOTH an actor's
+	// role grants/revokes AND a role's permission set can otherwise be served
+	// stale up to the TTL. To keep it fresh (CA-2):
+	//   - actor_assignment grant/revoke (product-owned write): call
+	//     AuthzCache.Invalidate(tenant, capacity) — or InvalidateTenant for a
+	//     bulk change — right after the write commits.
+	//   - seed / authorization-spine sync (roles + role_permissions): pass this
+	//     handle to seeds.Sync, which calls InvalidateAll after the writes commit.
+	// ABAC policies and ReBAC relationship edges are NOT cached (they pass
+	// through / are checked directly each Evaluate), so a policy activation or a
+	// granted_via edge change is never stale and needs no invalidation.
 	AuthzCache *authz.CachingStore
 
 	// Evidence-layer services exposed to modules via module.Context (roadmap CA-11):

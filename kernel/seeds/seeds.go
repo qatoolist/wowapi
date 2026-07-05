@@ -155,11 +155,25 @@ func (b Bundle) validate(module string) error {
 	return nil
 }
 
+// SpineInvalidator drops an in-process authorization cache after a seed
+// (authorization-spine) write commits. *authz.CachingStore satisfies it via its
+// InvalidateAll method — declared here as a narrow local interface so this base
+// package stays free of an authz import. A seed sync rewrites GLOBAL platform
+// roles and their role_permissions, which any tenant's actors may hold and which
+// the cache pre-joins into ActiveAssignments, so the WHOLE cache is dropped (not
+// one tenant) — see CachingStore.InvalidateAll.
+type SpineInvalidator interface{ InvalidateAll() }
+
 // Sync upserts the bundle's catalog rows idempotently. It must run on a
 // platform-privileged connection (the global catalogs are not app_rt-writable).
 // Running twice is a no-op diff (ON CONFLICT DO UPDATE); tenant data is never
 // touched.
-func Sync(ctx context.Context, db database.DBTX, b Bundle) error {
+//
+// invalidators, if any, are invoked AFTER every write succeeds so an in-process
+// authz cache does not serve stale role/permission grants past the sync (CA-2).
+// Pass the kernel's live cache (Kernel.AuthzCache) when it is non-nil; pass
+// nothing when caching is off — the default — and Sync behaves exactly as before.
+func Sync(ctx context.Context, db database.DBTX, b Bundle, invalidators ...SpineInvalidator) error {
 	for _, p := range b.Permissions {
 		if _, err := db.Exec(ctx,
 			`INSERT INTO permissions (key, module, description, sensitive)
@@ -224,6 +238,15 @@ func Sync(ctx context.Context, db database.DBTX, b Bundle) error {
                   WHERE role_id = $1 AND NOT (permission_key = ANY($2))`,
 			roleID, r.Permissions); err != nil {
 			return kerr.Wrapf(err, "seeds.Sync", "prune stale grants on role %s", r.Key)
+		}
+	}
+	// The writes above changed the authorization spine (platform roles and their
+	// permission grants). Drop any in-process authz cache broadly so a role's
+	// changed permission set takes effect immediately rather than after the TTL
+	// (CA-2). No-op when caching is off (no invalidator passed).
+	for _, inv := range invalidators {
+		if inv != nil {
+			inv.InvalidateAll()
 		}
 	}
 	return nil

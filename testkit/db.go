@@ -78,8 +78,9 @@ var (
 
 // NewDB provisions an exclusive database for t cloned from the migrated kernel
 // template, returning admin + runtime pools and a TxManager over runtime. It
-// skips (never fails) when no admin DSN is configured.
-func NewDB(t *testing.T) *DBHandle {
+// skips (never fails) when no admin DSN is configured. Accepts testing.TB so
+// both tests and benchmarks (Benchmark* over the DB-backed hot paths) share it.
+func NewDB(t testing.TB) *DBHandle {
 	t.Helper()
 	dsn := adminDSN(t)
 	ctx := context.Background()
@@ -146,7 +147,7 @@ func NewDB(t *testing.T) *DBHandle {
 // convenience), but a CI/release gate sets WOWAPI_REQUIRE_DB=1 so a missing DB
 // FAILS loudly instead of turning every DB-backed test into a silent skip —
 // green-but-hollow CI is the failure mode this guard closes.
-func adminDSN(t *testing.T) string {
+func adminDSN(t testing.TB) string {
 	t.Helper()
 	if dsn := os.Getenv("WOWAPI_TEST_DSN"); dsn != "" {
 		return dsn
@@ -301,7 +302,7 @@ func templateName() (string, error) {
 
 // createTestDB clones the template into name, retrying transient "being
 // accessed by other users" contention on the shared source.
-func createTestDB(ctx context.Context, t *testing.T, dsn, name, tmpl string) {
+func createTestDB(ctx context.Context, t testing.TB, dsn, name, tmpl string) {
 	t.Helper()
 	conn, err := connectDB(ctx, dsn, "")
 	if err != nil {
@@ -352,7 +353,7 @@ func dropTestDB(ctx context.Context, dsn, name string) {
 
 // testDBName derives a lowercase, <=63-char database name from the test name
 // plus a random suffix for uniqueness across parallel runs.
-func testDBName(t *testing.T) string {
+func testDBName(t testing.TB) string {
 	base := strings.ToLower(t.Name())
 	base = regexp.MustCompile(`[^a-z0-9_]+`).ReplaceAllString(base, "_")
 	base = strings.Trim(base, "_")

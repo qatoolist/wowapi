@@ -1,15 +1,19 @@
 // Package auth is wowapi's authentication kernel: it verifies OIDC/JWT bearer
-// tokens against an injectable KeySource (JWKS-by-kid in production, a local RSA
+// tokens against an injectable KeySource (JWKS-over-HTTPS in production, a local
 // signer in tests) and maps validated claims onto an authz.Actor after the app
-// resolves the framework user id and active capacity (D-0037, 01 §3).
+// resolves the framework user id and active capacity (D-0037, 01 §3). The
+// Authenticator type adapts a Verifier to the framework's structural
+// httpx.Authenticator so it can be the user leg of a product's composite.
 //
 // Two properties are structural, not configurable:
-//   - RS256 only: the verifier asserts the token's signing method is
-//     *jwt.SigningMethodRSA before touching the key, so "alg":"none" and HMAC
-//     tokens are rejected outright (algorithm-confusion defense);
+//   - asymmetric signatures only: the verifier asserts the token's signing method
+//     is RSA or ECDSA (RS256/ES256) before touching the key, so "alg":"none" and
+//     HMAC tokens are rejected outright (algorithm-confusion defense);
 //   - opaque failures: every bad/missing/expired/wrong-issuer/wrong-audience/
 //     unknown-kid/bad-signature case returns errors.E(KindUnauthenticated, ...)
-//     and never echoes the token or key material.
+//     and never echoes the token or key material. A KeySource transport fault
+//     (unreachable JWKS) surfaces as a KindExternal HARD error, not a 401, so a
+//     composite authenticator does not mask a transient outage as a clean reject.
 //
 // Import law (blueprint 04 §1; boundary lint): this package imports only stdlib,
 // kernel/errors, kernel/authz, google/uuid and the jwt library — never module,
@@ -19,6 +23,8 @@ package auth
 
 import (
 	"context"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -105,7 +111,7 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 
 	claims := &Claims{}
 	parser := jwt.NewParser(
-		jwt.WithValidMethods([]string{"RS256"}),
+		jwt.WithValidMethods([]string{"RS256", "ES256"}),
 		jwt.WithIssuer(v.issuer),
 		jwt.WithAudience(v.aud),
 		jwt.WithLeeway(v.leeway),
@@ -113,26 +119,37 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 	)
 
 	keyfunc := func(token *jwt.Token) (any, error) {
-		// Algorithm-confusion defense: assert the concrete RSA signing method
-		// before we ever look up a key. WithValidMethods above already gates on
-		// the "alg" string; this second check binds to the *type* so an attacker
-		// cannot coerce an HMAC verification against RSA public-key bytes.
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		// Algorithm-confusion defense: assert a concrete asymmetric signing
+		// method before we ever look up a key. WithValidMethods above already
+		// gates on the "alg" string; this second check binds to the *type* so an
+		// attacker cannot coerce an HMAC verification against public-key bytes.
+		switch token.Method.(type) {
+		case *jwt.SigningMethodRSA, *jwt.SigningMethodECDSA:
+		default:
 			return nil, unauth("unexpected signing method", nil)
 		}
 		kid, _ := token.Header["kid"].(string)
 		key, err := v.keys.Key(ctx, kid)
 		if err != nil {
-			return nil, unauth("unknown key id", err)
+			// An unknown-kid (KindUnauthenticated) stays an opaque 401; any other
+			// kind (e.g. KindExternal when the JWKS endpoint is unreachable) is a
+			// hard fault that must propagate rather than be flattened to a 401.
+			if errors.KindOf(err) == errors.KindUnauthenticated {
+				return nil, unauth("unknown key id", err)
+			}
+			return nil, err
 		}
 		return key, nil
 	}
 
 	if _, err := parser.ParseWithClaims(tokenString, claims, keyfunc); err != nil {
-		// Preserve an already-opaque KindUnauthenticated from keyfunc; otherwise
-		// wrap the jwt parse/validation error as opaque unauthenticated.
-		if errors.KindOf(err) == errors.KindUnauthenticated {
-			return Claims{}, err
+		// A kernel *Error in the chain was surfaced deliberately by keyfunc/the
+		// KeySource: keep its Kind (an opaque 401 for unknown-kid, or a hard fault
+		// such as KindExternal for an unreachable JWKS). A raw jwt parse/validation
+		// failure (bad signature, expired, wrong iss/aud) carries no Kind — wrap it
+		// as opaque unauthenticated.
+		if e, ok := errors.As(err); ok {
+			return Claims{}, e
 		}
 		return Claims{}, unauth("invalid token", err)
 	}
@@ -181,4 +198,47 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 		ImpersonatorUserID: claims.ImpersonatorUserID,
 		BreakGlass:         claims.BreakGlass,
 	}, nil
+}
+
+// Authenticator adapts a Verifier to the framework's structural
+// httpx.Authenticator: it reads an "Authorization: Bearer <jwt>" header,
+// verifies the token, and maps its claims to an authz.Actor via the
+// PrincipalStore. It is the OIDC/JWT user leg of a product's composite
+// authenticator (roadmap S1/CA-2). It satisfies httpx.Authenticator
+// structurally — kernel/auth never imports kernel/httpx (import law).
+//
+// Decline vs. fault: a missing bearer token or a non-JWT token (e.g. an API key)
+// yields KindUnauthenticated so a composite falls through to the next scheme; a
+// JWKS/transport fault propagates as a hard error so it is not masked as a 401.
+type Authenticator struct {
+	v  *Verifier
+	ps PrincipalStore
+}
+
+// NewAuthenticator builds the OIDC/JWT authenticator over a Verifier and the
+// app-supplied PrincipalStore (subject → framework user id + capacity check).
+func NewAuthenticator(v *Verifier, ps PrincipalStore) *Authenticator {
+	return &Authenticator{v: v, ps: ps}
+}
+
+// Authenticate resolves the user actor from the request's bearer JWT. It
+// declines (KindUnauthenticated) when no bearer token is present.
+func (a *Authenticator) Authenticate(r *http.Request) (authz.Actor, error) {
+	tok := bearerToken(r)
+	if tok == "" {
+		return authz.Actor{}, unauth("missing bearer token", nil)
+	}
+	claims, err := a.v.Verify(r.Context(), tok)
+	if err != nil {
+		return authz.Actor{}, err
+	}
+	return a.v.Actor(r.Context(), claims, a.ps)
+}
+
+// bearerToken extracts the token from an "Authorization: Bearer <token>" header.
+func bearerToken(r *http.Request) string {
+	if after, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return after
+	}
+	return ""
 }

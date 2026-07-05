@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // DLQ operability for events (roadmap R4). An event that exhausts its dispatch
@@ -59,6 +60,34 @@ func ListDeadEvents(ctx context.Context, pool *pgxpool.Pool, limit int) ([]DeadE
 		return nil, kerr.Wrapf(err, "outbox.ListDeadEvents", "iterate dlq")
 	}
 	return out, nil
+}
+
+// CountDeadEvents returns the number of dead-lettered (dispatch_status='dead')
+// outbox events — the events contribution to DLQ depth (roadmap CA-1 / backlog
+// B-8). Runs on the platform pool (events_outbox is read cross-tenant as
+// app_platform via the outbox_relay_all policy).
+func CountDeadEvents(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	var n int64
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM events_outbox WHERE dispatch_status = 'dead'`).Scan(&n); err != nil {
+		return 0, kerr.Wrapf(err, "outbox.CountDeadEvents", "count dlq")
+	}
+	return n, nil
+}
+
+// PublishDLQDepth counts dead-lettered events and sets the
+// dlq_depth{queue="events"} gauge on m. Drive it from the leader-safe scheduler
+// so the depth is counted once, not once per replica. m may be nil (no emission);
+// otherwise it is the shared sink — observability.NoOp when no adapter is wired.
+func PublishDLQDepth(ctx context.Context, pool *pgxpool.Pool, m observability.Metrics) error {
+	n, err := CountDeadEvents(ctx, pool)
+	if err != nil {
+		return err
+	}
+	if m != nil {
+		m.SetGauge("dlq_depth", float64(n), map[string]string{"queue": "events"})
+	}
+	return nil
 }
 
 // ReplayDeadEvent resets a dead event to 'pending' for re-dispatch: attempts

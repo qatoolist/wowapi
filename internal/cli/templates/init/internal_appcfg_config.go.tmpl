@@ -16,9 +16,29 @@ import (
 // config fields here; they load from the same layered sources.
 type Config struct {
 	config.Framework
+	// Auth holds product-owned authentication config. When Auth.OIDC.Issuer is
+	// set, cmd/api wires the OIDC/JWT bearer authenticator as the user leg of the
+	// composite; left empty, that leg stays DenyAll (deny-by-default) so only API
+	// keys authenticate.
+	Auth AuthConfig `conf:"auth" json:"auth"`
 	// Modules carries each registered module's modules.<name>.* namespace,
 	// passed to app.Boot so modules receive only their own config.
 	Modules config.Namespaces `conf:"modules"`
+}
+
+// AuthConfig groups {{.Name}}'s authentication settings.
+type AuthConfig struct {
+	OIDC OIDCConfig `conf:"oidc" json:"oidc"`
+}
+
+// OIDCConfig configures the OIDC/JWT bearer authenticator (kernel/auth). Set
+// Issuer (and normally Audience) to enable the user auth leg. JWKSURI is
+// optional: when empty it is discovered from the issuer's
+// /.well-known/openid-configuration document.
+type OIDCConfig struct {
+	Issuer   string `conf:"issuer" json:"issuer" doc:"OIDC issuer (iss); enables the user auth leg when set"`
+	Audience string `conf:"audience" json:"audience" doc:"expected token audience (aud)"`
+	JWKSURI  string `conf:"jwks_uri" json:"jwks_uri" doc:"JWKS endpoint; discovered from the issuer when empty"`
 }
 
 // Load reads the layered configuration in precedence order: configs/base.yaml,

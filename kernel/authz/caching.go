@@ -110,6 +110,20 @@ func (c *CachingStore) InvalidateTenant(tenantID uuid.UUID) {
 	}
 }
 
+// InvalidateAll drops the entire cache. It is the correct invalidation for a
+// GLOBAL authorization-spine write — a seed sync of platform roles / their
+// role_permissions — because those rows are cross-tenant: a changed role and its
+// grants may be held by actors in ANY tenant, and the cached ActiveAssignments
+// pre-join role_permissions, so a permission added to (or pruned from) a role is
+// otherwise served stale until the TTL. seeds.Sync calls this after its writes
+// commit when a live cache is wired (CA-2), so a spine change takes effect on
+// this pod immediately rather than after the TTL.
+func (c *CachingStore) InvalidateAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	clear(c.cache)
+}
+
 // --- pass-through reads (not on the per-actor hot path) ---
 
 func (c *CachingStore) OrgAncestors(ctx context.Context, db database.TenantDB, orgID uuid.UUID) ([]uuid.UUID, error) {

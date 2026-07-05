@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // DLQ operability (roadmap R4). Jobs that exhaust their attempts are
@@ -58,6 +59,34 @@ func ListDead(ctx context.Context, pool *pgxpool.Pool, limit int) ([]DeadJobEntr
 		return nil, kerr.Wrapf(err, "jobs.ListDead", "iterate dlq")
 	}
 	return out, nil
+}
+
+// CountDead returns the number of dead-lettered (status='discarded') jobs
+// currently in the queue — the jobs contribution to DLQ depth (roadmap CA-1 /
+// backlog B-8). Runs on the platform pool (jobs_queue is a global kernel table).
+func CountDead(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	var n int64
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM jobs_queue WHERE status = 'discarded'`).Scan(&n); err != nil {
+		return 0, kerr.Wrapf(err, "jobs.CountDead", "count dlq")
+	}
+	return n, nil
+}
+
+// PublishDLQDepth counts dead-lettered jobs and sets the dlq_depth{queue="jobs"}
+// gauge on m. Drive it from the leader-safe scheduler (a single replica claims
+// each interval) so the depth is counted once, not once per replica. m may be
+// nil (no emission); otherwise it is the shared sink — observability.NoOp when
+// no adapter is wired.
+func PublishDLQDepth(ctx context.Context, pool *pgxpool.Pool, m observability.Metrics) error {
+	n, err := CountDead(ctx, pool)
+	if err != nil {
+		return err
+	}
+	if m != nil {
+		m.SetGauge("dlq_depth", float64(n), map[string]string{"queue": "jobs"})
+	}
+	return nil
 }
 
 // ReplayDead resets a discarded job to 'available' for another run: attempts

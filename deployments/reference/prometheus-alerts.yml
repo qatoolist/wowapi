@@ -13,8 +13,7 @@
 #   scheduler_task_errors_total{task}                    (worker)
 #   webhook_breaker_state{endpoint_id}  0=closed 1=open 2=half-open (worker)
 #   rate_limit_dropped_total{route}     (api, once RateLimit is in the chain — CA-2)
-#
-# NOT yet exported (documented CA-1 follow-up): dead-letter-queue depth.
+#   dlq_depth{queue}    queue=jobs|events — dead-letter backlog (worker)
 
 groups:
   - name: wowapi-framework
@@ -54,6 +53,16 @@ groups:
         annotations:
           summary: "Webhook breaker open for endpoint {{ $labels.endpoint_id }}"
           description: "Outbound deliveries to this endpoint are being skipped (circuit open)."
+
+      # CA-1/B-8 dead-letter backlog: jobs or events that exhausted their retries
+      # are accumulating in the DLQ and need operator attention (`wowapi dlq …`).
+      - alert: WowapiDLQDepthHigh
+        expr: dlq_depth > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Dead-letter queue {{ $labels.queue }} non-empty"
+          description: "{{ $value }} dead-lettered items sitting in the {{ $labels.queue }} DLQ for 15m — inspect and replay/discard via `wowapi dlq`."
 
       # RED: elevated server-error rate on the API.
       - alert: WowapiHighServerErrorRate

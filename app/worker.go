@@ -21,6 +21,7 @@ type WorkerConfigOpts struct {
 	SchedulerPoll       time.Duration // how often to check for due tasks (default 30s)
 	SLAInterval         time.Duration // workflow SLA sweep interval (default 1m)
 	IdempotencyInterval time.Duration // idempotency-key expiry sweep interval (default 1h)
+	DLQDepthInterval    time.Duration // dlq_depth gauge refresh interval (default 1m)
 }
 
 // StartWorker runs the background worker process for a booted app: the outbox
@@ -59,6 +60,9 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if opts.IdempotencyInterval <= 0 {
 		opts.IdempotencyInterval = time.Hour
 	}
+	if opts.DLQDepthInterval <= 0 {
+		opts.DLQDepthInterval = time.Minute
+	}
 
 	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch, outbox.WithRelayTracer(k.Tracer))
 	var runnerOpts []jobs.RunnerOpt
@@ -84,7 +88,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 				map[string]string{"task": name})
 		}
 	})
-	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval)
+	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval)
 	registerModuleRecurring(sched, k, b.Recurring)
 
 	// Both loops respect ctx cancellation and drain in-flight work themselves.

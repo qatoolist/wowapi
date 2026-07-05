@@ -172,15 +172,19 @@ BENCH_PKGS := \
 	./kernel/httpx/... \
 	./kernel/config/... \
 	./kernel/filtering/... \
-	./kernel/pagination/...
+	./kernel/pagination/... \
+	./kernel/audit/... \
+	./kernel/sequence/...
 
 .PHONY: bench
-bench: ## Run hot-path benchmarks with allocation counts
-	$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS)
+bench: ## Run hot-path benchmarks with allocation counts (DB-backed benches need `make up` or DATABASE_URL)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 \
+		$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS)
 
 .PHONY: bench-budget
-bench-budget: ## Enforce performance budgets (fails if any benchmark exceeds bench-budgets.txt)
-	$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS) \
+bench-budget: ## Enforce performance budgets (fails if any benchmark exceeds bench-budgets.txt; needs a real DB for the audit/sequence benches)
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 \
+		$(GO) test -bench=. -benchmem -run=^$$ $(BENCH_PKGS) \
 		| $(GO) run ./internal/tools/benchbudget bench-budgets.txt
 
 .PHONY: coverage

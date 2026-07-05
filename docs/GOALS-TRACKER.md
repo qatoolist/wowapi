@@ -69,8 +69,8 @@ From `VERIFICATION-wowapi-hardening.md` §6 (closure matrix), reconciled with po
 
 | CA | Pri | Item | Status |
 |---|---|---|---|
-| CA-1 | P0 | Metrics emission (RED, scheduler lag, breaker, rate-limit, config fingerprint) | ✅ Closed (residual: DLQ-depth gauge — infra in place) |
-| CA-2 | P0 | Default wiring (RateLimit in chain, real trace-sample-ratio, composite authn, signed cursors) | ✅ Closed |
+| CA-1 | P0 | Metrics emission (RED, scheduler lag, breaker, rate-limit, config fingerprint, DLQ depth) | ✅ Closed — DLQ-depth gauge `dlq_depth{queue}` now emitted leader-safe (B-8 done) |
+| CA-2 | P0 | Default wiring (RateLimit in chain, real trace-sample-ratio, composite authn — API key + config-gated OIDC/JWT, signed cursors) | ✅ Closed — CA-2(a): `kernel/auth` OIDC/JWT `Authenticator` (JWKS RS256/ES256) shipped + wired; CA-2(b): authz cache `InvalidateAll` wired into `seeds.Sync` (D-0079) |
 | CA-3 | P0 | API-key completion (Rotate, audited issue/rotate/revoke, CLI, ABAC-scope test) | ✅ Closed |
 | CA-4 | P0 | Outbox hot-aggregate load characterization (~200 ev/s) | ✅ Closed |
 | CA-5 | P0 | Recurring-job module face (`Context.RecurringJob`, leader-safe) | ✅ Closed |
@@ -94,13 +94,13 @@ Everything below is **documented and low-risk**; none blocks v1 readiness. Order
 | # | Item | Type | Where tracked | Notes |
 |---|---|---|---|---|
 | B-1 | **golangci-lint backlog (~160)** — 154 production `errcheck`, 3 `unused`, 2 `unparam`, 1 `unconvert` | Code hygiene | `docs/working/lint-backlog.md` | Gate blocks **new** code (`make lint-new`); backlog burned down package-by-package, never blanket-`//nolint`. |
-| B-2 | **Perf budgets for new hot paths** — audit Record/chainHash, sequence Allocate, token bucket, CachingStore, edge middleware | Perf gate | `bench-budgets.txt` | `bench-budgets.txt` untouched since Phase 11; extend budgets to the hardening hot paths. |
+| B-2 | ~~Perf budgets for new hot paths~~ | Perf gate | `bench-budgets.txt` | ✅ **Done** — benchmarks + budgets added for audit Record/chain, sequence Allocate, token bucket, CachingStore hit/miss, edge middleware; `make bench-budget` now enforces them (30 benches). |
 | B-3 | **CA-11 anchor-export job** — scheduled audit-chain anchor for offline tail-truncation detection | Feature | CA-11 | Chain verify exists in-DB; anchor-export adds out-of-band tamper evidence. |
 | B-4 | **CA-12 O2** — schema-snapshot diffing in the reversibility drill | Ops | CA-12 | Reversibility drill runs; add snapshot diff assertion. |
 | B-5 | **CA-12 O5** — scripted PITR / object-storage restore legs (or rescope to a staging drill) | Ops | CA-12 | Runbook exists; scripted restore rehearsal outstanding. |
 | B-6 | **CA-10 read-replica router** (if ever needed in-kernel) | Feature | CA-10 | Rescoped to deployment; only revisit if a product needs kernel-level RO routing. |
 | B-7 | **CA-6 reference-stack app-smoke** — nginx header smoke against a scaffolded running product | CI | CA-6 residual | Header posture already unit-tested (`kernel/httpx/edge_test.go`); needs a scaffolded product in CI. |
-| B-8 | **CA-1 DLQ-depth gauge** — Prometheus gauge for dead-letter depth | Metrics | CA-1 residual | Scheduler/metrics infra in place; add the gauge. |
+| B-8 | ~~CA-1 DLQ-depth gauge~~ | Metrics | CA-1 residual | ✅ **Done** — `dlq_depth{queue="jobs"\|"events"}` emitted on the leader-safe scheduler; alert `WowapiDLQDepthHigh` added. |
 | B-9 | **CA-9 jobs/notify trace sub-paths** — extend async trace propagation beyond the outbox seam | Observability | CA-9 residual | Outbox is the primary fan-out; same tracer seam reused. |
 
 ---
@@ -113,7 +113,7 @@ printed (verified) ✅ · generated module compiles + passes contract from an ex
 containers ✅ · hosted CI green on `78fcc0a` (these doc commits re-run it on push) ✅ · no open critical/high review
 findings ✅.
 
-**Outstanding for a clean `v1.0.0` tag:** burn down B-1 (lint backlog) and B-2 (perf budgets) to zero, and close the
+**Outstanding for a clean `v1.0.0` tag:** burn down B-1 (lint backlog) to zero, and close the
 low-risk ops finishers B-3…B-5. None are architectural.
 
 ---

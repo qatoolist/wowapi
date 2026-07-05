@@ -3,6 +3,44 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0079 — CA-2(b): authz-cache invalidation wired to the authorization-spine write
+- **Context:** `authz.CachingStore` was wireable (`kernel.Deps.AuthzCacheTTL` → `Kernel.AuthzCache`) but
+  its `Invalidate`/`InvalidateTenant` had ZERO non-test callers, so a role/permission change could be
+  served stale for up to the TTL, and the original "invalidation hook on seed/spine writes" acceptance
+  clause had been silently dropped. The review flagged this as an incompletely-closed hardening item.
+- **What the cache actually holds (scoping the fix):** `CachingStore` caches ONLY `ActiveAssignments`,
+  which pre-joins `role_permissions`. So exactly two write classes can be served stale: (1) an
+  `actor_assignment` grant/revoke, and (2) a role's permission-set change (`roles` + `role_permissions`,
+  i.e. a seed sync). The other Store reads (`OrgAncestors`/`OrgSubtree`/`Policies`/`ResourceOrg`) and the
+  ReBAC `Checker.Has` are pass-through / checked directly each `Evaluate`, so **ABAC policy activation and
+  granted_via relationship-edge changes are never cached and cannot go stale** — they need no invalidation
+  (correct by construction, now documented on the `Kernel.AuthzCache` field).
+- **Decision:**
+  - **Seed / authorization-spine sync (framework-owned write) — REAL wiring.** Added
+    `CachingStore.InvalidateAll()` (drops the whole cache) and an optional variadic `SpineInvalidator`
+    hook on `seeds.Sync(ctx, db, bundle, invalidators...)`. After the spine writes commit, `Sync` calls
+    `InvalidateAll` on any passed cache. Platform roles are GLOBAL (tenant_id NULL, assignable in any
+    tenant), so the correct invalidation is broad (whole cache), not one tenant. Backward compatible:
+    existing callers pass no invalidator; caching-off (the default) passes nothing → exact prior behavior.
+    Products that run `seeds.Sync` with caching on pass `Kernel.AuthzCache`.
+  - **actor_assignment grant/revoke (product-owned write) — exposed handle, not framework-wireable.** The
+    framework ships NO assignment-management write path (only testkit fixtures and product modules write
+    `actor_assignments`), so there is nothing in-framework to wire. `Kernel.AuthzCache` is exposed with a
+    documented contract: call `Invalidate(tenant, capacity)` (or `InvalidateTenant`) right after the
+    grant/revoke commits. This is a handle, not a TTL-only rescope — the TTL remains only the cross-pod
+    bound.
+- **Not a TTL-only rescope:** the one reachable framework spine write IS wired; the only unwired path is a
+  write the framework does not own, for which the invalidation handle is exposed and documented.
+- **Tests (real, DB-backed, non-skipping):** `kernel/seeds/sync_invalidate_test.go` proves a re-sync that
+  prunes a role grant is reflected immediately when the cache is passed to `Sync` (and stays bounded-stale
+  within a 1h TTL when it is not — the control arm isolates invalidation, not clock, as the cause) plus a
+  caching-off arm; `kernel/authz/caching_pg_test.go` proves through the real `Evaluate` that an
+  `actor_assignment` revoke is immediate after `Invalidate` fires (and immediate with caching off).
+  Revert-check: neutering `InvalidateAll` fails the spine test at the stale-allow assertion.
+- **Affected:** `kernel/authz/caching.go` (`InvalidateAll`), `kernel/seeds/seeds.go` (`SpineInvalidator` +
+  `Sync` hook), `kernel/kernel.go` (`AuthzCache` field doc), `kernel/seeds/sync_invalidate_test.go`,
+  `kernel/authz/caching_pg_test.go`.
+
 ## D-0078 — CF-1: fail-closed platform DSN (runtime/platform separation)
 - **Context:** an independent review (CF-1) found the generated api/worker platform pool fell back to the
   runtime DSN + `SET ROLE app_platform` when `db.platform_dsn` was unset. That fallback structurally requires

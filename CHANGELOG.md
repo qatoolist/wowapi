@@ -18,11 +18,22 @@ and selected H5/P1 items. All domain-neutral; each shipped behind the `make ci` 
 Closure of the exit-gate gaps found by `VERIFICATION-wowapi-hardening.md` (status matrix in its §6):
 
 - **Metrics actually emit** (CA-1): `kernel.Deps.Metrics`; RED middleware + `/metrics` in the generated
-  api; scheduler-lag, webhook-breaker, rate-limit-drop, config-fingerprint gauges; reference Prometheus
-  alerts/scrape in `deployments/reference/`.
+  api; scheduler-lag, webhook-breaker, rate-limit-drop, config-fingerprint, and **DLQ-depth**
+  (`dlq_depth{queue}`, leader-safe) gauges; reference Prometheus alerts/scrape in `deployments/reference/`.
 - **Secure-by-default wiring** (CA-2): rate limiter in the default chain (opt-out `http.rate_limit`); real
-  `telemetry.trace_sample_ratio` wired to the OTel adapter; composite API-key+OIDC authenticator; opt-in
-  authz assignment cache; signed keyset cursors in `workflow.OpenTasksFor` and the generated CRUD list.
+  `telemetry.trace_sample_ratio` wired to the OTel adapter; composite API-key + OIDC/JWT authenticator —
+  the OIDC user leg (`kernel/auth`: JWKS RS256/ES256 verifier + `Authenticator`, DB principal via
+  `adapters/auth/pgprincipal`) activates when `auth.oidc` is configured in the product, else the composite
+  falls through to deny-by-default (`DenyAllAuthenticator`); opt-in authz assignment cache with
+  `InvalidateAll` wired into `seeds.Sync` so a spine change is reflected immediately (D-0079); signed keyset
+  cursors in `workflow.OpenTasksFor` and the generated CRUD list.
+- **Runtime/platform privilege separation** (CF-1, second review): the generated api/worker **fail closed**
+  when `db.platform_dsn` is unset instead of reusing the runtime DSN + `SET ROLE app_platform` (which would
+  require the cluster-global `app_rt → app_platform` membership); the product-dev box uses a dedicated
+  `app_platform` login, and `authz.TestIntegrationRuntimeRoleNotMemberOfPlatform` guards against poisoning
+  (D-0078).
+- **Perf budgets extended** (B-2): benchmarks + budgets for audit Record/chain, `sequence.Allocate`, the HTTP
+  token bucket, `authz.CachingStore`, and the edge middleware chain; `make bench-budget` enforces 30 benches.
 - **API keys** (CA-3): `apikey.Store.Rotate`, audited issue/rotate/revoke, and a `wowapi apikey` CLI.
 - **Advisory-lock load envelope** (CA-4) documented with a repeatable test.
 - **Module recurring jobs** (CA-5): `module.Context.RecurringJob`.
