@@ -28,7 +28,24 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Process note:** this is the pattern compounding — each unscoped sweep found the *previous* fix's missed
   sibling. The durable rule (now in the review-learnings log): when fixing one instance, grep every sibling of
   the same shape and fix or explicitly clear each, and boot the delivered artifact rather than the boot path.
+- **Fourth sweep (over this D-0085 commit) — addendum:** it confirmed the pool sibling-sweep is finally
+  complete (no unguarded serving pool remains; no accidental platform work leaks into the api process; every
+  prose claim holds) and there is **no live hole**. It found one real gap: the C-1 api-wiring and F1 dlq-guard
+  fixes had **no revert-sensitive test** — the e2e's superuser DSN is demoted by `SET ROLE app_platform`, so
+  `AssertRLSEnforced`/`WithConnRLSGuard` pass whether or not the wiring is present (reverting the fix left CI
+  green). A behavioral delivered-artifact test can't distinguish wired-from-unwired for exactly that reason, so
+  added **structural** revert-sensitive guards: `TestInitWiresGuardedPlatformPool` (asserts the generated
+  api/worker wire `Deps.Platform` *and* apply `WithConnRLSGuard`; **proven to FAIL** when `Platform` is
+  un-wired) and `TestCLIPoolsApplyRLSGuard` (locks the guard on the dlq/audit/apikey CLI pools). The behavioral
+  proof of the boot-check mechanism itself remains `app.TestIntegrationBootFailsOnRLSBypassPlatformPool`. The
+  adversarial half of the same sweep found one more real gap: the `kernel.Kernel.Platform` / `kernel.Deps.Platform`
+  doc comments still said "nil in api-only processes / required only for worker/migrate" — the API-contract
+  surface a *custom* (non-scaffold) api main reads, which would tell that engineer to skip `Platform` and
+  silently bypass the M3 check. Corrected both to state that the api and worker both wire it and that leaving it
+  nil skips the backstop (nil only for migrate). This is the deliberate stopping point (per the agreed stopping
+  rule): findings converged to a no-live-hole test-rigor + doc-contract gap, now closed.
 - **Affected:** internal/cli/templates/init/cmd_api_main.go.tmpl, internal/cli/dlq_cmd.go, internal/e2e/e2e_test.go,
+  internal/cli/platform_pool_wiring_test.go, kernel/kernel.go (Platform doc contract),
   docs/implementation/decisions.md (D-0082 correction).
 
 ## D-0084 — Open-ended-review follow-ups: what the confirm-scoped gates missed

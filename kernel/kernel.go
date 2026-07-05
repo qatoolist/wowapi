@@ -53,7 +53,7 @@ type Kernel struct {
 	Cfg             config.Framework
 	Log             *slog.Logger
 	Pool            *pgxpool.Pool
-	Platform        *pgxpool.Pool // app_platform pool for cross-tenant kernel work (relay, job runner, seed sync); may be nil in api-only processes
+	Platform        *pgxpool.Pool // app_platform pool for cross-tenant kernel work; see Deps.Platform for the wiring contract (nil only for migrate)
 	Tx              database.TxManager
 	Authz           authz.Evaluator
 	Perms           *authz.Registry
@@ -127,8 +127,15 @@ type Kernel struct {
 // Deps injects the pools/tx (built by the product main, or provided by testkit)
 // so the kernel does not hard-code pool construction and stays testable.
 type Deps struct {
-	Pool     *pgxpool.Pool
-	Platform *pgxpool.Pool // optional; required only for the worker/migrate processes
+	Pool *pgxpool.Pool
+	// Platform is the app_platform pool for cross-tenant kernel work (outbox relay,
+	// job runner, seed sync) and, in the api, cross-tenant API-key verification. Both
+	// the generated api and worker mains build it BEFORE Boot and wire it here, and
+	// app.Boot's RLS-enforcement check (M3) validates it when non-nil. It is nil only
+	// for the migrate process, which serves no tenant traffic and opts out of that
+	// check via app.SkipRLSEnforcementCheck. A custom api/worker main MUST wire it
+	// too — leaving it nil silently skips the M3 backstop for the platform pool.
+	Platform *pgxpool.Pool
 	Tx       database.TxManager
 	Audit    authz.AuditSink // optional; nil → a logging sink
 	// Storage is the object-storage adapter backing the document framework.
