@@ -1,10 +1,9 @@
 # wowapi — Goals & Backlog Tracker
 
 Companion to [SRS.md](SRS.md). Tracks every goal and work item by status: **Done · Deferred/Rescoped · Pending**.
-Cross-checked against the tree on 2026-07-04 (50 commits; 251 Go files; 108 test files; 24 migrations; Go 1.26).
+Cross-checked against the tree on 2026-07-05 (66 commits; 329 Go files; 184 test files; 28 migrations; Go 1.26).
 The authoritative gate (`make ci` in containers, `WOWAPI_REQUIRE_DB=1`) is green; the hosted GitHub CI last ran green
-on `78fcc0a` (the tip before these docs). The SRS/tracker commits are local and pending the user's push, after which
-CI runs on them.
+on `329cc0e` (all 5 workflows: ci, govulncheck, codeql, scorecard, security-scan).
 
 **Legend:** ✅ Done · 🟡 Partial · ⏸️ Deferred/Rescoped (documented, low-risk) · ⬜ Pending/backlog.
 
@@ -110,11 +109,12 @@ Container-first build ✅ · 24 real-DB test categories ✅ · per-phase evidenc
 ✅ · boundary lint (no forbidden imports / no domain leakage) ✅ · deny-by-default authz proven ✅ · RLS isolation
 proven ✅ · outbox atomicity + crash/retry proven ✅ · leader-safe scheduler exactly-once proven ✅ · secrets never
 printed (verified) ✅ · generated module compiles + passes contract from an external repo ✅ · `make ci` green in
-containers ✅ · hosted CI green on `78fcc0a` (these doc commits re-run it on push) ✅ · no open critical/high review
+containers ✅ · hosted CI green on `329cc0e` (all 5 workflows) ✅ · no open critical/high review
 findings ✅.
 
-**Outstanding for a clean `v1.0.0` tag:** burn down B-1 (lint backlog) to zero, and close the
-low-risk ops finishers B-3…B-5. None are architectural.
+**Outstanding for a clean `v1.0.0` tag:** burn down B-1 (lint backlog, ~154 `errcheck`) to zero. The ops
+finishers B-2…B-5 are all closed (see the backlog table); the generated-scaffold config/migrate/deploy
+correctness gaps raised in the latest consumer-facing review are fixed (D-0083). None are architectural.
 
 ---
 

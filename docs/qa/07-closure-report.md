@@ -70,4 +70,11 @@ open defects; all are recorded in `06`. Graphify semantic `extract` remains bloc
 — environmental.
 
 **Status: CLOSED.** No known open critical, major, integration, E2E, data-consistency, security,
-permission, or framework-level defects. `wowapi` is production-ready with the regression suite hardened.
+permission, or framework-level defects. The framework core is production-ready: the authoritative
+`make ci` gate (containers, `WOWAPI_REQUIRE_DB=1`) is green and the regression suite is hardened.
+
+**One release-honesty caveat.** The full `make lint` (`golangci-lint run ./...`) still reports ~154
+`errcheck` findings tracked as backlog **B-1** in `docs/working/lint-backlog.md` — mostly best-effort
+`defer Close()` / write paths, non-blocking and gated for *new* code by `make lint-new`, but not yet
+burned down. "Production-ready" here refers to behaviour under the green `make ci` gate; a clean full
+`make lint` (and thus a `v1.0.0` tag) is pending that burn-down.

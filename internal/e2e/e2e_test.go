@@ -98,6 +98,15 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		t.Fatalf("e2e: go vet ./...: %v", err)
 	}
 
+	// Step 6b: `config validate --env <e>` must honor --env, NOT fall back to
+	// APP_ENV. No prod overlay is scaffolded, so validating --env prod must FAIL
+	// even though APP_ENV=local would otherwise validate clean — the regression
+	// guard for the "validated the wrong environment" bug (the prod CI gate).
+	if err := runCmd(t, productDir, env, wowapiBin, "config", "validate", "--env", "prod"); err == nil {
+		t.Fatal("e2e: `config validate --env prod` must fail when no prod overlay exists — --env must not fall back to APP_ENV")
+	}
+	t.Log("e2e: config validate --env prod correctly fails (honors --env ✓)")
+
 	// DB smoke path: guarded by DATABASE_URL so it skips cleanly in offline CI —
 	// but a CI/release gate sets WOWAPI_REQUIRE_DB=1 so the runtime proof (migrate
 	// + api /healthz) is not silently skipped.
@@ -126,6 +135,40 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		t.Fatalf("e2e: migrate run: %v (criterion #22 FAIL)", err)
 	}
 	t.Log("e2e: migrate ran successfully (criterion #22 ✓)")
+
+	// `config validate --env local` must pass now that the DSN secretrefs resolve
+	// (the product checker wires the env secret provider) — the control for the
+	// --env-prod failure asserted above.
+	if err := runCmd(t, productDir, dbEnv, wowapiBin, "config", "validate", "--env", "local"); err != nil {
+		t.Fatalf("e2e: `config validate --env local` should pass with DSNs set: %v", err)
+	}
+
+	// migrate down is a guarded FULL reset: it must refuse outside local/dev even
+	// with a valid DSN, so a prod operator cannot wipe the database. Write a valid
+	// prod overlay and run under APP_ENV=prod so the config loads cleanly AS prod —
+	// then it is the runner's own environment guard (asserted via its message), not
+	// a config-conflict error, that rejects the reset, before any DDL runs.
+	prodOverlay := filepath.Join(productDir, "configs", "prod.yaml")
+	prodYAML := "environment: prod\nlog:\n  level: info\n  format: json\ndb:\n" +
+		"  dsn: \"secretref://env/DATABASE_URL\"\n" +
+		"  migrate_dsn: \"secretref://env/MIGRATE_URL\"\n" +
+		"  platform_dsn: \"secretref://env/PLATFORM_URL\"\n"
+	if err := os.WriteFile(prodOverlay, []byte(prodYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(prodOverlay) }()
+	// Override BOTH env layers to prod: APP_ENV=prod selects configs/prod.yaml and
+	// WOWAPI__ENVIRONMENT=prod overrides the baseline env-var layer (else the two
+	// disagree and the config loader rejects the conflict before the guard runs).
+	prodEnv := append(append([]string{}, dbEnv...), "APP_ENV=prod", "WOWAPI__ENVIRONMENT=prod")
+	derr := runCmd(t, productDir, prodEnv, migrateBin, "down")
+	if derr == nil {
+		t.Fatal("e2e: `migrate down` must refuse in a non-local/dev environment (guarded reset)")
+	}
+	if !strings.Contains(derr.Error(), "refusing to reset") {
+		t.Fatalf("e2e: `migrate down` in prod must be rejected by the runner's environment guard, got: %v", derr)
+	}
+	t.Log("e2e: migrate down refuses outside local/dev via the runner guard (guarded reset ✓)")
 
 	// Step 8: build cmd/api and start it on a free port.
 	apiBin := filepath.Join(tmpDir, "api")

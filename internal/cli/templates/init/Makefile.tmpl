@@ -14,5 +14,8 @@ lint:
 migrate-up:
 	go run ./cmd/migrate up
 
+# migrate-down is a FULL reset to version 0 (not a stepwise rollback). The runner
+# refuses to run it unless the environment is local/dev — production schema changes
+# use forward (expand-contract) migrations. Intended for local teardown only.
 migrate-down:
 	go run ./cmd/migrate down

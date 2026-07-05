@@ -3,6 +3,42 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0083 — Generated-scaffold config/migrate/deploy correctness (consumer-facing review)
+- **Context:** a consumer-facing review of the *generated product* (not the kernel) found six real
+  scaffold/config/deployment/release-honesty gaps. The kernel, migrations, testkit, CI, and container gate
+  were rated strong; these were correctness gaps in what `wowapi init` emits and in a couple of release claims.
+- **Decisions (all fixed):**
+  - **F1 (High):** the scaffolded `tools/configcheck` ignored `--env` and loaded only `APP_ENV`, so
+    `wowapi config validate --env prod` validated the wrong environment (the prod CI gate was inert). Rewrote
+    the checker to parse `--dir/--base/--env/--env-prefix`, select the `<env>.yaml` overlay (required when
+    `--env` is given), wire the env secret provider, and **assert the composed environment equals `--env`**
+    (fail-closed) — mirroring the framework-side `config_cmd.go` path. `--env` wins over `APP_ENV`.
+  - **F2 (High):** the generated `cmd/migrate` was fail-open (config-load failure → compiled defaults) and
+    ignored `up`/`down` (always migrated up), so `make migrate-down` was a no-op that looked like a rollback.
+    Now: **fail-closed** config load (any error aborts); `up`/`down` subcommands; `down` runs
+    `database.MigrateReset` (full reset to v0, modules-reverse-then-kernel) but **refuses unless environment
+    is local/dev** — production schema change is forward-only expand-contract (blueprint 12). The framework
+    exposes no stepwise down-one, so a guarded full reset is the honest primitive (chosen over adding a
+    down-one API that would encourage the non-expand-contract path).
+  - **F3 (Medium):** `config diff` was not delegated to the product checker, and the framework-side diff
+    built loader options without a secret provider (so `secretref://env/...` configs errored). Wired
+    `envprovider.New()` into `runConfigDiff`; `config diff` now delegates to `tools/configcheck` when present
+    (added a `diff` mode there over the product's `appcfg.Config`), framework-only fallback otherwise.
+  - **F4 (Medium):** `wowapi deploy render --format env` omitted `WOWAPI__DB__MIGRATE_DSN` (compose had it),
+    so the migrate job couldn't run. Added the migrate DSN secret reference to the env template.
+  - **F5 (Medium, release-honesty):** `make lint` is still red (~154 `errcheck`, backlog B-1). Qualified the
+    "production-ready" claim in `docs/qa/07-closure-report.md` to scope it to the green `make ci` gate and
+    name the tracked lint backlog as pending for a clean `v1.0.0` — rather than burn down 154 mechanical
+    findings this round (user's call).
+  - **F6 (Low):** refreshed `docs/GOALS-TRACKER.md` stale counts / CI SHA and the outdated "outstanding" line
+    (B-2…B-5 are closed; only B-1 remains).
+- **Tradeoffs:** F1/F2 convert generated-scaffold footguns into fail-closed defaults, consistent with the
+  H1/H2/M2/M3/CF-1 "safe-by-default" line. `migrate down` deliberately offers only a guarded full reset, not
+  stepwise rollback, to stay aligned with forward-only expand-contract.
+- **Affected:** internal/cli/templates/init/{tools_configcheck_main.go.tmpl, cmd_migrate_main.go.tmpl,
+  Makefile.tmpl}, internal/cli/{deploy_cmd.go, config_delegate.go, config_cmd.go}, internal/cli/cmds_test.go,
+  internal/e2e/e2e_test.go (regression guards), docs/qa/07-closure-report.md, docs/GOALS-TRACKER.md.
+
 ## D-0082 — M3: boot-time RLS-enforcement check is safe-by-default (fail closed on an RLS-bypassing runtime pool)
 - **Context:** the follow-up flagged in D-0081 ("M3 guard-by-default"). Postgres `FORCE ROW LEVEL SECURITY`
   does NOT apply to a superuser or a `BYPASSRLS` role. So a product that wires its tenant-serving pool over an

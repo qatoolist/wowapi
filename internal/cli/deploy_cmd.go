@@ -130,8 +130,11 @@ services:
 `
 
 const envTemplate = `# Rendered by ` + "`wowapi deploy render`" + ` — {{.Name}} deployment env ({{.Env}}).
-# WOWAPI__DB__DSN is a secret REFERENCE; set WOWAPI_DB_DSN to the real DSN.
+# WOWAPI__DB__DSN and WOWAPI__DB__MIGRATE_DSN are secret REFERENCES: set the real
+# DSNs in WOWAPI_DB_DSN (api/worker runtime, non-privileged app_rt) and
+# WOWAPI_MIGRATE_DSN (the migrate job, privileged app_migrate). Never inline them.
 WOWAPI__ENVIRONMENT={{.Env}}
 WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN
+WOWAPI__DB__MIGRATE_DSN=secretref://env/WOWAPI_MIGRATE_DSN
 WOWAPI_IMAGE={{.Image}}
 `

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/kernel/config"
 )
 
@@ -67,6 +68,9 @@ func runConfigDiff(args []string, stdout, stderr io.Writer) int {
 			BaseFile:  filepath.Join(*dir, "base.yaml"),
 			EnvFile:   filepath.Join(*dir, env+".yaml"),
 			EnvPrefix: *prefix,
+			// Wire the env secret provider so secretref://env/<VAR> values resolve;
+			// without it a normal DSN config errors out during the diff load.
+			Secrets: envprovider.New(),
 		})
 		if err != nil {
 			return "", err

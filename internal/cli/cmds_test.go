@@ -216,8 +216,16 @@ func TestDeployRenderEnvAndBadFormat(t *testing.T) {
 	if code := runDeploy([]string{"render", "--format", "env", "--env", "prod"}, &out, &errb); code != 0 {
 		t.Fatalf("env render exit %d: %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "WOWAPI__ENVIRONMENT=prod") {
-		t.Fatalf("env output missing environment: %s", out.String())
+	got := out.String()
+	if !strings.Contains(got, "WOWAPI__ENVIRONMENT=prod") {
+		t.Fatalf("env output missing environment: %s", got)
+	}
+	// Both the runtime DSN and the migrate DSN must be emitted as secret references —
+	// the migrate job needs WOWAPI__DB__MIGRATE_DSN or it cannot run migrations.
+	for _, want := range []string{"WOWAPI__DB__DSN=secretref://env/WOWAPI_DB_DSN", "WOWAPI__DB__MIGRATE_DSN=secretref://env/WOWAPI_MIGRATE_DSN"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("env output missing %q:\n%s", want, got)
+		}
 	}
 	out.Reset()
 	errb.Reset()

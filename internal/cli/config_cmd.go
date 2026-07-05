@@ -154,8 +154,12 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2 // unreachable
 	case "diff":
-		// diff needs two environments loaded at once; handled framework-side
-		// (product-field diff via the checker is a follow-up).
+		// Prefer the product-local checker so the diff covers the product's Config
+		// type (module + product-specific fields), matching validate/print/doctor;
+		// fall back to the framework-only diff when no product checker is present.
+		if handled, code := delegateConfigCheck("diff", rest, stdout, stderr); handled {
+			return code
+		}
 		return runConfigDiff(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "wowapi config: unknown subcommand %q\n", sub)

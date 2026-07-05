@@ -1,31 +1,49 @@
 // Command configcheck validates and inspects {{.Name}}'s COMPOSED configuration
 // (internal/appcfg.Config), which the prebuilt `wowapi` CLI cannot link directly
-// (D-0003). The CLI shells out to `go run ./tools/configcheck <mode>` so
-// `wowapi config validate|print|schema|doctor` operate on the product's config,
-// not just config.Framework.
+// (D-0003). `wowapi config <mode>` shells out to `go run ./tools/configcheck
+// <mode> [flags]` so it operates on the product's config, not just config.Framework.
 //
 // Modes:
 //
 //	validate  load + validate; exit 0 if OK, 1 if invalid (CI gate)
 //	print     emit the effective config as JSON (Secret fields are redacted)
-//	schema    emit the JSON Schema derived from the product Config struct tags
 //	doctor    emit the effective config plus its fingerprint (redacted)
+//	schema    emit the JSON Schema derived from the product Config struct tags
+//	diff      redacted effective-config diff between two environments
+//
+// Shared flags (validate, print, doctor):
+//
+//	--dir         directory holding base.yaml + <env>.yaml (default "configs")
+//	--base        explicit base file path (default <dir>/base.yaml when present)
+//	--env         environment name; selects <dir>/<env>.yaml and is asserted
+//	              against the composed environment (CI gate). Falls back to APP_ENV.
+//	--env-prefix  environment variable prefix (default "WOWAPI__")
+//
+// diff flags: --from <env> --to <env> (plus --dir/--env-prefix).
 package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/kernel/config"
 
 	"{{.Module}}/internal/appcfg"
 )
 
 func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(argv []string) int {
 	mode := "validate"
-	if len(os.Args) > 1 {
-		mode = os.Args[1]
+	if len(argv) > 0 && !strings.HasPrefix(argv[0], "-") {
+		mode, argv = argv[0], argv[1:]
 	}
 
 	// schema needs no config files — derive it from struct tags and exit.
@@ -33,37 +51,167 @@ func main() {
 		b, err := config.Schema[appcfg.Config]()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "configcheck: schema: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		os.Stdout.Write(b)
 		fmt.Println()
-		return
+		return 0
 	}
 
-	cfg, fp, err := appcfg.Load()
+	fs := flag.NewFlagSet("configcheck "+mode, flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	dir := fs.String("dir", "configs", "directory holding base.yaml + <env>.yaml")
+	base := fs.String("base", "", "explicit base file path")
+	env := fs.String("env", "", "environment name; selects <dir>/<env>.yaml and is asserted")
+	prefix := fs.String("env-prefix", "WOWAPI__", "environment variable prefix")
+	var from, to *string
+	if mode == "diff" {
+		from = fs.String("from", "", "source environment (required)")
+		to = fs.String("to", "", "target environment (required)")
+	}
+	if err := fs.Parse(argv); err != nil {
+		return 2
+	}
+
+	if mode == "diff" {
+		return runDiff(*dir, *prefix, *from, *to)
+	}
+
+	// --env wins over APP_ENV; assertEnv is enforced only when --env was given so
+	// `config validate --env prod` is a real CI gate (the overlay must exist AND
+	// declare environment=prod), while a bare `APP_ENV=dev` shell still works.
+	envName, envExplicit := *env, *env != ""
+	if envName == "" {
+		envName = os.Getenv("APP_ENV")
+	}
+	opts, err := buildOpts(*dir, *base, envName, envExplicit, *prefix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "configcheck: %v\n", err)
-		os.Exit(1)
+		return 1
+	}
+
+	loaded, err := config.LoadDetailed[appcfg.Config](opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configcheck: %v\n", err)
+		return 1
+	}
+	if envExplicit && string(loaded.Config.Environment) != *env {
+		fmt.Fprintf(os.Stderr, "configcheck: config declares environment %q but --env %s was requested — the overlay must set the environment it is named for\n",
+			string(loaded.Config.Environment), *env)
+		return 1
+	}
+	for _, w := range loaded.Warnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
 
 	switch mode {
 	case "validate":
-		fmt.Printf("OK: configuration valid (fingerprint %s)\n", fp.Short())
+		fmt.Printf("OK: configuration valid (fingerprint %s)\n", loaded.Fingerprint.Short())
 	case "print", "doctor":
 		// config.Secret fields marshal as their redaction marker, so this is safe
 		// to emit (structural redaction, verified by the framework's secret tests).
-		b, err := json.MarshalIndent(cfg, "", "  ")
+		b, err := json.MarshalIndent(loaded.Config, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "configcheck: encode: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		os.Stdout.Write(b)
 		fmt.Println()
 		if mode == "doctor" {
-			fmt.Printf("fingerprint: %s\n", fp.Short())
+			fmt.Printf("fingerprint: %s\n", loaded.Fingerprint.Short())
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "configcheck: unknown mode %q (want validate|print|schema|doctor)\n", mode)
-		os.Exit(2)
+		fmt.Fprintf(os.Stderr, "configcheck: unknown mode %q (want validate|print|doctor|schema|diff)\n", mode)
+		return 2
+	}
+	return 0
+}
+
+// runDiff renders a redacted effective-config diff between two environments over
+// the product's composed Config (both overlays must exist).
+func runDiff(dir, prefix, from, to string) int {
+	if from == "" || to == "" {
+		fmt.Fprintln(os.Stderr, "configcheck diff: both --from and --to are required")
+		return 2
+	}
+	load := func(envName string) (string, error) {
+		opts, err := buildOpts(dir, "", envName, true, prefix)
+		if err != nil {
+			return "", err
+		}
+		cfg, _, err := config.Load[appcfg.Config](opts)
+		if err != nil {
+			return "", err
+		}
+		js, err := json.MarshalIndent(cfg, "", "  ")
+		return string(js), err
+	}
+	fromJSON, err := load(from)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configcheck diff: load %s: %v\n", from, err)
+		return 1
+	}
+	toJSON, err := load(to)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "configcheck diff: load %s: %v\n", to, err)
+		return 1
+	}
+	if fromJSON == toJSON {
+		fmt.Printf("config diff %s -> %s: identical\n", from, to)
+		return 0
+	}
+	fmt.Printf("--- %s\n+++ %s\n", from, to)
+	printLineDiff(fromJSON, toJSON)
+	return 0
+}
+
+// buildOpts resolves the base + env-overlay paths and wires the env secret
+// provider so secretref://env/<VAR> values resolve. When envExplicit is true the
+// overlay MUST exist (a missing --env overlay is an error); when the env came
+// from APP_ENV a missing overlay is skipped, matching the runtime loader.
+func buildOpts(dir, base, envName string, envExplicit bool, prefix string) (config.Options, error) {
+	opts := config.Options{EnvPrefix: prefix, Secrets: envprovider.New()}
+	if base != "" {
+		opts.BaseFile = base
+	} else if p := filepath.Join(dir, "base.yaml"); fileExists(p) {
+		opts.BaseFile = p
+	}
+	if envName != "" {
+		overlay := filepath.Join(dir, envName+".yaml")
+		if fileExists(overlay) {
+			opts.EnvFile = overlay
+		} else if envExplicit {
+			return config.Options{}, fmt.Errorf("env overlay %q not found", overlay)
+		}
+	}
+	return opts, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// printLineDiff emits a minimal line-oriented diff of two already-redacted JSON
+// dumps: lines only in a are prefixed "-", lines only in b "+".
+func printLineDiff(a, b string) {
+	al, bl := strings.Split(a, "\n"), strings.Split(b, "\n")
+	inB := make(map[string]int, len(bl))
+	for _, l := range bl {
+		inB[l]++
+	}
+	inA := make(map[string]int, len(al))
+	for _, l := range al {
+		inA[l]++
+	}
+	for _, l := range al {
+		if inB[l] == 0 {
+			fmt.Printf("- %s\n", strings.TrimSpace(l))
+		}
+	}
+	for _, l := range bl {
+		if inA[l] == 0 {
+			fmt.Printf("+ %s\n", strings.TrimSpace(l))
+		}
 	}
 }
