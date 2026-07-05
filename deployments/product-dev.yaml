@@ -1,0 +1,41 @@
+# Product-dev overlay: a devbox for manually building a product ON the wowapi
+# framework. Use WITH the base stack and the launcher:
+#
+#   scripts/product-dev.sh /path/to/your/product-dir
+#
+# The launcher exports PRODUCT_DIR (+ optional PRODUCT_DB / APP_RT_PASSWORD),
+# brings up postgres/minio/mailpit, bootstraps the product DB + app_rt login
+# roles, then drops you into the devbox shell. See docs/operations/product-dev-container.md.
+services:
+  devbox:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: dev
+    working_dir: /workspace
+    entrypoint: ["/wowapi/scripts/devbox/entrypoint.sh"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - ..:/wowapi:ro # the framework checkout — READ-ONLY (the box cannot change it)
+      - ${PRODUCT_DIR:?set PRODUCT_DIR (use scripts/product-dev.sh)}:/workspace
+      - gocache:/root/.cache/go-build
+      - gomod:/go/pkg/mod
+    ports:
+      - "8080:8080" # product API → host
+    environment:
+      GOTOOLCHAIN: local # go.mod pins 1.26 and the image ships 1.26 — never fetch a toolchain
+      APP_ENV: local # load configs/local.yaml — wires db.migrate_dsn/db.dsn to the DSNs below
+      # DSNs the scaffolded configs/local.yaml reads via secretref://env/. migrate
+      # runs as the superuser (DDL); the API runs as the non-superuser app_rt so
+      # row-level security is enforced, not bypassed.
+      MIGRATE_URL: postgres://wowapi:wowapi-local-only@postgres:5432/${PRODUCT_DB:-wowproduct}?sslmode=disable
+      DATABASE_URL: postgres://app_rt:${APP_RT_PASSWORD:-app-local-only}@postgres:5432/${PRODUCT_DB:-wowproduct}?sslmode=disable
+      # Object storage + mail (only needed once the product uses documents/notifications).
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: wowapi
+      S3_SECRET_KEY: wowapi-local-only
+      SMTP_ADDR: mailpit:1025
+    depends_on:
+      postgres:
+        condition: service_healthy

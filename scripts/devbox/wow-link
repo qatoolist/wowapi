@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# wow-link: point the product in /workspace at the local framework checkout.
+#
+# The framework repo is private and un-tagged, so instead of `go get`-ing a
+# published version we add a filesystem `replace` to the read-only /wowapi mount.
+# A filesystem replace bypasses the module proxy and sumdb, so the product builds
+# directly against the local source. Re-run this after editing go.mod.
+set -euo pipefail
+
+cd /workspace
+if [ ! -f go.mod ]; then
+  echo "wow-link: no go.mod in /workspace — run 'wowapi init' first." >&2
+  exit 1
+fi
+
+go mod edit -replace github.com/qatoolist/wowapi=/wowapi
+go mod tidy
+echo "wow-link: product now builds against the local framework at /wowapi (replace directive added)."

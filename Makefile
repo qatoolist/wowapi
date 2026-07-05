@@ -53,6 +53,11 @@ shell: ## Shell in the containerized toolbox (repo mounted at /src)
 db-shell: ## psql into the local postgres
 	$(COMPOSE) exec postgres psql -U wowapi -d wowapi
 
+.PHONY: product-dev
+product-dev: ## Build a product ON the framework in a dev box: make product-dev DIR=/path/to/product
+	@test -n "$(DIR)" || { echo "usage: make product-dev DIR=/path/to/product-dir"; exit 2; }
+	scripts/product-dev.sh "$(DIR)"
+
 ##@ Database
 
 # Local default DSN matches deployments/compose.yaml; CI containers get
