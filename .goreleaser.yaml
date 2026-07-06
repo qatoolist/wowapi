@@ -55,13 +55,15 @@ sboms:
 signs:
   - id: cosign
     cmd: cosign
-    signature: "${artifact}.sig"
-    certificate: "${artifact}.pem"
+    # cosign v3 (from cosign-installer v4) defaults to the new Sigstore bundle
+    # format and IGNORES --output-signature/--output-certificate; the signature +
+    # certificate + Rekor entry all live in one --bundle file. Consumers verify with
+    # `cosign verify-blob --bundle checksums.txt.cosign.bundle …` (see SECURITY.md).
+    signature: "${artifact}.cosign.bundle"
     args:
       - sign-blob
       - "--yes"
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
+      - "--bundle=${signature}"
       - "${artifact}"
     artifacts: checksum
     output: true

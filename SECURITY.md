@@ -55,11 +55,11 @@ Releases are built by GitHub Actions and published with:
 
 **Verify a released binary archive** — verify the signed checksums, then confirm your download's hash is listed:
 ```bash
-# 1) verify the cosign keyless signature on the checksums file
+# 1) verify the cosign keyless signature on the checksums file (Sigstore bundle)
 cosign verify-blob \
   --certificate-identity-regexp 'https://github.com/qatoolist/wowapi/.github/workflows/release.yml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --signature checksums.txt.sig --certificate checksums.txt.pem checksums.txt
+  --bundle checksums.txt.cosign.bundle checksums.txt
 # 2) confirm the archive you downloaded matches a listed checksum
 sha256sum -c checksums.txt --ignore-missing
 ```
