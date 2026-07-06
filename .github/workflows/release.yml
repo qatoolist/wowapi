@@ -109,6 +109,10 @@ jobs:
           image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: image-sbom.spdx.json
+          # Don't attach the SBOM to the GitHub Release (that needs contents:write,
+          # which this least-privilege job doesn't have). The image SBOM is attested
+          # to the image DIGEST in the next step; the archive SBOMs are on the Release.
+          upload-release-assets: false
       - name: attest build provenance (image)
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
