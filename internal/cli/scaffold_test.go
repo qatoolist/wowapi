@@ -281,6 +281,23 @@ func TestInitRejectsExtraArgs(t *testing.T) {
 	}
 }
 
+// TestInitHintPointsToReadme: the next-steps hint must NOT imply `make migrate-up`
+// works bare — it needs APP_ENV + the DB DSNs + a running Postgres, all documented
+// in the generated README. The hint points there instead of over-promising.
+func TestInitHintPointsToReadme(t *testing.T) {
+	base := t.TempDir()
+	code, out, errOut := callInit(t, "myapp", "--module", "github.com/acme/myapp", "--dir", base)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "README") {
+		t.Errorf("init hint should point to the README for the env-dependent steps; got:\n%s", out)
+	}
+	if strings.Contains(out, "migrate-up") {
+		t.Errorf("init hint must not imply `make migrate-up` runs with no setup; got:\n%s", out)
+	}
+}
+
 // ---------- wowapi new-module ----------
 
 func TestNewModuleCreatesFiles(t *testing.T) {

@@ -11,7 +11,9 @@ changes to it require a new major version.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+- `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB
+  DSNs + a running Postgres (fail-closed). The hint now points to the generated README's "Getting started".
 
 ## [1.0.0] — 2026-07-06 — first stable release
 
