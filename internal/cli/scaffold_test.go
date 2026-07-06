@@ -229,6 +229,58 @@ func TestInitLocalYAMLHasEnvironment(t *testing.T) {
 	assertFileContains(t, filepath.Join(dir, "configs", "local.yaml"), "environment: local")
 }
 
+// TestInitPositionalNameCreatesSubdir: `wowapi init <name> --module ...` creates a
+// NEW subdirectory <name> under the base dir and scaffolds the product inside it,
+// with the product name derived from the positional arg. Flags after the positional
+// must still parse.
+func TestInitPositionalNameCreatesSubdir(t *testing.T) {
+	base := t.TempDir()
+	code, _, errOut := callInit(t, "myapp", "--module", "github.com/acme/myapp", "--dir", base)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr: %s", code, errOut)
+	}
+	// The product is created inside base/myapp, not directly in base.
+	assertFileExists(t, filepath.Join(base, "myapp", "go.mod"))
+	assertFileExists(t, filepath.Join(base, "myapp", "cmd", "api", "main.go"))
+	assertFileContains(t, filepath.Join(base, "myapp", "configs", "local.yaml"), "myapp")
+	if _, err := os.Stat(filepath.Join(base, "go.mod")); !os.IsNotExist(err) {
+		t.Fatal("scaffold must go into base/myapp, not base directly")
+	}
+}
+
+// TestInitPositionalRequiresModule: the positional name adds dir/name ergonomics but
+// --module stays required (chosen behaviour).
+func TestInitPositionalRequiresModule(t *testing.T) {
+	base := t.TempDir()
+	code, _, errOut := callInit(t, "myapp", "--dir", base)
+	if code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if !strings.Contains(errOut, "--module") {
+		t.Errorf("stderr should mention --module: %q", errOut)
+	}
+}
+
+// TestInitNameFlagOverridesPositional: --name overrides the product name; the
+// positional still controls the target subdirectory.
+func TestInitNameFlagOverridesPositional(t *testing.T) {
+	base := t.TempDir()
+	code, _, errOut := callInit(t, "myapp", "--module", "github.com/acme/myapp", "--name", "custom", "--dir", base)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr: %s", code, errOut)
+	}
+	assertFileExists(t, filepath.Join(base, "myapp", "go.mod"))
+	assertFileContains(t, filepath.Join(base, "myapp", "configs", "local.yaml"), "custom")
+}
+
+// TestInitRejectsExtraArgs: more than one positional arg is a usage error.
+func TestInitRejectsExtraArgs(t *testing.T) {
+	code, _, _ := callInit(t, "a", "b", "--module", "github.com/acme/app")
+	if code != 2 {
+		t.Fatalf("exit %d, want 2 for extra positional args", code)
+	}
+}
+
 // ---------- wowapi new-module ----------
 
 func TestNewModuleCreatesFiles(t *testing.T) {

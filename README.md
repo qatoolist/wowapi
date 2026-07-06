@@ -187,8 +187,8 @@ go build -o bin/wowapi ./cmd/wowapi     # then use ./bin/wowapi
 **2. Scaffold a product repo:**
 
 ```bash
-mkdir myapp && cd myapp
-wowapi init --module github.com/acme/myapp --name myapp
+wowapi init myapp --module github.com/acme/myapp   # creates ./myapp/ and scaffolds inside it
+cd myapp
 # scaffolds: go.mod, Makefile, cmd/{api,worker,migrate}, configs/{base,local}.yaml,
 #            internal/{wire,appcfg}, tools/configcheck, README.md, .gitignore
 go mod tidy
@@ -262,7 +262,7 @@ run — a green host suite can hide skipped DB tests). See
 | Command | Purpose |
 |---|---|
 | `wowapi version` | Print CLI version + check the go.mod dependency version |
-| `wowapi init --module <path>` | Scaffold a product repository |
+| `wowapi init [<name>] --module <path>` | Scaffold a product repo (with `<name>`, creates `./<name>/`; otherwise scaffolds into `.`) |
 | `wowapi new-module --name <name>` | Scaffold a module package implementing `module.Module` |
 | `wowapi gen crud --module <dir> --resource <name> --fields <...>` | Generate CRUD scaffolding for a resource |
 | `wowapi migrate create --name <n>` | Create the next-numbered migration file |

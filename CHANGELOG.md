@@ -34,6 +34,9 @@ fixes, a full enterprise supply-chain release pipeline, and a clean, enforced li
 
 ### Generated product scaffold — correctness
 
+- `wowapi init <name>` takes a positional name that creates a new `./<name>/` directory and scaffolds the
+  product inside it (name defaults from it); flags may appear before or after it. The flag-only form
+  (`wowapi init --module … --dir …`, scaffold into `--dir`) still works.
 - `wowapi config validate --env <e>` now honours `--env` (previously validated whatever `APP_ENV` pointed at)
   and fails closed when the composed environment doesn't match.
 - `cmd/migrate` fails closed on a bad config and has real `up` / `down` — `down` is a guarded full reset,

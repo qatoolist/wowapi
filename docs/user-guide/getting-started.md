@@ -32,17 +32,18 @@ go build -o bin/wowapi ./cmd/wowapi
 
 ## Step 2 — Scaffold a product repository
 
-`wowapi init` creates a *new, separate* repo that depends on the framework. Run it in an **empty**
-directory (use `--force` otherwise).
+`wowapi init <name>` creates a *new, separate* repo — the directory `<name>` — that depends on the framework:
 
 ```bash
-mkdir myapp && cd myapp
-wowapi init --module github.com/acme/myapp --name myapp
+wowapi init myapp --module github.com/acme/myapp   # creates ./myapp/
+cd myapp
 go mod tidy
 ```
 
-Flags: `--module` (required, your Go module path), `--name` (default: last path segment),
-`--dir` (default `.`), `--force`.
+The positional `<name>` sets both the new directory and the product name. Flags: `--module` (required, your
+Go module path), `--name` (override the product name), `--dir` (base directory — the product goes in
+`<dir>/<name>`), `--force` (scaffold into a non-empty directory). Omit `<name>` to scaffold directly into the
+current directory (`--dir .`).
 
 What it scaffolds:
 

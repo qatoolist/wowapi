@@ -13,15 +13,25 @@ import (
 )
 
 func initUsage(w io.Writer) {
-	fmt.Fprint(w, `usage: wowapi init [flags]
+	fmt.Fprint(w, `usage: wowapi init [<name>] [flags]
 
 Scaffold a minimal product repository that depends on the wowapi framework.
+
+  wowapi init myapp --module github.com/acme/myapp
+      creates ./myapp/ and scaffolds the product inside it.
+  wowapi init --module github.com/acme/myapp
+      scaffolds into the current directory (--dir ".").
+
 Refuses if the target directory is non-empty unless --force is set.
+
+Arguments:
+  <name>     Optional. Creates a new subdirectory <dir>/<name> and scaffolds the
+             product inside it; also the default product name.
 
 Flags:
   --module   Go module path for the product (required, e.g. "github.com/acme/app")
-  --name     Product name (default: last path segment of --module)
-  --dir      Target directory (default ".")
+  --name     Product name (default: <name>, else the last segment of --module)
+  --dir      Base directory (default "."); with <name>, the product goes in <dir>/<name>
   --force    Overwrite existing files and scaffold into non-empty directories
 `)
 }
@@ -45,8 +55,26 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		name   = fs.String("name", "", "product name (default: last segment of --module)")
 		force  = fs.Bool("force", false, "overwrite existing files")
 	)
+	// Extract a leading positional <name> BEFORE flag parsing: Go's flag package
+	// stops at the first non-flag arg, so `wowapi init myapp --module x` would
+	// otherwise leave the flags unparsed. A trailing positional
+	// (`wowapi init --module x myapp`) is picked up from fs.Args() after Parse.
+	var positional string
+	if len(args) > 0 && args[0] != "" && !strings.HasPrefix(args[0], "-") {
+		positional, args = args[0], args[1:]
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		if positional == "" {
+			positional, rest = rest[0], rest[1:]
+		}
+		if len(rest) > 0 {
+			fmt.Fprintf(stderr, "wowapi init: unexpected extra arguments: %s\n", strings.Join(rest, " "))
+			initUsage(stderr)
+			return 2
+		}
 	}
 	if *module == "" {
 		fmt.Fprintln(stderr, "wowapi init: --module is required")
@@ -54,13 +82,24 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// Product name: --name wins; else the positional <name>; else the module's last segment.
 	productName := *name
 	if productName == "" {
-		parts := strings.Split(*module, "/")
-		productName = parts[len(parts)-1]
+		if positional != "" {
+			productName = filepath.Base(positional)
+		} else {
+			parts := strings.Split(*module, "/")
+			productName = parts[len(parts)-1]
+		}
 	}
 
-	target, err := filepath.Abs(*dir)
+	// Target: with a positional <name>, create a NEW subdirectory <dir>/<name> and
+	// scaffold inside it; otherwise scaffold directly into --dir (default ".").
+	targetRel := *dir
+	if positional != "" {
+		targetRel = filepath.Join(*dir, positional)
+	}
+	target, err := filepath.Abs(targetRel)
 	if err != nil {
 		fmt.Fprintf(stderr, "wowapi init: %v\n", err)
 		return 1
@@ -127,6 +166,13 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintln(stdout, "internal/modules/.gitkeep")
+
+	fmt.Fprintf(stdout, "\nScaffolded product %q into %s\n", productName, target)
+	if positional != "" {
+		fmt.Fprintf(stdout, "Next: cd %s && go mod tidy && make build && make migrate-up\n", positional)
+	} else {
+		fmt.Fprintln(stdout, "Next: go mod tidy && make build && make migrate-up")
+	}
 
 	return 0
 }
