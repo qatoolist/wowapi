@@ -2,21 +2,73 @@ package httpx_test
 
 import (
 	"context"
+	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
-	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
 	"github.com/qatoolist/wowapi/kernel/auth"
 	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/policy"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/testkit"
 )
+
+// dbPrincipalStore satisfies auth.PrincipalStore over real Postgres with the
+// exact query logic of adapters/auth/pgprincipal.Store (platform pool for the
+// global identity spine, tenant-bound RLS-read pool for acting_capacities).
+// It is a test-local stand-in so this file can exercise the real DB round-trip
+// without kernel tests importing adapters/ (boundary lint: kernel tests must
+// not import adapters).
+type dbPrincipalStore struct {
+	platform database.TxManager
+	runtime  database.TxManager
+}
+
+func (s dbPrincipalStore) UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.platform.Platform(ctx, func(ctx context.Context, db database.DB) error {
+		return db.QueryRow(ctx,
+			`SELECT id FROM users WHERE idp_subject = $1 AND status = 'active'`, subject,
+		).Scan(&id)
+	})
+	if err != nil {
+		if stderrors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, kerr.E(kerr.KindUnauthenticated, "unauthenticated",
+				"unknown subject", kerr.Op("dbPrincipalStore.UserIDBySubject"))
+		}
+		return uuid.Nil, kerr.Wrapf(err, "dbPrincipalStore.UserIDBySubject", "load user")
+	}
+	return id, nil
+}
+
+func (s dbPrincipalStore) ValidateCapacity(ctx context.Context, userID, tenantID, capacityID uuid.UUID) error {
+	ctx = database.WithTenantID(ctx, tenantID)
+	var ok bool
+	err := s.runtime.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(ctx,
+			`SELECT EXISTS (
+			   SELECT 1 FROM acting_capacities
+			    WHERE id = $1 AND user_id = $2 AND status = 'active' AND valid_to IS NULL
+			 )`, capacityID, userID,
+		).Scan(&ok)
+	})
+	if err != nil {
+		return kerr.Wrapf(err, "dbPrincipalStore.ValidateCapacity", "load capacity")
+	}
+	if !ok {
+		return kerr.E(kerr.KindForbidden, "permission_denied",
+			"capacity not permitted", kerr.Op("dbPrincipalStore.ValidateCapacity"))
+	}
+	return nil
+}
 
 // seedUserWithSubject inserts a global user with a known idp_subject via the
 // owner pool, so a test can mint a JWT whose sub the real auth.Verifier/
@@ -102,7 +154,7 @@ func TestIntegrationStepUpEndToEnd(t *testing.T) {
 
 	ti := testkit.NewTokenIssuer()
 	verifier := auth.NewVerifier(ti.KeySource(), auth.Config{Issuer: "wowapi-test", Audience: "wowapi"})
-	principals := pgprincipal.New(h.PlatformTxM, h.TxM)
+	principals := dbPrincipalStore{platform: h.PlatformTxM, runtime: h.TxM}
 	authenticator := auth.NewAuthenticator(verifier, principals)
 
 	mux := router.SecureHandler(authenticator, eval, h.TxM)
