@@ -82,7 +82,7 @@ reviewer catches a hallucinated flag or signature.
   source file at write time** (quote `file:line`), and a fresh source-grounded reviewer must fact-check
   docs before a docs goal is complete. New recurring class: **doc-not-grounded-in-source** (a
   documentation-specific sibling of *deferred-claimed-as-done*, and its inverse *feature-claimed-as-gap*).
-- Recurrence of **stray generation artifacts**: the `</content>` tag reappeared on *every* newly-written
+- Recurrence of **stray generation artifacts**: the leaked `content` closing tag reappeared on *every* newly-written
   page this pass; the `review_gate.sh` stray-tag scan caught them all → strip is now a standard
   post-write step for any batch of generated docs.
 
