@@ -30,6 +30,24 @@ changes to it require a new major version.
   SELECT/INSERT on `audit_logs`; INSERT/UPDATE on `audit_chain`) while leaving the `relationships`
   and `rule_versions` table protections untouched. Documented in the user guide
   (Modules → Privileged services).
+- **Locale negotiation + API i18n (`kernel/i18n`, `httpx.Locale`, `module.Context.I18n`)** —
+  cross-cutting localization for synchronous API responses so every product built on the framework
+  handles `Accept-Language` and localized errors consistently instead of re-implementing risky
+  translation plumbing (GAP-001). `kernel/i18n` adds a `Catalog` (in-process `(locale, key)` map with
+  deterministic fallback to a default locale, and a final fallback to the key so a missing translation
+  never breaks a response), a `Registry` that ships the framework's own **English** catalog (problem
+  titles + validation-tag messages, under the reserved `kernel.` namespace) and accepts module bundles
+  under their `<module>.` prefix, and an RFC 9110 §12.5.4 `Negotiate` (q-values, primary-subtag match).
+  `httpx.Locale(catalog)` middleware negotiates the request locale, binds it to the request context,
+  and sets `Content-Language`; `httpx.WriteError` localizes problem `title` and `kernel/validation`'s
+  `StructCtx` localizes field messages — **machine `code`s and field paths stay byte-stable across
+  locales**, and internal logs stay technical English. `module.Context.I18n(bundle)` registers a
+  module's localized bundle; `app.Boot` merges all bundles with the framework catalog and exposes it as
+  `Booted.I18n` to pass to `httpx.Locale`. **Zero-config behavior is unchanged**: with no catalog wired,
+  responses stay English-only, byte-for-byte as before. `testkit` adds `AssertNegotiatedLocale`,
+  `NewLocaleRequest`, and `AssertLocalizedProblem`. English is the default locale and ultimate fallback;
+  product translations stay in product-owned bundles (the framework ships only its own English strings).
+  Documented in the user guide (Validation & Error Handling → Localizing responses).
 - **`adapters/storage/s3`** — production S3/MinIO object-storage adapter implementing the
   `kernel/storage.Adapter` port (presigned PUT/GET with TTL clamping, checksum-verified `Stat`,
   ranged `Peek`, idempotent `Delete`, `KindNotFound` mapping, path-style addressing, fail-closed

@@ -142,6 +142,64 @@ httpx.WriteJSON(w, http.StatusCreated, httpx.OK(dto))
 
 This keeps success and error envelopes consistent across every module.
 
+## Localizing responses (i18n)
+
+By default every error is English. To serve localized `title` and field messages, wire the
+`kernel/i18n` catalog and the `httpx.Locale` middleware — **machine `code`s and field paths never
+change with the locale**, only the human-facing text, so clients keep switching on the stable `code`.
+
+**What the framework ships.** `kernel/i18n` ships its own **English** catalog as the first bundle:
+one problem `title` per error `Kind` and one message per validator tag, stored under the reserved
+`kernel.` namespace and keyed by the *stable machine identifier* (the kind's code / the tag name),
+never the English text. English is the default locale and the ultimate fallback: a missing translation
+falls back to English, and a missing key falls back to the key itself — a translation gap can never
+break a response. Internal logs stay technical English regardless of the request locale.
+
+**Registering product/module translations.** A module contributes a bundle per locale during
+`Register`, under its own `<module>.` prefix (the framework owns `kernel.`):
+
+```go
+func (m *Module) Register(mc module.Context) error {
+    // Localize the framework's own strings for a new locale…
+    mc.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+        i18n.KeyProblemTitle(errors.KindNotFound): "सापडले नाही",
+        i18n.KeyValidationMessage("required"):     "हे फील्ड आवश्यक आहे",
+        // …and your module's own keys (must be prefixed "<module>.").
+        "orders.status.shipped": "पाठवले",
+    }})
+    return nil
+}
+```
+
+`app.Boot` merges every module's bundles with the framework catalog and returns the result as
+`Booted.I18n`. Ownership is validated at boot: a module registering a key outside its prefix (or under
+the reserved `kernel.` namespace) fails boot with the other registry checks.
+
+**Wiring the middleware.** Pass the merged catalog to `httpx.Locale`, placed after `RequestID` and
+before your routes:
+
+```go
+h := httpx.Chain(mux,
+    httpx.RequestID(),
+    httpx.Locale(booted.I18n), // negotiates Accept-Language, sets Content-Language
+    // …edge + auth middleware…
+)
+```
+
+`httpx.Locale` parses `Accept-Language` (RFC 9110 q-values; a supported `mr` matches an offered
+`mr-IN`), binds the negotiated locale to the request context, and sets `Content-Language` on the
+response. `httpx.WriteError` then localizes the problem `title`, and `httpx.BindAndValidate` localizes
+field messages — no handler change required. **Passing no catalog (or `nil`) is a valid zero-config
+setup: responses stay English, byte-for-byte identical to a framework with no i18n.**
+
+Example: a request with `Accept-Language: mr-IN,mr;q=0.9,en;q=0.8` against a catalog that supports
+Marathi gets `Content-Language: mr`, a Marathi `title`/field message, and the **same** `code`/`field`
+as the English response. An unsupported locale (e.g. `fr-FR`) falls back deterministically to English.
+
+**Testing.** `testkit` provides `AssertNegotiatedLocale`, `NewLocaleRequest`, and
+`AssertLocalizedProblem` to assert negotiation and that a problem localizes its title while keeping its
+machine code stable.
+
 ## Patterns & pitfalls
 
 | Situation | Do this |
