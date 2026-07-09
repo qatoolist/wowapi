@@ -4,9 +4,13 @@
 //
 //	up    apply kernel then module migrations (forward, expand-contract), then
 //	      sync the merged module seed catalog (permissions, roles, resource
-//	      types, relationship types) idempotently. Without this last step the
-//	      catalogs stay empty and every authorization check denies (GAP-003) —
-//	      see docs/user-guide/database-migrations.md#seeds.
+//	      types, relationship types) idempotently, then sync the rule
+//	      registry's definitions (rule_definitions) idempotently. Without the
+//	      seed step the catalogs stay empty and every authorization check
+//	      denies (GAP-003); without the rule-definition step, any registered
+//	      rule point fails rule_versions.rule_key's FK until synced (GAP-007) —
+//	      see docs/user-guide/database-migrations.md#seeds and
+//	      docs/user-guide/database-migrations.md#rule-definitions.
 //	down  roll ALL migrations back to version 0 (full reset). Guarded: refuses
 //	      unless the environment is local or dev — production rollback is an
 //	      expand-contract anti-pattern (see docs/blueprint/12) and this runner
@@ -26,6 +30,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/logging"
+	"github.com/qatoolist/wowapi/kernel/rules"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/migrations"
 
@@ -160,6 +165,18 @@ func run(ctx context.Context, argv []string) error {
 		return fmt.Errorf("seed sync: %w", err)
 	}
 	log.InfoContext(ctx, "seed catalogs synced", "modules", len(names))
+
+	// Rule-definition sync (GAP-007, mirrors seed sync's lifecycle position
+	// exactly): upsert every module-registered rule Point into rule_definitions
+	// idempotently. Runs on the same privileged migrate pool, right after seed
+	// sync and before anything proposes/activates a rule_versions row for a
+	// key — rule_versions.rule_key FKs rule_definitions, so a registered point
+	// with no synced definition would fail Propose with a foreign-key error
+	// the first time a product tried to use it.
+	if err := rules.SyncDefinitions(ctx, pool, k.Rules); err != nil {
+		return fmt.Errorf("rule definition sync: %w", err)
+	}
+	log.InfoContext(ctx, "rule definitions synced", "keys", len(k.Rules.Keys()))
 	return nil
 }
 

@@ -315,6 +315,38 @@ func TestInitMigrateMainSyncsSeeds(t *testing.T) {
 	assertParseGo(t, migratePath)
 }
 
+// TestInitMigrateMainSyncsRuleDefinitions is the GAP-007 lifecycle regression,
+// mirroring TestInitMigrateMainSyncsSeeds exactly: the generated cmd/migrate
+// must run rules.SyncDefinitions AFTER seeds.Sync (same privileged pool,
+// same deploy point) so a fresh database gets its rule_definitions mirror
+// populated — without this, rule_versions.rule_key's FK fails for any
+// registered point until a product hand-writes a SQL mirror (the gap
+// wowsociety's rulemirror_test.go drift guard existed to catch).
+func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/rules")
+	assertFileContains(t, migratePath, "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	assertParseGo(t, migratePath)
+
+	// Ordering: rule-definition sync must run after seed sync in the file text
+	// (matches the runtime ordering requirement — rule_versions may reference
+	// rule_definitions, and seeds establish the catalogs rule points may need).
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedIdx := strings.Index(string(content), "seeds.Sync(ctx, pool, booted.Seeds)")
+	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	if seedIdx == -1 || ruleIdx == -1 || ruleIdx < seedIdx {
+		t.Fatalf("rule-definition sync must appear AFTER seed sync in generated migrate main (seedIdx=%d ruleIdx=%d)", seedIdx, ruleIdx)
+	}
+}
+
 // TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003 "clear failure
 // mode" acceptance criterion: the generated api main must wire
 // app.CatalogsSeeded into /readyz so a pod whose migrate step skipped seed
