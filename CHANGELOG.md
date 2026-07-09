@@ -20,6 +20,16 @@ changes to it require a new major version.
   document upload/confirm e2e. Adds `github.com/minio/minio-go/v7` as a direct dependency. Wiring
   is documented in the user guide (Build & Deploy → Object storage); framework config/scaffold
   wiring is a tracked follow-up.
+- **Step-up/MFA seedability + JWT `amr` propagation**: `seeds.PermissionSeed.StepUp` (`step_up` YAML key,
+  strict-decoded) lets a module declare a step-up-gated permission in its seed catalog instead of
+  registering it directly against `authz.Registry`; `app.Boot` propagates it into `authz.Permission.StepUp`
+  and `seeds.Sync` persists it to a new `permissions.step_up` column (migration `00029`, idempotent —
+  re-syncing after the seed changes updates the existing row). `auth.Claims` gains the standard `amr`
+  claim (RFC 8176) and `Verifier.Actor` copies it onto `authz.Actor.AMR`, so a product's JWT authenticator
+  gets step-up enforcement without reparsing the bearer token to recover `amr` itself. Adds
+  `testkit.WithAMR(...string)` alongside the existing token options. Closes the two framework gaps
+  `wowsociety`'s identity module previously worked around (direct `StepUp` registration + a manual
+  catalog migration + a JWT-reparsing authenticator wrapper).
 
 ### Fixed
 - `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB

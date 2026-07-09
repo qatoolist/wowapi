@@ -140,8 +140,27 @@ if !dec.Allowed { return kerr.E(kerr.KindForbidden, "permission_denied", "not al
 ### Step-up / MFA
 
 When an actor *would* be allowed but the permission demands an elevated auth factor they haven't satisfied,
-`Decision.StepUpRequired` is set. The HTTP gate turns this into a **re-authentication challenge**, not a
-flat 403. Your authenticator surfaces the satisfied factors via `Actor.AMR`.
+`Decision.StepUpRequired` is set. The HTTP gate turns this into a **re-authentication challenge** — 401 with
+`WWW-Authenticate: Bearer error="insufficient_user_authentication", step_up="mfa"` — not a flat 403.
+
+**Declaring a step-up permission** is a seed field, not out-of-band wiring:
+
+```yaml
+permissions:
+  - key: identity.impersonation.assign
+    description: assign an impersonation grant
+    step_up: true
+```
+
+`kernel/seeds` strict-decodes `step_up` (a typo fails the load), `app.Boot` propagates it into
+`authz.Permission.StepUp` when it registers your seed's permissions, and `seeds.Sync` persists it to
+`permissions.step_up` — re-syncing after you flip the flag updates the existing catalog row (idempotent,
+not insert-only).
+
+**Satisfying the factor** flows from your IdP token straight through, with nothing to reparse: the standard
+`amr` claim (RFC 8176, e.g. `["pwd","mfa"]`) is a field on `auth.Claims`, and `Verifier.Actor` copies it onto
+`authz.Actor.AMR`, which the evaluator checks. A product authenticator built on `kernel/auth` gets step-up for
+free — it does not need to re-verify the bearer token to recover `amr` itself.
 
 ## Testing auth
 
@@ -152,7 +171,7 @@ flat 403. Your authenticator surfaces the satisfied factors via `Actor.AMR`.
 ti := testkit.NewTokenIssuer()                 // local RSA keypair
 ks := ti.KeySource()                           // wire into your verifier
 tok := ti.Issue(subjectID, tenantID, capacityID,
-    testkit.WithAudience("myapp"), testkit.WithBreakGlass(true)) // options: WithIssuer/WithAudience/WithExpiry/WithImpersonator/WithBreakGlass(bool)
+    testkit.WithAudience("myapp"), testkit.WithBreakGlass(true)) // options: WithIssuer/WithAudience/WithExpiry/WithImpersonator/WithBreakGlass(bool)/WithAMR(...string)
 req.Header.Set("Authorization", "Bearer "+tok)
 ```
 
