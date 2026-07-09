@@ -25,8 +25,12 @@ type ProblemError struct {
 // problemTypeBase is the URI prefix for the machine-readable problem type.
 const problemTypeBase = "https://errors.wowapi.dev/"
 
-// titles are short, safe, human titles per Kind. Never derived from the
-// (potentially sensitive) error message.
+// titles are short, safe, human titles per Kind — the English fallback used
+// when no i18n catalog is bound to the request context (zero-config) or a
+// locale has no translation for a title. Localized rendering pulls from the
+// framework catalog via localizeTitle (kernel/i18n keys the SAME English
+// strings under KeyProblemTitle, so this map and the catalog stay in lockstep).
+// Never derived from the (potentially sensitive) error message.
 var titles = map[errors.Kind]string{
 	errors.KindValidation:          "Validation failed",
 	errors.KindUnauthenticated:     "Authentication required",
@@ -55,7 +59,7 @@ func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
 	if !ok {
 		writeProblem(w, ProblemError{
 			Type:      problemTypeBase + "internal",
-			Title:     titles[errors.KindInternal],
+			Title:     localizeTitle(ctx, errors.KindInternal, titles[errors.KindInternal]),
 			Status:    http.StatusInternalServerError,
 			Code:      errors.KindInternal.DefaultCode(),
 			RequestID: reqID,
@@ -71,19 +75,22 @@ func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
 	}
 	p := ProblemError{
 		Type:      problemTypeBase + kind.DefaultCode(),
-		Title:     titles[kind],
+		Title:     localizeTitle(ctx, kind, titles[kind]),
 		Status:    status,
 		Code:      code,
 		RequestID: reqID,
 		Errors:    e.Fields,
 	}
 	// Internal errors never expose their message; everything else exposes the
-	// deliberately user-safe Msg only (never Op or the wrapped cause).
+	// deliberately user-safe Msg only (never Op or the wrapped cause). Detail is
+	// the user-safe Msg the producing layer already localized (or left English);
+	// WriteError does not translate it — kernel/validation localizes field
+	// messages at production time, and other callers pass locale-appropriate Msg.
 	if kind != errors.KindInternal {
 		p.Detail = e.Msg
 	}
 	if p.Title == "" {
-		p.Title = titles[errors.KindInternal]
+		p.Title = localizeTitle(ctx, errors.KindInternal, titles[errors.KindInternal])
 	}
 	writeProblem(w, p)
 }
@@ -91,7 +98,7 @@ func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
 func writeInternal(ctx context.Context, w http.ResponseWriter) {
 	writeProblem(w, ProblemError{
 		Type:      problemTypeBase + "internal",
-		Title:     titles[errors.KindInternal],
+		Title:     localizeTitle(ctx, errors.KindInternal, titles[errors.KindInternal]),
 		Status:    http.StatusInternalServerError,
 		Code:      errors.KindInternal.DefaultCode(),
 		RequestID: RequestIDFrom(ctx),

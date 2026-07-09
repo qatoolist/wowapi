@@ -57,7 +57,10 @@ func BindAndValidate[T any](r *http.Request, v *validation.Validator, maxBytes i
 	if err != nil {
 		return out, err
 	}
-	if err := v.Struct(out); err != nil {
+	// StructCtx localizes field messages against the locale/catalog the
+	// httpx.Locale middleware bound to r.Context(); with no catalog wired it is
+	// byte-identical to v.Struct (English). Field paths and codes stay stable.
+	if err := v.StructCtx(r.Context(), out); err != nil {
 		return out, err
 	}
 	return out, nil

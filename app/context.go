@@ -25,6 +25,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -52,6 +53,10 @@ type bootState struct {
 	health     map[string]func(context.Context) error
 	ports      map[string]any
 	recurring  []RecurringJob
+	// i18n aggregates the framework's English catalog plus every module's
+	// localized bundles (GAP-001). Shared across module contexts; ownership
+	// (module-prefixed keys) is enforced per Register and surfaced at boot.
+	i18n *i18n.Registry
 }
 
 func newBootState() *bootState {
@@ -61,6 +66,7 @@ func newBootState() *bootState {
 		openapi:    map[string][]byte{},
 		health:     map[string]func(context.Context) error{},
 		ports:      map[string]any{},
+		i18n:       i18n.NewRegistry(),
 	}
 }
 
@@ -299,6 +305,11 @@ func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }
 func (c *moduleContext) OpenAPI(fragment []byte) {
 	c.boot.openapi[c.name] = fragment
 }
+
+// I18n registers a module's localized message bundle under this module's name.
+// Ownership (keys prefixed "<name>.") is enforced by the shared registry;
+// violations accumulate and fail boot via the registry's Err().
+func (c *moduleContext) I18n(bundle i18n.Bundle) { c.boot.i18n.Register(c.name, bundle) }
 
 func (c *moduleContext) Health(name string, check func(context.Context) error) {
 	c.boot.health[c.name+"."+name] = check

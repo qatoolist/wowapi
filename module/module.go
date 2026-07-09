@@ -29,6 +29,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
@@ -112,6 +113,15 @@ type Context interface {
 	Migrations(fsys fs.FS)
 	Seeds(fsys fs.FS)
 	OpenAPI(fragment []byte)
+
+	// I18n registers a module's localized message bundle (GAP-001): the messages
+	// for one locale, keyed under the module's own "<name>." prefix. Called once
+	// per locale during Register (mirroring Seeds/OpenAPI collection). The app
+	// merges every module's bundles with the framework's own English catalog into
+	// one Catalog, which the httpx.Locale middleware negotiates against and
+	// WriteError/validation localize from. Product-specific translations stay in
+	// product-owned bundles — the framework ships only its own English strings.
+	I18n(bundle i18n.Bundle)
 
 	// Health registers a named readiness check (Phase 5).
 	Health(name string, check func(context.Context) error)
