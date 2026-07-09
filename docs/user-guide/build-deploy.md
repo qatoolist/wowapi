@@ -81,6 +81,70 @@ The `tools` service is preconfigured with `S3_ENDPOINT`, `SMTP_ADDR`, and
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318`, so the container gate exercises object storage, email, and
 tracing against real services — not mocks.
 
+## Object storage (S3/MinIO)
+
+The document framework (`kernel/document`, exposed via `module.Context.DocumentClasses()`) talks to blob
+storage through the `storage.Adapter` port (`kernel/storage/storage.go`), never directly to S3/MinIO. Two
+adapters satisfy that port:
+
+| Adapter | Package | Use |
+|---|---|---|
+| In-memory | `kernel/storage` (`storage.NewMemory()`) | Tests and local dev without a real object store. |
+| S3/MinIO | `github.com/qatoolist/wowapi/adapters/storage/s3` | Production and any local dev pointed at real MinIO. |
+
+If your module registers a document class but the kernel has no storage adapter wired, `app.Boot` fails
+closed: *"document classes are registered (…) but no storage adapter is wired: pass kernel.Deps.Storage"*.
+
+### Wiring the S3/MinIO adapter
+
+Construct `s3.Config` from your product's own config/secrets (there is no framework config section for it
+yet — see the gap note below) and pass the adapter into `kernel.Deps.Storage` alongside the other deps your
+`cmd/api`/`cmd/worker` main already builds:
+
+```go
+import s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
+
+store, err := s3adapter.New(ctx, s3adapter.Config{
+    Endpoint:     cfg.Storage.Endpoint,  // "minio:9000", or "https://s3.amazonaws.com"
+    Bucket:       cfg.Storage.Bucket,
+    Region:       cfg.Storage.Region,    // empty is fine for MinIO
+    AccessKey:    cfg.Storage.AccessKey.Reveal(),
+    SecretKey:    cfg.Storage.SecretKey.Reveal(),
+    UseSSL:       cfg.Storage.UseSSL,        // ignored when Endpoint carries an explicit http(s):// scheme
+    PresignTTL:   5 * time.Minute,           // default AND upper bound for presigned URLs (0 = 15m)
+    CreateBucket: cfg.Environment != "prod", // local/dev only — provision prod buckets out of band
+})
+if err != nil {
+    return fmt.Errorf("storage: %w", err)
+}
+// No Close/Shutdown: the minio client holds no long-lived resources to release.
+
+k, err := kernel.New(cfg.Framework, log, kernel.Deps{
+    Pool: pool, Platform: platformPool, Tx: txm, Storage: store, /* … */
+})
+```
+
+`New` fails closed at boot if the bucket doesn't exist and `CreateBucket` is false — the same fail-fast
+posture as the DB pool, so a missing bucket is a boot error, not a 500 on the first upload. Set
+`CreateBucket: true` only for local/dev overlays; production buckets are provisioned out of band.
+
+The adapter mirrors `storage.NewMemory`'s semantics exactly (same `KindNotFound` mapping, same idempotent
+`Delete`, same checksum-verified `Stat`), so swapping it in changes nothing about how your document classes
+behave — only where the bytes live.
+
+### Local development against the compose MinIO
+
+`make up` already starts a MinIO at `localhost:9000` (root user/password `wowapi` / `wowapi-local-only`; see
+the table above), so pointing `s3.Config.Endpoint` at `localhost:9000` (or `minio:9000` from inside the
+`tools`/api/worker containers) with `CreateBucket: true` gets you a working local object store with no
+additional infrastructure.
+
+> **Gap:** there is currently no `config.Framework` section or CLI-generated scaffold wiring for storage —
+> your product config decides the field names and where the S3 credentials come from (env, `secretref://`,
+> etc.) and your `cmd/api`/`cmd/worker` main constructs `s3.Config` and passes it to `kernel.Deps.Storage`
+> as shown above. Framework-level config/scaffold wiring is tracked separately; until then, wire it exactly
+> like the `Metrics`/`Tracer` deps already are in the generated main.
+
 ## Health & readiness
 
 Every deployment exposes two infrastructure endpoints (public):
