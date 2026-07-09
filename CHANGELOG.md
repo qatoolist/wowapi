@@ -12,6 +12,26 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- **Reusable MFA factor primitives + sender ports (`kernel/mfa`)** — closes the gap that forced
+  `wowsociety` to hand-roll TOTP/HOTP/OTP crypto locally (GAP-005). The framework had step-up
+  authorization semantics (`authz.Decision.StepUpRequired`, the `amr` claim, GAP-004) but no reusable
+  primitive for actually *producing* a satisfied factor. `kernel/mfa` is a pure-logic leaf package: RFC
+  6238 TOTP generation (`GenerateTOTPSecret`, `TOTPCodeAt`) and verification (`VerifyTOTPAt`) with
+  configurable step/digits/algorithm(SHA1/SHA256/SHA512)/skew window; RFC 4226 HOTP (`HOTPCode`); numeric
+  OTP generation (`GenerateOTPCode`, `crypto/rand`) with salted constant-time hash/verify
+  (`HashOTPCode`/`VerifyOTPCode`, matching the `subtle.ConstantTimeCompare` convention already used by
+  `kernel/apikey` and `kernel/webhook`); pure TTL + attempt-limit challenge-policy helpers
+  (`ChallengePolicy`/`ChallengeState`/`Evaluate`) with no storage schema of their own; and a `Sender`
+  delivery port for SMS/email code delivery with `FakeSender` (test) and `NewLogSender` (dev/local)
+  adapters — deliberately not `kernel/notify.ChannelSender`, since that port is coupled to the
+  `notification_deliveries` schema this leaf package must not depend on. RFC 4226 Appendix D and RFC 6238
+  Appendix B's published test vectors are pinned in tests for every documented algorithm/digit
+  combination, alongside an explicit constant-time-comparison-semantics test (equal / unequal /
+  length-mismatch, no panics). Ported from and replaces `wowsociety/internal/modules/identity/{totp,otp,sms}.go`'s
+  local implementation; enrollment UX, factor storage schema, delivery-provider selection, and
+  which-actions-require-which-factor policy remain product-owned (see the package doc comment). Documented
+  in the user guide (Authentication & Authorization → Step-up / MFA), linking framework-side step-up/AMR
+  consumption to product-side factor implementation.
 - **Rule registry definitions lifecycle + expanded schema validation (`kernel/rules.SyncDefinitions`)**
   — closes the gap that forced `wowsociety` to hand-mirror its Go rule-point declarations into a SQL
   migration and run a drift-guard test against it (GAP-007). `rules.SyncDefinitions(ctx, db, registry)`

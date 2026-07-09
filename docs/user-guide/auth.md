@@ -162,6 +162,19 @@ not insert-only).
 `authz.Actor.AMR`, which the evaluator checks. A product authenticator built on `kernel/auth` gets step-up for
 free — it does not need to re-verify the bearer token to recover `amr` itself.
 
+**Implementing the factor that produces `amr`** is a separate concern from step-up itself, and lives in
+`kernel/mfa`: reusable, standards-compliant TOTP (RFC 6238) and HOTP (RFC 4226) code generation/verification,
+numeric OTP generation with salted constant-time hashing, and pure TTL/attempt-limit challenge-policy helpers,
+plus `Sender` delivery-port interfaces (SMS/email) with log/fake adapters. There is no import relationship
+between the two packages — `kernel/authz` never imports `kernel/mfa` and vice versa. The connection is a
+convention: a product's own auth/MFA service uses `kernel/mfa` to verify a TOTP or delivered-OTP code, and
+*on success* appends the corresponding factor (e.g. `"mfa"`, `"otp"`) to the `amr` slice it puts on the
+authenticated actor — at which point `kernel/authz`'s step-up check (above) is satisfied. `kernel/mfa`
+deliberately does not know about `amr`, permissions, or which actions require which factor: enrollment UX,
+factor storage schema, delivery-provider selection, and factor-to-permission policy are all product-owned.
+See the `kernel/mfa` package doc for the exact API (`GenerateTOTPSecret`, `TOTPCodeAt`/`VerifyTOTPAt`,
+`HOTPCode`, `GenerateOTPCode`/`HashOTPCode`/`VerifyOTPCode`, `ChallengePolicy`, `Sender`).
+
 ## Testing auth
 
 `testkit` issues real signed tokens so you can exercise the gate end to end
