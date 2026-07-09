@@ -298,6 +298,39 @@ func TestInitHintPointsToReadme(t *testing.T) {
 	}
 }
 
+// TestInitMigrateMainSyncsSeeds is the GAP-003 regression: the generated
+// cmd/migrate must run seeds.Sync after module migrations so a fresh
+// production database gets its authorization/resource catalogs populated —
+// without this, the framework docs' own PF-9 finding (deploy → empty
+// catalogs → deny-everything) reproduces in every scaffolded product.
+func TestInitMigrateMainSyncsSeeds(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/seeds")
+	assertFileContains(t, migratePath, "seeds.Sync(ctx, pool, booted.Seeds)")
+	assertParseGo(t, migratePath)
+}
+
+// TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003 "clear failure
+// mode" acceptance criterion: the generated api main must wire
+// app.CatalogsSeeded into /readyz so a pod whose migrate step skipped seed
+// sync reports NOT ready with an actionable message, instead of only
+// surfacing as scattered per-request 403s.
+func TestInitAPIMainWiresSeedCatalogsReadinessCheck(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertFileContains(t, apiPath, "app.CatalogsSeeded")
+	assertParseGo(t, apiPath)
+}
+
 // ---------- wowapi new-module ----------
 
 func TestNewModuleCreatesFiles(t *testing.T) {

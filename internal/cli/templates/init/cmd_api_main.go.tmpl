@@ -172,6 +172,13 @@ func run(ctx context.Context) error {
 	// Health endpoints are Public infrastructure, mounted directly.
 	health := app.Readiness(booted, fp, map[string]httpx.HealthCheck{
 		"db": func(ctx context.Context) error { return pool.Ping(ctx) },
+		// GAP-003 clear-failure-mode check: fail /readyz loudly, naming the fix,
+		// if a module declares seeds but the deployed database's catalog tables
+		// are still empty — the generated cmd/migrate now runs seeds.Sync, but
+		// this check catches any deploy path that skipped it (e.g. migrate ran
+		// against the wrong database) BEFORE the pod takes traffic, instead of
+		// letting it surface only as scattered per-request 403s.
+		"seeds": func(ctx context.Context) error { return app.CatalogsSeeded(ctx, platformPool, booted.Seeds) },
 	})
 	mux.Handle("/healthz", health.Liveness())
 	mux.Handle("/readyz", health.Readiness())

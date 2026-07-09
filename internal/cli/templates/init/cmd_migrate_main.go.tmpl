@@ -2,7 +2,11 @@
 //
 // Usage: migrate [up|down]   (default "up")
 //
-//	up    apply kernel then module migrations (forward, expand-contract).
+//	up    apply kernel then module migrations (forward, expand-contract), then
+//	      sync the merged module seed catalog (permissions, roles, resource
+//	      types, relationship types) idempotently. Without this last step the
+//	      catalogs stay empty and every authorization check denies (GAP-003) —
+//	      see docs/user-guide/database-migrations.md#seeds.
 //	down  roll ALL migrations back to version 0 (full reset). Guarded: refuses
 //	      unless the environment is local or dev — production rollback is an
 //	      expand-contract anti-pattern (see docs/blueprint/12) and this runner
@@ -22,6 +26,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/logging"
+	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/migrations"
 
 	"{{.Module}}/internal/wire"
@@ -143,6 +148,18 @@ func run(ctx context.Context, argv []string) error {
 		log.InfoContext(ctx, "module migrations applied",
 			"module", name, "applied", r.Applied, "version", r.Version)
 	}
+
+	// Seed sync (blueprint 06 §2 lifecycle SeedSync): upsert the merged module
+	// catalogs (permissions, roles, resource types, relationship types)
+	// idempotently. This is the deploy point that already holds a privileged
+	// connection; without it the DB catalogs stay empty — every authorization
+	// check denies and resource-mirror writes fail their FK (GAP-003). No
+	// invalidator is passed: this process holds no long-lived authz cache (it
+	// exits immediately after migrating), unlike the api/worker runtime.
+	if err := seeds.Sync(ctx, pool, booted.Seeds); err != nil {
+		return fmt.Errorf("seed sync: %w", err)
+	}
+	log.InfoContext(ctx, "seed catalogs synced", "modules", len(names))
 	return nil
 }
 
