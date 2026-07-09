@@ -95,33 +95,50 @@ adapters satisfy that port:
 If your module registers a document class but the kernel has no storage adapter wired, `app.Boot` fails
 closed: *"document classes are registered (…) but no storage adapter is wired: pass kernel.Deps.Storage"*.
 
-### Wiring the S3/MinIO adapter
+### Wiring the S3/MinIO adapter (generated scaffold)
 
-Construct `s3.Config` from your product's own config/secrets (there is no framework config section for it
-yet — see the gap note below) and pass the adapter into `kernel.Deps.Storage` alongside the other deps your
-`cmd/api`/`cmd/worker` main already builds:
+`wowapi init` scaffolds the S3/MinIO wiring for you: `internal/appcfg.Config` carries a `Storage` section
+(`StorageConfig` — endpoint, bucket, region, secretref-only credentials, `use_ssl`, `presign_ttl`,
+`create_bucket`), and the generated `cmd/api`/`cmd/worker` mains construct the adapter and pass it into
+`kernel.Deps.Storage` automatically, gated on `cfg.Storage.Enabled()` (true once `storage.endpoint` is set):
 
 ```go
-import s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
-
-store, err := s3adapter.New(ctx, s3adapter.Config{
-    Endpoint:     cfg.Storage.Endpoint,  // "minio:9000", or "https://s3.amazonaws.com"
-    Bucket:       cfg.Storage.Bucket,
-    Region:       cfg.Storage.Region,    // empty is fine for MinIO
-    AccessKey:    cfg.Storage.AccessKey.Reveal(),
-    SecretKey:    cfg.Storage.SecretKey.Reveal(),
-    UseSSL:       cfg.Storage.UseSSL,        // ignored when Endpoint carries an explicit http(s):// scheme
-    PresignTTL:   5 * time.Minute,           // default AND upper bound for presigned URLs (0 = 15m)
-    CreateBucket: cfg.Environment != "prod", // local/dev only — provision prod buckets out of band
-})
-if err != nil {
-    return fmt.Errorf("storage: %w", err)
+// Generated in cmd/api/main.go and cmd/worker/main.go — no product edits needed.
+var store storage.Adapter
+if cfg.Storage.Enabled() {
+    s3a, serr := s3adapter.New(ctx, s3adapter.Config{
+        Endpoint:     cfg.Storage.Endpoint,
+        Bucket:       cfg.Storage.Bucket,
+        Region:       cfg.Storage.Region,
+        AccessKey:    cfg.Storage.AccessKey.Reveal(),
+        SecretKey:    cfg.Storage.SecretKey.Reveal(),
+        UseSSL:       cfg.Storage.UseSSL,
+        PresignTTL:   cfg.Storage.PresignTTL,
+        CreateBucket: cfg.Storage.CreateBucket,
+    })
+    if serr != nil {
+        return fmt.Errorf("storage: %w", serr)
+    }
+    store = s3a
 }
-// No Close/Shutdown: the minio client holds no long-lived resources to release.
 
 k, err := kernel.New(cfg.Framework, log, kernel.Deps{
     Pool: pool, Platform: platformPool, Tx: txm, Storage: store, /* … */
 })
+```
+
+Leave `storage.endpoint` unset (the default in the generated `configs/base.yaml`, commented out) and
+`Deps.Storage` stays nil — `app.Boot` still fails closed if a module registers a document class, exactly as
+before. Set the section in an env overlay to enable it:
+
+```yaml
+storage:
+  endpoint: "localhost:9000"
+  bucket: "myapp-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+  create_bucket: true   # local/dev overlays only
 ```
 
 `New` fails closed at boot if the bucket doesn't exist and `CreateBucket` is false — the same fail-fast
@@ -135,15 +152,9 @@ behave — only where the bytes live.
 ### Local development against the compose MinIO
 
 `make up` already starts a MinIO at `localhost:9000` (root user/password `wowapi` / `wowapi-local-only`; see
-the table above), so pointing `s3.Config.Endpoint` at `localhost:9000` (or `minio:9000` from inside the
-`tools`/api/worker containers) with `CreateBucket: true` gets you a working local object store with no
+the table above), so pointing `storage.endpoint` at `localhost:9000` (or `minio:9000` from inside the
+`tools`/api/worker containers) with `create_bucket: true` gets you a working local object store with no
 additional infrastructure.
-
-> **Gap:** there is currently no `config.Framework` section or CLI-generated scaffold wiring for storage —
-> your product config decides the field names and where the S3 credentials come from (env, `secretref://`,
-> etc.) and your `cmd/api`/`cmd/worker` main constructs `s3.Config` and passes it to `kernel.Deps.Storage`
-> as shown above. Framework-level config/scaffold wiring is tracked separately; until then, wire it exactly
-> like the `Metrics`/`Tracer` deps already are in the generated main.
 
 ## Health & readiness
 

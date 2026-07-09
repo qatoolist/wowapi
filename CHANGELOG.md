@@ -12,6 +12,32 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- **Standard storage/OIDC/i18n scaffold wiring in `wowapi init` (GAP-008, the last framework gap)** — closes
+  the gap that forced `wowsociety` to hand-write its own `tools/configcheck`, `internal/appcfg.StorageConfig`,
+  and S3/OIDC wiring in `cmd/api`/`cmd/worker`. The generated `internal/appcfg.Config` now carries a
+  `StorageConfig` section (`endpoint`/`bucket`/`region`/secretref-only credentials/`use_ssl`/`presign_ttl`/
+  `create_bucket`, with `Enabled()`/`Validate()` mirroring the OIDC `AuthConfig` pattern already scaffolded),
+  and `Config.Validate()` delegates to it (ARCH-10 composition contract). The generated `cmd/api` and
+  `cmd/worker` mains construct the `adapters/storage/s3` adapter and wire it into `kernel.Deps.Storage`
+  whenever `cfg.Storage.Enabled()`, exactly mirroring how `wowsociety` wired it by hand — left unset,
+  `Deps.Storage` stays nil and `app.Boot` still fails closed if a module registers a document class. The
+  generated `configs/base.yaml` documents the new `storage:` section commented out, alongside the existing
+  `auth.oidc` documentation. The generated `cmd/api` main also now installs `httpx.Locale(booted.I18n)` in
+  the middleware chain unconditionally (`booted.I18n` is never nil — the framework English catalog is
+  always pre-loaded), enabling `Accept-Language` negotiation + `Content-Language` responses with zero
+  product config (kernel/i18n landed this branch with no scaffold enablement point until now). OIDC/JWT
+  auth wiring, OTel tracing, Prometheus metrics, and the migrations→`seeds.Sync`→`rules.SyncDefinitions`
+  process shell were already scaffolded (GAP-001/002/003/007) and are unchanged. `tools/configcheck`
+  already linked the composed `appcfg.Config` (not just `config.Framework`) and needed no changes — it now
+  additionally proves out the Storage/Auth sections via its `schema`/`validate` modes. Acceptance: a new
+  product can run `wowapi config validate` (which delegates to the generated `tools/configcheck`) against a
+  composed config carrying `storage:`/`auth.oidc:` sections with **no hand-written checker and no
+  product-side config-struct edits**; `internal/cli/scaffold_test.go` extends the existing render-and-parse
+  regression net with a real **compile** of the rendered product against this framework checkout (`go build
+  ./...` via a `replace` directive, `TestInitRenderedProductCompiles`) plus end-to-end `configcheck
+  schema`/`validate` runs proving the composed type and an enabled storage+OIDC overlay both work, not just
+  parse. Documented in the user guide (Build & Deploy → Object storage; Getting Started → scaffold tree +
+  new "Generated vs. product-owned" boundary table).
 - **Reusable MFA factor primitives + sender ports (`kernel/mfa`)** — closes the gap that forced
   `wowsociety` to hand-roll TOTP/HOTP/OTP crypto locally (GAP-005). The framework had step-up
   authorization semantics (`authz.Decision.StepUpRequired`, the `amr` claim, GAP-004) but no reusable

@@ -31,3 +31,18 @@ db:
 #     issuer: "https://idp.example.com/"
 #     audience: "{{.Name}}"
 #     jwks_uri: ""
+
+# storage — optional S3/MinIO object storage for the document framework
+# (adapters/storage/s3). Leave endpoint unset to keep object storage disabled
+# (app.Boot fails closed if a module registers a document class with no
+# storage adapter wired). access_key/secret_key MUST be secretref:// references,
+# never inline values. create_bucket is for local/dev overlays only.
+# storage:
+#   endpoint: "localhost:9000"
+#   bucket: "{{.DBName}}-docs"
+#   region: ""
+#   access_key: "secretref://env/S3_ACCESS_KEY"
+#   secret_key: "secretref://env/S3_SECRET_KEY"
+#   use_ssl: false
+#   presign_ttl: 15m
+#   create_bucket: false

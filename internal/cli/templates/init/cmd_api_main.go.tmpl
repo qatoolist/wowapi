@@ -12,6 +12,7 @@ import (
 
 	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
 	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
+	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
 	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel/apikey"
@@ -23,6 +24,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/logging"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/storage"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -119,7 +121,31 @@ func run(ctx context.Context) error {
 	}
 	defer platformPool.Close()
 
-	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Platform: platformPool, Tx: txm, Metrics: metrics, Tracer: tracer})
+	// Object storage (optional): when storage.endpoint is configured, wire the
+	// S3/MinIO adapter behind the framework storage port so modules can
+	// register document classes. Left unset, Deps.Storage stays nil and
+	// app.Boot fails closed if a module registers a document class — the
+	// framework's guarantee, deliberately preserved. The constructor verifies
+	// the bucket, so a misconfigured store fails boot here, not on first upload.
+	var store storage.Adapter
+	if cfg.Storage.Enabled() {
+		s3a, serr := s3adapter.New(ctx, s3adapter.Config{
+			Endpoint:     cfg.Storage.Endpoint,
+			Bucket:       cfg.Storage.Bucket,
+			Region:       cfg.Storage.Region,
+			AccessKey:    cfg.Storage.AccessKey.Reveal(),
+			SecretKey:    cfg.Storage.SecretKey.Reveal(),
+			UseSSL:       cfg.Storage.UseSSL,
+			PresignTTL:   cfg.Storage.PresignTTL,
+			CreateBucket: cfg.Storage.CreateBucket,
+		})
+		if serr != nil {
+			return fmt.Errorf("storage: %w", serr)
+		}
+		store = s3a
+	}
+
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Platform: platformPool, Tx: txm, Storage: store, Metrics: metrics, Tracer: tracer})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
@@ -201,6 +227,13 @@ func run(ctx context.Context) error {
 		httpx.Recover(log),
 		httpx.SecureHeaders(),
 		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
+		// Locale negotiation (kernel/i18n): binds the request's negotiated
+		// locale + the merged message catalog (framework English + every
+		// module's bundles) into the context before any handler runs, and
+		// sets Content-Language on the response. booted.I18n is never nil
+		// (the framework catalog is always pre-loaded), so this is a
+		// standard, always-on concern — no product config gate needed.
+		httpx.Locale(booted.I18n),
 		observability.Trace(tracer),     // OTel span per request when tracing is enabled
 		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),

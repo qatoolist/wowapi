@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -361,6 +363,251 @@ func TestInitAPIMainWiresSeedCatalogsReadinessCheck(t *testing.T) {
 	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
 	assertFileContains(t, apiPath, "app.CatalogsSeeded")
 	assertParseGo(t, apiPath)
+}
+
+// ---------- GAP-008: storage / OIDC / i18n scaffold wiring ----------
+
+// TestInitAppcfgHasStorageConfig: the generated internal/appcfg.Config must
+// declare a StorageConfig section (mirroring wowsociety's hand-written one)
+// so a product can enable the S3/MinIO adapter via config alone, with no
+// product-side config-struct boilerplate. Validate() must delegate to it
+// (ARCH-10 composition contract), matching how Auth is already handled.
+func TestInitAppcfgHasStorageConfig(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	cfgPath := filepath.Join(dir, "internal", "appcfg", "config.go")
+	assertParseGo(t, cfgPath)
+	for _, want := range []string{
+		"StorageConfig",
+		`conf:"storage"`,
+		"func (s StorageConfig) Enabled() bool",
+		"c.Storage.Validate()",
+	} {
+		assertFileContains(t, cfgPath, want)
+	}
+}
+
+// TestInitAPIMainWiresOptionalStorage: the generated cmd/api main must wire the
+// S3/MinIO adapter into kernel.Deps.Storage when cfg.Storage.Enabled(), with no
+// product-side boilerplate beyond what wowapi generated (GAP-008 acceptance:
+// "standard storage ... configuration can be wired without product-specific
+// boilerplate").
+func TestInitAPIMainWiresOptionalStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	for _, want := range []string{
+		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		"kernel/storage",
+		"cfg.Storage.Enabled()",
+		"s3adapter.New(ctx, s3adapter.Config{",
+		"Storage: store",
+	} {
+		assertFileContains(t, apiPath, want)
+	}
+}
+
+// TestInitWorkerMainWiresOptionalStorage mirrors TestInitAPIMainWiresOptionalStorage
+// for cmd/worker: the worker touches the same store for document/retention jobs.
+func TestInitWorkerMainWiresOptionalStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	workerPath := filepath.Join(dir, "cmd", "worker", "main.go")
+	assertParseGo(t, workerPath)
+	for _, want := range []string{
+		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		"cfg.Storage.Enabled()",
+		"s3adapter.New(ctx, s3adapter.Config{",
+		"Storage:  store",
+	} {
+		assertFileContains(t, workerPath, want)
+	}
+}
+
+// TestInitAPIMainWiresLocaleMiddleware: the generated api main must install the
+// framework's i18n locale-negotiation middleware (kernel/i18n landed this
+// branch) unconditionally — booted.I18n is always a non-nil catalog
+// (framework English is pre-loaded), so this is a pure framework-standard
+// concern with no product config gate, unlike storage/OIDC.
+func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	assertFileContains(t, apiPath, "httpx.Locale(booted.I18n)")
+}
+
+// TestInitConfigsBaseDocumentsStorage: the generated configs/base.yaml should
+// document the optional storage section the same way it already documents
+// auth.oidc, so a product discovers the knob without reading Go source.
+func TestInitConfigsBaseDocumentsStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "storage:")
+}
+
+// buildRenderedProduct scaffolds a product into a fresh temp dir, points its
+// go.mod at THIS wowapi checkout via a replace directive (so the compile test
+// runs entirely offline against the framework under development, never a
+// published version), and runs `go mod tidy`. It returns the product dir.
+// Callers then run `go build ./...` (and any other go tool) inside it.
+func buildRenderedProduct(t *testing.T, extraInitArgs ...string) string {
+	t.Helper()
+	wowapiDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// scaffold_test.go lives in internal/cli; the module root is two levels up.
+	wowapiRoot, err := filepath.Abs(filepath.Join(wowapiDir, "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wowapiRoot, "go.mod")); err != nil {
+		t.Fatalf("could not locate wowapi module root at %s: %v", wowapiRoot, err)
+	}
+
+	dir := t.TempDir()
+	args := append([]string{"--module", "github.com/acme/compiletest", "--dir", dir}, extraInitArgs...)
+	code, _, errOut := callInit(t, args...)
+	if code != 0 {
+		t.Fatalf("init exit %d: %s", code, errOut)
+	}
+
+	gomodPath := filepath.Join(dir, "go.mod")
+	gomod, err := os.ReadFile(gomodPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := string(gomod) + fmt.Sprintf("\nreplace github.com/qatoolist/wowapi => %s\n", wowapiRoot)
+	if err := os.WriteFile(gomodPath, []byte(replaced), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = dir
+	if out, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy failed: %v\n%s", err, out)
+	}
+	return dir
+}
+
+// TestInitRenderedProductCompiles is the GAP-008 regression net: the scaffold
+// must not merely PARSE (assertParseGo) but actually COMPILE against the real
+// framework, in the zero-config state (storage disabled, OIDC disabled — the
+// var store storage.Adapter / var userAuth httpx.Authenticator branches both
+// take their nil/DenyAll path). This is the same binary regardless of runtime
+// config, so it also covers the "enabled" code paths at the type level; the
+// dedicated config-composition test below additionally proves the enabled
+// runtime values round-trip through the strict config loader.
+func TestInitRenderedProductCompiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles the rendered product against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+	build := exec.Command("go", "build", "./...")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build ./... failed on rendered product:\n%s", out)
+	}
+}
+
+// TestInitConfigcheckSchemaCoversStorageAndAuth proves the generated
+// tools/configcheck links the COMPOSED product config (appcfg.Config) — not
+// just config.Framework — including the new Storage/Auth sections, without
+// any hand-written checker (GAP-008 acceptance criterion #1). `schema` needs
+// no config files on disk, so it is a fast, deterministic way to prove the
+// composed type is actually reachable through the generated tool.
+func TestInitConfigcheckSchemaCoversStorageAndAuth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./tools/configcheck` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+	cc := exec.Command("go", "run", "./tools/configcheck", "schema")
+	cc.Dir = dir
+	out, err := cc.CombinedOutput()
+	if err != nil {
+		t.Fatalf("configcheck schema failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{`"storage"`, `"auth"`, `"oidc"`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("configcheck schema missing %q in output:\n%s", want, out)
+		}
+	}
+}
+
+// TestInitConfigcheckValidatesStorageAndOIDCOverlay proves a product can
+// enable storage + OIDC purely via config (a local.yaml-style overlay) and
+// have the GENERATED configcheck validate it end to end — no hand-written
+// checker, no product-side config struct edits (GAP-008 acceptance criterion
+// #3: "standard storage and OIDC/JWT configuration can be wired without
+// product-specific boilerplate"). The strict config loader rejects unknown
+// keys, so this also proves Storage/Auth are wired into appcfg.Config for
+// real, not just present as dead struct fields.
+func TestInitConfigcheckValidatesStorageAndOIDCOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./tools/configcheck` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+
+	// "dev" (not a bespoke name) — config.Framework.Environment is a closed
+	// enum (local|dev|stage|prod); the overlay must declare a value the
+	// strict loader accepts, and --env dev asserts the overlay actually
+	// declares environment: dev (configcheck's CI-gate behavior).
+	overlay := `environment: dev
+log:
+  level: debug
+  format: text
+db:
+  dsn: "secretref://env/DATABASE_URL"
+  migrate_dsn: "secretref://env/MIGRATE_URL"
+  platform_dsn: "secretref://env/PLATFORM_URL"
+auth:
+  oidc:
+    issuer: "https://idp.example.com/"
+    audience: "compiletest"
+storage:
+  endpoint: "localhost:9000"
+  bucket: "compiletest-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+`
+	if err := os.WriteFile(filepath.Join(dir, "configs", "dev.yaml"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cc := exec.Command("go", "run", "./tools/configcheck", "validate", "--env", "dev")
+	cc.Dir = dir
+	cc.Env = append(os.Environ(),
+		"DATABASE_URL=postgres://app_rt:x@localhost:5432/compiletest?sslmode=disable",
+		"MIGRATE_URL=postgres://app_migrate:x@localhost:5432/compiletest?sslmode=disable",
+		"PLATFORM_URL=postgres://app_platform:x@localhost:5432/compiletest?sslmode=disable",
+		"S3_ACCESS_KEY=minioadmin",
+		"S3_SECRET_KEY=minioadmin",
+	)
+	out, err := cc.CombinedOutput()
+	if err != nil {
+		t.Fatalf("configcheck validate --env ci failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "OK: configuration valid") {
+		t.Errorf("expected validation success, got:\n%s", out)
+	}
 }
 
 // ---------- wowapi new-module ----------
