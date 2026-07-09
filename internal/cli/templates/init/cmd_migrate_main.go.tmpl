@@ -24,7 +24,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -34,6 +33,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/migrations"
 
+	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
 )
 
@@ -100,7 +100,7 @@ func run(ctx context.Context, argv []string) error {
 	// (SkipRLSEnforcementCheck) — that check is for the tenant-serving api/worker
 	// runtime pool, which must be a non-privileged app_rt role.
 	txm := database.NewManager(pool, cfg.DB)
-	k, err := kernel.New(cfg, log, kernel.Deps{Pool: pool, Tx: txm})
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
@@ -185,17 +185,13 @@ func run(ctx context.Context, argv []string) error {
 // provider. It fails closed: any load error is returned to the caller. No files are
 // required on disk (env vars alone suffice), but environment must be set — so a bare
 // container needs WOWAPI__ENVIRONMENT (plus a DSN), never a silent default.
-func loadConfig() (config.Framework, error) {
-	opts := config.Options{
-		EnvPrefix: "WOWAPI__",
-		Secrets:   envprovider.New(),
-	}
-	if _, err := os.Stat("configs/base.yaml"); err == nil {
-		opts.BaseFile = "configs/base.yaml"
-	}
-	if env := os.Getenv("APP_ENV"); env != "" {
-		opts.EnvFile = "configs/" + env + ".yaml"
-	}
-	cfg, _, err := config.Load[config.Framework](opts)
+//
+// It loads the COMPOSED product config (appcfg.Config), not bare
+// config.Framework: the strict loader rejects unknown keys, so product-owned
+// sections in the overlays (auth.*, storage.*) would otherwise abort the
+// migrate while the api/worker accept the very same file. Only the promoted
+// framework fields are used here; migrate never touches object storage.
+func loadConfig() (appcfg.Config, error) {
+	cfg, _, err := appcfg.Load()
 	return cfg, err
 }

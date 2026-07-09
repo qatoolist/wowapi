@@ -610,6 +610,90 @@ storage:
 	}
 }
 
+// TestInitMigrateMainLoadsComposedConfig: the generated cmd/migrate must load
+// the COMPOSED product config (appcfg.Load) — not bare config.Framework — for
+// the same reason wowsociety's hand-written migrate does: the strict loader
+// rejects unknown keys, so product-owned sections in the deployed overlays
+// (auth.*, storage.*) would otherwise abort the migrate while the generated
+// api/worker accept the very same file. One overlay must serve all three
+// processes (GAP-008 follow-up).
+func TestInitMigrateMainLoadsComposedConfig(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertParseGo(t, migratePath)
+	assertFileContains(t, migratePath, `"github.com/acme/myapp/internal/appcfg"`)
+	assertFileContains(t, migratePath, "appcfg.Load()")
+	// The kernel still receives only the framework subset.
+	assertFileContains(t, migratePath, "kernel.New(cfg.Framework")
+	// The old framework-only load path must be gone.
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "config.Load[config.Framework]") {
+		t.Errorf("generated migrate main still loads bare config.Framework — must load the composed appcfg.Config:\n%s", content)
+	}
+}
+
+// TestInitMigrateMainAcceptsComposedOverlay is the behavioral proof for the
+// above: a rendered product whose overlay carries storage:+auth: sections must
+// be ACCEPTED by the rendered migrate main's config load. `migrate down`
+// against an environment: stage overlay reaches the down-guard ("refusing to
+// reset") strictly AFTER config load and BEFORE any DB connection, so the
+// guard message proves the composed overlay parsed cleanly with no database
+// required — while "unknown key" output would reproduce the bug.
+func TestInitMigrateMainAcceptsComposedOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./cmd/migrate` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+
+	overlay := `environment: stage
+db:
+  dsn: "secretref://env/DATABASE_URL"
+  migrate_dsn: "secretref://env/MIGRATE_URL"
+  platform_dsn: "secretref://env/PLATFORM_URL"
+auth:
+  oidc:
+    issuer: "https://idp.example.com/"
+    audience: "compiletest"
+storage:
+  endpoint: "localhost:9000"
+  bucket: "compiletest-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+`
+	if err := os.WriteFile(filepath.Join(dir, "configs", "stage.yaml"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mig := exec.Command("go", "run", "./cmd/migrate", "down")
+	mig.Dir = dir
+	mig.Env = append(os.Environ(),
+		"APP_ENV=stage",
+		"DATABASE_URL=postgres://app_rt:x@localhost:5432/compiletest?sslmode=disable",
+		"MIGRATE_URL=postgres://app_migrate:x@localhost:5432/compiletest?sslmode=disable",
+		"PLATFORM_URL=postgres://app_platform:x@localhost:5432/compiletest?sslmode=disable",
+		"S3_ACCESS_KEY=minioadmin",
+		"S3_SECRET_KEY=minioadmin",
+	)
+	out, err := mig.CombinedOutput()
+	if err == nil {
+		t.Fatalf("migrate down in stage must refuse (down-guard), got success:\n%s", out)
+	}
+	if strings.Contains(string(out), "unknown key") {
+		t.Errorf("migrate rejected the composed overlay (strict loader saw product sections as unknown keys) — it must load appcfg.Config:\n%s", out)
+	}
+	if !strings.Contains(string(out), "refusing to reset") {
+		t.Errorf("expected the down-guard message (proof config load succeeded), got:\n%s", out)
+	}
+}
+
 // ---------- wowapi new-module ----------
 
 func TestNewModuleCreatesFiles(t *testing.T) {

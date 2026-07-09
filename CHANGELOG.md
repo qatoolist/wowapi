@@ -25,9 +25,15 @@ changes to it require a new major version.
   `auth.oidc` documentation. The generated `cmd/api` main also now installs `httpx.Locale(booted.I18n)` in
   the middleware chain unconditionally (`booted.I18n` is never nil — the framework English catalog is
   always pre-loaded), enabling `Accept-Language` negotiation + `Content-Language` responses with zero
-  product config (kernel/i18n landed this branch with no scaffold enablement point until now). OIDC/JWT
-  auth wiring, OTel tracing, Prometheus metrics, and the migrations→`seeds.Sync`→`rules.SyncDefinitions`
-  process shell were already scaffolded (GAP-001/002/003/007) and are unchanged. `tools/configcheck`
+  product config (kernel/i18n landed this branch with no scaffold enablement point until now). The
+  generated `cmd/migrate` now loads the COMPOSED `appcfg.Config` (via `appcfg.Load()`) instead of bare
+  `config.Framework` — the strict loader rejects unknown keys, so a deployed overlay carrying the new
+  `storage:`/`auth:` sections would otherwise abort the migrate while api/worker accept the very same
+  file; one overlay now serves all three processes (mirrors `wowsociety`'s hand-written migrate, which
+  did this for exactly that reason; the kernel still receives only `cfg.Framework`, and migrate never
+  touches object storage). OIDC/JWT auth wiring, OTel tracing, Prometheus metrics, and the
+  migrations→`seeds.Sync`→`rules.SyncDefinitions` lifecycle were already scaffolded
+  (GAP-001/002/003/007) and are unchanged. `tools/configcheck`
   already linked the composed `appcfg.Config` (not just `config.Framework`) and needed no changes — it now
   additionally proves out the Storage/Auth sections via its `schema`/`validate` modes. Acceptance: a new
   product can run `wowapi config validate` (which delegates to the generated `tools/configcheck`) against a
