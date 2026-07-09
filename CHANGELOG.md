@@ -12,6 +12,26 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- **Rule registry definitions lifecycle + expanded schema validation (`kernel/rules.SyncDefinitions`)**
+  — closes the gap that forced `wowsociety` to hand-mirror its Go rule-point declarations into a SQL
+  migration and run a drift-guard test against it (GAP-007). `rules.SyncDefinitions(ctx, db, registry)`
+  upserts every registered `Point` into `rule_definitions` idempotently (schema, default value, allowed
+  scopes, approval requirement, description all converge on re-sync; no duplicate rows), satisfying the
+  `rule_versions.rule_key` foreign key without any product SQL. It is the rule-registry analogue of
+  `kernel/seeds.Sync` and runs at the same lifecycle point: the generated `cmd/migrate` calls it
+  immediately after `seeds.Sync`, on the same `app_platform`-privileged connection. There is no
+  standalone `wowapi rules sync` framework CLI subcommand — unlike seed catalogs (declarative YAML the
+  framework can load off disk), rule points exist only as Go declarations inside a booted product
+  process, so a product with a custom migrate main calls `SyncDefinitions` itself the same way. Also
+  expands `kernel/rules`' focused schema validator (`kernel/rules/schema.go`) with the common JSON
+  Schema bounds keywords: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minLength`,
+  `maxLength`, `pattern`, `minItems`, `maxItems`, and a shallow `required`-property-presence check for
+  object values — so `Store.Propose` now rejects an out-of-bounds numeric/string/array value at write
+  time instead of a product re-implementing the same bounds check (as `wowsociety`'s `rulepoints.go`
+  `checkValue` did). Full recursive JSON Schema (nested `properties` sub-schemas, `additionalProperties`,
+  `items` sub-schemas) stays explicitly out of scope — the validator's doc comment narrows the contract
+  rather than silently under-supporting it. All prior validator behavior (top-level `type` + `enum`)
+  is preserved unchanged. Documented in the user guide (Database & Migrations → Rule definitions).
 - **Scoped privileged framework services (`kernel/privileged`, `module.Context.Privileged()`)** —
   a sanctioned, audited surface for the valid tenant-scoped operations that require *platform*
   privilege at the database, so a product module no longer has to write its own `SECURITY DEFINER`
