@@ -221,6 +221,47 @@ func TestSyncLifecycle(t *testing.T) {
 	}
 }
 
+// TestSyncPersistsStepUp: Sync writes permissions.step_up on initial insert and
+// flips it on re-sync when the seed changes — a permission's step-up
+// requirement is a live, updatable catalog attribute, not a one-time insert.
+func TestSyncPersistsStepUp(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	p := h.Platform
+
+	b := seeds.Bundle{
+		Permissions: []seeds.PermissionSeed{
+			{Key: "seedcov.impersonation.assign", Description: "assign impersonation", StepUp: true},
+			{Key: "seedcov.doc.read", Description: "read a doc"},
+		},
+	}
+	if err := seeds.Sync(ctx, p, b); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	if !scanBool(t, p, `SELECT step_up FROM permissions WHERE key='seedcov.impersonation.assign'`) {
+		t.Fatal("step_up=true not persisted on initial insert")
+	}
+	if scanBool(t, p, `SELECT step_up FROM permissions WHERE key='seedcov.doc.read'`) {
+		t.Fatal("step_up should default to false when the seed omits it")
+	}
+
+	// Flip: the seed drops step_up on re-sync — idempotent updatable, not stuck.
+	flipped := b
+	flipped.Permissions = []seeds.PermissionSeed{
+		{Key: "seedcov.impersonation.assign", Description: "assign impersonation", StepUp: false},
+		{Key: "seedcov.doc.read", Description: "read a doc", StepUp: true},
+	}
+	if err := seeds.Sync(ctx, p, flipped); err != nil {
+		t.Fatalf("flip re-sync: %v", err)
+	}
+	if scanBool(t, p, `SELECT step_up FROM permissions WHERE key='seedcov.impersonation.assign'`) {
+		t.Fatal("step_up not flipped to false on re-sync")
+	}
+	if !scanBool(t, p, `SELECT step_up FROM permissions WHERE key='seedcov.doc.read'`) {
+		t.Fatal("step_up not flipped to true on re-sync")
+	}
+}
+
 // TestSyncEmptyBundle: syncing an empty bundle is a clean no-op that writes no
 // catalog rows.
 func TestSyncEmptyBundle(t *testing.T) {

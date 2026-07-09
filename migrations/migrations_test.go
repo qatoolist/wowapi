@@ -41,6 +41,7 @@ var expectedFiles = []string{
 	"00026_notify_trace_context.sql",
 	"00027_audit_anchors.sql",
 	"00028_jobs_rls.sql",
+	"00029_permissions_step_up.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

@@ -59,6 +59,7 @@ type tokenConfig struct {
 	expiry       time.Duration
 	impersonator uuid.UUID
 	breakGlass   bool
+	amr          []string
 }
 
 // TokenOption customizes a minted token so tests can drive the verifier's
@@ -91,6 +92,13 @@ func WithBreakGlass(on bool) TokenOption {
 	return func(c *tokenConfig) { c.breakGlass = on }
 }
 
+// WithAMR sets the standard amr (authentication-methods-references) claim
+// (RFC 8176, e.g. WithAMR("pwd", "mfa")), driving the auth.Verifier's
+// propagation into authz.Actor.AMR and the evaluator's step-up check.
+func WithAMR(amr ...string) TokenOption {
+	return func(c *tokenConfig) { c.amr = amr }
+}
+
 // Issue mints a signed RS256 JWT for subject in tenantID with the given
 // capacityID (pass uuid.Nil to omit the capacity claim). Standard claims
 // (iss/aud/exp/iat/nbf) default to the values the auth.Verifier expects and are
@@ -119,6 +127,7 @@ func (ti *TokenIssuer) Issue(subject string, tenantID, capacityID uuid.UUID, opt
 		CapacityID:         capacityID,
 		ImpersonatorUserID: cfg.impersonator,
 		BreakGlass:         cfg.breakGlass,
+		AMR:                cfg.amr,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

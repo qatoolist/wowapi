@@ -159,7 +159,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		bundle.ResourceTypes = append(bundle.ResourceTypes, b.ResourceTypes...)
 		bundle.RelationshipTypes = append(bundle.RelationshipTypes, b.RelationshipTypes...)
 		for _, p := range b.Permissions {
-			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia})
+			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp})
 		}
 		for _, rt := range b.ResourceTypes {
 			k.Resources.Register(name, resource.TypeSpec{Key: rt.Key, Description: rt.Description})
