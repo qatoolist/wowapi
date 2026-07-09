@@ -91,3 +91,14 @@ Append: *what was found · why it happened · why the workflow missed it · prev
 test/script/gate to update.* If the class already appears above, add the instance under it; if a new
 class recurs (≥2), add a row to the recurring-patterns table and a checklist item. Mirror significant
 learnings into the AI-agent `review-learnings` memory.
+
+## 2026-07-10 — wowsociety gap-closure program (8 gaps, 2 repos, subagent-driven)
+- **Dispatch checklists must name every mechanical gate.** GAP-004's implementer ran lint-new/test-unit/
+  test-security but not `lint-boundaries`; its e2e test imported an adapter from a kernel test package and
+  the violation surfaced two tasks later. Fix was cheap (`849d788`); the rule is now: every implementer
+  dispatch lists the full gate set (lint-new, lint-boundaries, targeted, test-unit, coverage-check) —
+  generic "run the gates" is not enough. (Class: incomplete-gate-enumeration.)
+- Independent per-task reviewers earned their cost: caught a **Critical** uint32 modulus overflow in
+  kernel/mfa at digits=10 (`c890996`) and an i18n raw-key-leak pre-ship — both invisible to green suites.
+- Reviewer follow-ups on "documented-not-fixed" concerns pay off: GAP-008's migrate-overlay rejection was
+  reported as an accepted concern; a one-message follow-up closed it properly (`d2a4164`).
