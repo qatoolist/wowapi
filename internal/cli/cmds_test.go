@@ -315,14 +315,24 @@ func TestSeedSyncDirNotADirectory(t *testing.T) {
 	}
 }
 
-// TestSeedSyncLoadError: malformed seed YAML must fail before DATABASE_URL is used.
+// TestSeedSyncLoadError: malformed seed YAML must fail before DATABASE_URL is
+// used. DATABASE_URL is unset so a DB-connection failure cannot masquerade as
+// the load failure — the exit-1 must come from the load path specifically
+// (review finding: assert the error source, not just the exit code).
 func TestSeedSyncLoadError(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
 	dir := t.TempDir()
 	writeFile(t, dir, "permissions.yaml", "permissions: [this is : not valid")
 	var out, errb bytes.Buffer
 	code := runSeed([]string{"sync", "--module", "widgets=" + dir}, &out, &errb)
 	if code != 1 {
 		t.Fatalf("malformed seed should exit 1, got %d (%s)", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "load seeds for widgets") {
+		t.Fatalf("expected a seed load error, got %q", errb.String())
+	}
+	if strings.Contains(errb.String(), "DATABASE_URL") {
+		t.Fatalf("load failure must be reported before any DSN handling: %q", errb.String())
 	}
 }
 
