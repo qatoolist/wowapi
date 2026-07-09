@@ -12,6 +12,24 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- **Scoped privileged framework services (`kernel/privileged`, `module.Context.Privileged()`)** —
+  a sanctioned, audited surface for the valid tenant-scoped operations that require *platform*
+  privilege at the database, so a product module no longer has to write its own `SECURITY DEFINER`
+  SQL bridge (SEC-24 / SEC-13). `Privileged().Relationships()` grants/revokes ReBAC relationship
+  edges (`Grant`/`Revoke`); `Privileged().Rules()` activates tenant-scope rule versions
+  (`ActivateTenant`, with an optional atomic product `Gate`). Each service is bound to the calling
+  module and enforces, in Go, every check the product bridges performed: tenant binding (fail-closed
+  when unbound), relationship-type / rule-key **ownership** (module-name prefix or a declared
+  allow-list), subject/object **resource existence** in the bound tenant, **scope restriction**
+  (tenant-scope only, of the caller's tenant), soft-revoke that preserves history, double-revoke /
+  double-activate conflict detection, and an **audit** row on the kernel hash chain. Operations run
+  in a tenant-bound `app_platform` transaction, so the existing `relationships` / `rule_versions`
+  RLS and the one-active-per-instant `EXCLUDE` constraint still enforce isolation and arbitrate
+  races — no module ever sees a platform pool or raw SQL door. Migration `00030` grants
+  `app_platform` the minimum it needs to run the services as a role (SELECT on `acting_capacities`;
+  SELECT/INSERT on `audit_logs`; INSERT/UPDATE on `audit_chain`) while leaving the `relationships`
+  and `rule_versions` table protections untouched. Documented in the user guide
+  (Modules → Privileged services).
 - **`adapters/storage/s3`** — production S3/MinIO object-storage adapter implementing the
   `kernel/storage.Adapter` port (presigned PUT/GET with TTL clamping, checksum-verified `Stat`,
   ranged `Peek`, idempotent `Delete`, `KindNotFound` mapping, path-style addressing, fail-closed
