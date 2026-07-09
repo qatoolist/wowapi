@@ -16,20 +16,29 @@ const DefaultOTPDigits = 6
 
 // GenerateOTPCode returns a cryptographically random (crypto/rand) numeric
 // code of exactly digits decimal characters, left-zero-padded. digits must
-// be in [1,10] (bounded by the same uint32 truncation limit as HOTPCode).
+// be in [1,10] (bounded by the same limit as HOTPCode's dynamic-truncation
+// output width).
+//
+// The modulus and the random draw are both computed in uint64: digits=10
+// requires a modulus of 10^10 (10000000000), which exceeds uint32's range
+// (max 4294967295) and would silently wrap to a much smaller modulus if
+// accumulated in 32 bits — the same class of bug this package's HOTPCode
+// once had. 8 random bytes read into a uint64 give ~64 bits of entropy,
+// comfortably enough to reduce mod 10^10 without the last-bucket modulo bias
+// a narrower read would introduce.
 func GenerateOTPCode(digits int) (string, error) {
 	if digits < 1 || digits > maxDigits {
 		return "", fmt.Errorf("mfa: unsupported digit count %d (must be 1..%d)", digits, maxDigits)
 	}
-	mod := uint32(1)
+	mod := uint64(1)
 	for i := 0; i < digits; i++ {
 		mod *= 10
 	}
-	var buf [4]byte
+	var buf [8]byte
 	if _, err := rand.Read(buf[:]); err != nil {
 		return "", fmt.Errorf("mfa: generate OTP code: %w", err)
 	}
-	n := binary.BigEndian.Uint32(buf[:]) % mod
+	n := binary.BigEndian.Uint64(buf[:]) % mod
 	return fmt.Sprintf("%0*d", digits, n), nil
 }
 

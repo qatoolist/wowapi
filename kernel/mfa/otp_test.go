@@ -31,7 +31,40 @@ func TestOTP_GenerateCode_RejectsInvalidDigits(t *testing.T) {
 		t.Error("digits=-1 accepted")
 	}
 	if _, err := mfa.GenerateOTPCode(11); err == nil {
-		t.Error("digits=11 accepted (exceeds uint32 range)")
+		t.Error("digits=11 accepted (exceeds the 10-digit supported range)")
+	}
+}
+
+// TestOTP_MaxDigitsSpansFullRange is a regression test for the same class of
+// modulus-overflow bug fixed in HOTPCode: a uint32 accumulator for 10^10
+// silently wraps to ~1.41e9, capping every digits=10 code well below
+// 10,000,000,000 without an error. It draws enough digits=10 codes that, if
+// the modulus were still computed in uint32, none would ever reach the
+// wrapped ceiling — so seeing one prove the true (uint64) range is in use.
+func TestOTP_MaxDigitsSpansFullRange(t *testing.T) {
+	const wrappedUint32Modulus = 1410065408 // 10^10 mod 2^32, the bug's effective ceiling
+	found := false
+	for i := 0; i < 2000; i++ {
+		code, err := mfa.GenerateOTPCode(10)
+		if err != nil {
+			t.Fatalf("GenerateOTPCode(10): %v", err)
+		}
+		if len(code) != 10 {
+			t.Fatalf("GenerateOTPCode(10) length = %d, want 10", len(code))
+		}
+		var asInt uint64
+		for _, c := range code {
+			asInt = asInt*10 + uint64(c-'0')
+		}
+		if asInt >= wrappedUint32Modulus {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no digits=10 code in 2000 draws reached the range a uint32-modulus bug would have made " +
+			"unreachable (~1-in-3 odds per draw if fixed) — either the regression reappeared or this is a " +
+			"1-in-10^600ish fluke; re-run before assuming regression")
 	}
 }
 

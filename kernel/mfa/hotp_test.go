@@ -32,7 +32,43 @@ func TestHOTP_RejectsUnsupportedDigits(t *testing.T) {
 		t.Error("HOTPCode: expected error for digits=0")
 	}
 	if _, err := mfa.HOTPCode(key, 0, mfa.AlgSHA1, 11); err == nil {
-		t.Error("HOTPCode: expected error for digits=11 (uint32 truncation overflow)")
+		t.Error("HOTPCode: expected error for digits=11 (exceeds the 10-decimal-digit truncation width)")
+	}
+}
+
+// TestHOTP_MaxDigitsSpansFullRange is a regression test for a modulus-overflow
+// bug: computing 10^10 in a uint32 accumulator silently wraps to ~1.41e9
+// (uint32's max is ~4.29e9), which caps every digits=10 code well below
+// 10,000,000,000 without ever returning an error. It asserts a counter is
+// reachable whose correct (uint64-computed) 10-digit code has a leading digit
+// that the truncated-modulus bug could never produce (anything at or above
+// ~1,410,065,408 was unreachable under the wrapped modulus), proving the
+// production code path spans the true 10-digit range rather than silently
+// operating on a truncated one.
+func TestHOTP_MaxDigitsSpansFullRange(t *testing.T) {
+	key := []byte("12345678901234567890")
+	const wrappedUint32Modulus = 1410065408 // 10^10 mod 2^32, the bug's effective ceiling
+	found := false
+	for counter := uint64(0); counter < 2000; counter++ {
+		code, err := mfa.HOTPCode(key, counter, mfa.AlgSHA1, 10)
+		if err != nil {
+			t.Fatalf("HOTPCode(counter=%d, digits=10): %v", counter, err)
+		}
+		if len(code) != 10 {
+			t.Fatalf("HOTPCode(counter=%d, digits=10) length = %d, want 10", counter, len(code))
+		}
+		var asInt uint64
+		for _, c := range code {
+			asInt = asInt*10 + uint64(c-'0')
+		}
+		if asInt >= wrappedUint32Modulus {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no digits=10 code in the first 2000 counters reached the range a uint32-modulus bug " +
+			"would have made unreachable — either the regression reappeared or this test needs a wider search")
 	}
 }
 

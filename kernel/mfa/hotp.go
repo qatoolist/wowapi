@@ -68,14 +68,20 @@ func HOTPCode(key []byte, counter uint64, alg Algorithm, digits int) (string, er
 	mac.Write(counterBytes[:])
 	sum := mac.Sum(nil)
 
-	// RFC 4226 §5.3 dynamic truncation.
+	// RFC 4226 §5.3 dynamic truncation. binCode is bounded by the 31-bit mask
+	// on the top byte (max 2147483647), which needs up to 10 decimal digits —
+	// so the modulus below MUST be computed in a width wider than uint32:
+	// 10^10 (10000000000) already exceeds uint32's max (4294967295), and a
+	// uint32 accumulator would silently wrap to a much smaller modulus,
+	// truncating the code's range without ever returning an error. uint64
+	// comfortably holds 10^10.
 	offset := sum[len(sum)-1] & 0x0f
-	binCode := (uint32(sum[offset])&0x7f)<<24 |
-		(uint32(sum[offset+1])&0xff)<<16 |
-		(uint32(sum[offset+2])&0xff)<<8 |
-		(uint32(sum[offset+3]) & 0xff)
+	binCode := (uint64(sum[offset])&0x7f)<<24 |
+		(uint64(sum[offset+1])&0xff)<<16 |
+		(uint64(sum[offset+2])&0xff)<<8 |
+		(uint64(sum[offset+3]) & 0xff)
 
-	mod := uint32(1)
+	mod := uint64(1)
 	for i := 0; i < digits; i++ {
 		mod *= 10
 	}
