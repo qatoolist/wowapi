@@ -184,9 +184,10 @@ type Context interface {
 	// rule versions (Privileged().Rules()) — WITHOUT the module writing its own
 	// SECURITY DEFINER SQL or ever seeing a platform pool. Each operation runs in a
 	// tenant-bound app_platform transaction and is restricted to relationship types
-	// and rule keys the module owns (module-name prefix or a declared allow-list),
-	// so a module can never manage another module's edges or rules. The allow-list
-	// is declared per product at wiring time; see docs/user-guide/module-development.
+	// and rule keys the module owns (module-name prefix ownership through this
+	// accessor), so a module can never manage another module's edges or rules.
+	// Products needing a wider allow-list construct their own privileged.New(...)
+	// at wiring time; see docs/user-guide/module-development.
 	Privileged() *privileged.Services
 
 	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
