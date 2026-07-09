@@ -176,6 +176,45 @@ The catalog is for deterministic reference data the authz system needs — not r
 data. Syncing is idempotent (re-applying a bundle is a no-op), which the module contract suite asserts.
 Row-level reference data still belongs in migrations.
 
+### Seed sync is part of the production deploy lifecycle
+
+Loading a bundle into memory at boot is **not** the same as syncing it to the database. Two lifecycle
+steps must both happen before a deployed process serves traffic:
+
+1. **Boot** parses every module's seeds and registers them into the in-memory registries the evaluator
+   reads (`app.Boot`) — this always happens, on every process (api/worker/migrate).
+2. **Sync** (`kernel/seeds.Sync`) upserts that merged bundle into the database's global catalog tables
+   (`permissions`, `roles`, `role_permissions`, `resource_types`, `relationship_types`) on a
+   platform-privileged (`app_platform`) connection — this does **not** happen automatically.
+
+Skipping step 2 leaves the catalog tables empty on a fresh database: every authorization check denies
+(deny-by-default with no seeded grants) and resource-mirror writes fail their foreign key against the
+empty `resource_types` table. The failure is silent at deploy time — nothing warns you seeds were never
+applied — and surfaces only as scattered 403s and FK errors once the process is already serving.
+
+Two supported ways to run it, both idempotent (safe to re-run every deploy):
+
+```bash
+# 1. Generated cmd/migrate runs it automatically after migrations (recommended — no extra step):
+make migrate-up          # kernel migrations → module migrations → seeds.Sync, in one invocation
+
+# 2. Standalone, e.g. to re-sync catalogs without a full migrate run:
+wowapi seed sync --module widgets=internal/modules/widgets/seeds \
+                  --module billing=internal/modules/billing/seeds
+```
+
+`wowapi seed sync` connects to `DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as
+`wowapi dlq`), loads and merges every named module's seed directory the same way `app.Boot` does, then
+calls `seeds.Sync`. It has no long-lived process, so it never holds an in-process authz cache to
+invalidate; a running api/worker with `AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call
+because `seeds.Sync` accepts the kernel's `AuthzCache` as a `SpineInvalidator` — pass it when calling
+`seeds.Sync` from a long-lived process (the generated migrate/CLI paths don't need to; they exit
+immediately after).
+
+A generated api process also wires a `/readyz` check (`app.CatalogsSeeded`) that fails loudly — naming
+`wowapi seed sync` — if any module's declared seeds are missing from the database, so a pod that skipped
+this step never reports ready instead of silently denying every request.
+
 ## Common problems
 
 | Symptom | Likely cause | Fix |
