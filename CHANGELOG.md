@@ -11,6 +11,16 @@ changes to it require a new major version.
 
 ## [Unreleased]
 
+### Added
+- **`adapters/storage/s3`** — production S3/MinIO object-storage adapter implementing the
+  `kernel/storage.Adapter` port (presigned PUT/GET with TTL clamping, checksum-verified `Stat`,
+  ranged `Peek`, idempotent `Delete`, `KindNotFound` mapping, path-style addressing, fail-closed
+  bucket validation with optional local/dev auto-create). Integration-tested against real MinIO
+  (gated on `WOWAPI_REQUIRE_S3`, mirroring the DB gate) plus a Memory↔S3 contract test and a full
+  document upload/confirm e2e. Adds `github.com/minio/minio-go/v7` as a direct dependency. Wiring
+  is documented in the user guide (Build & Deploy → Object storage); framework config/scaffold
+  wiring is a tracked follow-up.
+
 ### Fixed
 - `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB
   DSNs + a running Postgres (fail-closed). The hint now points to the generated README's "Getting started".
