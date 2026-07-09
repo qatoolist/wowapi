@@ -42,6 +42,7 @@ var expectedFiles = []string{
 	"00027_audit_anchors.sql",
 	"00028_jobs_rls.sql",
 	"00029_permissions_step_up.sql",
+	"00030_privileged_services.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

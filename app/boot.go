@@ -130,6 +130,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,
 			intReg: k.IntegrationProviders, intStore: k.Integrations,
 			audit: k.Audit, sequence: k.Sequence, bulk: k.Bulk, artifacts: k.Artifacts,
+			platformTx: k.PlatformTx, ruleStore: k.RuleStore,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {

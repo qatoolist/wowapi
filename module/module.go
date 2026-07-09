@@ -34,6 +34,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/privileged"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
@@ -165,6 +166,18 @@ type Context interface {
 	Sequence() *sequence.Allocator
 	Bulk() *bulk.Service
 	Artifacts() *artifact.Pipeline
+
+	// Privileged returns the module's scoped privileged-service surface (GAP-006):
+	// the sanctioned, audited way to perform a valid tenant-scoped operation that
+	// needs PLATFORM privilege at the database — granting/revoking ReBAC
+	// relationship edges (Privileged().Relationships()) and activating tenant-scope
+	// rule versions (Privileged().Rules()) — WITHOUT the module writing its own
+	// SECURITY DEFINER SQL or ever seeing a platform pool. Each operation runs in a
+	// tenant-bound app_platform transaction and is restricted to relationship types
+	// and rule keys the module owns (module-name prefix or a declared allow-list),
+	// so a module can never manage another module's edges or rules. The allow-list
+	// is declared per product at wiring time; see docs/user-guide/module-development.
+	Privileged() *privileged.Services
 
 	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
 	// registry a module declares its document classes into during Register;
