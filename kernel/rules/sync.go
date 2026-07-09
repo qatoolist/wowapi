@@ -19,9 +19,11 @@ import (
 //
 // Call this from the generated migrate main after module migrations (so the
 // table exists) and before any rule_versions writes — mirroring seeds.Sync's
-// lifecycle position exactly (GAP-003 → GAP-007). A standalone `wowapi rules
-// sync` also runs it outside a full migrate, for re-syncing definitions
-// without a schema change.
+// lifecycle position exactly (GAP-003 → GAP-007). Unlike seed catalogs (YAML
+// the framework CLI can load off disk), rule points exist only as Go
+// declarations inside a booted product process, so there is no standalone
+// `wowapi rules sync` subcommand; a product with a custom migrate main calls
+// this itself the same way.
 //
 // SyncDefinitions does not itself check module ownership beyond what
 // Registry.Register already enforced at registration time (a rule point can
