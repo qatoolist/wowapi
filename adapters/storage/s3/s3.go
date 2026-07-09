@@ -224,14 +224,10 @@ func (a *Adapter) Stat(ctx context.Context, key string) (storage.ObjectInfo, err
 		}
 		return storage.ObjectInfo{}, kerr.Wrapf(err, "storage.s3.Stat", "stat %q", key)
 	}
-	if info.ChecksumSHA256 != "" {
-		// S3 reports it base64; the port speaks lowercase hex.
-		raw, derr := base64.StdEncoding.DecodeString(info.ChecksumSHA256)
-		if derr == nil && len(raw) == sha256.Size {
-			return storage.ObjectInfo{Size: info.Size, Checksum: hex.EncodeToString(raw)}, nil
-		}
-		// Unparseable checksum metadata: fall through to hashing the bytes.
+	if hexSum, ok := decodeSHA256Checksum(info.ChecksumSHA256); ok {
+		return storage.ObjectInfo{Size: info.Size, Checksum: hexSum}, nil
 	}
+	// No (or unparseable) checksum metadata: hash the bytes ourselves.
 
 	obj, err := a.client.GetObject(ctx, a.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
@@ -292,6 +288,21 @@ func (a *Adapter) Delete(ctx context.Context, key string) error {
 		return kerr.Wrapf(err, "storage.s3.Delete", "delete %q", key)
 	}
 	return nil
+}
+
+// decodeSHA256Checksum converts the base64 SHA-256 S3 reports in HeadObject
+// metadata (present only for checksum-signed uploads) to the lowercase hex the
+// storage port speaks. ok is false when the value is empty, not valid base64,
+// or not exactly 32 bytes — callers then fall back to hashing the bytes.
+func decodeSHA256Checksum(b64 string) (hexSum string, ok bool) {
+	if b64 == "" {
+		return "", false
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(raw) != sha256.Size {
+		return "", false
+	}
+	return hex.EncodeToString(raw), true
 }
 
 // isNotFound recognizes the S3 shapes of "no such object".

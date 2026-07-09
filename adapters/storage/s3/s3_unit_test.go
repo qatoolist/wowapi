@@ -5,6 +5,9 @@ package s3
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -149,6 +152,33 @@ func TestNew_EnsureBucketProbeErrorPropagates(t *testing.T) {
 	cfg.Bucket = "Invalid_Bucket_Name!"
 	if _, err := New(context.Background(), cfg); err == nil {
 		t.Fatal("New with an invalid bucket name succeeded, want the BucketExists probe error")
+	}
+}
+
+// decodeSHA256Checksum backs Stat's fast path: when HeadObject already carries
+// a signed SHA-256 (base64), it is converted to the port's lowercase hex; any
+// empty/garbled/wrong-length value must report !ok so Stat falls back to
+// hashing the bytes rather than trusting bad metadata.
+func TestDecodeSHA256Checksum(t *testing.T) {
+	sum := sha256.Sum256([]byte("payload"))
+	valid := base64.StdEncoding.EncodeToString(sum[:])
+
+	cases := map[string]struct {
+		in      string
+		wantHex string
+		wantOK  bool
+	}{
+		"valid checksum decodes to lowercase hex": {valid, hex.EncodeToString(sum[:]), true},
+		"empty is not ok":                         {"", "", false},
+		"invalid base64 is not ok":                {"!!!not-base64!!!", "", false},
+		"wrong length is not ok":                  {base64.StdEncoding.EncodeToString([]byte("too short")), "", false},
+	}
+	for name, tc := range cases {
+		gotHex, gotOK := decodeSHA256Checksum(tc.in)
+		if gotHex != tc.wantHex || gotOK != tc.wantOK {
+			t.Errorf("%s: decodeSHA256Checksum(%q) = (%q, %v), want (%q, %v)",
+				name, tc.in, gotHex, gotOK, tc.wantHex, tc.wantOK)
+		}
 	}
 }
 
