@@ -298,6 +298,17 @@ func run(ctx context.Context) error {
 		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
 		httpx.Timeout(cfg.HTTP.RequestTimeout),
 	)
+	// SecurityProfile (backlog B7): under the default API profile this appends
+	// nothing (httpx.SecurityChain returns an empty slice), so this line is a
+	// no-op for every existing deployment — byte-for-byte the same handler as
+	// before B7. Under the opt-in browser profile it appends SecureHeaders(CSP)
+	// + CSRFProtect. Placed last (innermost, right before mux/the auth gate) so
+	// CSRF sees the fully-formed request (after body/timeout limits are set up)
+	// and still runs BEFORE the RouteMeta permission gate inside mux/SecureHandler,
+	// so a forged state-changing request is rejected before it can act. This is
+	// config-driven at runtime, not templated per profile: the SAME generated
+	// main.go serves both profiles — do not special-case profile in the template.
+	mws = append(mws, httpx.SecurityChain(cfg.Security)...)
 	handler := httpx.Chain(mux, mws...)
 
 	srv := &http.Server{
