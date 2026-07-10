@@ -22,6 +22,19 @@ db:
   max_conns: 16
   query_timeout: 5s
 
+# i18n — localization catalog loading (GAP-001B). The framework's English
+# defaults are always embedded; these settings add product translations on top.
+# locales/ (YAML + JSON) is loaded as a sanctioned framework-override source, so
+# a locales/<locale>/kernel.yaml key overrides the embedded framework default;
+# internal/i18n/catalogs holds optional compiled Go bundles. cmd/api, cmd/worker,
+# AND cmd/migrate load these same sources before boot completes. Validate with
+# `wowapi i18n validate`.
+i18n:
+  default_locale: en
+  supported_locales: [en, mr]
+  locales_dir: locales
+  go_bundles: true
+
 # auth.oidc — user (OIDC/JWT bearer) authentication. Leave unset to keep the
 # user leg deny-by-default (only API keys authenticate); set issuer + audience
 # (and optionally jwks_uri) in an env overlay to enable it. When jwks_uri is

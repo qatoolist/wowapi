@@ -104,9 +104,16 @@ func run(ctx context.Context, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
+	// Load the SAME i18n catalog sources as cmd/api and cmd/worker: migrate boots
+	// the app (to collect migration sets) through the identical lifecycle, so a
+	// broken catalog fails migrate too — the whole product shares one i18n contract.
+	i18nLayers, err := cfg.I18n.Layers()
+	if err != nil {
+		return fmt.Errorf("i18n: %w", err)
+	}
 	a := app.New()
 	a.Register(wire.Modules()...)
-	booted, err := a.Boot(ctx, k, nil, app.SkipRLSEnforcementCheck())
+	booted, err := a.Boot(ctx, k, nil, app.SkipRLSEnforcementCheck(), app.WithI18nLayers(i18nLayers...))
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}

@@ -144,9 +144,17 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("kernel: %w", err)
 	}
 
+	// Load the SAME i18n catalog sources as cmd/api and cmd/migrate so all three
+	// binaries share one localization lifecycle (the worker localizes strings in
+	// notifications/jobs the same way the API localizes responses).
+	i18nLayers, err := cfg.I18n.Layers()
+	if err != nil {
+		return fmt.Errorf("i18n: %w", err)
+	}
+
 	a := app.New()
 	a.Register(wire.Modules()...)
-	booted, err := a.Boot(ctx, k, cfg.Modules)
+	booted, err := a.Boot(ctx, k, cfg.Modules, app.WithI18nLayers(i18nLayers...))
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}

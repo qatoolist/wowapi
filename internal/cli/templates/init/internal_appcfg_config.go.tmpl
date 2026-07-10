@@ -13,6 +13,9 @@ import (
 
 	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/i18n"
+
+	"{{.Module}}/internal/i18n/catalogs"
 )
 
 // Config is {{.Name}}'s composed configuration. Add product-specific top-level
@@ -30,9 +33,73 @@ type Config struct {
 	// left unset, Deps.Storage stays nil and app.Boot fails closed if a module
 	// registers a document class.
 	Storage StorageConfig `conf:"storage" json:"storage"`
+	// I18n configures the message-catalog sources loaded before boot completes
+	// (localization; framework GAP-001B). The zero value is valid: with no config
+	// section, DefaultLocale defaults to "en" and the locales/ directory is loaded
+	// as a sanctioned framework-override source, so a product can add translation
+	// files with no code change. cmd/api, cmd/worker, AND cmd/migrate load the
+	// SAME sources through app.Boot(app.WithI18nLayers(...)).
+	I18n I18nConfig `conf:"i18n" json:"i18n"`
 	// Modules carries each registered module's modules.<name>.* namespace,
 	// passed to app.Boot so modules receive only their own config.
 	Modules config.Namespaces `conf:"modules"`
+}
+
+// I18nConfig configures localization catalog loading. A product edits configs/*.yaml
+// (the i18n: section) or these defaults; the generated binaries turn it into
+// precedence-ordered loader layers on top of the framework's embedded English
+// defaults. Layers, in order: product locales/ files (YAML+JSON, may override
+// kernel.* framework strings) then compiled Go bundles (internal/i18n/catalogs).
+type I18nConfig struct {
+	// DefaultLocale is the fallback locale; every key resolves here when a
+	// requested locale lacks it. Defaults to "en".
+	DefaultLocale string `conf:"default_locale" default:"en" json:"default_locale" doc:"fallback locale for message lookups"`
+	// SupportedLocales is the set of locales this product ships (drives coverage
+	// checks in 'wowapi i18n validate'). Defaults to [en].
+	SupportedLocales []string `conf:"supported_locales" json:"supported_locales" doc:"locales this product supports"`
+	// LocalesDir is the product-local catalog directory (YAML + JSON), loaded as a
+	// sanctioned framework-override source. Defaults to "locales".
+	LocalesDir string `conf:"locales_dir" default:"locales" json:"locales_dir" doc:"directory of product locale catalogs"`
+	// GoBundles enables the compiled Go catalog layer (internal/i18n/catalogs).
+	// Defaults true so the scaffolded sample bundle loads; set false to disable.
+	GoBundles bool `conf:"go_bundles" default:"true" json:"go_bundles" doc:"load the compiled Go catalog bundles in internal/i18n/catalogs"`
+}
+
+// DefaultLocaleOrEn returns the configured default locale or "en".
+func (c I18nConfig) DefaultLocaleOrEn() string {
+	if c.DefaultLocale == "" {
+		return i18n.DefaultLocale
+	}
+	return c.DefaultLocale
+}
+
+// Layers builds the product's i18n source layers (framework-override locales/
+// files + optional compiled Go bundles) for app.Boot(app.WithI18nLayers(...)).
+// The framework's embedded English defaults are always installed by the kernel
+// registry and sit beneath these layers, so this returns only the product's
+// additions. Called identically by cmd/api, cmd/worker, and cmd/migrate so all
+// three share one catalog lifecycle.
+func (c I18nConfig) Layers() ([]i18n.Layer, error) {
+	dir := c.LocalesDir
+	if dir == "" {
+		dir = "locales"
+	}
+	specs := []i18n.SourceSpec{
+		{Kind: i18n.KindFrameworkDefaults, Enabled: true},
+		{
+			Kind:               i18n.KindFS,
+			Path:               dir,
+			Formats:            []string{"yaml", "json"},
+			OverridesFramework: true,
+			Enabled:            true,
+		},
+		{
+			Kind:    i18n.KindGo,
+			Enabled: c.GoBundles,
+			Go:      catalogs.Bundles(),
+		},
+	}
+	return i18n.BuildLayers(os.DirFS("."), specs)
 }
 
 // Validate delegates to the embedded Framework validation and adds the

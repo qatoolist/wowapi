@@ -1,0 +1,12 @@
+# Marathi (mr) overrides of framework kernel.* strings — a sample SECOND locale
+# so {{.Name}} demonstrates real localization out of the box. English (the
+# default locale) still falls back to the framework's embedded defaults for any
+# key not overridden here.
+#
+# Placeholder rule: a parameterised framework message keeps its %s — the count
+# must match the English template or `wowapi i18n validate` fails.
+locale: mr
+messages:
+  kernel.problem.not_found: "संसाधन सापडले नाही"
+  kernel.validation.required: "हे क्षेत्र आवश्यक आहे"
+  kernel.validation.min: "किमान %s असणे आवश्यक आहे"

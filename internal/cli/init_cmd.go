@@ -148,6 +148,16 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		{"internal/wire/modules.go", "templates/init/internal_wire_modules.go.tmpl"},
 		{"internal/appcfg/config.go", "templates/init/internal_appcfg_config.go.tmpl"},
 		{"tools/configcheck/main.go", "templates/init/tools_configcheck_main.go.tmpl"},
+		// i18n (GAP-001B): a locales/ tree (en + a sample mr second locale) with
+		// product-local kernel.* overrides, product YAML + JSON catalogs, and a
+		// compiled Go catalog bundle — all loaded before boot with no product loader
+		// code. Validate them with `wowapi i18n validate`.
+		{"locales/en/kernel.yaml", "templates/init/locales_en_kernel.yaml.tmpl"},
+		{"locales/en/product.yaml", "templates/init/locales_en_product.yaml.tmpl"},
+		{"locales/en.json", "templates/init/locales_en_json.json.tmpl"},
+		{"locales/mr/kernel.yaml", "templates/init/locales_mr_kernel.yaml.tmpl"},
+		{"locales/mr/product.yaml", "templates/init/locales_mr_product.yaml.tmpl"},
+		{"internal/i18n/catalogs/en.go", "templates/init/internal_i18n_catalogs_en.go.tmpl"},
 	}
 
 	for _, spec := range files {
