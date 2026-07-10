@@ -50,6 +50,29 @@ import each other directly (they talk through **ports**). This is mechanically e
 | Migrations | `migrations/` | Embedded kernel baseline SQL | No (modules ship their own) |
 | Test harness | `testkit/` | Isolated-DB integration tests | Use it in tests |
 
+## The static provider/lifecycle manifest
+
+wowapi does not use a reflection-based runtime DI container or a service locator: `kernel.New` (in
+`kernel/kernel.go`) wires every process-scoped service in explicit, hand-written Go, and `app.Boot`
+(`app/boot.go`, `app/context.go`) hands each module a capability-scoped `module.Context`
+(`module/module.go`) built from those same services. That is deliberate — explicit wiring stays
+readable and debuggable as the kernel grows.
+
+What *does* need discipline at that size is lifecycle correctness: which services are process-lived
+vs. request-lived vs. bound to one tenant transaction, and which are migrate-only and must never reach
+the API/worker runtime. `kernel/lifecycle` captures that as a small, hand-maintained descriptor model
+(`ProviderDescriptor{Provides, Requires, Scope}`, scopes `process | request | tenant_tx | job |
+migrate`) reflecting the real graph above, plus a pure-function lint over it. `wowapi lint lifecycle`
+prints the manifest and fails (exit 1) on:
+
+- a process-scoped service depending on request-scoped (or otherwise narrower-lived) state;
+- a module receiving a raw `*pgxpool.Pool` instead of a `database.TxManager`;
+- a tenant-scoped value (`database.TenantDB`) escaping the transaction callback that produced it;
+- a migrate-only service wired into API/worker runtime;
+- a declared dependency with no matching provider, or a dependency cycle.
+
+CI gates on this the same way it gates on `make lint-boundaries` — see [CLI reference](cli-reference.md).
+
 ## Multi-tenancy & row-level security
 
 Every tenant-scoped table is protected by PostgreSQL **row-level security (RLS)**, not by trusting
