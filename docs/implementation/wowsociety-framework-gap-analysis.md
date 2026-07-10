@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 MD024 -->
+
 # GAP Analysis: wowsociety Framework Utilization
 
 Date: 2026-07-09
@@ -9,6 +11,19 @@ Product repository used as evidence: `/Users/qatoolist/go_home/src/github.com/qa
 Framework commit evaluated: `287abc38df8a`
 
 Product commit inspected: `6ac94049ee73`
+
+Post-implementation design review: after the gap-closure branch and the `wowsociety`
+consumption branch were built, a second review found that some work closed the
+observed product workaround without fully designing the framework capability. See
+[`wowsociety-framework-gap-design-review.md`](wowsociety-framework-gap-design-review.md),
+especially the i18n source/loading/tooling follow-up.
+
+Competitive architecture benchmark: the follow-up review was broadened into an
+RFC-style benchmark against Laravel, Spring Boot/Security, Gin, FastAPI, Django,
+and Axum/Tower. See
+[`framework-competitive-architecture-benchmark.md`](framework-competitive-architecture-benchmark.md)
+for the comparative matrix, low-level deep dives, and prioritized engineering
+backlog.
 
 ## Purpose
 
