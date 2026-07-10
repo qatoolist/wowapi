@@ -148,13 +148,22 @@ func (g *dialGuard) checkResolvedIPs(host string, ips []net.IP) error {
 type baseDialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // dialContext returns a DialContext function that resolves addr's host,
-// verifies the resolved addresses against policy, and only then delegates to
-// base. This is THE enforcement point: net/http calls it fresh for the
-// initial connection and for every redirect hop, so resolve-then-verify
-// automatically re-runs per hop with no extra wiring.
+// verifies the resolved addresses against policy, and dials one of the
+// VERIFIED addresses directly. This is THE enforcement point: net/http calls
+// it fresh for the initial connection and for every redirect hop, so
+// resolve-then-verify automatically re-runs per hop with no extra wiring.
+//
+// Critically, base is called with the verified IP (net.JoinHostPort(ip, port)),
+// NEVER the hostname: if we dialed the hostname, net.Dialer would perform its
+// own second DNS lookup, and an attacker-controlled resolver could return a
+// safe IP for the verification lookup and a blocked IP for that second
+// lookup — the DNS-rebinding / TOCTOU bypass this package exists to close.
+// Dialing the exact IP we checked collapses the two resolutions into one.
+// TLS SNI and the Host header are unaffected: http.Transport derives them from
+// the request URL's host, not the dial address.
 func (g *dialGuard) dialContext(base baseDialFunc) baseDialFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, _, err := net.SplitHostPort(addr)
+		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, fmt.Errorf("httpclient: malformed dial address %q: %w", addr, err)
 		}
@@ -165,6 +174,23 @@ func (g *dialGuard) dialContext(base baseDialFunc) baseDialFunc {
 		if err := g.checkResolvedIPs(host, ips); err != nil {
 			return nil, err
 		}
-		return base(ctx, network, addr)
+		if len(ips) == 0 {
+			// Only reachable for an allowlisted host whose resolver returned no
+			// addresses (checkResolvedIPs bypasses the empty check for those).
+			// There is nothing safe to dial — fail closed rather than fall back
+			// to dialing the hostname (which would re-resolve).
+			return nil, fmt.Errorf("%w: host %q resolved to no addresses", ErrBlockedAddress, host)
+		}
+		// Dial the verified IPs in order (mirrors the stdlib dialer's multi-record
+		// fallback); every ip already passed checkResolvedIPs, so each is safe.
+		var lastErr error
+		for _, ip := range ips {
+			conn, derr := base(ctx, network, net.JoinHostPort(ip.String(), port))
+			if derr == nil {
+				return conn, nil
+			}
+			lastErr = derr
+		}
+		return nil, lastErr
 	}
 }
