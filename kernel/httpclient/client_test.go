@@ -407,6 +407,83 @@ func TestClientAllowsRedirectWhenBothHopsAllowlisted(t *testing.T) {
 	}
 }
 
+// --- proxy environment must not bypass the SSRF guard ---
+
+// TestClientIgnoresProxyEnvironment proves the transport built by New never
+// honors HTTP_PROXY/HTTPS_PROXY: if it did, the guarded DialContext would
+// dial the PROXY's address (which can pass the guard on its own merits) and
+// hand the proxy the attacker-controlled target in the request/CONNECT line
+// — the real destination's blocked-IP status would never be checked at all.
+//
+// This is proven behaviorally, not just by inspecting transport.Proxy: a
+// real loopback listener stands in for "the proxy", and — critically — it is
+// ALLOWLISTED, so the guard would happily dial it if asked to. The request
+// target is 169.254.169.254 (cloud metadata, always blocked, never
+// allowlisted). So:
+//   - Bug present (Proxy: http.ProxyFromEnvironment): the transport dials the
+//     allowlisted proxy address instead of the target: the guard never sees
+//     169.254.169.254 at all, and the "proxy" (a real HTTP server) answers
+//     the request successfully — no ErrBlockedAddress.
+//   - Fixed (Proxy: nil): the transport dials 169.254.169.254 directly, the
+//     guard checks that resolved IP, and the request is blocked.
+//
+// Before the fix, this test fails (proxy answers 200, no error) — it exists
+// specifically to catch a regression back to the stdlib default transport
+// clone, which retains Proxy: http.ProxyFromEnvironment.
+func TestClientIgnoresProxyEnvironment(t *testing.T) {
+	proxyStandIn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("reached the proxy stand-in, not the real target"))
+	}))
+	defer proxyStandIn.Close()
+
+	proxyHost, _, err := net.SplitHostPort(strings.TrimPrefix(proxyStandIn.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The proxy stand-in is allowlisted — if the transport dials it (bug),
+	// the guard lets that dial through and the request "succeeds".
+	t.Setenv("HTTP_PROXY", proxyStandIn.URL)
+	t.Setenv("HTTPS_PROXY", proxyStandIn.URL)
+
+	client := New(Config{AllowedHosts: []string{proxyHost}})
+
+	// A blocked, never-allowlisted target. Not "localhost" — net/http's
+	// ProxyFromEnvironment special-cases that host to mean "no proxy",
+	// which would make this test pass for the wrong reason.
+	resp, err := client.Get("http://169.254.169.254/latest/meta-data/")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("expected the blocked metadata target to be refused even with HTTP_PROXY set — " +
+			"got a successful response, meaning the request was routed to the proxy instead of " +
+			"having its real destination verified by the SSRF guard")
+	}
+	if !errors.Is(err, ErrBlockedAddress) {
+		t.Errorf("expected ErrBlockedAddress, got %v (a non-guard error suggests the dial went "+
+			"somewhere unexpected, e.g. the proxy, rather than being cleanly blocked)", err)
+	}
+}
+
+// TestNewDisablesTransportProxy is a direct structural check complementing
+// the behavioral test above: the transport New builds must never carry a
+// non-nil Proxy func, regardless of environment.
+func TestNewDisablesTransportProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+
+	client := New(Config{})
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport is %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Error("expected New to set transport.Proxy = nil — SSRF safety requires the guarded " +
+			"DialContext to always dial the actual target, never a proxy hop that would make the " +
+			"dial-time IP check meaningless")
+	}
+}
+
 // --- config validation / defaults ---
 
 func TestNewAppliesDefaultTimeout(t *testing.T) {
