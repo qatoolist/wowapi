@@ -33,6 +33,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runMigrate(args[1:], stdout, stderr)
 	case "seed":
 		return runSeed(args[1:], stdout, stderr)
+	case "i18n":
+		return runI18n(args[1:], stdout, stderr)
 	case "openapi":
 		return runOpenAPI(args[1:], stdout, stderr)
 	case "lint":
@@ -102,8 +104,9 @@ Available commands:
   gen          run code generators (crud)
   migrate      create the next-numbered migration file
   seed         validate a module's seed bundle
+  i18n         validate a product's locale catalogs (coverage, ownership, placeholders)
   openapi      merge OpenAPI fragments into one document
-  lint         boundaries — module isolation + layering check
+  lint         boundaries|lifecycle — module isolation + layering, or provider/lifecycle manifest checks
   deploy       render deployment manifests (compose|env)
   dlq          inspect/replay/discard dead-letter jobs and events
 `, buildinfo.ModulePath)

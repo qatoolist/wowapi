@@ -84,9 +84,121 @@ db:
 | `webhook.outbound.ssrf_protection_disabled` | bool | `false` | Disables outbound webhook SSRF protection entirely. `unsafe:"true"` — **refused in prod, warned in stage.** See [Webhooks](webhooks.md#outbound-ssrf-protection). |
 | `webhook.outbound.allowed_hosts` | []string | `[]` | Exact-match hostname allowlist bypassing the address-class check for outbound webhook delivery. |
 | `webhook.outbound.allowed_cidrs` | []string | `[]` | CIDR allowlist for RESOLVED outbound webhook delivery addresses (e.g. `10.20.0.0/16`). |
+| `security.profile` | enum | `api` | `api` (default) or `browser` — see [Security profile](#security-profile-api-vs-browser) below. |
+| `security.csrf.cookie_name` | string | `csrf_token` | Only consulted under `security.profile: browser`. |
+| `security.csrf.header_name` | string | `X-CSRF-Token` | Only consulted under `security.profile: browser`. |
+| `security.cookie.same_site` | enum | `lax` | `strict`/`lax`/`none`; only consulted under `security.profile: browser`. |
+| `security.cookie.secure` | bool | `true` | Required `true` when `same_site: none`. |
 
 > Modules read their own config namespace via `mc.Config().Decode(&cfg)` inside `Register` — see
 > [Modules](modules.md). Unknown keys are **rejected**, so a typo'd module config key fails the boot.
+
+## Security profile: `api` vs `browser`
+
+`config.Security` (`kernel/config/security.go`) selects the framework's security posture **by profile**,
+not by hand-assembling middleware per product (backlog B7; see the benchmark's "Security: Profiles, Not
+Handler-Level Advice"). There are exactly two profiles:
+
+```yaml
+security:
+  profile: api        # DEFAULT — leaving this section out is identical to profile: api
+```
+
+- **`api`** (the default): bearer/API-key auth, **no cookies**, CSRF disabled by contract (there is no
+  cookie session to forge), strict JSON, CORS allowlist, RLS guard. This is exactly what wowapi does
+  today — selecting it, or omitting `security:` entirely, changes **nothing**.
+- **`browser`** (opt-in): additionally wires **CSRF token enforcement** on every state-changing request,
+  **SameSite/Secure cookie defaults**, and a **CSP header profile** suited to HTML. No product gains any
+  of this by doing anything other than explicitly selecting it.
+
+```yaml
+security:
+  profile: browser
+  csrf:
+    cookie_name: "csrf_token"     # default shown
+    header_name: "X-CSRF-Token"   # default shown
+    field_name: "csrf_token"      # form-field fallback for classic HTML posts
+  cookie:
+    same_site: lax                # strict | lax | none
+    secure: true                  # required when same_site: none
+  csp: ""                        # empty uses the built-in HTML-safe default
+```
+
+**CSRF defense: double-submit cookie, not synchronizer tokens.** `kernel/httpx.CSRFProtect` needs no
+server-side session store (backlog B7 deliberately scopes that out): a token is generated once, handed to
+the browser as a (non-`HttpOnly`) cookie, and the client must echo it back via the configured header (or a
+form field, for classic HTML form posts that can't set custom headers) on every state-changing request. A
+request whose echoed token doesn't match the cookie is rejected with `403`. Safe methods (`GET`/`HEAD`/
+`OPTIONS`/`TRACE`) are exempt and simply (re-)issue the cookie if one isn't already present.
+
+`wowapi config validate` rejects an **incoherent** browser profile — e.g. a blank `csrf.cookie_name`, an
+unrecognized `same_site`, or `same_site: none` without `secure: true` (browsers reject that combination
+outright) — so a misconfigured browser profile fails the boot gate instead of silently shipping without
+CSRF protection.
+
+**The generated scaffold wires this, not just the config schema.** `wowapi init`'s `cmd/api/main.go`
+appends `httpx.SecurityChain(cfg.Security)` to the middleware chain (innermost, right before the
+auth-gated router), so switching `security.profile` to `browser` in config is enough — no product code
+change needed. The generated `main.go` is identical either way: under the `api` profile the call appends
+nothing (proven behavior-unchanged), under `browser` it activates CSP + CSRF at runtime.
+
+The safe outbound HTTP client (DNS/IP-blocking SSRF guard for anything wowapi calls out to) is a separate,
+already-shipped concern: `kernel/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
+the security profile selected here.
+## Concurrency: capacity budget + backpressure
+
+`config.Concurrency` (`kernel/config/concurrency.go`) reasons about concurrency **across the whole
+deployment shape**, not just one knob at a time: it bounds in-flight HTTP requests at the edge, and
+validates that the declared shape (replica count × per-replica pool sizes + migration + admin reserve)
+cannot exhaust the database before rate limits or backpressure engage.
+
+```yaml
+concurrency:
+  http_max_in_flight: 0        # 0 = disabled (safe default); the backpressure limiter is off
+  worker_max_jobs: 0           # worker pool size, for capacity bookkeeping only
+  platform_max_in_flight: 0    # platform-pool in-flight cap, for bookkeeping only
+  replicas: 0                  # 0 = deployment shape not declared; capacity check is a no-op
+  runtime_pool_max: 0          # runtime (app_rt) pool max_conns per replica
+  platform_pool_max: 0         # platform (app_platform) pool max_conns per replica
+  migrate_pool_max: 0          # migrate process pool max_conns (counted once, not per replica)
+  reserved_admin: 0            # connections reserved for admin/operator access
+  capacity_mode: advisory      # advisory (warn only, default) | enforced (fail boot)
+  overload:
+    api_status: 503            # 503 or 429
+    retry_after: 2s
+```
+
+**Capacity-budget formula** (checked whenever `concurrency.replicas` is non-zero):
+
+```
+replicas*(runtime_pool_max + platform_pool_max) + migrate_pool_max + reserved_admin <= db.max_conns
+```
+
+- `concurrency.replicas == 0` (the default): the shape is **not configured**, so the check is a
+  deliberate no-op — it never passes or fails spuriously.
+- `capacity_mode: advisory` (**the default**): an oversubscribed shape is reported as a warning
+  (`wowapi config capacity`, boot logs) but **does not fail** `config validate` or process boot.
+- `capacity_mode: enforced` (**opt-in**): the same oversubscribed shape **fails** `config validate`
+  (and therefore boot) with a message citing the computed demand vs. `db.max_conns`.
+
+Run `wowapi config capacity --dir configs --env <env>` to lint the budget independent of
+`capacity_mode` — it always exits 1 on an oversubscribed shape, so CI can catch the problem early even
+while production boot itself stays advisory.
+
+**Migration path (advisory → enforced):** size `replicas`/`runtime_pool_max`/`platform_pool_max`/
+`migrate_pool_max`/`reserved_admin` for your deployment, run `wowapi config capacity` until it reports
+`capacity OK`, then flip `capacity_mode: enforced` in the environment overlay once you're confident the
+shape is correct. Because the default is advisory, upgrading the framework never breaks an existing
+deployment that hasn't set these fields yet.
+
+**Backpressure middleware** (`httpx.Backpressure`, wired in the generated `cmd/api/main.go` when
+`concurrency.http_max_in_flight > 0`): a bounded semaphore that rejects requests with `overload.api_status`
+(503 default) + `Retry-After: overload.retry_after` **before** they reach auth or the database, once more
+requests are concurrently in-flight than the configured cap. It is **disabled by default**
+(`http_max_in_flight: 0`), so upgrading never causes an existing deployment to start returning the overload
+status unexpectedly — size the cap using the capacity-budget knobs above, then set it explicitly. Rejected
+requests increment the `http_overload_rejected_total` counter (labeled by route) and current occupancy is
+exported as the `http_in_flight_requests` gauge.
 
 ## Environment variables (`WOWAPI__*`)
 
@@ -135,6 +247,7 @@ db:
 | `wowapi config print --env <env> --redacted` | Print the effective config as JSON (secrets redacted; `--redacted` is required). |
 | `wowapi config doctor --env <env>` | Per-key **provenance** table (which layer set each key) + the fingerprint. |
 | `wowapi config schema` | Emit the JSON Schema derived from struct tags. |
+| `wowapi config capacity --env <env>` | Check the concurrency capacity budget; exit 0 = within budget or shape not configured, exit 1 = oversubscribed. |
 
 Common flags: `--dir` (config dir, default `configs`), `--base` (base file), `--env` (overlay/environment
 name), `--env-prefix` (default `WOWAPI__`).

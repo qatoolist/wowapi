@@ -106,6 +106,63 @@ func TestLoadRejectsStepUpTypo(t *testing.T) {
 	}
 }
 
+// TestLoadParsesStepUpAMR pins the richer step-up form (B8): a permission can
+// require a SPECIFIC AMR subset and a specific challenge hint, not just the
+// deployment default set. step_up_amr/step_up_challenge decode alongside
+// step_up: true.
+func TestLoadParsesStepUpAMR(t *testing.T) {
+	src := fsys(map[string]string{
+		"p.yaml": `
+permissions:
+  - key: requests.request.approve
+    step_up: true
+    step_up_amr: [hwk]
+    step_up_challenge: hwk
+`,
+	})
+	b, err := seeds.Load(src, "requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Permissions) != 1 {
+		t.Fatalf("unexpected bundle: %+v", b)
+	}
+	p := b.Permissions[0]
+	if !p.StepUp {
+		t.Error("step_up: true not parsed")
+	}
+	if len(p.StepUpAMR) != 1 || p.StepUpAMR[0] != "hwk" {
+		t.Errorf("step_up_amr = %v, want [hwk]", p.StepUpAMR)
+	}
+	if p.StepUpChallenge != "hwk" {
+		t.Errorf("step_up_challenge = %q, want %q", p.StepUpChallenge, "hwk")
+	}
+}
+
+// TestLoadRejectsStepUpAMRTypo: step_up_amr must strict-decode like every
+// other seed field — a typo'd key fails the load, never a silent no-op.
+func TestLoadRejectsStepUpAMRTypo(t *testing.T) {
+	src := fsys(map[string]string{
+		"p.yaml": "permissions:\n  - key: requests.request.read\n    step_up_amrs: [hwk]\n",
+	})
+	if _, err := seeds.Load(src, "requests"); err == nil {
+		t.Fatal("step_up_amrs typo must fail strict decode")
+	}
+}
+
+// TestLoadRejectsStepUpAMRWithoutStepUp: step_up_amr/step_up_challenge only
+// make sense alongside step_up: true — declaring them without it is very
+// likely a seed-author mistake (the AMR subset would silently never gate
+// anything), so validate rejects it rather than silently ignoring the fields.
+func TestLoadRejectsStepUpAMRWithoutStepUp(t *testing.T) {
+	src := fsys(map[string]string{
+		"p.yaml": "permissions:\n  - key: requests.request.read\n    step_up_amr: [hwk]\n",
+	})
+	if _, err := seeds.Load(src, "requests"); err == nil {
+		t.Fatal("step_up_amr without step_up: true must be rejected")
+	}
+}
+
 // SEC-32: a role may not grant a permission its module does not own.
 func TestLoadRejectsForeignRoleGrant(t *testing.T) {
 	src := fsys(map[string]string{

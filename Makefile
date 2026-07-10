@@ -133,6 +133,10 @@ lint-new: ## ENFORCED gate: golangci-lint on CHANGED code only (new since LINT_B
 lint-boundaries: ## Import-law + vocabulary + Reveal() boundary lint
 	sh scripts/lint_boundaries.sh
 
+.PHONY: lint-lifecycle
+lint-lifecycle: ## Static provider/lifecycle manifest lint (backlog B9; kernel/lifecycle)
+	$(GO) run ./cmd/wowapi lint lifecycle
+
 .PHONY: tidy
 tidy: ## go mod tidy
 	$(GO) mod tidy
@@ -275,9 +279,10 @@ build: ## Build all packages and the CLI
 	$(GO) build -o bin/wowapi ./cmd/wowapi
 
 .PHONY: ci
-ci: ## Full local CI: vet + boundary lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
+ci: ## Full local CI: vet + boundary lint + lifecycle lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
 	$(GO) vet $(PKGS)
 	$(MAKE) lint-boundaries
+	$(MAKE) lint-lifecycle
 	$(MAKE) test-unit
 	$(MAKE) test-race
 	$(MAKE) bench-budget

@@ -117,11 +117,18 @@ func gateRoute(meta RouteMeta, h http.Handler, auth Authenticator, eval authz.Ev
 		}
 		// Step-up: the actor is otherwise permitted but the permission demands an
 		// elevated auth factor it has not satisfied — challenge for re-auth (401 +
-		// WWW-Authenticate) rather than a flat 403 (roadmap S3).
+		// WWW-Authenticate) rather than a flat 403 (roadmap S3). The advertised
+		// factor comes from the policy's Decision.StepUpChallenge (per-permission
+		// StepUpPolicy.Challenge, or the deployment's default), never hardcoded —
+		// a permission requiring a hardware key advertises step_up="hwk", not "mfa".
 		if decision.StepUpRequired {
-			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", step_up="mfa"`)
+			challenge := decision.StepUpChallenge
+			if challenge == "" {
+				challenge = "mfa" // defensive fallback; the evaluator always sets one
+			}
+			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_user_authentication", step_up="`+challenge+`"`)
 			WriteError(ctx, w, kerr.E(kerr.KindUnauthenticated, "step_up_required",
-				"elevated authentication (MFA) required for: "+meta.Permission))
+				"elevated authentication required for: "+meta.Permission))
 			return
 		}
 		if !decision.Allowed {

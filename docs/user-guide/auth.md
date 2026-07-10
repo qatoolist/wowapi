@@ -157,6 +157,49 @@ permissions:
 `permissions.step_up` — re-syncing after you flip the flag updates the existing catalog row (idempotent,
 not insert-only).
 
+**Requiring a specific factor, not just "any strong factor":** the plain `step_up: true` shorthand accepts
+any factor from the deployment's default strong-factor set (below). A permission can instead require a
+*specific* AMR subset — e.g. a hardware key, not just any MFA — with two extra seed fields:
+
+```yaml
+permissions:
+  - key: vault.secret.export
+    description: export a vault secret
+    step_up: true
+    step_up_amr: [hwk]        # only "hwk" satisfies this permission's step-up
+    step_up_challenge: hwk    # WWW-Authenticate advertises step_up="hwk"
+```
+
+`step_up_amr`/`step_up_challenge` are only meaningful alongside `step_up: true` — the seed load rejects them
+otherwise (a likely typo/mistake, not a silent no-op). `app.Boot` builds an `authz.StepUpPolicy{RequiredAMR,
+Challenge}` from these fields and attaches it to the registry's `Permission.StepUpPolicy`; the evaluator's
+"any of RequiredAMR satisfies it" is the usual step-up semantic (a single elevated factor is enough — factors
+are not required in combination). **This richer policy is registry-declared only, not DB-persisted**:
+`permissions.step_up` keeps storing the plain bool (the cheapest-correct persistence path — see
+`authz.Permission.StepUpPolicy`'s doc comment), so a permission's specific AMR requirement lives in your
+module's seed YAML, re-derived at every boot, same as every other seed-declared catalog fact.
+
+Scope note: this is **AMR-only** — there is no `MaxAge`/freshness field (e.g. "re-authenticated within the
+last N minutes"), because the production IdP's ability to reliably emit an `auth_time` claim could not be
+confirmed. `StepUpPolicy` is shaped so a `MaxAge` could be added later as an additive field without breaking
+existing callers, but that is out of scope today.
+
+**The default strong-factor set is deployment-configurable, not hardcoded.** Out of the box it is `mfa`,
+`otp`, `totp`, `hwk`, `fpt`, `face` (`authz.DefaultStrongFactors`) — **`sms` is deliberately excluded**:
+SMS-based step-up is opt-in only. A deployment overrides the set — including adding `sms` back — via
+`kernel.Deps.StepUpStrongFactors` (and `Deps.StepUpDefaultChallenge` for the advertised hint), with **no code
+changes**:
+
+```go
+k, err := kernel.New(cfg, log, kernel.Deps{
+    // ...
+    StepUpStrongFactors: append([]string{"sms"}, authz.DefaultStrongFactors...),
+})
+```
+
+The HTTP gate's `WWW-Authenticate: step_up="…"` always reflects the actual policy — a permission's own
+`step_up_challenge`, or the deployment's configured default — never a hardcoded `"mfa"`.
+
 **Satisfying the factor** flows from your IdP token straight through, with nothing to reparse: the standard
 `amr` claim (RFC 8176, e.g. `["pwd","mfa"]`) is a field on `auth.Claims`, and `Verifier.Actor` copies it onto
 `authz.Actor.AMR`, which the evaluator checks. A product authenticator built on `kernel/auth` gets step-up for
@@ -200,5 +243,10 @@ See [Testing](testing.md) for the full harness.
 | Boot fails: route has no permission | non-public route missing `Permission` | Add a `Permission` or mark `Public`. |
 | 403 where you expected a re-auth prompt | `StepUpRequired` not handled by the client | Handle the step-up challenge; ensure `AMR` reflects satisfied factors. |
 | List returns rows the user shouldn't see | not using `Filter` | Build the query from `Evaluator.Filter`'s `ListFilter`. |
+
+> **Serving a browser/cookie-session client?** Authentication here still stays product-owned — but wowapi's
+> **security profile** (`security.profile: browser` in [Configuration](configuration.md#security-profile-api-vs-browser))
+> additionally wires CSRF token enforcement and SameSite cookie defaults for you. The default `api`
+> profile (bearer/API-key, no cookies) is unaffected either way.
 
 Next: [Validation & errors](validation-errors.md) · [Testing](testing.md).

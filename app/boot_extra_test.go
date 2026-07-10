@@ -155,6 +155,61 @@ func TestBootPropagatesStepUp(t *testing.T) {
 	if !approvePerm.StepUp {
 		t.Error("widgets.widget.approve should require step-up (seed sets step_up: true)")
 	}
+	if approvePerm.StepUpPolicy != nil {
+		t.Errorf("plain step_up: true should NOT populate StepUpPolicy: %+v", approvePerm.StepUpPolicy)
+	}
+}
+
+// stepUpAMRSeed declares a permission requiring a SPECIFIC AMR (hwk), not the
+// deployment default set, via the richer seed form (B8).
+const stepUpAMRSeed = `
+permissions:
+  - key: widgets.widget.export
+    description: export a widget
+    step_up: true
+    step_up_amr: [hwk]
+    step_up_challenge: hwk
+`
+
+// TestBootPropagatesStepUpPolicy proves the richer step_up_amr/step_up_challenge
+// seed form reaches the shared authz registry as Permission.StepUpPolicy — the
+// same seed→boot→registry plumbing as the plain bool, extended (B8).
+func TestBootPropagatesStepUpPolicy(t *testing.T) {
+	h := testkit.NewDB(t)
+	k := discardKernel(t, h)
+
+	m := funcModule{name: "widgets", reg: func(mc module.Context) error {
+		mc.Seeds(fstest.MapFS{"seed.yaml": &fstest.MapFile{Data: []byte(stepUpAMRSeed)}})
+		return nil
+	}}
+
+	a := app.New()
+	a.Register(m)
+	if _, err := a.Boot(context.Background(), k, nil); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	exportPerm, ok := k.Perms.Get("widgets.widget.export")
+	if !ok {
+		t.Fatal("widgets.widget.export not registered")
+	}
+	if !exportPerm.StepUp {
+		t.Error("widgets.widget.export should carry StepUp: true (seed sets step_up: true)")
+	}
+	if exportPerm.StepUpPolicy == nil {
+		t.Fatal("widgets.widget.export should carry a StepUpPolicy (seed sets step_up_amr)")
+	}
+	if len(exportPerm.StepUpPolicy.RequiredAMR) != 1 || exportPerm.StepUpPolicy.RequiredAMR[0] != "hwk" {
+		t.Errorf("StepUpPolicy.RequiredAMR = %v, want [hwk]", exportPerm.StepUpPolicy.RequiredAMR)
+	}
+	if exportPerm.StepUpPolicy.Challenge != "hwk" {
+		t.Errorf("StepUpPolicy.Challenge = %q, want %q", exportPerm.StepUpPolicy.Challenge, "hwk")
+	}
+	// Boot populates the in-memory registry only; DB persistence of the plain
+	// step_up bool (via seeds.Sync) is proven separately by
+	// kernel/seeds.TestSyncPersistsStepUp and the httpx step-up e2e test —
+	// the cheapest-correct path keeps StepUpPolicy registry-declared, never
+	// DB-persisted (see authz.Permission.StepUpPolicy doc comment).
 }
 
 // TestBootConfigNamespaceIsolation confirms Boot threads each module's own

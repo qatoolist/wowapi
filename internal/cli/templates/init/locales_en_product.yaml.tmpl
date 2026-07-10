@@ -1,0 +1,9 @@
+# {{.Name}}'s own English message catalog (YAML).
+#
+# Product- and module-owned keys live under your own "<name>." namespace — never
+# kernel.* (that is framework-reserved; use locales/<locale>/kernel.yaml to
+# override framework strings). These load with NO product loader code; the
+# generated binaries read this directory before boot completes.
+locale: en
+messages:
+  "{{.Name}}.i18n.sample_yaml": "Loaded from a product YAML catalog"

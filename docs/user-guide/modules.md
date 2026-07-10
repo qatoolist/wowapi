@@ -252,9 +252,38 @@ What the framework enforces for you (so you never re-implement it in SQL):
   arbitrated by the one-active-per-instant constraint, exactly as before.
 
 > Availability: `mc.Privileged()` requires a process wired with the `app_platform` pool (`api`/`worker`;
-> not the `migrate` process). The default surface is **prefix-ownership**; a product that must widen it
-> (e.g. let a module manage a kernel `core.` type) constructs its own `privileged.Services` with a
-> `Config` allow-list from its wiring.
+> not the `migrate` process). The default surface is **prefix-ownership**.
+
+### Widening ownership with the `privileged` config section
+
+A product config can widen a specific module's ownership to a concrete, non-prefixed relationship type
+or rule key — e.g. sanctioning a `committee` module to grant the kernel `core.owner_of` relationship
+type. Add a `privileged` section to `configs/base.yaml` (or an env overlay), keyed by module name:
+
+```yaml
+privileged:
+  committee:
+    allow_rel_types:
+      - "core.owner_of"
+    allow_rule_keys:
+      - "policy.retention.days"
+```
+
+This flows straight into the `committee` module's `privileged.Config{AllowRelTypes, AllowRuleKeys}` the
+next time it calls `mc.Privileged()` — no code change, no per-product `privileged.Services` construction
+needed. Two rules govern it:
+
+- **Additive, not replacing.** `committee` keeps prefix-ownership of `committee.*` regardless; the
+  allow-list only adds the listed non-prefixed keys.
+- **Per-module, not global.** An allow-list entry for `committee` grants nothing to any other module —
+  each module's ownership is still checked against ITS OWN name. A module with no entry in `privileged`
+  behaves exactly as if the section didn't exist (today's prefix-only behavior, unchanged).
+
+**Security — explicit enumeration only, fail closed.** Every `allow_rel_types` / `allow_rule_keys` entry
+must be a concrete, fully-spelled key. Boot validation (`config.Privileged.Validate`, wired into
+`config.Framework.Validate`) REJECTS wildcards, glob syntax (`*`, `?`, `[...]`), and empty/whitespace
+entries — there is no "allow everything" escape hatch. A config with an unsafe entry fails to load; the
+process never starts.
 
 ## Checklist for a new module
 

@@ -33,6 +33,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi config doctor` | `--dir`, `--base`, `--env`, `--env-prefix` | Per-key provenance table + fingerprint. |
 | `wowapi config diff` | `--from` **(req)**, `--to` **(req)**, `--dir`, `--env-prefix` | Redacted effective-config diff between two environments. |
 | `wowapi config schema` | — | Emit JSON Schema derived from struct tags. |
+| `wowapi config capacity` | `--dir`, `--base`, `--env`, `--env-prefix` | Check the concurrency capacity budget; exit 0 within budget/not configured, exit 1 oversubscribed. |
 
 ### Migrations, seeds, OpenAPI
 
@@ -41,6 +42,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi migrate create` | `--dir` (`migrations`), `--name` **(req)** | Scaffold the next-numbered goose migration. |
 | `wowapi seed validate` | `--dir` (`seeds`), `--module` **(req)** | Load + validate a module seed bundle (no database). |
 | `wowapi seed sync` | `--module name=dir` **(req, repeatable)** | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
+| `wowapi i18n validate` | `--dir` (`locales`), `--default-locale` (`en`), `--supported` (`en`), `--strict` | Load + validate a product's locale catalogs (no database): coverage, `kernel.*` ownership, intra-layer duplicates, placeholder drift. Exit 0 OK / 1 with every problem listed. See [Validation & error handling § Localizing responses](validation-errors.md#localizing-responses-i18n). |
 | `wowapi openapi merge` | `--dir` (`.`), `--title` (`wowapi API`), `--version` (`0.0.0`), `--out` | Merge OpenAPI 3.1 fragments into one document. |
 
 > Applying migrations at runtime is the **product** `cmd/migrate` (`go run ./cmd/migrate up` / `make
@@ -53,6 +55,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | Command | Flags | Purpose |
 |---|---|---|
 | `wowapi lint boundaries` | `--pkgs` (`./...`) | Module isolation + layering (import-law) check. |
+| `wowapi lint lifecycle` | — | Print + lint the static provider/lifecycle manifest (`kernel/lifecycle`): catches scope leaks, raw pools reaching modules, tenant-scoped values escaping their transaction, migrate-only services wired into API/worker runtime, and missing providers/cycles. Exit 0 clean / 1 with every violation listed. |
 | `wowapi deploy render` | `--format` (`compose`\|`env`), `--name` (`app`), `--image` (`app:latest`), `--env` (`local`\|`dev`\|`stage`\|`prod`), `--out` | Render a deployment manifest. |
 
 ### Dead-letter queue operations
@@ -91,6 +94,7 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make fmt` | `gofmt` all Go files. |
 | `make lint` | `golangci-lint` (falls back to `go vet`). |
 | `make lint-boundaries` | Import-law + vocabulary + `Reveal()` boundary lint. |
+| `make lint-lifecycle` | Static provider/lifecycle manifest lint (`wowapi lint lifecycle`; backlog B9). |
 
 ### Test
 
@@ -114,7 +118,7 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make openapi` | Merge OpenAPI fragments. |
 | `make config-validate` / `make config-doctor` | Validate config / show provenance. |
 | `make build` | Build all packages + the CLI. |
-| `make ci` | Full local CI: vet, boundary lint, unit, race, perf budgets, build (golangci-lint = `make lint-new`). |
+| `make ci` | Full local CI: vet, boundary lint, lifecycle lint, unit, race, perf budgets, build (golangci-lint = `make lint-new`). |
 | **`make ci-container`** | Run `make ci` inside the toolbox container — **the authoritative gate**. |
 
 > Product repos get a **smaller** generated `Makefile` — `build`, `test`, `lint`, `migrate-up`

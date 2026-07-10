@@ -29,7 +29,40 @@ type Permission struct {
 	// factor (MFA) for this permission: an otherwise-allowed decision becomes a
 	// step-up challenge when the actor's AMR carries no strong factor (roadmap
 	// S3). MFA itself is the IdP's job; this gates on the surfaced amr claim.
+	// This is the persisted shorthand (permissions.step_up) — "require ANY
+	// factor from the deployment's configured default strong-factor set".
 	StepUp bool
+	// StepUpPolicy, when non-nil, REPLACES the default-set behavior of StepUp
+	// with a permission-specific requirement (e.g. "require hwk specifically").
+	// It is declared by a seed's richer step_up form (kernel/seeds) and lives
+	// only in this in-memory, boot-populated registry — it is NOT persisted
+	// (permissions.step_up remains a plain bool; see kernel/seeds doc comment
+	// on PermissionSeed.StepUpAMR for the rationale). A permission with
+	// StepUpPolicy set is treated as StepUp-gated regardless of the StepUp bool.
+	StepUpPolicy *StepUpPolicy
+}
+
+// StepUpPolicy is a permission-specific step-up requirement: the actor must
+// present at least one AMR value from RequiredAMR (any-of — the usual
+// step-up semantic: any single elevated factor satisfies the gate, factors
+// are not required in combination). Challenge names the factor/hint the HTTP
+// gate advertises in WWW-Authenticate (e.g. "hwk", "mfa").
+//
+// Scope (Decision 4, framework-engineering-backlog B8): this is AMR-only. The
+// production IdP's ability to reliably emit `auth_time` could not be confirmed
+// from the codebase, so no MaxAge/freshness field exists here. The struct is
+// shaped so a MaxAge *time.Duration could be added later as an additive field
+// without breaking existing callers — but that is explicitly out of scope now.
+type StepUpPolicy struct {
+	// RequiredAMR is the set of AMR values that satisfy this permission's
+	// step-up gate; the actor needs ANY ONE of them. Empty means "fall back to
+	// the deployment's configured default strong-factor set" (the StepUp bool
+	// shorthand's behavior).
+	RequiredAMR []string
+	// Challenge is the factor/hint advertised in the step-up challenge's
+	// WWW-Authenticate header (e.g. `step_up="hwk"`). Empty falls back to the
+	// deployment's default challenge hint.
+	Challenge string
 }
 
 // Registry is the boot-time permission catalog. Evaluating a permission absent

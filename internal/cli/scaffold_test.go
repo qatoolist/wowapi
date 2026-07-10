@@ -462,6 +462,104 @@ func TestInitConfigsBaseDocumentsStorage(t *testing.T) {
 	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "storage:")
 }
 
+// TestInitConfigsBaseDocumentsSecurityProfile: the generated configs/base.yaml
+// should document the SecurityProfile section (backlog B7) the same way it
+// documents storage/auth.oidc, so a product discovers the browser profile
+// opt-in without reading kernel/config source.
+func TestInitConfigsBaseDocumentsSecurityProfile(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "security:")
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "profile: browser")
+}
+
+// TestInitAPIMainWiresBackpressureMiddleware proves the generated cmd/api/main.go
+// wires the backlog-B6 backpressure middleware (guarded by
+// concurrency.http_max_in_flight) and the metrics callbacks for the
+// rejected-overload counter and in-flight gauge — the "wire it into the
+// scaffold" half of the deliverable, not just the library function existing.
+func TestInitAPIMainWiresBackpressureMiddleware(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	for _, want := range []string{
+		"httpx.Backpressure(cfg.Concurrency.HTTPMaxInFlight, cfg.Concurrency.Overload",
+		"httpx.OnBackpressureOverload(",
+		"http_overload_rejected_total",
+		"httpx.OnInFlightChange(",
+		"http_in_flight_requests",
+	} {
+		assertFileContains(t, apiPath, want)
+	}
+}
+
+// TestInitAPIMainWiresSecurityChain proves the generated cmd/api/main.go
+// actually calls httpx.SecurityChain(cfg.Security) (backlog B7's "wire it
+// into the scaffold" half) — the library primitive existed and was fully
+// unit-tested before this, but nothing in the scaffold called it, so a
+// browser-profile product built from `wowapi init` enforced NO CSRF/CSP
+// despite configs/base.yaml documenting the security: section.
+//
+// The generated main.go is profile-agnostic BY DESIGN: SecurityChain reads
+// cfg.Security at runtime and returns an empty slice under the (default) API
+// profile or [SecureHeaders(CSP), CSRFProtect] under the browser profile. The
+// SAME rendered main.go serves both profiles — do not "fix" this later by
+// templating the profile choice into cmd/api/main.go.tmpl; that would defeat
+// the point of a runtime-selectable profile and desync the template from
+// config-driven behavior.
+func TestInitAPIMainWiresSecurityChain(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	assertFileContains(t, apiPath, "httpx.SecurityChain(cfg.Security)")
+}
+
+// TestInitRenderedProductCompilesWithSecurityChain is the stronger proof
+// alongside TestInitAPIMainWiresSecurityChain: not only does the generated
+// source parse and mention the call, the rendered product actually COMPILES
+// against the real framework with the SecurityChain wiring in place. It
+// reuses the same zero-config (API-profile-default) render as
+// TestInitRenderedProductCompiles, confirming the default product is
+// behavior-unchanged (SecurityChain(api-profile) == nil, so this line is a
+// no-op at runtime) while still being present in the generated source for
+// the browser-profile opt-in.
+func TestInitRenderedProductCompilesWithSecurityChain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles the rendered product against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertFileContains(t, apiPath, "httpx.SecurityChain(cfg.Security)")
+	build := exec.Command("go", "build", "./...")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build ./... failed on rendered product:\n%s", out)
+	}
+}
+
+// TestInitConfigsBaseDocumentsConcurrency: the generated configs/base.yaml
+// should document the optional concurrency section, matching how it already
+// documents auth.oidc and storage.
+func TestInitConfigsBaseDocumentsConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "concurrency:")
+}
+
 // buildRenderedProduct scaffolds a product into a fresh temp dir, points its
 // go.mod at THIS wowapi checkout via a replace directive (so the compile test
 // runs entirely offline against the framework under development, never a

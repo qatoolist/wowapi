@@ -36,6 +36,8 @@ Subcommands:
   doctor      show per-key provenance table and fingerprint
               (note: environment-variable sanity probes arrive in Phase 10)
   diff        redacted effective-config diff (--from <env> --to <env>)
+  capacity    check the concurrency capacity budget (backlog B6); CI lint
+              (exit 0 = within budget or shape not configured, 1 = oversubscribed)
 
 Shared flags (validate, print, doctor):
   --dir         directory holding base.yaml + <env>.yaml (default "configs")
@@ -161,6 +163,11 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 			return code
 		}
 		return runConfigDiff(rest, stdout, stderr)
+	case "capacity":
+		// Framework-only for now (backlog B6): the capacity-budget formula only
+		// needs config.Framework's own fields (concurrency.* + db.max_conns), so
+		// there is no product-specific type to delegate to yet.
+		return runConfigCapacity(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "wowapi config: unknown subcommand %q\n", sub)
 		configUsage(stderr)
@@ -297,5 +304,54 @@ func runConfigDoctor(args []string, stdout, stderr io.Writer) int {
 	for _, w := range loaded.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", w)
 	}
+	return 0
+}
+
+// runConfigCapacity implements `wowapi config capacity` (backlog B6): a CI
+// lint independent of concurrency.capacity_mode — it always fails (exit 1) on
+// an oversubscribed deployment shape, regardless of whether the deployment
+// itself runs in advisory or enforced mode. capacity_mode governs whether
+// `wowapi config validate` / process boot fails on the same condition; this
+// subcommand exists so a CI pipeline can catch the problem early even while
+// production boot stays advisory (rollout guard: advisory-then-enforced).
+//
+// Exit 0: the shape fits under db.max_conns, OR no shape is declared
+// (concurrency.replicas == 0) — printed as "capacity OK ... (shape not
+// configured)" so the difference is visible without being a failure.
+// Exit 1: the computed demand exceeds db.max_conns; the formula and the
+// numbers are printed to stderr.
+func runConfigCapacity(args []string, stdout, stderr io.Writer) int {
+	fs, f := newCfgFlagSet("capacity", stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	baseFile, envFile, ok := f.resolve(fs, "capacity", stderr)
+	if !ok {
+		return 1
+	}
+
+	loaded, err := config.LoadDetailed[config.Framework](f.loaderOpts(baseFile, envFile))
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if !f.assertEnv(loaded.Config.Environment, "capacity", stderr) {
+		return 1
+	}
+	for _, w := range loaded.Warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", w)
+	}
+
+	if loaded.Config.Concurrency.Replicas == 0 {
+		fmt.Fprintln(stdout, "capacity OK  (deployment shape not configured: concurrency.replicas is 0, check skipped)")
+		return 0
+	}
+	if problem := config.CheckCapacity(loaded.Config); problem != nil {
+		fmt.Fprintln(stderr, problem.Error())
+		return 1
+	}
+	fmt.Fprintf(stdout, "capacity OK  replicas=%d runtime_pool_max=%d platform_pool_max=%d migrate_pool_max=%d reserved_admin=%d db.max_conns=%d\n",
+		loaded.Config.Concurrency.Replicas, loaded.Config.Concurrency.RuntimePoolMax, loaded.Config.Concurrency.PlatformPoolMax,
+		loaded.Config.Concurrency.MigratePoolMax, loaded.Config.Concurrency.ReservedAdmin, loaded.Config.DB.MaxConns)
 	return 0
 }

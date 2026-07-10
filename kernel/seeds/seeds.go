@@ -39,6 +39,22 @@ type PermissionSeed struct {
 	// when the actor's AMR carries no strong factor (roadmap S3). Propagated to
 	// authz.Permission.StepUp at boot and persisted to permissions.step_up.
 	StepUp bool `yaml:"step_up"`
+	// StepUpAMR, when non-empty, narrows step-up to a SPECIFIC AMR subset for
+	// this permission (e.g. ["hwk"] to require a hardware key specifically,
+	// rather than any factor from the deployment's default strong-factor set).
+	// Only meaningful alongside step_up: true (validated); propagated to
+	// authz.Permission.StepUpPolicy.RequiredAMR at boot. NOT persisted —
+	// permissions.step_up remains the plain bool; a richer per-permission AMR
+	// policy is registry-declared (seed-driven, in-memory), not DB-persisted.
+	// See kernel/seeds doc comment (package-level) and B8 backlog item for the
+	// cheapest-correct-path rationale.
+	StepUpAMR []string `yaml:"step_up_amr"`
+	// StepUpChallenge, when set, is the factor/hint the HTTP gate advertises in
+	// WWW-Authenticate for this permission's step-up challenge (e.g. "hwk"
+	// alongside step_up_amr: [hwk]). Only meaningful alongside step_up: true.
+	// Propagated to authz.Permission.StepUpPolicy.Challenge at boot. Not
+	// persisted, same rationale as StepUpAMR.
+	StepUpChallenge string `yaml:"step_up_challenge"`
 }
 
 // RoleSeed declares a platform-template role and the permissions it grants.
@@ -137,6 +153,13 @@ func (b Bundle) validate(module string) error {
 			if !relTypes[p.GrantedVia] {
 				errs = append(errs, fmt.Sprintf("permission %q: granted_via %q is not a relationship type declared by this module", p.Key, p.GrantedVia))
 			}
+		}
+		// step_up_amr/step_up_challenge only mean something alongside
+		// step_up: true — declaring them without it is almost certainly a seed
+		// mistake (the fields would silently never gate anything), so reject
+		// rather than ignore (B8).
+		if !p.StepUp && (len(p.StepUpAMR) > 0 || p.StepUpChallenge != "") {
+			errs = append(errs, fmt.Sprintf("permission %q: step_up_amr/step_up_challenge set without step_up: true", p.Key))
 		}
 	}
 	for _, r := range b.Roles {
