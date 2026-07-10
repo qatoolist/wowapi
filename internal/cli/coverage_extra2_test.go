@@ -142,6 +142,39 @@ func TestLintDispatchBoundaries(t *testing.T) {
 	}
 }
 
+// ---------- lint: lifecycle arm reached via runLint dispatch (backlog B9) ----------
+
+func TestLintDispatchLifecycle(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := runLint([]string{"lifecycle"}, &out, &errb); code != 0 {
+		t.Fatalf("lint lifecycle dispatch exit %d: %s", code, errb.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "lifecycle lint: OK") {
+		t.Fatalf("expected OK, got %q", got)
+	}
+	if !strings.Contains(got, "kernel.Tx") {
+		t.Fatalf("expected the manifest table to be printed, got %q", got)
+	}
+}
+
+func TestLintLifecycleUnknownFlag(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := runLintLifecycle([]string{"--bogus"}, &out, &errb); code != 2 {
+		t.Fatalf("unknown flag should exit 2, got %d: %s", code, errb.String())
+	}
+}
+
+func TestLintDispatchUnknownSubcommand(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := runLint([]string{"bogus"}, &out, &errb); code != 2 {
+		t.Fatalf("unknown lint subcommand should exit 2, got %d", code)
+	}
+	if !strings.Contains(errb.String(), `unknown subcommand "bogus"`) {
+		t.Fatalf("expected unknown-subcommand error, got %q", errb.String())
+	}
+}
+
 // ---------- config print/doctor: resolve failure + load error ----------
 
 func TestConfigPrintEnvOverlayMissing(t *testing.T) {
