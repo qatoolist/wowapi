@@ -53,8 +53,10 @@ func (p Point) allowsScope(s ScopeKind) bool {
 	return false
 }
 
-// Registry collects rule points during module registration; it is synced to
-// rule_definitions at boot and consulted by the resolver for defaults + policy.
+// Registry collects rule points during module registration; SyncDefinitions
+// persists it to rule_definitions (the generated migrate main calls it right
+// after seed sync, GAP-007), and it is consulted by the resolver for defaults
+// + policy.
 type Registry struct {
 	points map[string]Point
 	errs   []error

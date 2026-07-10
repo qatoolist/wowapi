@@ -10,6 +10,7 @@
 package validation
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"reflect"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 // tagToCode maps common go-playground/validator tag names to the stable
@@ -81,6 +83,18 @@ func New() *Validator {
 // error: passing a non-struct is a programming mistake in the caller, not a
 // user-input problem.
 func (vl *Validator) Struct(s any) error {
+	return vl.StructCtx(context.Background(), s)
+}
+
+// StructCtx validates s exactly like Struct but localizes each field message
+// against the i18n catalog bound to ctx (kernel/i18n; set by the httpx.Locale
+// middleware). The Field path and machine Code stay byte-stable regardless of
+// locale — only the human Message is translated. With no catalog in ctx
+// (zero-config) the output is byte-identical to Struct's English messages.
+//
+// httpx.BindAndValidate uses this so API validation errors localize
+// automatically; direct Struct callers keep the English behavior.
+func (vl *Validator) StructCtx(ctx context.Context, s any) error {
 	err := vl.v.Struct(s)
 	if err == nil {
 		return nil
@@ -100,12 +114,14 @@ func (vl *Validator) Struct(s any) error {
 		return errors.E(errors.KindInternal, "internal", "unexpected validator error", err)
 	}
 
+	cat := i18n.CatalogFrom(ctx)
+	locale := i18n.LocaleFrom(ctx)
 	fields := make([]errors.FieldError, 0, len(ve))
 	for _, fe := range ve {
 		fields = append(fields, errors.FieldError{
 			Field:   fieldPath(fe),
 			Code:    codeForTag(fe.Tag()),
-			Message: messageForTag(fe),
+			Message: localizedMessage(cat, locale, fe),
 		})
 	}
 	return errors.Validation("validation failed", fields...)
@@ -134,6 +150,41 @@ func codeForTag(tag string) string {
 		return code
 	}
 	return tag
+}
+
+// paramTags are the validator tags whose message carries a single %s filled
+// with fe.Param(). Kept in sync with messageForTag and the framework catalog's
+// parameterised entries so a localized template gets the same substitution.
+var paramTags = map[string]bool{
+	"min": true, "max": true, "len": true, "oneof": true, "gte": true, "lte": true,
+}
+
+// localizedMessage resolves the human message for fe. With no catalog (cat is
+// nil / zero-config) it returns the historical English messageForTag output
+// verbatim. With a catalog it looks up the framework key for the tag; if the
+// catalog served a locale-specific translation, it fills the %s param for
+// parameterised tags. A missing translation falls back through the catalog to
+// the English framework entry (deterministic i18n fallback), and an unknown tag
+// (no framework entry) falls back to messageForTag so novel tags still render.
+func localizedMessage(cat *i18n.Catalog, locale string, fe validator.FieldError) string {
+	if cat == nil {
+		return messageForTag(fe)
+	}
+	tag := fe.Tag()
+	tmpl, _ := cat.Lookup(locale, i18n.KeyValidationMessage(tag))
+	// tmpl == the key itself means the framework has no entry for this tag (e.g.
+	// a custom tag registered by a product): defer to messageForTag.
+	if tmpl == i18n.KeyValidationMessage(tag) {
+		return messageForTag(fe)
+	}
+	if paramTags[tag] {
+		param := fe.Param()
+		if tag == "oneof" {
+			param = strings.ReplaceAll(param, " ", ", ")
+		}
+		return fmt.Sprintf(tmpl, param)
+	}
+	return tmpl
 }
 
 // messageForTag builds a short human-readable message for a validation

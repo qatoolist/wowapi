@@ -81,6 +81,81 @@ The `tools` service is preconfigured with `S3_ENDPOINT`, `SMTP_ADDR`, and
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318`, so the container gate exercises object storage, email, and
 tracing against real services — not mocks.
 
+## Object storage (S3/MinIO)
+
+The document framework (`kernel/document`, exposed via `module.Context.DocumentClasses()`) talks to blob
+storage through the `storage.Adapter` port (`kernel/storage/storage.go`), never directly to S3/MinIO. Two
+adapters satisfy that port:
+
+| Adapter | Package | Use |
+|---|---|---|
+| In-memory | `kernel/storage` (`storage.NewMemory()`) | Tests and local dev without a real object store. |
+| S3/MinIO | `github.com/qatoolist/wowapi/adapters/storage/s3` | Production and any local dev pointed at real MinIO. |
+
+If your module registers a document class but the kernel has no storage adapter wired, `app.Boot` fails
+closed: *"document classes are registered (…) but no storage adapter is wired: pass kernel.Deps.Storage"*.
+
+### Wiring the S3/MinIO adapter (generated scaffold)
+
+`wowapi init` scaffolds the S3/MinIO wiring for you: `internal/appcfg.Config` carries a `Storage` section
+(`StorageConfig` — endpoint, bucket, region, secretref-only credentials, `use_ssl`, `presign_ttl`,
+`create_bucket`), and the generated `cmd/api`/`cmd/worker` mains construct the adapter and pass it into
+`kernel.Deps.Storage` automatically, gated on `cfg.Storage.Enabled()` (true once `storage.endpoint` is set):
+
+```go
+// Generated in cmd/api/main.go and cmd/worker/main.go — no product edits needed.
+var store storage.Adapter
+if cfg.Storage.Enabled() {
+    s3a, serr := s3adapter.New(ctx, s3adapter.Config{
+        Endpoint:     cfg.Storage.Endpoint,
+        Bucket:       cfg.Storage.Bucket,
+        Region:       cfg.Storage.Region,
+        AccessKey:    cfg.Storage.AccessKey.Reveal(),
+        SecretKey:    cfg.Storage.SecretKey.Reveal(),
+        UseSSL:       cfg.Storage.UseSSL,
+        PresignTTL:   cfg.Storage.PresignTTL,
+        CreateBucket: cfg.Storage.CreateBucket,
+    })
+    if serr != nil {
+        return fmt.Errorf("storage: %w", serr)
+    }
+    store = s3a
+}
+
+k, err := kernel.New(cfg.Framework, log, kernel.Deps{
+    Pool: pool, Platform: platformPool, Tx: txm, Storage: store, /* … */
+})
+```
+
+Leave `storage.endpoint` unset (the default in the generated `configs/base.yaml`, commented out) and
+`Deps.Storage` stays nil — `app.Boot` still fails closed if a module registers a document class, exactly as
+before. Set the section in an env overlay to enable it:
+
+```yaml
+storage:
+  endpoint: "localhost:9000"
+  bucket: "myapp-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+  create_bucket: true   # local/dev overlays only
+```
+
+`New` fails closed at boot if the bucket doesn't exist and `CreateBucket` is false — the same fail-fast
+posture as the DB pool, so a missing bucket is a boot error, not a 500 on the first upload. Set
+`CreateBucket: true` only for local/dev overlays; production buckets are provisioned out of band.
+
+The adapter mirrors `storage.NewMemory`'s semantics exactly (same `KindNotFound` mapping, same idempotent
+`Delete`, same checksum-verified `Stat`), so swapping it in changes nothing about how your document classes
+behave — only where the bytes live.
+
+### Local development against the compose MinIO
+
+`make up` already starts a MinIO at `localhost:9000` (root user/password `wowapi` / `wowapi-local-only`; see
+the table above), so pointing `storage.endpoint` at `localhost:9000` (or `minio:9000` from inside the
+`tools`/api/worker containers) with `create_bucket: true` gets you a working local object store with no
+additional infrastructure.
+
 ## Health & readiness
 
 Every deployment exposes two infrastructure endpoints (public):

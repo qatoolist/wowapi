@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 // TestModuleContextAccessorsNilGuards builds a module context with empty deps
@@ -88,6 +90,7 @@ func TestModuleContextBootStateRecording(t *testing.T) {
 	c.Migrations(fstest.MapFS{})
 	c.Seeds(fstest.MapFS{})
 	c.OpenAPI([]byte("openapi: 3.1.0"))
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{"mymod.msg.hi": "नमस्कार"}})
 	c.Health("live", func(context.Context) error { return nil })
 	c.RecurringJob("nightly", time.Minute, func(context.Context, database.TenantDB) error { return nil })
 	c.ProvidePort("mymod.clock", 42)
@@ -100,6 +103,12 @@ func TestModuleContextBootStateRecording(t *testing.T) {
 	}
 	if got := string(boot.openapi["mymod"]); got != "openapi: 3.1.0" {
 		t.Errorf("OpenAPI = %q, want the registered fragment", got)
+	}
+	if err := boot.i18n.Err(); err != nil {
+		t.Fatalf("i18n bundle rejected: %v", err)
+	}
+	if msg, _ := boot.i18n.Catalog().Lookup("mr", "mymod.msg.hi"); msg != "नमस्कार" {
+		t.Errorf("i18n bundle not aggregated: %q", msg)
 	}
 	if _, ok := boot.health["mymod.live"]; !ok {
 		t.Error("Health not recorded under module-prefixed name mymod.live")
@@ -121,5 +130,43 @@ func TestModuleContextBootStateRecording(t *testing.T) {
 	}
 	if _, err := c.Port("nope.missing"); err == nil {
 		t.Error("Port(nope.missing) must error for an unprovided port")
+	}
+}
+
+// TestModuleContextI18nDocExampleBoots grounds the user guide's "Registering
+// product/module translations" snippet (docs/user-guide/validation-errors.md,
+// "Localizing responses (i18n)" section): a module-prefixed key registers
+// cleanly with no boot error. This is the exact bundle shape shown in the doc.
+func TestModuleContextI18nDocExampleBoots(t *testing.T) {
+	boot := newBootState()
+	c := newModuleContext("orders", nil, nil, moduleDeps{boot: boot})
+
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+		"orders.status.shipped": "पाठवले",
+	}})
+
+	if err := boot.i18n.Err(); err != nil {
+		t.Fatalf("doc example bundle rejected at boot: %v", err)
+	}
+	if msg, _ := boot.i18n.Catalog().Lookup("mr", "orders.status.shipped"); msg != "पाठवले" {
+		t.Errorf("doc example key not registered: %q", msg)
+	}
+}
+
+// TestModuleContextI18nRejectsReservedKernelPrefix proves why the user guide's
+// module example does NOT (and must not) include a kernel.* key: Register
+// rejects it at boot, regardless of which module attempts it. This is the
+// reason docs/user-guide/validation-errors.md directs translators of the
+// framework's own strings to Booted.I18n.Add instead of module.Context.I18n.
+func TestModuleContextI18nRejectsReservedKernelPrefix(t *testing.T) {
+	boot := newBootState()
+	c := newModuleContext("orders", nil, nil, moduleDeps{boot: boot})
+
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+		i18n.KeyProblemTitle(errors.KindInternal): "should be rejected",
+	}})
+
+	if err := boot.i18n.Err(); err == nil {
+		t.Fatal("module registering a kernel.* key must fail boot, but Err() was nil")
 	}
 }

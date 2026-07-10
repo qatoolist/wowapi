@@ -168,10 +168,13 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "internal/modules/.gitkeep")
 
 	fmt.Fprintf(stdout, "\nScaffolded product %q into %s\n", productName, target)
+	// Only `go mod tidy` is setup-free. build/migrate/run need APP_ENV + the DB DSNs
+	// + a running Postgres (fail-closed), so point at the README rather than imply a
+	// bare `make migrate-up` works.
 	if positional != "" {
-		fmt.Fprintf(stdout, "Next: cd %s && go mod tidy && make build && make migrate-up\n", positional)
+		fmt.Fprintf(stdout, "Next: cd %s && go mod tidy — then see README.md \"Getting started\" (set APP_ENV + DB DSNs, start Postgres, migrate, run).\n", positional)
 	} else {
-		fmt.Fprintln(stdout, "Next: go mod tidy && make build && make migrate-up")
+		fmt.Fprintln(stdout, "Next: go mod tidy — then see README.md \"Getting started\" (set APP_ENV + DB DSNs, start Postgres, migrate, run).")
 	}
 
 	return 0

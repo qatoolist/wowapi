@@ -3,6 +3,8 @@ package auth_test
 import (
 	"context"
 	"crypto/x509"
+	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +102,108 @@ func TestVerify_ValidTokenMapsToActor(t *testing.T) {
 	if actor.UserID != userID || actor.TenantID != tenantID || actor.CapacityID != capID {
 		t.Fatalf("actor mismatch: %+v", actor)
 	}
+}
+
+// TestVerify_AMRPropagatesToClaims proves the standard RFC 8176 amr claim
+// round-trips through Verify into Claims.AMR.
+func TestVerify_AMRPropagatesToClaims(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	tenantID := uuid.New()
+	capID := uuid.New()
+	tok := ti.Issue("idp|alice", tenantID, capID, testkit.WithAMR("pwd", "mfa"))
+
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got := claims.AMR; len(got) != 2 || got[0] != "pwd" || got[1] != "mfa" {
+		t.Fatalf("Claims.AMR = %v, want [pwd mfa]", got)
+	}
+}
+
+// TestActor_AMRPropagates proves Verifier.Actor carries Claims.AMR through to
+// authz.Actor.AMR — the plumbing the evaluator's step-up check depends on.
+func TestActor_AMRPropagates(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	capID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okCap: capID}
+
+	tok := ti.Issue("idp|alice", tenantID, capID, testkit.WithAMR("pwd", "mfa"))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if got := actor.AMR; len(got) != 2 || got[0] != "pwd" || got[1] != "mfa" {
+		t.Fatalf("Actor.AMR = %v, want [pwd mfa]", got)
+	}
+}
+
+// TestVerify_NoAMRIsEmpty proves a token without an amr claim maps to a nil/
+// empty Claims.AMR — no strong factor is asserted absent explicit evidence.
+func TestVerify_NoAMRIsEmpty(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	tok := ti.Issue("idp|alice", uuid.New(), uuid.New())
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(claims.AMR) != 0 {
+		t.Fatalf("Claims.AMR = %v, want empty", claims.AMR)
+	}
+}
+
+// malformedAMRToken hand-assembles a JWT with a header+claims+signature of our
+// choosing so a test can pin a claims JSON shape the typed TokenIssuer API
+// cannot produce (e.g. amr as a bare string or an array of numbers). The JWT
+// library decodes claims via json.Unmarshal in ParseUnverified BEFORE the
+// signature is ever checked (golang-jwt/jwt/v5 parser.go), so a malformed amr
+// payload fails the parse at the JSON-decode step — the signature bytes here
+// never need to verify for this test to pin that behavior.
+func malformedAMRToken(t *testing.T, claimsJSON string) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT","kid":"test-key-1"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(claimsJSON))
+	sig := base64.RawURLEncoding.EncodeToString([]byte("not-a-real-signature"))
+	return header + "." + payload + "." + sig
+}
+
+func TestVerify_MalformedAMRStringInsteadOfArray(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+	now := time.Now().Unix()
+	claimsJSON := fmt.Sprintf(`{"sub":"idp|alice","iss":"wowapi-test","aud":"wowapi",
+		"iat":%d,"nbf":%d,"exp":%d,"tenant_id":%q,"amr":"mfa"}`,
+		now, now, now+3600, uuid.New().String())
+
+	_, err := v.Verify(context.Background(), malformedAMRToken(t, claimsJSON))
+	// encoding/json refuses to unmarshal a JSON string into a []string field —
+	// the whole Claims decode fails, so Verify must reject the token rather than
+	// silently drop or coerce the malformed amr.
+	assertUnauthenticated(t, err)
+}
+
+func TestVerify_MalformedAMRNonStringElements(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+	now := time.Now().Unix()
+	claimsJSON := fmt.Sprintf(`{"sub":"idp|alice","iss":"wowapi-test","aud":"wowapi",
+		"iat":%d,"nbf":%d,"exp":%d,"tenant_id":%q,"amr":[1,2]}`,
+		now, now, now+3600, uuid.New().String())
+
+	_, err := v.Verify(context.Background(), malformedAMRToken(t, claimsJSON))
+	assertUnauthenticated(t, err)
 }
 
 func TestActor_ImpersonationAndBreakGlassCarry(t *testing.T) {

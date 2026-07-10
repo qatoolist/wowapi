@@ -140,8 +140,40 @@ if !dec.Allowed { return kerr.E(kerr.KindForbidden, "permission_denied", "not al
 ### Step-up / MFA
 
 When an actor *would* be allowed but the permission demands an elevated auth factor they haven't satisfied,
-`Decision.StepUpRequired` is set. The HTTP gate turns this into a **re-authentication challenge**, not a
-flat 403. Your authenticator surfaces the satisfied factors via `Actor.AMR`.
+`Decision.StepUpRequired` is set. The HTTP gate turns this into a **re-authentication challenge** — 401 with
+`WWW-Authenticate: Bearer error="insufficient_user_authentication", step_up="mfa"` — not a flat 403.
+
+**Declaring a step-up permission** is a seed field, not out-of-band wiring:
+
+```yaml
+permissions:
+  - key: identity.impersonation.assign
+    description: assign an impersonation grant
+    step_up: true
+```
+
+`kernel/seeds` strict-decodes `step_up` (a typo fails the load), `app.Boot` propagates it into
+`authz.Permission.StepUp` when it registers your seed's permissions, and `seeds.Sync` persists it to
+`permissions.step_up` — re-syncing after you flip the flag updates the existing catalog row (idempotent,
+not insert-only).
+
+**Satisfying the factor** flows from your IdP token straight through, with nothing to reparse: the standard
+`amr` claim (RFC 8176, e.g. `["pwd","mfa"]`) is a field on `auth.Claims`, and `Verifier.Actor` copies it onto
+`authz.Actor.AMR`, which the evaluator checks. A product authenticator built on `kernel/auth` gets step-up for
+free — it does not need to re-verify the bearer token to recover `amr` itself.
+
+**Implementing the factor that produces `amr`** is a separate concern from step-up itself, and lives in
+`kernel/mfa`: reusable, standards-compliant TOTP (RFC 6238) and HOTP (RFC 4226) code generation/verification,
+numeric OTP generation with salted constant-time hashing, and pure TTL/attempt-limit challenge-policy helpers,
+plus `Sender` delivery-port interfaces (SMS/email) with log/fake adapters. There is no import relationship
+between the two packages — `kernel/authz` never imports `kernel/mfa` and vice versa. The connection is a
+convention: a product's own auth/MFA service uses `kernel/mfa` to verify a TOTP or delivered-OTP code, and
+*on success* appends the corresponding factor (e.g. `"mfa"`, `"otp"`) to the `amr` slice it puts on the
+authenticated actor — at which point `kernel/authz`'s step-up check (above) is satisfied. `kernel/mfa`
+deliberately does not know about `amr`, permissions, or which actions require which factor: enrollment UX,
+factor storage schema, delivery-provider selection, and factor-to-permission policy are all product-owned.
+See the `kernel/mfa` package doc for the exact API (`GenerateTOTPSecret`, `TOTPCodeAt`/`VerifyTOTPAt`,
+`HOTPCode`, `GenerateOTPCode`/`HashOTPCode`/`VerifyOTPCode`, `ChallengePolicy`, `Sender`).
 
 ## Testing auth
 
@@ -152,7 +184,7 @@ flat 403. Your authenticator surfaces the satisfied factors via `Actor.AMR`.
 ti := testkit.NewTokenIssuer()                 // local RSA keypair
 ks := ti.KeySource()                           // wire into your verifier
 tok := ti.Issue(subjectID, tenantID, capacityID,
-    testkit.WithAudience("myapp"), testkit.WithBreakGlass(true)) // options: WithIssuer/WithAudience/WithExpiry/WithImpersonator/WithBreakGlass(bool)
+    testkit.WithAudience("myapp"), testkit.WithBreakGlass(true)) // options: WithIssuer/WithAudience/WithExpiry/WithImpersonator/WithBreakGlass(bool)/WithAMR(...string)
 req.Header.Set("Authorization", "Bearer "+tok)
 ```
 

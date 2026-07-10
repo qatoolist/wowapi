@@ -54,18 +54,42 @@ myapp/
 ├── .gitignore
 ├── README.md
 ├── cmd/
-│   ├── api/main.go            # HTTP server (thin main over wowapi/app)
-│   ├── worker/main.go         # outbox relay + job runner + scheduler
-│   └── migrate/main.go        # goose migrations (up/down)
+│   ├── api/main.go            # HTTP server: auth (API key + optional OIDC/JWT), optional
+│   │                          # S3/MinIO storage, OTel tracing, Prometheus metrics, i18n
+│   │                          # locale middleware, seed-catalog readiness check
+│   ├── worker/main.go         # outbox relay + job runner + scheduler + optional storage
+│   └── migrate/main.go        # migrations → seeds.Sync → rules.SyncDefinitions
 ├── configs/
-│   ├── base.yaml              # shared defaults (http, log, db pool)
+│   ├── base.yaml              # shared defaults (http, log, db pool, commented-out auth/storage)
 │   └── local.yaml             # local overlay (environment: local, secretref DSNs)
 ├── internal/
 │   ├── wire/modules.go        # returns []module.Module — register your modules here
-│   └── appcfg/config.go       # product Config (embeds config.Framework + module namespaces)
+│   └── appcfg/config.go       # product Config: config.Framework + Auth (OIDC) + Storage (S3/MinIO)
+│                              # + module namespaces
 └── tools/
     └── configcheck/main.go    # product-local checker the `wowapi config` CLI delegates to
+                                # (links the COMPOSED appcfg.Config — validate/print/doctor/schema/diff)
 ```
+
+### Generated vs. product-owned: what you edit, what wowapi regenerates
+
+Every file above is committed to your product repo and yours to edit — `wowapi init` does not manage a
+"do not touch" zone. But some files are thin framework boilerplate you'll rarely need to change, while
+others are where your product's logic actually lives. Knowing which is which tells you what's safe to
+regenerate (diff and reconcile) versus what always needs your own review:
+
+| File | Nature | Typical edits |
+|---|---|---|
+| `cmd/api/main.go`, `cmd/worker/main.go`, `cmd/migrate/main.go` | Framework process shell | Rarely edited directly; extend by registering modules (`internal/wire`) and turning on config sections (`auth.oidc`, `storage`). Re-running `wowapi init --force` regenerates these — diff before overwriting if you *did* hand-edit one. |
+| `tools/configcheck/main.go` | Framework process shell | Same as above — parameterized by `appcfg.Config`, no product logic lives here. |
+| `internal/appcfg/config.go` | **Mixed** — framework sections generated, product sections yours | `Config.Auth`/`Config.Storage` are the framework's standard sections (regenerable); add your own top-level fields alongside them for product-specific settings. |
+| `configs/base.yaml`, `configs/*.yaml` | Product-owned | Values only, never regenerated — `auth`/`storage` ship commented out; uncomment and fill in per environment. |
+| `internal/wire/modules.go` | Product-owned | This is where you register every module (`wowapi new-module` scaffolds modules; you list them here). Never overwritten by `--force` behavior you'd want repeated. |
+| `internal/modules/**` | Product-owned | Your business logic — routes, handlers, migrations, seeds. |
+
+The standard adapter wiring (storage, OIDC/JWT auth, OTel tracing, Prometheus metrics, i18n locale
+negotiation, seed + rule-definition sync) is generated so no product hand-writes it; product-specific
+config values, module registration, and business logic stay entirely product-owned.
 
 ## Step 3 — Provide a database
 

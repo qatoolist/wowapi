@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -278,6 +280,417 @@ func TestInitRejectsExtraArgs(t *testing.T) {
 	code, _, _ := callInit(t, "a", "b", "--module", "github.com/acme/app")
 	if code != 2 {
 		t.Fatalf("exit %d, want 2 for extra positional args", code)
+	}
+}
+
+// TestInitHintPointsToReadme: the next-steps hint must NOT imply `make migrate-up`
+// works bare — it needs APP_ENV + the DB DSNs + a running Postgres, all documented
+// in the generated README. The hint points there instead of over-promising.
+func TestInitHintPointsToReadme(t *testing.T) {
+	base := t.TempDir()
+	code, out, errOut := callInit(t, "myapp", "--module", "github.com/acme/myapp", "--dir", base)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "README") {
+		t.Errorf("init hint should point to the README for the env-dependent steps; got:\n%s", out)
+	}
+	if strings.Contains(out, "migrate-up") {
+		t.Errorf("init hint must not imply `make migrate-up` runs with no setup; got:\n%s", out)
+	}
+}
+
+// TestInitMigrateMainSyncsSeeds is the GAP-003 regression: the generated
+// cmd/migrate must run seeds.Sync after module migrations so a fresh
+// production database gets its authorization/resource catalogs populated —
+// without this, the framework docs' own PF-9 finding (deploy → empty
+// catalogs → deny-everything) reproduces in every scaffolded product.
+func TestInitMigrateMainSyncsSeeds(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/seeds")
+	assertFileContains(t, migratePath, "seeds.Sync(ctx, pool, booted.Seeds)")
+	assertParseGo(t, migratePath)
+}
+
+// TestInitMigrateMainSyncsRuleDefinitions is the GAP-007 lifecycle regression,
+// mirroring TestInitMigrateMainSyncsSeeds exactly: the generated cmd/migrate
+// must run rules.SyncDefinitions AFTER seeds.Sync (same privileged pool,
+// same deploy point) so a fresh database gets its rule_definitions mirror
+// populated — without this, rule_versions.rule_key's FK fails for any
+// registered point until a product hand-writes a SQL mirror (the gap
+// wowsociety's rulemirror_test.go drift guard existed to catch).
+func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/rules")
+	assertFileContains(t, migratePath, "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	assertParseGo(t, migratePath)
+
+	// Ordering: rule-definition sync must run after seed sync in the file text
+	// (matches the runtime ordering requirement — rule_versions may reference
+	// rule_definitions, and seeds establish the catalogs rule points may need).
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedIdx := strings.Index(string(content), "seeds.Sync(ctx, pool, booted.Seeds)")
+	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	if seedIdx == -1 || ruleIdx == -1 || ruleIdx < seedIdx {
+		t.Fatalf("rule-definition sync must appear AFTER seed sync in generated migrate main (seedIdx=%d ruleIdx=%d)", seedIdx, ruleIdx)
+	}
+}
+
+// TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003 "clear failure
+// mode" acceptance criterion: the generated api main must wire
+// app.CatalogsSeeded into /readyz so a pod whose migrate step skipped seed
+// sync reports NOT ready with an actionable message, instead of only
+// surfacing as scattered per-request 403s.
+func TestInitAPIMainWiresSeedCatalogsReadinessCheck(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertFileContains(t, apiPath, "app.CatalogsSeeded")
+	assertParseGo(t, apiPath)
+}
+
+// ---------- GAP-008: storage / OIDC / i18n scaffold wiring ----------
+
+// TestInitAppcfgHasStorageConfig: the generated internal/appcfg.Config must
+// declare a StorageConfig section (mirroring wowsociety's hand-written one)
+// so a product can enable the S3/MinIO adapter via config alone, with no
+// product-side config-struct boilerplate. Validate() must delegate to it
+// (ARCH-10 composition contract), matching how Auth is already handled.
+func TestInitAppcfgHasStorageConfig(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	cfgPath := filepath.Join(dir, "internal", "appcfg", "config.go")
+	assertParseGo(t, cfgPath)
+	for _, want := range []string{
+		"StorageConfig",
+		`conf:"storage"`,
+		"func (s StorageConfig) Enabled() bool",
+		"c.Storage.Validate()",
+	} {
+		assertFileContains(t, cfgPath, want)
+	}
+}
+
+// TestInitAPIMainWiresOptionalStorage: the generated cmd/api main must wire the
+// S3/MinIO adapter into kernel.Deps.Storage when cfg.Storage.Enabled(), with no
+// product-side boilerplate beyond what wowapi generated (GAP-008 acceptance:
+// "standard storage ... configuration can be wired without product-specific
+// boilerplate").
+func TestInitAPIMainWiresOptionalStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	for _, want := range []string{
+		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		"kernel/storage",
+		"cfg.Storage.Enabled()",
+		"s3adapter.New(ctx, s3adapter.Config{",
+		"Storage: store",
+	} {
+		assertFileContains(t, apiPath, want)
+	}
+}
+
+// TestInitWorkerMainWiresOptionalStorage mirrors TestInitAPIMainWiresOptionalStorage
+// for cmd/worker: the worker touches the same store for document/retention jobs.
+func TestInitWorkerMainWiresOptionalStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	workerPath := filepath.Join(dir, "cmd", "worker", "main.go")
+	assertParseGo(t, workerPath)
+	for _, want := range []string{
+		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		"cfg.Storage.Enabled()",
+		"s3adapter.New(ctx, s3adapter.Config{",
+		"Storage:  store",
+	} {
+		assertFileContains(t, workerPath, want)
+	}
+}
+
+// TestInitAPIMainWiresLocaleMiddleware: the generated api main must install the
+// framework's i18n locale-negotiation middleware (kernel/i18n landed this
+// branch) unconditionally — booted.I18n is always a non-nil catalog
+// (framework English is pre-loaded), so this is a pure framework-standard
+// concern with no product config gate, unlike storage/OIDC.
+func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	assertFileContains(t, apiPath, "httpx.Locale(booted.I18n)")
+}
+
+// TestInitConfigsBaseDocumentsStorage: the generated configs/base.yaml should
+// document the optional storage section the same way it already documents
+// auth.oidc, so a product discovers the knob without reading Go source.
+func TestInitConfigsBaseDocumentsStorage(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "storage:")
+}
+
+// buildRenderedProduct scaffolds a product into a fresh temp dir, points its
+// go.mod at THIS wowapi checkout via a replace directive (so the compile test
+// runs entirely offline against the framework under development, never a
+// published version), and runs `go mod tidy`. It returns the product dir.
+// Callers then run `go build ./...` (and any other go tool) inside it.
+func buildRenderedProduct(t *testing.T, extraInitArgs ...string) string {
+	t.Helper()
+	wowapiDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// scaffold_test.go lives in internal/cli; the module root is two levels up.
+	wowapiRoot, err := filepath.Abs(filepath.Join(wowapiDir, "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(wowapiRoot, "go.mod")); err != nil {
+		t.Fatalf("could not locate wowapi module root at %s: %v", wowapiRoot, err)
+	}
+
+	dir := t.TempDir()
+	args := append([]string{"--module", "github.com/acme/compiletest", "--dir", dir}, extraInitArgs...)
+	code, _, errOut := callInit(t, args...)
+	if code != 0 {
+		t.Fatalf("init exit %d: %s", code, errOut)
+	}
+
+	gomodPath := filepath.Join(dir, "go.mod")
+	gomod, err := os.ReadFile(gomodPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := string(gomod) + fmt.Sprintf("\nreplace github.com/qatoolist/wowapi => %s\n", wowapiRoot)
+	if err := os.WriteFile(gomodPath, []byte(replaced), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = dir
+	if out, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy failed: %v\n%s", err, out)
+	}
+	return dir
+}
+
+// TestInitRenderedProductCompiles is the GAP-008 regression net: the scaffold
+// must not merely PARSE (assertParseGo) but actually COMPILE against the real
+// framework, in the zero-config state (storage disabled, OIDC disabled — the
+// var store storage.Adapter / var userAuth httpx.Authenticator branches both
+// take their nil/DenyAll path). This is the same binary regardless of runtime
+// config, so it also covers the "enabled" code paths at the type level; the
+// dedicated config-composition test below additionally proves the enabled
+// runtime values round-trip through the strict config loader.
+func TestInitRenderedProductCompiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles the rendered product against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+	build := exec.Command("go", "build", "./...")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build ./... failed on rendered product:\n%s", out)
+	}
+}
+
+// TestInitConfigcheckSchemaCoversStorageAndAuth proves the generated
+// tools/configcheck links the COMPOSED product config (appcfg.Config) — not
+// just config.Framework — including the new Storage/Auth sections, without
+// any hand-written checker (GAP-008 acceptance criterion #1). `schema` needs
+// no config files on disk, so it is a fast, deterministic way to prove the
+// composed type is actually reachable through the generated tool.
+func TestInitConfigcheckSchemaCoversStorageAndAuth(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./tools/configcheck` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+	cc := exec.Command("go", "run", "./tools/configcheck", "schema")
+	cc.Dir = dir
+	out, err := cc.CombinedOutput()
+	if err != nil {
+		t.Fatalf("configcheck schema failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{`"storage"`, `"auth"`, `"oidc"`} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("configcheck schema missing %q in output:\n%s", want, out)
+		}
+	}
+}
+
+// TestInitConfigcheckValidatesStorageAndOIDCOverlay proves a product can
+// enable storage + OIDC purely via config (a local.yaml-style overlay) and
+// have the GENERATED configcheck validate it end to end — no hand-written
+// checker, no product-side config struct edits (GAP-008 acceptance criterion
+// #3: "standard storage and OIDC/JWT configuration can be wired without
+// product-specific boilerplate"). The strict config loader rejects unknown
+// keys, so this also proves Storage/Auth are wired into appcfg.Config for
+// real, not just present as dead struct fields.
+func TestInitConfigcheckValidatesStorageAndOIDCOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./tools/configcheck` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+
+	// "dev" (not a bespoke name) — config.Framework.Environment is a closed
+	// enum (local|dev|stage|prod); the overlay must declare a value the
+	// strict loader accepts, and --env dev asserts the overlay actually
+	// declares environment: dev (configcheck's CI-gate behavior).
+	overlay := `environment: dev
+log:
+  level: debug
+  format: text
+db:
+  dsn: "secretref://env/DATABASE_URL"
+  migrate_dsn: "secretref://env/MIGRATE_URL"
+  platform_dsn: "secretref://env/PLATFORM_URL"
+auth:
+  oidc:
+    issuer: "https://idp.example.com/"
+    audience: "compiletest"
+storage:
+  endpoint: "localhost:9000"
+  bucket: "compiletest-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+`
+	if err := os.WriteFile(filepath.Join(dir, "configs", "dev.yaml"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cc := exec.Command("go", "run", "./tools/configcheck", "validate", "--env", "dev")
+	cc.Dir = dir
+	cc.Env = append(os.Environ(),
+		"DATABASE_URL=postgres://app_rt:x@localhost:5432/compiletest?sslmode=disable",
+		"MIGRATE_URL=postgres://app_migrate:x@localhost:5432/compiletest?sslmode=disable",
+		"PLATFORM_URL=postgres://app_platform:x@localhost:5432/compiletest?sslmode=disable",
+		"S3_ACCESS_KEY=minioadmin",
+		"S3_SECRET_KEY=minioadmin",
+	)
+	out, err := cc.CombinedOutput()
+	if err != nil {
+		t.Fatalf("configcheck validate --env ci failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "OK: configuration valid") {
+		t.Errorf("expected validation success, got:\n%s", out)
+	}
+}
+
+// TestInitMigrateMainLoadsComposedConfig: the generated cmd/migrate must load
+// the COMPOSED product config (appcfg.Load) — not bare config.Framework — for
+// the same reason wowsociety's hand-written migrate does: the strict loader
+// rejects unknown keys, so product-owned sections in the deployed overlays
+// (auth.*, storage.*) would otherwise abort the migrate while the generated
+// api/worker accept the very same file. One overlay must serve all three
+// processes (GAP-008 follow-up).
+func TestInitMigrateMainLoadsComposedConfig(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertParseGo(t, migratePath)
+	assertFileContains(t, migratePath, `"github.com/acme/myapp/internal/appcfg"`)
+	assertFileContains(t, migratePath, "appcfg.Load()")
+	// The kernel still receives only the framework subset.
+	assertFileContains(t, migratePath, "kernel.New(cfg.Framework")
+	// The old framework-only load path must be gone.
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "config.Load[config.Framework]") {
+		t.Errorf("generated migrate main still loads bare config.Framework — must load the composed appcfg.Config:\n%s", content)
+	}
+}
+
+// TestInitMigrateMainAcceptsComposedOverlay is the behavioral proof for the
+// above: a rendered product whose overlay carries storage:+auth: sections must
+// be ACCEPTED by the rendered migrate main's config load. `migrate down`
+// against an environment: stage overlay reaches the down-guard ("refusing to
+// reset") strictly AFTER config load and BEFORE any DB connection, so the
+// guard message proves the composed overlay parsed cleanly with no database
+// required — while "unknown key" output would reproduce the bug.
+func TestInitMigrateMainAcceptsComposedOverlay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs `go run ./cmd/migrate` against the real framework; skipped in -short")
+	}
+	dir := buildRenderedProduct(t)
+
+	overlay := `environment: stage
+db:
+  dsn: "secretref://env/DATABASE_URL"
+  migrate_dsn: "secretref://env/MIGRATE_URL"
+  platform_dsn: "secretref://env/PLATFORM_URL"
+auth:
+  oidc:
+    issuer: "https://idp.example.com/"
+    audience: "compiletest"
+storage:
+  endpoint: "localhost:9000"
+  bucket: "compiletest-docs"
+  access_key: "secretref://env/S3_ACCESS_KEY"
+  secret_key: "secretref://env/S3_SECRET_KEY"
+  presign_ttl: 15m
+`
+	if err := os.WriteFile(filepath.Join(dir, "configs", "stage.yaml"), []byte(overlay), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mig := exec.Command("go", "run", "./cmd/migrate", "down")
+	mig.Dir = dir
+	mig.Env = append(os.Environ(),
+		"APP_ENV=stage",
+		"DATABASE_URL=postgres://app_rt:x@localhost:5432/compiletest?sslmode=disable",
+		"MIGRATE_URL=postgres://app_migrate:x@localhost:5432/compiletest?sslmode=disable",
+		"PLATFORM_URL=postgres://app_platform:x@localhost:5432/compiletest?sslmode=disable",
+		"S3_ACCESS_KEY=minioadmin",
+		"S3_SECRET_KEY=minioadmin",
+	)
+	out, err := mig.CombinedOutput()
+	if err == nil {
+		t.Fatalf("migrate down in stage must refuse (down-guard), got success:\n%s", out)
+	}
+	if strings.Contains(string(out), "unknown key") {
+		t.Errorf("migrate rejected the composed overlay (strict loader saw product sections as unknown keys) — it must load appcfg.Config:\n%s", out)
+	}
+	if !strings.Contains(string(out), "refusing to reset") {
+		t.Errorf("expected the down-guard message (proof config load succeeded), got:\n%s", out)
 	}
 }
 

@@ -11,7 +11,167 @@ changes to it require a new major version.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Standard storage/OIDC/i18n scaffold wiring in `wowapi init` (GAP-008, the last framework gap)** — closes
+  the gap that forced `wowsociety` to hand-write its own `tools/configcheck`, `internal/appcfg.StorageConfig`,
+  and S3/OIDC wiring in `cmd/api`/`cmd/worker`. The generated `internal/appcfg.Config` now carries a
+  `StorageConfig` section (`endpoint`/`bucket`/`region`/secretref-only credentials/`use_ssl`/`presign_ttl`/
+  `create_bucket`, with `Enabled()`/`Validate()` mirroring the OIDC `AuthConfig` pattern already scaffolded),
+  and `Config.Validate()` delegates to it (ARCH-10 composition contract). The generated `cmd/api` and
+  `cmd/worker` mains construct the `adapters/storage/s3` adapter and wire it into `kernel.Deps.Storage`
+  whenever `cfg.Storage.Enabled()`, exactly mirroring how `wowsociety` wired it by hand — left unset,
+  `Deps.Storage` stays nil and `app.Boot` still fails closed if a module registers a document class. The
+  generated `configs/base.yaml` documents the new `storage:` section commented out, alongside the existing
+  `auth.oidc` documentation. The generated `cmd/api` main also now installs `httpx.Locale(booted.I18n)` in
+  the middleware chain unconditionally (`booted.I18n` is never nil — the framework English catalog is
+  always pre-loaded), enabling `Accept-Language` negotiation + `Content-Language` responses with zero
+  product config (kernel/i18n landed this branch with no scaffold enablement point until now). The
+  generated `cmd/migrate` now loads the COMPOSED `appcfg.Config` (via `appcfg.Load()`) instead of bare
+  `config.Framework` — the strict loader rejects unknown keys, so a deployed overlay carrying the new
+  `storage:`/`auth:` sections would otherwise abort the migrate while api/worker accept the very same
+  file; one overlay now serves all three processes (mirrors `wowsociety`'s hand-written migrate, which
+  did this for exactly that reason; the kernel still receives only `cfg.Framework`, and migrate never
+  touches object storage). OIDC/JWT auth wiring, OTel tracing, Prometheus metrics, and the
+  migrations→`seeds.Sync`→`rules.SyncDefinitions` lifecycle were already scaffolded
+  (GAP-001/002/003/007) and are unchanged. `tools/configcheck`
+  already linked the composed `appcfg.Config` (not just `config.Framework`) and needed no changes — it now
+  additionally proves out the Storage/Auth sections via its `schema`/`validate` modes. Acceptance: a new
+  product can run `wowapi config validate` (which delegates to the generated `tools/configcheck`) against a
+  composed config carrying `storage:`/`auth.oidc:` sections with **no hand-written checker and no
+  product-side config-struct edits**; `internal/cli/scaffold_test.go` extends the existing render-and-parse
+  regression net with a real **compile** of the rendered product against this framework checkout (`go build
+  ./...` via a `replace` directive, `TestInitRenderedProductCompiles`) plus end-to-end `configcheck
+  schema`/`validate` runs proving the composed type and an enabled storage+OIDC overlay both work, not just
+  parse. Documented in the user guide (Build & Deploy → Object storage; Getting Started → scaffold tree +
+  new "Generated vs. product-owned" boundary table).
+- **Reusable MFA factor primitives + sender ports (`kernel/mfa`)** — closes the gap that forced
+  `wowsociety` to hand-roll TOTP/HOTP/OTP crypto locally (GAP-005). The framework had step-up
+  authorization semantics (`authz.Decision.StepUpRequired`, the `amr` claim, GAP-004) but no reusable
+  primitive for actually *producing* a satisfied factor. `kernel/mfa` is a pure-logic leaf package: RFC
+  6238 TOTP generation (`GenerateTOTPSecret`, `TOTPCodeAt`) and verification (`VerifyTOTPAt`) with
+  configurable step/digits/algorithm(SHA1/SHA256/SHA512)/skew window; RFC 4226 HOTP (`HOTPCode`); numeric
+  OTP generation (`GenerateOTPCode`, `crypto/rand`) with salted constant-time hash/verify
+  (`HashOTPCode`/`VerifyOTPCode`, matching the `subtle.ConstantTimeCompare` convention already used by
+  `kernel/apikey` and `kernel/webhook`); pure TTL + attempt-limit challenge-policy helpers
+  (`ChallengePolicy`/`ChallengeState`/`Evaluate`) with no storage schema of their own; and a `Sender`
+  delivery port for SMS/email code delivery with `FakeSender` (test) and `NewLogSender` (dev/local)
+  adapters — deliberately not `kernel/notify.ChannelSender`, since that port is coupled to the
+  `notification_deliveries` schema this leaf package must not depend on. RFC 4226 Appendix D and RFC 6238
+  Appendix B's published test vectors are pinned in tests for every documented algorithm/digit
+  combination, alongside an explicit constant-time-comparison-semantics test (equal / unequal /
+  length-mismatch, no panics). Ported from and replaces `wowsociety/internal/modules/identity/{totp,otp,sms}.go`'s
+  local implementation; enrollment UX, factor storage schema, delivery-provider selection, and
+  which-actions-require-which-factor policy remain product-owned (see the package doc comment). Documented
+  in the user guide (Authentication & Authorization → Step-up / MFA), linking framework-side step-up/AMR
+  consumption to product-side factor implementation.
+- **Rule registry definitions lifecycle + expanded schema validation (`kernel/rules.SyncDefinitions`)**
+  — closes the gap that forced `wowsociety` to hand-mirror its Go rule-point declarations into a SQL
+  migration and run a drift-guard test against it (GAP-007). `rules.SyncDefinitions(ctx, db, registry)`
+  upserts every registered `Point` into `rule_definitions` idempotently (schema, default value, allowed
+  scopes, approval requirement, description all converge on re-sync; no duplicate rows), satisfying the
+  `rule_versions.rule_key` foreign key without any product SQL. It is the rule-registry analogue of
+  `kernel/seeds.Sync` and runs at the same lifecycle point: the generated `cmd/migrate` calls it
+  immediately after `seeds.Sync`, on the same `app_platform`-privileged connection. There is no
+  standalone `wowapi rules sync` framework CLI subcommand — unlike seed catalogs (declarative YAML the
+  framework can load off disk), rule points exist only as Go declarations inside a booted product
+  process, so a product with a custom migrate main calls `SyncDefinitions` itself the same way. Also
+  expands `kernel/rules`' focused schema validator (`kernel/rules/schema.go`) with the common JSON
+  Schema bounds keywords: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `minLength`,
+  `maxLength`, `pattern`, `minItems`, `maxItems`, and a shallow `required`-property-presence check for
+  object values — so `Store.Propose` now rejects an out-of-bounds numeric/string/array value at write
+  time instead of a product re-implementing the same bounds check (as `wowsociety`'s `rulepoints.go`
+  `checkValue` did). Full recursive JSON Schema (nested `properties` sub-schemas, `additionalProperties`,
+  `items` sub-schemas) stays explicitly out of scope — the validator's doc comment narrows the contract
+  rather than silently under-supporting it. All prior validator behavior (top-level `type` + `enum`)
+  is preserved unchanged. Documented in the user guide (Database & Migrations → Rule definitions).
+- **Scoped privileged framework services (`kernel/privileged`, `module.Context.Privileged()`)** —
+  a sanctioned, audited surface for the valid tenant-scoped operations that require *platform*
+  privilege at the database, so a product module no longer has to write its own `SECURITY DEFINER`
+  SQL bridge (SEC-24 / SEC-13). `Privileged().Relationships()` grants/revokes ReBAC relationship
+  edges (`Grant`/`Revoke`); `Privileged().Rules()` activates tenant-scope rule versions
+  (`ActivateTenant`, with an optional atomic product `Gate`). Each service is bound to the calling
+  module and enforces, in Go, every check the product bridges performed: tenant binding (fail-closed
+  when unbound), relationship-type / rule-key **ownership** (module-name prefix or a declared
+  allow-list), subject/object **resource existence** in the bound tenant, **scope restriction**
+  (tenant-scope only, of the caller's tenant), soft-revoke that preserves history, double-revoke /
+  double-activate conflict detection, and an **audit** row on the kernel hash chain. Operations run
+  in a tenant-bound `app_platform` transaction, so the existing `relationships` / `rule_versions`
+  RLS and the one-active-per-instant `EXCLUDE` constraint still enforce isolation and arbitrate
+  races — no module ever sees a platform pool or raw SQL door. Migration `00030` grants
+  `app_platform` the minimum it needs to run the services as a role (SELECT on `acting_capacities`;
+  SELECT/INSERT on `audit_logs`; INSERT/UPDATE on `audit_chain`) while leaving the `relationships`
+  and `rule_versions` table protections untouched. Documented in the user guide
+  (Modules → Privileged services).
+- **Locale negotiation + API i18n (`kernel/i18n`, `httpx.Locale`, `module.Context.I18n`)** —
+  cross-cutting localization for synchronous API responses so every product built on the framework
+  handles `Accept-Language` and localized errors consistently instead of re-implementing risky
+  translation plumbing (GAP-001). `kernel/i18n` adds a `Catalog` (in-process `(locale, key)` map with
+  deterministic fallback to a default locale, and a final fallback to the key so a missing translation
+  never breaks a response), a `Registry` that ships the framework's own **English** catalog (problem
+  titles + validation-tag messages, under the reserved `kernel.` namespace) and accepts module bundles
+  under their `<module>.` prefix, and an RFC 9110 §12.5.4 `Negotiate` (q-values, primary-subtag match).
+  `httpx.Locale(catalog)` middleware negotiates the request locale, binds it to the request context,
+  and sets `Content-Language`; `httpx.WriteError` localizes problem `title` and (where a `detail.<code>`
+  catalog entry exists for the error's machine code) `detail`, and `kernel/validation`'s `StructCtx`
+  localizes field messages — **machine `code`s and field paths stay byte-stable across locales**, and
+  internal logs stay technical English. `i18n.KeyDetail(code)` is the well-known key for a localized
+  `detail`, always under the reserved `kernel.` namespace; the framework ships exactly one entry under
+  it, `detail.validation_failed`, for its own stable validation-failure message — most codes have no
+  `detail.<code>` entry and `detail` falls back to the producer's `Msg` verbatim (byte-identical to no
+  i18n at all). `module.Context.I18n(bundle)` registers a module's own localized bundle (rejected if it
+  touches the reserved `kernel.` namespace — translating the framework's own strings for a new locale is
+  done by adding directly to `Booted.I18n`, not through `Register`); `app.Boot` merges all bundles with
+  the framework catalog and exposes the result as `Booted.I18n` to pass to `httpx.Locale`. **Zero-config
+  behavior is unchanged**: with no catalog wired,
+  responses stay English-only, byte-for-byte as before. `testkit` adds `AssertNegotiatedLocale`,
+  `NewLocaleRequest`, and `AssertLocalizedProblem`. English is the default locale and ultimate fallback;
+  product translations stay in product-owned bundles (the framework ships only its own English strings).
+  Documented in the user guide (Validation & Error Handling → Localizing responses).
+- **`adapters/storage/s3`** — production S3/MinIO object-storage adapter implementing the
+  `kernel/storage.Adapter` port (presigned PUT/GET with TTL clamping, checksum-verified `Stat`,
+  ranged `Peek`, idempotent `Delete`, `KindNotFound` mapping, path-style addressing, fail-closed
+  bucket validation with optional local/dev auto-create). Integration-tested against real MinIO
+  (gated on `WOWAPI_REQUIRE_S3`, mirroring the DB gate) plus a Memory↔S3 contract test and a full
+  document upload/confirm e2e. Adds `github.com/minio/minio-go/v7` as a direct dependency. Wiring
+  is documented in the user guide (Build & Deploy → Object storage); framework config/scaffold
+  wiring is a tracked follow-up.
+- **Step-up/MFA seedability + JWT `amr` propagation**: `seeds.PermissionSeed.StepUp` (`step_up` YAML key,
+  strict-decoded) lets a module declare a step-up-gated permission in its seed catalog instead of
+  registering it directly against `authz.Registry`; `app.Boot` propagates it into `authz.Permission.StepUp`
+  and `seeds.Sync` persists it to a new `permissions.step_up` column (migration `00029`, idempotent —
+  re-syncing after the seed changes updates the existing row). `auth.Claims` gains the standard `amr`
+  claim (RFC 8176) and `Verifier.Actor` copies it onto `authz.Actor.AMR`, so a product's JWT authenticator
+  gets step-up enforcement without reparsing the bearer token to recover `amr` itself. Adds
+  `testkit.WithAMR(...string)` alongside the existing token options. Closes the two framework gaps
+  `wowsociety`'s identity module previously worked around (direct `StepUp` registration + a manual
+  catalog migration + a JWT-reparsing authenticator wrapper).
+
+### Fixed
+- `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB
+  DSNs + a running Postgres (fail-closed). The hint now points to the generated README's "Getting started".
+- **GAP-001 acceptance gap: problem-details `detail` was never localized** (external merge-review finding).
+  `kernel/httpx.WriteError` set `Detail = e.Msg` verbatim regardless of the negotiated locale, and its doc
+  comment explicitly (and incorrectly) claimed `Detail` is never translated by `WriteError` — contradicting
+  GAP-001's stated acceptance criterion that both `title` **and** `detail` localize. Added `i18n.KeyDetail
+  (code)` (keyed by the error's stable machine code, mirroring `KeyProblemTitle`/`KeyValidationMessage`) and
+  `httpx.localizeDetail`, which `WriteError` now calls: a `detail.<code>` catalog entry localizes `Detail`;
+  otherwise it falls back to the producer's `Msg` exactly as before (byte-identical zero-config behavior).
+  Internal-kind errors still never expose `Detail`. Shipped the framework's own `detail.validation_failed`
+  English entry (kernel/validation's stable top-level validation message) — most codes intentionally have
+  no entry and keep falling back to `Msg`; enumerating every kernel code was explicitly out of scope, and
+  product codes remain product-catalog territory. Fixed the stale doc comment and updated the user guide
+  (Validation & Error Handling → Localizing responses) to state the real contract: title and field messages
+  always localize, detail localizes only where a `detail.<code>` entry exists. A first pass at this doc
+  update incorrectly implied a module could register its own `<module>.detail.<code>` translation and
+  extended a pre-existing broken example (a `mc.I18n` bundle carrying `kernel.*` keys, which `Register`
+  has always rejected); both were corrected, and the guide now explicitly documents the only supported way
+  to add a translation for the framework's own `kernel.*` strings (title/validation/detail) — writing
+  directly to `Booted.I18n.Add`, since `Register` always rejects the reserved prefix regardless of caller.
+  No module-scoped registration path for `kernel.*` translations exists yet; that remains a tracked
+  follow-up, not part of this fix. Both the corrected module-bundle example and the `Booted.I18n.Add`
+  mechanism are grounded by new/existing tests (`app.TestModuleContextI18nDocExampleBoots`,
+  `app.TestModuleContextI18nRejectsReservedKernelPrefix`,
+  `httpx.TestWriteErrorValidationDetailLocalizesViaShippedEntry`).
 
 ## [1.0.0] — 2026-07-06 — first stable release
 

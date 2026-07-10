@@ -78,6 +78,21 @@ PITR + object-storage restore procedure and the quarterly drill: [backup-restore
 
 Zero-downtime expand/contract pattern and the CI reversibility drill: [migrations.md](migrations.md).
 
+### Seed catalog sync
+
+Migrating the schema is not enough — the authorization/resource **catalogs** (permissions, roles,
+resource types, relationship types) must also be synced into the database, or every request denies and
+resource writes fail their FK. See
+[Database & Migrations § Seeds](../user-guide/database-migrations.md#seeds-declarative-yaml-catalogs).
+
+- [ ] The generated `cmd/migrate up` (`make migrate-up`) runs `seeds.Sync` automatically after
+      migrations — confirm your deploy pipeline still calls this and hasn't replaced it with a custom
+      migrate step that drops the sync.
+- [ ] If you run `wowapi seed sync` standalone instead, it's part of the deploy pipeline, not a one-time
+      setup step — run it on every deploy (idempotent).
+- [ ] Confirm the api process's `/readyz` includes the `seeds` check (`app.CatalogsSeeded`) so a pod
+      that skipped seed sync fails readiness with an actionable message instead of taking traffic.
+
 ## 6. Rate limiting
 
 The kernel ships an in-process token-bucket limiter (`kernel/httpx.RateLimit` + `NewTokenBucket`).

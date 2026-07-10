@@ -142,6 +142,99 @@ httpx.WriteJSON(w, http.StatusCreated, httpx.OK(dto))
 
 This keeps success and error envelopes consistent across every module.
 
+## Localizing responses (i18n)
+
+By default every error is English. To serve localized `title`, `detail`, and field messages, wire the
+`kernel/i18n` catalog and the `httpx.Locale` middleware — **machine `code`s and field paths never
+change with the locale**, only the human-facing text, so clients keep switching on the stable `code`.
+
+**What the framework ships.** `kernel/i18n` ships its own **English** catalog as the first bundle:
+one problem `title` per error `Kind`, one message per validator tag, and one problem `detail` for the
+framework's own well-known codes with a stable message (currently `validation_failed`) — stored under
+the reserved `kernel.` namespace and keyed by the *stable machine identifier* (the kind's code / the
+tag name / the error's code), never the English text. English is the default locale and the ultimate
+fallback: a missing translation falls back to English, and a missing key falls back to the key itself
+— a translation gap can never break a response. Internal logs stay technical English regardless of the
+request locale.
+
+**The `detail` contract.** `title` and validation field messages always localize (the framework
+guarantees a catalog entry for every `Kind`/tag). `detail` is different: it localizes **only when a
+`kernel.detail.<code>` catalog entry exists** for the error's machine `code`, via `i18n.KeyDetail(code)`
+— which is `reservedPrefix + "detail." + code`, i.e. always under the framework's own `kernel.`
+namespace. `KeyDetail` currently only names **framework-owned** codes (an `errors.Kind`'s
+`DefaultCode()`, e.g. `validation_failed`); it has no module-qualified form, so it cannot name a
+product-specific error code. Most codes (framework or product) carry a producer-supplied,
+already-appropriate `Msg` and have no catalog entry — for those, `detail` falls back to that `Msg`
+verbatim, unchanged from before. Internal errors never expose `detail` at all, translated or not.
+
+**Registering product/module translations.** A module contributes a bundle per locale during
+`Register`, under its own `<module>.` prefix (the framework owns `kernel.`, and `Register` rejects any
+key under that reserved prefix or outside the module's own prefix — a module's bundle can only add its
+*own* keys, e.g. an order-status label, never a `kernel.*` title/validation/detail key):
+
+```go
+func (m *Module) Register(mc module.Context) error {
+    mc.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+        // Must be prefixed "<module>." — a bare kernel.* key here is rejected
+        // at boot (Registry.Register's ownership check).
+        "orders.status.shipped": "पाठवले",
+    }})
+    return nil
+}
+```
+
+`app.Boot` merges every module's bundles with the framework catalog and returns the result as
+`Booted.I18n`. Ownership is validated at boot: a module registering a key outside its prefix (or under
+the reserved `kernel.` namespace) fails boot with the other registry checks.
+
+**Translating the framework's own strings (`kernel.*` titles/validation messages/details) for a new
+locale.** There is no `Register`-based path for this today — `Register` enforces per-module ownership
+and always rejects the reserved `kernel.` prefix, by design, so one module can't shadow another's (or
+the framework's) strings. The supported mechanism is to add directly to the catalog `app.Boot` returns,
+which is a plain `*i18n.Catalog` with an unguarded `Add(locale, key, message)`:
+
+```go
+booted, err := app.Boot(...)
+// ...
+booted.I18n.Add("mr", i18n.KeyProblemTitle(errors.KindNotFound), "सापडले नाही")
+booted.I18n.Add("mr", i18n.KeyValidationMessage("required"), "हे फील्ड आवश्यक आहे")
+booted.I18n.Add("mr", i18n.KeyDetail("validation_failed"), "प्रमाणीकरण अयशस्वी झाले")
+httpx.Locale(booted.I18n) // wire the same catalog into the middleware, as below
+```
+
+This is exactly how the framework's own mr-IN acceptance test proves localization
+(`kernel/httpx/locale_test.go`'s `buildTestCatalog`), and it is the only way to extend the `kernel.`
+namespace with a new locale's strings. Registering a per-locale `kernel.*` bundle through
+`module.Context.I18n` (as opposed to `Catalog.Add`) is not supported; adding one is a tracked follow-up,
+not part of this contract.
+
+**Wiring the middleware.** Pass the merged catalog to `httpx.Locale`, placed after `RequestID` and
+before your routes:
+
+```go
+h := httpx.Chain(mux,
+    httpx.RequestID(),
+    httpx.Locale(booted.I18n), // negotiates Accept-Language, sets Content-Language
+    // …edge + auth middleware…
+)
+```
+
+`httpx.Locale` parses `Accept-Language` (RFC 9110 q-values; a supported `mr` matches an offered
+`mr-IN`), binds the negotiated locale to the request context, and sets `Content-Language` on the
+response. `httpx.WriteError` then localizes the problem `title` and (where a `detail.<code>` entry
+exists) `detail`, and `httpx.BindAndValidate` localizes field messages — no handler change required.
+**Passing no catalog (or `nil`) is a valid zero-config setup: responses stay English, byte-for-byte
+identical to a framework with no i18n.**
+
+Example: a request with `Accept-Language: mr-IN,mr;q=0.9,en;q=0.8` against a catalog that supports
+Marathi gets `Content-Language: mr`, a Marathi `title`/field message (and a Marathi `detail` if a
+`detail.<code>` entry was registered for that error's code), and the **same** `code`/`field` as the
+English response. An unsupported locale (e.g. `fr-FR`) falls back deterministically to English.
+
+**Testing.** `testkit` provides `AssertNegotiatedLocale`, `NewLocaleRequest`, and
+`AssertLocalizedProblem` to assert negotiation and that a problem localizes its title while keeping its
+machine code stable.
+
 ## Patterns & pitfalls
 
 | Situation | Do this |

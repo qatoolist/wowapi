@@ -39,11 +39,14 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | Command | Flags | Purpose |
 |---|---|---|
 | `wowapi migrate create` | `--dir` (`migrations`), `--name` **(req)** | Scaffold the next-numbered goose migration. |
-| `wowapi seed validate` | `--dir` (`seeds`), `--module` **(req)** | Load + validate a module seed bundle. |
+| `wowapi seed validate` | `--dir` (`seeds`), `--module` **(req)** | Load + validate a module seed bundle (no database). |
+| `wowapi seed sync` | `--module name=dir` **(req, repeatable)** | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
 | `wowapi openapi merge` | `--dir` (`.`), `--title` (`wowapi API`), `--version` (`0.0.0`), `--out` | Merge OpenAPI 3.1 fragments into one document. |
 
 > Applying migrations at runtime is the **product** `cmd/migrate` (`go run ./cmd/migrate up` / `make
-> migrate-up`), not the `wowapi` CLI. The CLI's `migrate` subcommand only *creates* migration files.
+> migrate-up`), not the `wowapi` CLI. The CLI's `migrate` subcommand only *creates* migration files. The
+> generated `cmd/migrate up` also runs seed sync automatically (GAP-003) — `wowapi seed sync` is the
+> standalone equivalent for re-syncing catalogs without a full migrate run.
 
 ### Boundaries & deployment
 

@@ -25,11 +25,13 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/privileged"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
@@ -51,6 +53,10 @@ type bootState struct {
 	health     map[string]func(context.Context) error
 	ports      map[string]any
 	recurring  []RecurringJob
+	// i18n aggregates the framework's English catalog plus every module's
+	// localized bundles (GAP-001). Shared across module contexts; ownership
+	// (module-prefixed keys) is enforced per Register and surfaced at boot.
+	i18n *i18n.Registry
 }
 
 func newBootState() *bootState {
@@ -60,6 +66,7 @@ func newBootState() *bootState {
 		openapi:    map[string][]byte{},
 		health:     map[string]func(context.Context) error{},
 		ports:      map[string]any{},
+		i18n:       i18n.NewRegistry(),
 	}
 }
 
@@ -99,6 +106,13 @@ type moduleContext struct {
 	bulk      *bulk.Service
 	artifacts *artifact.Pipeline
 	boot      *bootState
+
+	// privileged deps (GAP-006): the tenant-bindable app_platform manager and rule
+	// store backing the scoped privileged services. priv is the per-module Services
+	// value, built lazily on first Privileged() call from these shared deps.
+	platformTx database.TxManager
+	ruleStore  *rules.Store
+	priv       *privileged.Services
 }
 
 // moduleDeps bundles the shared registries/services the app injects into every
@@ -134,6 +148,9 @@ type moduleDeps struct {
 	bulk      *bulk.Service
 	artifacts *artifact.Pipeline
 	boot      *bootState
+
+	platformTx database.TxManager
+	ruleStore  *rules.Store
 }
 
 func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, deps moduleDeps) module.Context {
@@ -152,6 +169,7 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		notifyReg: deps.notifyReg, notifySvc: deps.notifySvc, webhooks: deps.webhooks,
 		intReg: deps.intReg, intStore: deps.intStore,
 		audit: deps.audit, sequence: deps.sequence, bulk: deps.bulk, artifacts: deps.artifacts,
+		platformTx: deps.platformTx, ruleStore: deps.ruleStore,
 		boot: deps.boot,
 	}
 }
@@ -250,6 +268,22 @@ func (c *moduleContext) Sequence() *sequence.Allocator { return c.sequence }
 func (c *moduleContext) Bulk() *bulk.Service           { return c.bulk }
 func (c *moduleContext) Artifacts() *artifact.Pipeline { return c.artifacts }
 
+// Privileged returns the module's scoped privileged-service surface (GAP-006),
+// built once and bound to THIS module's name so ownership is enforced against
+// the calling module. Prefix-ownership only by default: the module may manage
+// relationship types and rule keys prefixed "<name>."; a product that must widen
+// this can build its own privileged.Services with a Config allow-list from its
+// own wiring. In a process wired without a platform pool (the migrate process,
+// which registers no modules that perform privileged writes) the underlying
+// platform manager is nil, so a Grant/Revoke/ActivateTenant call would fail at
+// invocation — but such a process never reaches those calls.
+func (c *moduleContext) Privileged() *privileged.Services {
+	if c.priv == nil {
+		c.priv = privileged.New(c.name, c.platformTx, c.ruleStore, c.Audit(), c.IDGen(), privileged.Config{})
+	}
+	return c.priv
+}
+
 // DocumentClasses/DocumentHooks are the shared document registration pointers;
 // Documents/Comments/Attachments are the runtime services.
 func (c *moduleContext) DocumentClasses() *document.Registry { return c.docClass }
@@ -271,6 +305,11 @@ func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }
 func (c *moduleContext) OpenAPI(fragment []byte) {
 	c.boot.openapi[c.name] = fragment
 }
+
+// I18n registers a module's localized message bundle under this module's name.
+// Ownership (keys prefixed "<name>.") is enforced by the shared registry;
+// violations accumulate and fail boot via the registry's Err().
+func (c *moduleContext) I18n(bundle i18n.Bundle) { c.boot.i18n.Register(c.name, bundle) }
 
 func (c *moduleContext) Health(name string, check func(context.Context) error) {
 	c.boot.health[c.name+"."+name] = check

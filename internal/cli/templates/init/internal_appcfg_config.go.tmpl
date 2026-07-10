@@ -6,7 +6,10 @@
 package appcfg
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -21,9 +24,22 @@ type Config struct {
 	// composite; left empty, that leg stays DenyAll (deny-by-default) so only API
 	// keys authenticate.
 	Auth AuthConfig `conf:"auth" json:"auth"`
+	// Storage configures the S3/MinIO object-storage adapter
+	// (github.com/qatoolist/wowapi/adapters/storage/s3). When Storage.Endpoint
+	// is set, cmd/api and cmd/worker wire the adapter as kernel Deps.Storage;
+	// left unset, Deps.Storage stays nil and app.Boot fails closed if a module
+	// registers a document class.
+	Storage StorageConfig `conf:"storage" json:"storage"`
 	// Modules carries each registered module's modules.<name>.* namespace,
 	// passed to app.Boot so modules receive only their own config.
 	Modules config.Namespaces `conf:"modules"`
+}
+
+// Validate delegates to the embedded Framework validation and adds the
+// product-owned sections (ARCH-10 composition contract: a product Config that
+// shadows the promoted Framework.Validate MUST delegate to it).
+func (c Config) Validate() error {
+	return errors.Join(c.Framework.Validate(), c.Storage.Validate())
 }
 
 // AuthConfig groups {{.Name}}'s authentication settings.
@@ -39,6 +55,57 @@ type OIDCConfig struct {
 	Issuer   string `conf:"issuer" json:"issuer" doc:"OIDC issuer (iss); enables the user auth leg when set"`
 	Audience string `conf:"audience" json:"audience" doc:"expected token audience (aud)"`
 	JWKSURI  string `conf:"jwks_uri" json:"jwks_uri" doc:"JWKS endpoint; discovered from the issuer when empty"`
+}
+
+// Presign TTL bounds: presigned URLs are deliberately short-lived; anything
+// under a minute races slow uploads, anything over an hour stops being
+// "short-lived".
+const (
+	MinPresignTTL = time.Minute
+	MaxPresignTTL = time.Hour
+)
+
+// StorageConfig configures the S3/MinIO object-storage adapter backing the
+// document framework. Endpoint empty = object storage disabled (the zero
+// value validates). Credentials are secretref-only Secret fields — never
+// inline values in overlays.
+type StorageConfig struct {
+	Endpoint     string        `conf:"endpoint" json:"endpoint" doc:"S3-compatible endpoint (host:port, or http(s)://host:port); empty disables object storage"`
+	Bucket       string        `conf:"bucket" json:"bucket" doc:"bucket holding all document objects (keys are tenant-prefixed by the kernel)"`
+	Region       string        `conf:"region" json:"region" doc:"bucket region; empty is fine for MinIO"`
+	AccessKey    config.Secret `conf:"access_key" json:"access_key" doc:"access key as a secretref:// reference (e.g. secretref://env/S3_ACCESS_KEY)"`
+	SecretKey    config.Secret `conf:"secret_key" json:"secret_key" doc:"secret key as a secretref:// reference (e.g. secretref://env/S3_SECRET_KEY)"`
+	UseSSL       bool          `conf:"use_ssl" json:"use_ssl" doc:"connect over TLS; ignored when the endpoint carries an explicit http:// or https:// scheme"`
+	PresignTTL   time.Duration `conf:"presign_ttl" default:"15m" json:"presign_ttl" doc:"default AND upper bound for presigned URL validity (1m..1h); the adapter clamps longer requests down to it"`
+	CreateBucket bool          `conf:"create_bucket" json:"create_bucket" doc:"create the bucket at boot when absent — local/dev overlays only; production buckets are provisioned, not conjured"`
+}
+
+// Enabled reports whether object storage is configured at all.
+func (s StorageConfig) Enabled() bool { return s.Endpoint != "" }
+
+// Validate checks the storage section. Like Framework.Validate it returns ALL
+// problems joined. The zero value (storage disabled) is valid.
+func (s StorageConfig) Validate() error {
+	if !s.Enabled() {
+		return nil
+	}
+	var errs []error
+	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
+
+	if s.Bucket == "" {
+		add("storage.bucket: required when storage.endpoint is set")
+	}
+	if s.AccessKey.IsZero() {
+		add("storage.access_key: required when storage.endpoint is set (use a secretref:// reference)")
+	}
+	if s.SecretKey.IsZero() {
+		add("storage.secret_key: required when storage.endpoint is set (use a secretref:// reference)")
+	}
+	if s.PresignTTL < MinPresignTTL || s.PresignTTL > MaxPresignTTL {
+		add("storage.presign_ttl: %s out of bounds (%s..%s — presigned URLs must stay short-lived)",
+			s.PresignTTL, MinPresignTTL, MaxPresignTTL)
+	}
+	return errors.Join(errs...)
 }
 
 // Load reads the layered configuration in precedence order: configs/base.yaml,

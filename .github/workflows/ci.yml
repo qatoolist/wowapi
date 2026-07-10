@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26"
+  GO_VERSION: "1.26.5"
   # Pinned (not @latest) so the enforced full-tree `make lint` gate is
   # deterministic — a new upstream golangci-lint release cannot fail CI until this
   # is bumped deliberately (in lockstep with the Makefile GOLANGCI_VERSION).

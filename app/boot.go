@@ -13,6 +13,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
@@ -34,6 +35,11 @@ type Booted struct {
 	Migrations map[string]fs.FS
 	Seeds      seeds.Bundle   // merged catalog seeds, ready for SeedSync
 	Recurring  []RecurringJob // module-registered recurring jobs (run by the worker scheduler)
+	// I18n is the merged message catalog (framework English + every module's
+	// localized bundles). Pass it to httpx.Locale so responses negotiate and
+	// localize (GAP-001). Never nil — at minimum it carries the framework's
+	// English catalog.
+	I18n *i18n.Catalog
 }
 
 // RecurringJob is a leader-safe per-tenant recurring job a module registered via
@@ -130,6 +136,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,
 			intReg: k.IntegrationProviders, intStore: k.Integrations,
 			audit: k.Audit, sequence: k.Sequence, bulk: k.Bulk, artifacts: k.Artifacts,
+			platformTx: k.PlatformTx, ruleStore: k.RuleStore,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
@@ -159,7 +166,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		bundle.ResourceTypes = append(bundle.ResourceTypes, b.ResourceTypes...)
 		bundle.RelationshipTypes = append(bundle.RelationshipTypes, b.RelationshipTypes...)
 		for _, p := range b.Permissions {
-			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia})
+			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp})
 		}
 		for _, rt := range b.ResourceTypes {
 			k.Resources.Register(name, resource.TypeSpec{Key: rt.Key, Description: rt.Description})
@@ -203,6 +210,11 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if err := k.IntegrationProviders.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
+	// i18n bundle ownership (module-prefixed keys, no reserved kernel.* shadowing)
+	// is boot-validated like every other registry.
+	if err := boot.i18n.Err(); err != nil {
+		regErrs = append(regErrs, err)
+	}
 	// Every route's permission must be a registered permission (deny-by-default
 	// depends on the registry knowing it; an unknown permission is a boot bug).
 	for _, p := range router.Permissions() {
@@ -225,5 +237,6 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		Migrations: boot.migrations,
 		Seeds:      bundle,
 		Recurring:  boot.recurring,
+		I18n:       boot.i18n.Catalog(),
 	}, nil
 }

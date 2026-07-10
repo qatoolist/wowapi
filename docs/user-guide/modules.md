@@ -46,6 +46,7 @@ set (`module/module.go`):
 | `RetentionClasses()` | `*retention.Registry` | Dispose/export/erase callbacks (DSR). |
 | `DocumentClasses()`/`DocumentHooks()`/`Documents()`/`Comments()`/`Attachments()` | document subsystem | Files, comments, attachments. |
 | `NotifyTemplates()`/`Notify()`/`Webhooks()`/`IntegrationProviders()`/`Integrations()` | comms subsystem | Notifications, webhooks, integrations. |
+| `Privileged()` | `*privileged.Services` | Scoped, audited platform-privilege operations — grant/revoke ReBAC edges, activate tenant rules — on keys the module **owns**. See below. |
 
 > The Context grows one accessor per kernel capability. While wowapi is **v0**, widening this interface is
 > an accepted breaking change (`module/module.go` package doc).
@@ -199,6 +200,61 @@ lookup := p.(requestsapi.Lookup)      // assert to the shared interface type
 
 Both sides are checked at boot — an unsatisfied `Port` fails `Validate`. This keeps the dependency graph
 explicit and `make lint-boundaries` green.
+
+## Privileged services — platform operations without a `SECURITY DEFINER` bridge
+
+A few framework writes are deliberately **off-limits** to the shared `app_rt` role your module runs as,
+because they are authorization inputs:
+
+- **`relationships`** — a `granted_via` edge grants a permission on its object, so `app_rt` has `SELECT`
+  only; edge writes are `app_platform`.
+- **`rule_versions`** — *activating* a rule version changes runtime behaviour, so `app_rt` may only
+  propose drafts; activation is `app_platform`.
+
+When your module has a *valid* reason to perform one of these (grant a committee seat, activate a
+tenant policy version), do **not** ship your own `SECURITY DEFINER` SQL function. Use `mc.Privileged()`:
+a scoped, audited surface that runs the operation with platform privilege **but tenant-bound**, so the
+same RLS and constraints still isolate you.
+
+```go
+// Grant a ReBAC edge of a type THIS module owns (prefix "committee.").
+id, err := mc.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+    RelType:     "committee.seat_of",             // must be owned (module prefix or allow-list)
+    SubjectKind: relationship.KindCapacity,        // defaults to capacity when empty
+    SubjectID:   capacityID,                       // must be an active capacity in this tenant
+    Object:      resource.Ref{Type: "committee.committee", ID: committeeID}, // must exist in this tenant
+    ValidTo:     &expiry,                           // optional temporal window; nil = open-ended
+    Actor:       actorID,                           // recorded as created_by + in the audit trail
+})
+
+// Revoke soft-closes the edge (valid_to = now) — history is preserved, not deleted.
+err = mc.Privileged().Relationships().Revoke(ctx, id, actorID)
+
+// Activate a TENANT-scope draft of a rule KEY this module owns.
+err = mc.Privileged().Rules().ActivateTenant(ctx, versionID, approverID, privileged.ActivateOptions{
+    // Optional: run a domain gate atomically before the state transition (e.g. "a verified
+    // citation must cover the effective date"). Returning an error rolls the activation back.
+    Gate: func(ctx context.Context, db database.TenantDB) error { return checkCitation(ctx, db) },
+})
+```
+
+What the framework enforces for you (so you never re-implement it in SQL):
+
+- **Tenant binding** — fails closed if `ctx` carries no tenant.
+- **Ownership** — the relationship type / rule key must be prefixed with your module name, or be in
+  the product's declared allow-list. You can never manage another module's edges or rules.
+- **Existence** — the subject capacity and object resource must exist in *your* tenant (cross-tenant
+  targets are invisible via RLS → rejected).
+- **Scope** — only *tenant-scope* rule versions of the caller's tenant can be activated here;
+  platform-scope activation stays platform-tooling-only.
+- **Audit** — every grant/revoke/activation writes a row on the tenant's audit hash chain.
+- **Races** — a double-revoke or double-activate is reported as a conflict; concurrent activations are
+  arbitrated by the one-active-per-instant constraint, exactly as before.
+
+> Availability: `mc.Privileged()` requires a process wired with the `app_platform` pool (`api`/`worker`;
+> not the `migrate` process). The default surface is **prefix-ownership**; a product that must widen it
+> (e.g. let a module manage a kernel `core.` type) constructs its own `privileged.Services` with a
+> `Config` allow-list from its wiring.
 
 ## Checklist for a new module
 
