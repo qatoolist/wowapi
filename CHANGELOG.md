@@ -115,11 +115,14 @@ changes to it require a new major version.
   catalog entry exists for the error's machine code) `detail`, and `kernel/validation`'s `StructCtx`
   localizes field messages — **machine `code`s and field paths stay byte-stable across locales**, and
   internal logs stay technical English. `i18n.KeyDetail(code)` is the well-known key for a localized
-  `detail`; the framework ships one shipped entry, `detail.validation_failed`, for its own stable
-  validation-failure message — most codes have no `detail.<code>` entry and `detail` falls back to the
-  producer's `Msg` verbatim (byte-identical to no i18n at all). `module.Context.I18n(bundle)` registers a
-  module's localized bundle; `app.Boot` merges all bundles with the framework catalog and exposes it as
-  `Booted.I18n` to pass to `httpx.Locale`. **Zero-config behavior is unchanged**: with no catalog wired,
+  `detail`, always under the reserved `kernel.` namespace; the framework ships exactly one entry under
+  it, `detail.validation_failed`, for its own stable validation-failure message — most codes have no
+  `detail.<code>` entry and `detail` falls back to the producer's `Msg` verbatim (byte-identical to no
+  i18n at all). `module.Context.I18n(bundle)` registers a module's own localized bundle (rejected if it
+  touches the reserved `kernel.` namespace — translating the framework's own strings for a new locale is
+  done by adding directly to `Booted.I18n`, not through `Register`); `app.Boot` merges all bundles with
+  the framework catalog and exposes the result as `Booted.I18n` to pass to `httpx.Locale`. **Zero-config
+  behavior is unchanged**: with no catalog wired,
   responses stay English-only, byte-for-byte as before. `testkit` adds `AssertNegotiatedLocale`,
   `NewLocaleRequest`, and `AssertLocalizedProblem`. English is the default locale and ultimate fallback;
   product translations stay in product-owned bundles (the framework ships only its own English strings).
@@ -158,7 +161,17 @@ changes to it require a new major version.
   no entry and keep falling back to `Msg`; enumerating every kernel code was explicitly out of scope, and
   product codes remain product-catalog territory. Fixed the stale doc comment and updated the user guide
   (Validation & Error Handling → Localizing responses) to state the real contract: title and field messages
-  always localize, detail localizes only where a `detail.<code>` entry exists.
+  always localize, detail localizes only where a `detail.<code>` entry exists. A first pass at this doc
+  update incorrectly implied a module could register its own `<module>.detail.<code>` translation and
+  extended a pre-existing broken example (a `mc.I18n` bundle carrying `kernel.*` keys, which `Register`
+  has always rejected); both were corrected, and the guide now explicitly documents the only supported way
+  to add a translation for the framework's own `kernel.*` strings (title/validation/detail) — writing
+  directly to `Booted.I18n.Add`, since `Register` always rejects the reserved prefix regardless of caller.
+  No module-scoped registration path for `kernel.*` translations exists yet; that remains a tracked
+  follow-up, not part of this fix. Both the corrected module-bundle example and the `Booted.I18n.Add`
+  mechanism are grounded by new/existing tests (`app.TestModuleContextI18nDocExampleBoots`,
+  `app.TestModuleContextI18nRejectsReservedKernelPrefix`,
+  `httpx.TestWriteErrorValidationDetailLocalizesViaShippedEntry`).
 
 ## [1.0.0] — 2026-07-06 — first stable release
 

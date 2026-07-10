@@ -178,7 +178,12 @@ func TestAcceptanceProofEndToEnd(t *testing.T) {
 // TestWriteErrorValidationDetailLocalizesViaShippedEntry proves the framework's
 // own shipped `detail.validation_failed` English catalog entry localizes the
 // validation error's top-level Detail (not just field messages), while Code and
-// field Code/Field stay byte-stable — closing GAP-001's Detail gap.
+// field Code/Field stay byte-stable — closing GAP-001's Detail gap. The
+// `cat.Add(...)` calls here are the exact mechanism the user guide's
+// "Translating the framework's own strings" section documents for adding a
+// kernel.* translation (docs/user-guide/validation-errors.md, Localizing
+// responses (i18n)): direct Catalog.Add on the booted catalog, not
+// module.Context.I18n/Register (which rejects the reserved kernel.* prefix).
 func TestWriteErrorValidationDetailLocalizesViaShippedEntry(t *testing.T) {
 	cat := i18n.NewRegistry().Catalog()
 	cat.Add("mr", i18n.KeyValidationMessage("required"), "हे फील्ड आवश्यक आहे")

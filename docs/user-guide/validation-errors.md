@@ -161,26 +161,22 @@ request locale.
 guarantees a catalog entry for every `Kind`/tag). `detail` is different: it localizes **only when a
 `kernel.detail.<code>` catalog entry exists** for the error's machine `code`, via `i18n.KeyDetail(code)`
 — which is `reservedPrefix + "detail." + code`, i.e. always under the framework's own `kernel.`
-namespace. This means `KeyDetail` currently only supports **framework-owned** codes (an `errors.Kind`'s
-`DefaultCode()`, e.g. `validation_failed`): a module can add a *translation* of a framework detail key
-for a new locale (as `KeyDetail("validation_failed")` below does), but there is no way for a module to
-register a localized `detail` for its own product-specific error code — `Register` rejects any key
-under the reserved `kernel.` prefix, and `KeyDetail` has no module-qualified form. Most codes (framework
-or product) carry a producer-supplied, already-appropriate `Msg` and have no catalog entry — for those,
-`detail` falls back to that `Msg` verbatim, unchanged from before. Internal errors never expose `detail`
-at all, translated or not.
+namespace. `KeyDetail` currently only names **framework-owned** codes (an `errors.Kind`'s
+`DefaultCode()`, e.g. `validation_failed`); it has no module-qualified form, so it cannot name a
+product-specific error code. Most codes (framework or product) carry a producer-supplied,
+already-appropriate `Msg` and have no catalog entry — for those, `detail` falls back to that `Msg`
+verbatim, unchanged from before. Internal errors never expose `detail` at all, translated or not.
 
 **Registering product/module translations.** A module contributes a bundle per locale during
-`Register`, under its own `<module>.` prefix (the framework owns `kernel.`):
+`Register`, under its own `<module>.` prefix (the framework owns `kernel.`, and `Register` rejects any
+key under that reserved prefix or outside the module's own prefix — a module's bundle can only add its
+*own* keys, e.g. an order-status label, never a `kernel.*` title/validation/detail key):
 
 ```go
 func (m *Module) Register(mc module.Context) error {
-    // Localize the framework's own strings for a new locale…
     mc.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
-        i18n.KeyProblemTitle(errors.KindNotFound): "सापडले नाही",
-        i18n.KeyValidationMessage("required"):     "हे फील्ड आवश्यक आहे",
-        i18n.KeyDetail("validation_failed"):       "प्रमाणीकरण अयशस्वी झाले",
-        // …and your module's own keys (must be prefixed "<module>.").
+        // Must be prefixed "<module>." — a bare kernel.* key here is rejected
+        // at boot (Registry.Register's ownership check).
         "orders.status.shipped": "पाठवले",
     }})
     return nil
@@ -190,6 +186,27 @@ func (m *Module) Register(mc module.Context) error {
 `app.Boot` merges every module's bundles with the framework catalog and returns the result as
 `Booted.I18n`. Ownership is validated at boot: a module registering a key outside its prefix (or under
 the reserved `kernel.` namespace) fails boot with the other registry checks.
+
+**Translating the framework's own strings (`kernel.*` titles/validation messages/details) for a new
+locale.** There is no `Register`-based path for this today — `Register` enforces per-module ownership
+and always rejects the reserved `kernel.` prefix, by design, so one module can't shadow another's (or
+the framework's) strings. The supported mechanism is to add directly to the catalog `app.Boot` returns,
+which is a plain `*i18n.Catalog` with an unguarded `Add(locale, key, message)`:
+
+```go
+booted, err := app.Boot(...)
+// ...
+booted.I18n.Add("mr", i18n.KeyProblemTitle(errors.KindNotFound), "सापडले नाही")
+booted.I18n.Add("mr", i18n.KeyValidationMessage("required"), "हे फील्ड आवश्यक आहे")
+booted.I18n.Add("mr", i18n.KeyDetail("validation_failed"), "प्रमाणीकरण अयशस्वी झाले")
+httpx.Locale(booted.I18n) // wire the same catalog into the middleware, as below
+```
+
+This is exactly how the framework's own mr-IN acceptance test proves localization
+(`kernel/httpx/locale_test.go`'s `buildTestCatalog`), and it is the only way to extend the `kernel.`
+namespace with a new locale's strings. Registering a per-locale `kernel.*` bundle through
+`module.Context.I18n` (as opposed to `Catalog.Add`) is not supported; adding one is a tracked follow-up,
+not part of this contract.
 
 **Wiring the middleware.** Pass the merged catalog to `httpx.Locale`, placed after `RequestID` and
 before your routes:
