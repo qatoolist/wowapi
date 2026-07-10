@@ -54,6 +54,27 @@ services:
       - "4317:4317"     # OTLP gRPC receiver
       - "4318:4318"     # OTLP HTTP receiver
 
+  # Graph database for Graphify exports and ad hoc cross-community analysis.
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/wowapi-local-only
+      NEO4J_server_default__listen__address: 0.0.0.0
+      NEO4J_server_memory_pagecache_size: 256M
+      NEO4J_server_memory_heap_initial__size: 512M
+      NEO4J_server_memory_heap_max__size: 512M
+    ports:
+      - "7474:7474"   # Browser UI / HTTP
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4jdata:/data
+      - neo4jlogs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -a bolt://localhost:7687 -u neo4j -p wowapi-local-only 'RETURN 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   # Containerized toolbox: run tests/lint without host Go.
   #   docker compose -f deployments/compose.yaml run --rm tools make ci
   tools:
@@ -80,3 +101,5 @@ volumes:
   miniodata:
   gocache:
   gomod:
+  neo4jdata:
+  neo4jlogs:

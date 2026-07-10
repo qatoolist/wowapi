@@ -67,6 +67,7 @@ The framework's `deployments/compose.yaml` (via `make up`) brings up everything 
 | `minio` | `minio/minio` | S3-compatible object store (artifacts/documents). |
 | `mailpit` | `axllent/mailpit` | SMTP sink for notification testing. |
 | `jaeger` | `jaegertracing/all-in-one:1.57` | Tracing; OTLP HTTP receiver on `:4318`. |
+| `neo4j` | `neo4j:5-community` | Graph database for Graphify exports and bridge analysis. |
 | `tools` | (repo toolbox) | Containerized runner — where `make ci-container` executes. |
 
 ```bash

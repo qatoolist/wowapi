@@ -42,6 +42,19 @@ For normal code changes:
 scripts/graphify_refresh.sh update
 ```
 
+To export the current graph into the local Neo4j container:
+
+```bash
+make graph-neo4j
+```
+
+For a bridge map over the current graph:
+
+```bash
+sh scripts/graphify_bridge_map.sh node
+sh scripts/graphify_bridge_map.sh community
+```
+
 For doc/architecture changes that need semantic extraction:
 
 ```bash
@@ -52,6 +65,12 @@ For reclustering an existing graph:
 
 ```bash
 scripts/graphify_refresh.sh cluster
+```
+
+For graph database export and deeper cross-community querying:
+
+```bash
+graphify export neo4j
 ```
 
 ## Policy
