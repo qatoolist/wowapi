@@ -136,6 +136,12 @@ unrecognized `same_site`, or `same_site: none` without `secure: true` (browsers 
 outright) — so a misconfigured browser profile fails the boot gate instead of silently shipping without
 CSRF protection.
 
+**The generated scaffold wires this, not just the config schema.** `wowapi init`'s `cmd/api/main.go`
+appends `httpx.SecurityChain(cfg.Security)` to the middleware chain (innermost, right before the
+auth-gated router), so switching `security.profile` to `browser` in config is enough — no product code
+change needed. The generated `main.go` is identical either way: under the `api` profile the call appends
+nothing (proven behavior-unchanged), under `browser` it activates CSP + CSRF at runtime.
+
 The safe outbound HTTP client (DNS/IP-blocking SSRF guard for anything wowapi calls out to) is a separate,
 already-shipped concern: `kernel/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
 the security profile selected here.
