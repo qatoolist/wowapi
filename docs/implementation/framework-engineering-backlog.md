@@ -2,6 +2,11 @@
 
 Review lead: Fable 5 (coordination/synthesis only). Verification: 7 specialist reviews this session — i18n, scaffold/config, auth/security, rules/lifecycle (executed proofs), product migration (all five at be84ee2 against the design review), plus wowapi-internals and external-frameworks verifiers for the new benchmark doc. Package = gap-analysis (cross-link edits only), gap-design-review (all 8 gate edits verified applied), framework-competitive-architecture-benchmark (new).
 
+> **Execution status (2026-07-10, branch `feat/backlog-p1`, unpushed):** all P0 and P1 items COMPLETE and verified.
+> P0: B1 ✅ (i18n subsystem), B2–B5 ✅ (prior wave, `feat/backlog-p0`). P1: B6 ✅, B7 ✅, B8 ✅, B9 ✅, B10 ✅.
+> Each item was TDD-built, independently reviewed, and coordinator-verified (acceptance tests re-run). Whole-branch gate green: lint 0, boundaries OK, 54 pkgs ok/0 FAIL, security 0 FAIL, coverage 92.1%.
+> Deferred (unchanged): P2 B11 (router — parked by B5 data), B12, B13; W1 (wowsociety i18n migration) unlocked by B1. B8 MaxAge/auth_time pending IdP capability (Decision 4).
+
 ## 1. Executive summary
 
 The research package is trustworthy and engineering-ready after three small corrections to the benchmark doc. Every external-framework claim (Gin/Spring/FastAPI/Django/Axum/Laravel, 14 URLs) verified against primary sources. Every wowapi-internal claim verified file:line except two: the doc **undersells a live SSRF exposure** (kernel/webhook's default HTTPSender is a bare http.Client — the "safe outbound client" belongs in P0, not P1) and **overclaims "no benchmarks exist"** (a bench suite with allocation budgets exists; what's missing is a full-chain, high-route-cardinality dispatch benchmark). The design review's findings were all previously verified accurate; its corrected version (sms/NIST, auth_time prerequisite, preventive MFA framing) is in the package. Net: 13 framework backlog items (5×P0, 5×P1, 3×P2-conditional), 1 product-migration item, 1 docs item.
