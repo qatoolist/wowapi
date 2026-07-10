@@ -336,6 +336,57 @@ func TestSeedSyncLoadError(t *testing.T) {
 	}
 }
 
+// ---------- B4: lifecycle CLI alignment (escape-hatch framing) ----------
+
+// TestSeedUsageDocumentsEscapeHatchLimitations locks the --help text's honest
+// disclosure of what `wowapi seed sync` cannot do: it has no access to a
+// product's layered config/secretref-resolved DSN (unlike the generated
+// migrate main's appcfg.Load()), and it cannot sync rule_definitions because
+// rule points exist only as Go declarations inside a booted product process
+// (kernel/rules.SyncDefinitions doc comment, docs/user-guide/database-migrations.md
+// §Rule definitions) — the framework CLI binary has no product rule registry
+// to walk. The help text must name the generated migrate as the production
+// path and enumerate both limitations, so a user reaching for this command
+// cannot miss the gap.
+func TestSeedUsageDocumentsEscapeHatchLimitations(t *testing.T) {
+	var out bytes.Buffer
+	seedUsage(&out)
+	got := out.String()
+
+	for _, want := range []string{
+		"low-level escape hatch",
+		"generated", // "generated cmd/migrate" / "generated migrate"
+		"migrate",
+		"does NOT sync rule definitions", // rule_definitions gap must be named
+		"product config",                 // no configs/<env>.yaml
+		"secretref",                      // no secretref:// resolution
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("seed usage text missing expected disclosure %q; got:\n%s", want, got)
+		}
+	}
+}
+
+// TestSeedSyncWarnsRuleDefinitionsNotSynced proves the disclosure isn't just
+// help-text theatre: every real `seed sync` invocation prints the warning to
+// stderr before doing anything, so a user who never reads --help still sees
+// it. Runs without a database (fails fast on missing DATABASE_URL after
+// loading), so the warning must appear regardless of how far the command
+// gets.
+func TestSeedSyncWarnsRuleDefinitionsNotSynced(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	dir := t.TempDir()
+	writeFile(t, dir, "permissions.yaml", "permissions:\n  - key: widgets.widget.create\n    description: c\n")
+	var out, errb bytes.Buffer
+	runSeed([]string{"sync", "--module", "widgets=" + dir}, &out, &errb)
+	if !strings.Contains(errb.String(), "rule definitions are NOT synced") {
+		t.Fatalf("expected a rule-definitions warning on stderr, got %q", errb.String())
+	}
+	if !strings.Contains(errb.String(), "migrate") {
+		t.Fatalf("warning should point at the generated migrate as the production path, got %q", errb.String())
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
