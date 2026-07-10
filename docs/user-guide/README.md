@@ -15,10 +15,11 @@ New to the project? Read in order:
 5. **[Database & migrations](database-migrations.md)** — RLS/roles, writing migrations, the reversibility drill.
 6. **[Authentication & authorization](auth.md)** — actors, `RouteMeta`, the route gate, API keys, step-up.
 7. **[Validation & error handling](validation-errors.md)** — request decoding, the error taxonomy, problem details.
-8. **[Testing](testing.md)** — `testkit`, the suites, the authoritative gate, regression, fuzzing.
-9. **[Build & deploy](build-deploy.md)** — binaries, `deploy render`, the compose stack, the checklist.
-10. **[CLI reference](cli-reference.md)** — every `wowapi` subcommand + `Makefile` target.
-11. **[Troubleshooting & FAQ](troubleshooting-faq.md)** — common errors, fixes, and answers.
+8. **[Webhooks](webhooks.md)** — inbound/outbound delivery, outbound SSRF protection, the allowlist escape hatch.
+9. **[Testing](testing.md)** — `testkit`, the suites, the authoritative gate, regression, fuzzing.
+10. **[Build & deploy](build-deploy.md)** — binaries, `deploy render`, the compose stack, the checklist.
+11. **[CLI reference](cli-reference.md)** — every `wowapi` subcommand + `Makefile` target.
+12. **[Troubleshooting & FAQ](troubleshooting-faq.md)** — common errors, fixes, and answers.
 
 Deeper material lives elsewhere: [design rationale](../blueprint/README.md) (the blueprint), [operations
 runbooks](../operations/deployment-checklist.md), [design decisions](../implementation/decisions.md), and

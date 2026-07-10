@@ -192,24 +192,40 @@ Skipping step 2 leaves the catalog tables empty on a fresh database: every autho
 empty `resource_types` table. The failure is silent at deploy time — nothing warns you seeds were never
 applied — and surfaces only as scattered 403s and FK errors once the process is already serving.
 
-Two supported ways to run it, both idempotent (safe to re-run every deploy):
+**The production path is the generated `cmd/migrate`.** It loads the composed product config via
+`appcfg.Load()` (`configs/base.yaml` + `configs/<env>.yaml` + `secretref://` resolution), then runs
+migrations, `seeds.Sync`, and `rules.SyncDefinitions` — in that order, on one privileged connection:
 
 ```bash
-# 1. Generated cmd/migrate runs it automatically after migrations (recommended — no extra step):
-make migrate-up          # kernel migrations → module migrations → seeds.Sync, in one invocation
+make migrate-up          # kernel migrations → module migrations → seeds.Sync → rules.SyncDefinitions
+```
 
-# 2. Standalone, e.g. to re-sync catalogs without a full migrate run:
+**`wowapi seed sync` is a low-level, standalone escape hatch** — e.g. to re-sync seed catalogs without a
+full migrate run — not a substitute for the generated migrate on a fresh environment:
+
+```bash
 wowapi seed sync --module widgets=internal/modules/widgets/seeds \
                   --module billing=internal/modules/billing/seeds
 ```
 
-`wowapi seed sync` connects to `DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as
-`wowapi dlq`), loads and merges every named module's seed directory the same way `app.Boot` does, then
-calls `seeds.Sync`. It has no long-lived process, so it never holds an in-process authz cache to
-invalidate; a running api/worker with `AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call
-because `seeds.Sync` accepts the kernel's `AuthzCache` as a `SpineInvalidator` — pass it when calling
-`seeds.Sync` from a long-lived process (the generated migrate/CLI paths don't need to; they exit
-immediately after).
+It has real limitations relative to the generated migrate path:
+
+- **No product config.** It connects via a bare `DATABASE_URL` environment variable, not `appcfg.Load()` —
+  no `configs/<env>.yaml` layering, no `secretref://` resolution, and hardcoded pool defaults
+  (`config.Defaults().DB`) rather than the product's tuned `db.pool` settings.
+- **Does not sync rule definitions.** Unlike the generated migrate, this command never calls
+  `rules.SyncDefinitions` — see [Rule definitions](#rule-definitions) below for why: rule points exist only
+  as Go declarations inside a booted product process, and a framework-only CLI binary has no product rule
+  registry to read, so there is nothing to sync here even in principle. The command prints a warning to
+  this effect on every run.
+
+Both `seeds.Sync` calls are idempotent (safe to re-run every deploy). `wowapi seed sync` connects to
+`DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as `wowapi dlq`), loads and merges
+every named module's seed directory the same way `app.Boot` does, then calls `seeds.Sync`. It has no
+long-lived process, so it never holds an in-process authz cache to invalidate; a running api/worker with
+`AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call because `seeds.Sync` accepts the kernel's
+`AuthzCache` as a `SpineInvalidator` — pass it when calling `seeds.Sync` from a long-lived process (the
+generated migrate/CLI paths don't need to; they exit immediately after).
 
 A generated api process also wires a `/readyz` check (`app.CatalogsSeeded`) that fails loudly — naming
 `wowapi seed sync` — if any module's declared seeds are missing from the database, so a pod that skipped
@@ -217,12 +233,51 @@ this step never reports ready instead of silently denying every request.
 
 ## Rule definitions
 
-A module registers **rule points** in Go (`mc.Rules().Register(module, rules.Point{...})` — key, JSON
-Schema, default value, allowed scopes, whether changes require approval, description). Registering a
-point only builds the in-memory registry; `rule_versions.rule_key` carries a foreign key onto
-`rule_definitions`, so the framework must also persist a mirror of every registered point into that table
-before any tenant/platform/org rule VALUE can be proposed for it (blueprint 02 §2.1: "Rule definition row
-… persisted mirror of the registered point — makes points introspectable/auditable in the DB").
+A module registers **rule points** in Go (`mc.Rules().Register(module, rules.Point{...})` — key, a
+**RuleValueSchema**, default value, allowed scopes, whether changes require approval, description).
+Registering a point only builds the in-memory registry; `rule_versions.rule_key` carries a foreign key
+onto `rule_definitions`, so the framework must also persist a mirror of every registered point into that
+table before any tenant/platform/org rule VALUE can be proposed for it (blueprint 02 §2.1: "Rule
+definition row … persisted mirror of the registered point — makes points introspectable/auditable in the
+DB").
+
+### RuleValueSchema (not JSON Schema)
+
+`Point.ValueSchema` is **not** JSON Schema, despite the historical name and older comments/docs that said
+so. It is `RuleValueSchema`: a small, closed grammar the framework validates by hand — no JSON-Schema
+library dependency (ratified Decision 2). The ONLY recognized top-level keywords are:
+
+| Keyword | Applies to | Meaning |
+|---|---|---|
+| `type` | any | one of `integer`, `number`, `string`, `boolean`, `object`, `array`, `null` |
+| `enum` | any | JSON array of allowed literal values |
+| `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` | numbers | numeric bounds |
+| `minLength`, `maxLength`, `pattern` (RE2) | strings | length/pattern constraints |
+| `minItems`, `maxItems` | arrays | length bounds |
+| `required` | objects | shallow presence check for the named keys — **not** recursive per-property validation |
+
+There is no nested `properties`/`items` sub-schema evaluator, no `additionalProperties`, no
+`multipleOf`, and no other JSON Schema keyword — a rule point needing per-property typing should
+declare separate top-level rule points instead of one object-shaped point with nested constraints.
+
+This is enforced, not just documented — `Registry.Register` **fails registration** (surfaced through
+`Registry.Err()`, the same boot-error-accumulation gate `app.Boot` already calls) if:
+
+- `type` is anything other than the seven recognized values (an unrecognized type used to be silently
+  accepted — that was a real bug, now closed);
+- the schema contains any keyword outside the table above (previously silently dropped by a lax JSON
+  decode, so a typo'd or unsupported constraint was never enforced — now a strict decode rejects it);
+- the `Default` value does not itself conform to `ValueSchema` (previously never checked at all — a
+  point could ship with a default that violated its own schema).
+
+A schema that fails any of these checks can never reach `rule_definitions` — `SyncDefinitions` only ever
+sees points that already passed `Register`.
+
+`Resolver.Resolve` additionally re-validates the winning **stored** value against the point's *current*
+schema before returning it (cheap — pure in-memory, no extra I/O) — this catches the case where a
+schema was tightened after a value was written (module upgrade) and the old stored value no longer
+conforms; Resolve surfaces that drift as an error rather than silently handing back a non-conforming
+value.
 
 `kernel/rules.SyncDefinitions(ctx, db, registry)` is that lifecycle step — the rule-registry analogue of
 `kernel/seeds.Sync` (GAP-007). It upserts every point the registry holds into `rule_definitions`,

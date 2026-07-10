@@ -16,6 +16,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 )
 
@@ -61,6 +63,7 @@ type Framework struct {
 	Log           Log       `conf:"log" json:"log"`
 	DB            DB        `conf:"db" json:"db"`
 	Telemetry     Telemetry `conf:"telemetry" json:"telemetry"`
+	Webhook       Webhook   `conf:"webhook" json:"webhook"`
 }
 
 // Telemetry configures distributed tracing (roadmap O1). Tracing is OFF by
@@ -115,6 +118,30 @@ type RateLimit struct {
 	Disabled          bool    `conf:"disabled" json:"disabled" doc:"set true to remove the default per-client rate limiter from the chain"`
 	RequestsPerSecond float64 `conf:"requests_per_second" default:"20" json:"requests_per_second" doc:"sustained requests/sec per client key (per replica)"`
 	Burst             int     `conf:"burst" default:"40" json:"burst" doc:"burst capacity per client key"`
+}
+
+// Webhook configures the webhook framework (kernel/webhook).
+type Webhook struct {
+	Outbound WebhookOutbound `conf:"outbound" json:"outbound"`
+}
+
+// WebhookOutbound configures outbound webhook delivery's SSRF protection
+// (backlog B2). Outbound delivery targets are USER-CONFIGURABLE URLs (tenants
+// register their own webhook endpoints), so by default every dial is guarded
+// by kernel/httpclient: loopback, link-local (incl. the 169.254.169.254 cloud
+// metadata address), RFC1918/ULA private ranges, and unspecified addresses are
+// all refused. AllowedHosts/AllowedCIDRs are the escape hatch for intentional
+// internal targets (e.g. a tenant's own internal relay); SSRFProtectionDisabled
+// exists only for local/dev convenience against a hand-rolled test receiver.
+// It is tagged `unsafe:"true"` — the framework's standard dev-only-knob gate
+// (kernel/config/bind.go enforceUnsafe) refuses it at Load() time in prod and
+// WARNS in stage; Validate() below additionally refuses it in prod as
+// defense-in-depth for callers that build/validate a Framework value directly
+// without going through Load() (e.g. tests).
+type WebhookOutbound struct {
+	SSRFProtectionDisabled bool     `conf:"ssrf_protection_disabled" unsafe:"true" json:"ssrf_protection_disabled" doc:"DANGEROUS: disables ALL dial-time SSRF protection for outbound webhook delivery. Refused in prod, warned in stage"`
+	AllowedHosts           []string `conf:"allowed_hosts" json:"allowed_hosts" doc:"exact-match hostname allowlist bypassing the blocked-address-class check for outbound webhook delivery"`
+	AllowedCIDRs           []string `conf:"allowed_cidrs" json:"allowed_cidrs" doc:"CIDR allowlist (e.g. 10.20.0.0/16) for resolved outbound webhook delivery addresses"`
 }
 
 // Log configures structured logging.
@@ -193,6 +220,17 @@ func (f Framework) Validate() error {
 			add("http.rate_limit.burst: must be >= 1 when the limiter is enabled")
 		}
 	}
+	for _, h := range f.Webhook.Outbound.AllowedHosts {
+		if strings.TrimSpace(h) == "" {
+			add("webhook.outbound.allowed_hosts: entries must not be blank")
+			break
+		}
+	}
+	for _, c := range f.Webhook.Outbound.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(c)); err != nil {
+			add("webhook.outbound.allowed_cidrs: %q is not a valid CIDR: %v", c, err)
+		}
+	}
 
 	// Production safety floor. Dev-only conveniences added in later phases
 	// carry an `unsafe` marker and are rejected here when Environment is prod.
@@ -202,6 +240,9 @@ func (f Framework) Validate() error {
 		}
 		if f.Log.Level == "debug" {
 			add("log.level: debug is not allowed in prod")
+		}
+		if f.Webhook.Outbound.SSRFProtectionDisabled {
+			add("webhook.outbound.ssrf_protection_disabled: must not be true in prod")
 		}
 	}
 

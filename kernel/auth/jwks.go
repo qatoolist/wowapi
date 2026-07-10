@@ -82,7 +82,7 @@ func NewJWKSKeySource(cfg JWKSConfig) (KeySource, error) {
 	}
 	client := cfg.Client
 	if client == nil {
-		client = &http.Client{Timeout: defaultJWKSTimeout}
+		client = &http.Client{Timeout: defaultJWKSTimeout, Transport: jwksTransport()}
 	}
 	now := cfg.Now
 	if now == nil {
@@ -96,6 +96,22 @@ func NewJWKSKeySource(cfg JWKSConfig) (KeySource, error) {
 		client:     client,
 		now:        now,
 	}, nil
+}
+
+// jwksTransport is the default outbound transport for JWKS/discovery fetches.
+// It clones the stdlib default transport but DISABLES proxy use
+// (http.DefaultTransport.Proxy is http.ProxyFromEnvironment): the issuer/JWKS
+// URI is trusted boot-time config already constrained by validateHTTPSURL, and
+// honoring an ambient HTTP(S)_PROXY would route auth-critical key fetches
+// through an unvalidated hop — the same egress policy kernel/httpclient enforces
+// for webhook delivery. Unlike that client, no private-IP dial guard is applied:
+// an internal https OIDC issuer (e.g. a cluster-private IdP) is a legitimate,
+// supported deployment that validateHTTPSURL permits. A deployment that wants a
+// fully guarded client can inject one via JWKSConfig.Client.
+func jwksTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	return t
 }
 
 // jwksKeySource is a concurrency-safe caching KeySource.

@@ -9,7 +9,7 @@
 CREATE TABLE rule_definitions (
     key              text PRIMARY KEY,          -- 'core.retention.audit_days'
     module           text NOT NULL,
-    value_schema     jsonb NOT NULL,            -- JSON Schema for values
+    value_schema     jsonb NOT NULL,            -- RuleValueSchema (strict limited grammar: type/enum/bounds/lengths/pattern/items/required) for values
     default_value    jsonb NOT NULL,
     allowed_scopes   text[] NOT NULL DEFAULT '{platform,tenant,org}',
     requires_approval boolean NOT NULL DEFAULT false,

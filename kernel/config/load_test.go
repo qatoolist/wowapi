@@ -282,6 +282,59 @@ product:
 	}
 }
 
+// TestLoadWebhookSSRFProtectionDisabledIsUnsafeKnob proves
+// webhook.outbound.ssrf_protection_disabled (backlog B2) is wired through the
+// framework's REAL dev-only-knob gate (enforceUnsafe in kernel/config/bind.go),
+// not just Framework.Validate()'s standalone prod check: refused in prod,
+// warned in stage, fine in dev — exercised on config.Framework itself (this is
+// the first Framework field to carry `unsafe:"true"`; TestLoadUnsafeKnobMatrix
+// above covers the mechanism generically via a synthetic product config).
+func TestLoadWebhookSSRFProtectionDisabledIsUnsafeKnob(t *testing.T) {
+	const key = "webhook.outbound.ssrf_protection_disabled"
+
+	t.Run("prod", func(t *testing.T) {
+		base := writeYAML(t, `
+environment: prod
+webhook:
+  outbound:
+    ssrf_protection_disabled: true
+`)
+		_, _, err := config.Load[config.Framework](config.Options{BaseFile: base})
+		mustContain(t, err, key, "prod")
+	})
+	t.Run("stage-warns", func(t *testing.T) {
+		base := writeYAML(t, `
+environment: stage
+webhook:
+  outbound:
+    ssrf_protection_disabled: true
+`)
+		got, err := config.LoadDetailed[config.Framework](config.Options{BaseFile: base})
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(got.Warnings, "\n")
+		if !strings.Contains(joined, key) {
+			t.Errorf("stage should warn about %s, warnings: %q", key, got.Warnings)
+		}
+	})
+	t.Run("dev-ok", func(t *testing.T) {
+		base := writeYAML(t, `
+environment: dev
+webhook:
+  outbound:
+    ssrf_protection_disabled: true
+`)
+		got, err := config.LoadDetailed[config.Framework](config.Options{BaseFile: base})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Warnings) != 0 {
+			t.Errorf("dev should not warn: %q", got.Warnings)
+		}
+	})
+}
+
 // unsafeDefaultCfg reproduces SEC-3: a knob whose unsafe value is its
 // compiled default must still be refused in prod.
 type unsafeDefaultCfg struct {

@@ -30,6 +30,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/document"
+	"github.com/qatoolist/wowapi/kernel/httpclient"
 	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/notify"
@@ -278,12 +279,22 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	notifyReg := notify.NewRegistry()
 	notifySvc := notify.New(notifyReg, idgen, notify.WithTracer(tracer))
 
-	// Webhooks: a service over a Sender (real HTTP by default) and a secret-ref
-	// resolver adapting the kernel secrets provider. Modules register verifiers +
-	// inbound handlers on it during Register.
+	// Webhooks: a service over a Sender (SSRF-safe HTTP by default, backlog B2)
+	// and a secret-ref resolver adapting the kernel secrets provider. Modules
+	// register verifiers + inbound handlers on it during Register.
 	sender := deps.WebhookSender
 	if sender == nil {
-		sender = webhook.NewHTTPSender()
+		out := cfg.Webhook.Outbound
+		var senderOpts []webhook.HTTPSenderOption
+		if out.SSRFProtectionDisabled {
+			senderOpts = append(senderOpts, webhook.WithSSRFProtectionDisabled())
+		} else {
+			senderOpts = append(senderOpts, webhook.WithHTTPClientConfig(httpclient.Config{
+				AllowedHosts: out.AllowedHosts,
+				AllowedCIDRs: out.AllowedCIDRs,
+			}))
+		}
+		sender = webhook.NewHTTPSender(senderOpts...)
 	}
 	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen, webhook.WithMetrics(metrics))
 

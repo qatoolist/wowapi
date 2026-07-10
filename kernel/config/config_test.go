@@ -61,6 +61,42 @@ func TestTelemetryAndRateLimitValidation(t *testing.T) {
 	}
 }
 
+// TestWebhookOutboundValidation covers the B2 config surface: the outbound
+// SSRF allowlist. Disabled by default (SSRFAllowUnsafe=false); an invalid
+// CIDR entry must fail validation, and a bad hostname entry (empty string)
+// must fail too.
+func TestWebhookOutboundValidation(t *testing.T) {
+	f := Defaults()
+	f.Webhook.Outbound.AllowedCIDRs = []string{"not-a-cidr"}
+	err := f.Validate()
+	if err == nil {
+		t.Fatal("invalid outbound allowlist CIDR must fail validation")
+	}
+	if !strings.Contains(err.Error(), "webhook.outbound.allowed_cidrs:") {
+		t.Errorf("missing %q in: %v", "webhook.outbound.allowed_cidrs:", err)
+	}
+
+	f2 := Defaults()
+	f2.Webhook.Outbound.AllowedHosts = []string{""}
+	err2 := f2.Validate()
+	if err2 == nil {
+		t.Fatal("empty outbound allowlist host must fail validation")
+	}
+	if !strings.Contains(err2.Error(), "webhook.outbound.allowed_hosts:") {
+		t.Errorf("missing %q in: %v", "webhook.outbound.allowed_hosts:", err2)
+	}
+}
+
+func TestWebhookOutboundDefaultsAreSafe(t *testing.T) {
+	f := Defaults()
+	if f.Webhook.Outbound.SSRFProtectionDisabled {
+		t.Fatal("SSRF protection must be enabled by default")
+	}
+	if len(f.Webhook.Outbound.AllowedHosts) != 0 || len(f.Webhook.Outbound.AllowedCIDRs) != 0 {
+		t.Fatal("the default allowlist must be empty")
+	}
+}
+
 func TestProdSafetyFloor(t *testing.T) {
 	f := Defaults()
 	f.Environment = EnvProd
@@ -74,6 +110,22 @@ func TestProdSafetyFloor(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in: %v", want, err)
 		}
+	}
+}
+
+// TestProdSafetyFloorRejectsSSRFProtectionDisabled proves the B2 escape hatch
+// cannot be used to disable the guard entirely in production — only the
+// scoped host/CIDR allowlist is available there.
+func TestProdSafetyFloorRejectsSSRFProtectionDisabled(t *testing.T) {
+	f := Defaults()
+	f.Environment = EnvProd
+	f.Webhook.Outbound.SSRFProtectionDisabled = true
+	err := f.Validate()
+	if err == nil {
+		t.Fatal("prod with SSRF protection disabled must fail validation")
+	}
+	if !strings.Contains(err.Error(), "webhook.outbound.ssrf_protection_disabled:") {
+		t.Errorf("missing %q in: %v", "webhook.outbound.ssrf_protection_disabled:", err)
 	}
 }
 

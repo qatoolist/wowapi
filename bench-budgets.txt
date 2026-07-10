@@ -38,6 +38,24 @@
 #   BenchmarkTokenBucketAllow                26 ns/op   0 allocs/op
 #   BenchmarkEdgeMiddlewareChain           2908 ns/op  28 allocs/op
 #
+# Full-chain dispatch gate (backlog B5 / competitive-benchmark §Routing).
+# Measured Apple M3 Max, 2026-07-10, default -benchtime sample counts (~2M reps
+# for the sub-microsecond dispatch benches, ~700K-900K for the gate/decode
+# benches) — no DB; fakeAuth/fakeEval/fakeTxM (fakes_test.go) front the real
+# ServeMux -> SecureHandler -> gateRoute chain, same doubles the gate unit
+# tests already use:
+#   BenchmarkDispatch/50routes              577 ns/op  14 allocs/op
+#   BenchmarkDispatch/500routes             604 ns/op  14 allocs/op
+#   BenchmarkDispatch/2000routes            666 ns/op  14 allocs/op
+#   BenchmarkDispatchParallel/50routes      450 ns/op  14 allocs/op
+#   BenchmarkDispatchParallel/500routes     440 ns/op  14 allocs/op
+#   BenchmarkDispatchParallel/2000routes    470 ns/op  14 allocs/op
+#   BenchmarkAuthzGateCachedHit            1603 ns/op  28 allocs/op
+#   BenchmarkAuthzGateUncachedMiss         1601 ns/op  24 allocs/op
+#   BenchmarkDecodeJSONTypical             1549 ns/op  21 allocs/op
+#   BenchmarkDecodeJSONOversizedRejected    393 ns/op   9 allocs/op
+#   BenchmarkBindAndValidateTypical        1666 ns/op  22 allocs/op
+#
 # DB-backed hot paths (backlog B-2 / CA-7). Measured against local Postgres 16 on
 # localhost; each op includes a real BEGIN/COMMIT and the query round trips, so
 # these carry MUCH higher variance than the in-memory benches. Budgets keep extra
@@ -67,6 +85,28 @@ BenchmarkRouteMetaValidate           1500   15
 # BodyLimit→Timeout). TokenBucket.Allow is zero-alloc on the steady-state path.
 BenchmarkTokenBucketAllow             300    0
 BenchmarkEdgeMiddlewareChain        30000  120
+# Full-chain dispatch gate (backlog B5): ServeMux route match -> gateRoute
+# (authN/tenant-bind/authZ) -> handler, at increasing route cardinality. Flat
+# cost across 50->2000 routes is the data point that keeps ServeMux (see the
+# recommendation in docs/implementation/framework-competitive-architecture-
+# benchmark.md and the backlog-B5 report) — budgets carry the same ~10x
+# headroom as the rest of this file.
+BenchmarkDispatch/50routes            6000   24
+BenchmarkDispatch/500routes           6500   24
+BenchmarkDispatch/2000routes          7000   24
+BenchmarkDispatchParallel/50routes    5000   24
+BenchmarkDispatchParallel/500routes   5000   24
+BenchmarkDispatchParallel/2000routes  5500   24
+# Authz gate through the real evaluator, cached (CachingStore hit) vs
+# uncached (fake Store, no DB — see bench_test.go LIMITATION comment: this is
+# not a real-database uncached measurement).
+BenchmarkAuthzGateCachedHit          16000   40
+BenchmarkAuthzGateUncachedMiss       16000   35
+# DecodeJSON / BindAndValidate hot body path (typical payload, oversized
+# rejection, and the full bind+validate path).
+BenchmarkDecodeJSONTypical           16000   32
+BenchmarkDecodeJSONOversizedRejected  4000   20
+BenchmarkBindAndValidateTypical      17000   33
 # ── kernel/config ─────────────────────────────────────────────────────────────
 # Field reads must be zero-alloc; tight ns/op ceiling proves no map/reflection.
 BenchmarkConfigFieldReadMaxBodyBytes   50    0

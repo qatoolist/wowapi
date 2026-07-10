@@ -186,45 +186,53 @@ func TestProposeUnregisteredAndDisallowedScope(t *testing.T) {
 // TestSchemaValidationRejections drives validateAgainstSchema/typeMatches/compact
 // through Propose's write-time check. Every case here is REJECTED before any DB
 // call, so a nil db is safe and the assertions are on the returned error kind.
+//
+// B3: Register now validates a point's DEFAULT against its own schema (defect
+// 3), so each case must supply a `def` that actually conforms to its schema —
+// a single hard-coded `0` default (the pre-B3 shape of this table) would now
+// fail most of these schemas at registration, before Propose is ever reached.
+// The malformed-schema cases ("schema_malformed", "pattern_malformed") reject
+// at Register regardless of default (a broken schema can't validate anything,
+// including its own default), so those two are asserted directly against
+// Registry.Err() rather than routed through Propose.
 func TestSchemaValidationRejections(t *testing.T) {
 	cases := []struct {
 		name   string
 		key    string
 		schema string
+		def    string
 		value  string
 		kind   errors.Kind
 	}{
-		{"integer_mismatch", "core.t.intv", `{"type":"integer"}`, `"x"`, errors.KindValidation},
-		{"integer_non_whole", "core.t.intw", `{"type":"integer"}`, `1.5`, errors.KindValidation},
-		{"number_mismatch", "core.t.numv", `{"type":"number"}`, `"x"`, errors.KindValidation},
-		{"string_mismatch", "core.t.strv", `{"type":"string"}`, `5`, errors.KindValidation},
-		{"boolean_mismatch", "core.t.boolv", `{"type":"boolean"}`, `5`, errors.KindValidation},
-		{"object_mismatch", "core.t.objv", `{"type":"object"}`, `5`, errors.KindValidation},
-		{"array_mismatch", "core.t.arrv", `{"type":"array"}`, `5`, errors.KindValidation},
-		{"null_mismatch", "core.t.nullv", `{"type":"null"}`, `5`, errors.KindValidation},
-		{"enum_miss", "core.t.enumv", `{"enum":["low","high"]}`, `"nope"`, errors.KindValidation},
-		{"enum_bad_json", "core.t.enumbad", `{"enum":["low"]}`, `{bad`, errors.KindValidation},
-		{"value_not_json", "core.t.badval", `{"type":"integer"}`, `{bad`, errors.KindValidation},
-		{"schema_malformed", "core.t.badschema", `{bad`, `1`, errors.KindInternal},
+		{"integer_mismatch", "core.t.intv", `{"type":"integer"}`, `0`, `"x"`, errors.KindValidation},
+		{"integer_non_whole", "core.t.intw", `{"type":"integer"}`, `0`, `1.5`, errors.KindValidation},
+		{"number_mismatch", "core.t.numv", `{"type":"number"}`, `0`, `"x"`, errors.KindValidation},
+		{"string_mismatch", "core.t.strv", `{"type":"string"}`, `""`, `5`, errors.KindValidation},
+		{"boolean_mismatch", "core.t.boolv", `{"type":"boolean"}`, `false`, `5`, errors.KindValidation},
+		{"object_mismatch", "core.t.objv", `{"type":"object"}`, `{}`, `5`, errors.KindValidation},
+		{"array_mismatch", "core.t.arrv", `{"type":"array"}`, `[]`, `5`, errors.KindValidation},
+		{"null_mismatch", "core.t.nullv", `{"type":"null"}`, `null`, `5`, errors.KindValidation},
+		{"enum_miss", "core.t.enumv", `{"enum":["low","high"]}`, `"low"`, `"nope"`, errors.KindValidation},
+		{"enum_bad_json", "core.t.enumbad", `{"enum":["low"]}`, `"low"`, `{bad`, errors.KindValidation},
+		{"value_not_json", "core.t.badval", `{"type":"integer"}`, `0`, `{bad`, errors.KindValidation},
 
-		// GAP-007: expanded JSON Schema keyword validation.
-		{"minimum_violation", "core.t.minv", `{"type":"number","minimum":0}`, `-1`, errors.KindValidation},
-		{"maximum_violation", "core.t.maxv", `{"type":"number","maximum":100}`, `101`, errors.KindValidation},
-		{"exclusive_minimum_violation_eq", "core.t.exminv", `{"type":"number","exclusiveMinimum":0}`, `0`, errors.KindValidation},
-		{"exclusive_minimum_violation_lt", "core.t.exminv2", `{"type":"number","exclusiveMinimum":0}`, `-1`, errors.KindValidation},
-		{"exclusive_maximum_violation_eq", "core.t.exmaxv", `{"type":"number","exclusiveMaximum":100}`, `100`, errors.KindValidation},
-		{"exclusive_maximum_violation_gt", "core.t.exmaxv2", `{"type":"number","exclusiveMaximum":100}`, `101`, errors.KindValidation},
-		{"min_length_violation", "core.t.minlenv", `{"type":"string","minLength":3}`, `"ab"`, errors.KindValidation},
-		{"max_length_violation", "core.t.maxlenv", `{"type":"string","maxLength":3}`, `"abcd"`, errors.KindValidation},
-		{"pattern_violation", "core.t.patv", `{"type":"string","pattern":"^[a-z]+$"}`, `"ABC"`, errors.KindValidation},
-		{"pattern_malformed", "core.t.patbadv", `{"type":"string","pattern":"("}`, `"x"`, errors.KindInternal},
-		{"min_items_violation", "core.t.minitemsv", `{"type":"array","minItems":2}`, `[1]`, errors.KindValidation},
-		{"max_items_violation", "core.t.maxitemsv", `{"type":"array","maxItems":2}`, `[1,2,3]`, errors.KindValidation},
-		{"required_missing", "core.t.reqv", `{"type":"object","required":["name"]}`, `{"other":1}`, errors.KindValidation},
+		// GAP-007: expanded RuleValueSchema keyword validation.
+		{"minimum_violation", "core.t.minv", `{"type":"number","minimum":0}`, `0`, `-1`, errors.KindValidation},
+		{"maximum_violation", "core.t.maxv", `{"type":"number","maximum":100}`, `0`, `101`, errors.KindValidation},
+		{"exclusive_minimum_violation_eq", "core.t.exminv", `{"type":"number","exclusiveMinimum":0}`, `1`, `0`, errors.KindValidation},
+		{"exclusive_minimum_violation_lt", "core.t.exminv2", `{"type":"number","exclusiveMinimum":0}`, `1`, `-1`, errors.KindValidation},
+		{"exclusive_maximum_violation_eq", "core.t.exmaxv", `{"type":"number","exclusiveMaximum":100}`, `0`, `100`, errors.KindValidation},
+		{"exclusive_maximum_violation_gt", "core.t.exmaxv2", `{"type":"number","exclusiveMaximum":100}`, `0`, `101`, errors.KindValidation},
+		{"min_length_violation", "core.t.minlenv", `{"type":"string","minLength":3}`, `"abc"`, `"ab"`, errors.KindValidation},
+		{"max_length_violation", "core.t.maxlenv", `{"type":"string","maxLength":3}`, `"abc"`, `"abcd"`, errors.KindValidation},
+		{"pattern_violation", "core.t.patv", `{"type":"string","pattern":"^[a-z]+$"}`, `"abc"`, `"ABC"`, errors.KindValidation},
+		{"min_items_violation", "core.t.minitemsv", `{"type":"array","minItems":2}`, `[1,2]`, `[1]`, errors.KindValidation},
+		{"max_items_violation", "core.t.maxitemsv", `{"type":"array","maxItems":2}`, `[1]`, `[1,2,3]`, errors.KindValidation},
+		{"required_missing", "core.t.reqv", `{"type":"object","required":["name"]}`, `{"name":"x"}`, `{"other":1}`, errors.KindValidation},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			r := regPoint(t, c.key, c.schema, `0`, nil, false)
+			r := regPoint(t, c.key, c.schema, c.def, nil, false)
 			store := rules.NewStore(r, model.UUIDv7())
 			_, err := store.Propose(context.Background(), nil, rules.Proposal{
 				Key: c.key, Scope: rules.ScopeTenant, Value: json.RawMessage(c.value),
@@ -234,6 +242,41 @@ func TestSchemaValidationRejections(t *testing.T) {
 			}
 			if errors.KindOf(err) != c.kind {
 				t.Fatalf("error kind = %v, want %v (%v)", errors.KindOf(err), c.kind, err)
+			}
+		})
+	}
+}
+
+// TestSchemaValidationRejectionsAtRegister covers the two malformed-schema
+// cases carried over from the pre-B3 TestSchemaValidationRejections table
+// ("schema_malformed", "pattern_malformed"): a schema that cannot even
+// type-check its OWN default now fails at Register (B3 defect 3 built on top
+// of the pre-existing malformed-schema/malformed-pattern checks), so these
+// are asserted directly against Registry.Err() rather than routed through
+// Propose (which they can no longer reach).
+func TestSchemaValidationRejectionsAtRegister(t *testing.T) {
+	cases := []struct {
+		name   string
+		key    string
+		schema string
+		def    string
+	}{
+		{"schema_malformed", "core.t.badschema", `{bad`, `1`},
+		{"pattern_malformed", "core.t.patbadv", `{"type":"string","pattern":"("}`, `"x"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := rules.NewRegistry()
+			r.Register(moduleOfKey(c.key), rules.Point{
+				Key: c.key, ValueSchema: json.RawMessage(c.schema), Default: json.RawMessage(c.def),
+				Description: "cov",
+			})
+			err := r.Err()
+			if err == nil {
+				t.Fatalf("schema %s must fail registration", c.schema)
+			}
+			if errors.KindOf(err) != errors.KindInternal {
+				t.Fatalf("error kind = %v, want internal (%v)", errors.KindOf(err), err)
 			}
 		})
 	}
@@ -296,8 +339,14 @@ func TestIntegrationRulePropose_RejectsOutOfBoundsNumeric(t *testing.T) {
 
 // TestIntegrationRuleValueTypesRoundTrip proposes SCHEMA-VALID values of every
 // supported type, activates them, and asserts the resolver returns them
-// verbatim — exercising typeMatches' accept branches, the no-type/unknown-type
-// escapes, enum membership, and compact() on the enum success path.
+// verbatim — exercising typeMatches' accept branches, the no-type escape,
+// enum membership, and compact() on the enum success path.
+//
+// B3: an unknown "type" keyword used to be silently accepted by typeMatches'
+// default `true` branch (fail-open); that case has moved to
+// TestRegisterRejectsUnknownType in the registration-rejection suite, which
+// asserts the point is now REJECTED at Register — it can no longer reach
+// Propose/Resolve at all.
 func TestIntegrationRuleValueTypesRoundTrip(t *testing.T) {
 	cases := []struct {
 		key    string
@@ -312,7 +361,6 @@ func TestIntegrationRuleValueTypesRoundTrip(t *testing.T) {
 		{"core.rt.objv", `{"type":"object"}`, `{}`, `{"a":1}`},
 		{"core.rt.nullv", `{"type":"null"}`, `null`, `null`},
 		{"core.rt.anyv", `{}`, `0`, `42`},
-		{"core.rt.unknownv", `{"type":"weird"}`, `""`, `"whatever"`},
 		{"core.rt.enumv", `{"enum":["low","high"]}`, `"low"`, `"high"`},
 	}
 
