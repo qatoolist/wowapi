@@ -28,6 +28,7 @@ moment it registers an outbound endpoint.
 | Unspecified ("any") | `0.0.0.0`, `::` |
 | RFC1918 private | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` |
 | IPv6 unique local (ULA, RFC4193) | `fc00::/7` |
+| RFC6598 carrier-grade NAT (CGNAT) | `100.64.0.0/10` — used internally by AWS, many container/K8s overlays, other cloud infra |
 | Multicast | `224.0.0.0/4`, `ff00::/8` |
 
 A blocked dial fails with an error wrapping `httpclient.ErrBlockedAddress`; `webhook.deliverToEndpoint`
@@ -74,8 +75,10 @@ webhook:
 
 `webhook.outbound.ssrf_protection_disabled: true` removes the guard entirely, falling back to a bare
 `net/http.Client`. This exists for local development against a hand-rolled test receiver on `localhost`
-where an allowlist entry would be needless ceremony. **`config.Framework.Validate()` refuses this key
-in `environment: prod`** — a product cannot accidentally ship it live.
+where an allowlist entry would be needless ceremony. The field is tagged `unsafe:"true"` — the
+framework's standard dev-only-knob gate (`kernel/config/bind.go` `enforceUnsafe`) **refuses it when
+`environment: prod`** and **warns loudly when `environment: stage`**, so a product cannot accidentally
+ship it live, and staging deployments get an explicit signal instead of silent exposure.
 
 ### For product/module authors
 

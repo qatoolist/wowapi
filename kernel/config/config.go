@@ -132,10 +132,14 @@ type Webhook struct {
 // metadata address), RFC1918/ULA private ranges, and unspecified addresses are
 // all refused. AllowedHosts/AllowedCIDRs are the escape hatch for intentional
 // internal targets (e.g. a tenant's own internal relay); SSRFProtectionDisabled
-// exists only for local/dev convenience against a hand-rolled test receiver —
-// Validate() below refuses it in prod.
+// exists only for local/dev convenience against a hand-rolled test receiver.
+// It is tagged `unsafe:"true"` — the framework's standard dev-only-knob gate
+// (kernel/config/bind.go enforceUnsafe) refuses it at Load() time in prod and
+// WARNS in stage; Validate() below additionally refuses it in prod as
+// defense-in-depth for callers that build/validate a Framework value directly
+// without going through Load() (e.g. tests).
 type WebhookOutbound struct {
-	SSRFProtectionDisabled bool     `conf:"ssrf_protection_disabled" json:"ssrf_protection_disabled" doc:"DANGEROUS: disables ALL dial-time SSRF protection for outbound webhook delivery. Refused in prod by Validate()"`
+	SSRFProtectionDisabled bool     `conf:"ssrf_protection_disabled" unsafe:"true" json:"ssrf_protection_disabled" doc:"DANGEROUS: disables ALL dial-time SSRF protection for outbound webhook delivery. Refused in prod, warned in stage"`
 	AllowedHosts           []string `conf:"allowed_hosts" json:"allowed_hosts" doc:"exact-match hostname allowlist bypassing the blocked-address-class check for outbound webhook delivery"`
 	AllowedCIDRs           []string `conf:"allowed_cidrs" json:"allowed_cidrs" doc:"CIDR allowlist (e.g. 10.20.0.0/16) for resolved outbound webhook delivery addresses"`
 }

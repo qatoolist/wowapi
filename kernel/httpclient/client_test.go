@@ -120,6 +120,74 @@ func TestDialContextAllowsHostnameResolvingToPublicIP(t *testing.T) {
 	}
 }
 
+// TestDialContextAllowlistedHostWithNoResolvedAddressesFailsClosed covers the
+// one edge case checkResolvedIPs itself can't guard: an ALLOWLISTED host
+// bypasses the "empty resolution" check there (an allowlisted host is always
+// permitted regardless of what it resolves to), but dialContext must still
+// refuse to dial when there is genuinely nothing to connect to — never fall
+// back to dialing the bare hostname, which would let the dialer re-resolve.
+func TestDialContextAllowlistedHostWithNoResolvedAddressesFailsClosed(t *testing.T) {
+	g := newDialGuard(Config{AllowedHosts: []string{"internal.example"}})
+	g.resolveFn = fakeResolver{ips: nil}.resolve
+
+	dial := g.dialContext(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		t.Fatal("dialer must not be reached when there are no resolved addresses to dial")
+		return nil, nil
+	})
+	_, err := dial(context.Background(), "tcp", "internal.example:80")
+	if err == nil {
+		t.Fatal("expected an error when an allowlisted host resolves to nothing")
+	}
+	if !errors.Is(err, ErrBlockedAddress) {
+		t.Errorf("expected ErrBlockedAddress, got %v", err)
+	}
+}
+
+// TestDialContextDialsVerifiedIPNotHostname is the DNS-rebinding regression
+// guard: the dialer MUST be handed the exact IP that was verified, never the
+// hostname. If it received the hostname, net.Dialer would run a second,
+// independent DNS lookup — and an attacker-controlled resolver could answer
+// that second lookup with a blocked IP after answering the verification lookup
+// with a safe one (TOCTOU). This test fails if the guard ever regresses to
+// dialing addr's hostname.
+func TestDialContextDialsVerifiedIPNotHostname(t *testing.T) {
+	g := newDialGuard(Config{})
+	g.resolveFn = fakeResolver{ips: []net.IP{net.ParseIP("93.184.216.34")}}.resolve
+
+	var dialedAddr string
+	dial := g.dialContext(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialedAddr = addr
+		return nil, errors.New("no real dial in this unit test")
+	})
+	_, _ = dial(context.Background(), "tcp", "rebind.example:80")
+	if dialedAddr != "93.184.216.34:80" {
+		t.Fatalf("dialed %q, want the verified IP 93.184.216.34:80 — dialing the hostname would let the dialer re-resolve and defeat DNS-rebinding protection", dialedAddr)
+	}
+}
+
+// TestDialContextTriesAllVerifiedIPs proves that when a host resolves to
+// multiple verified addresses and the first dial fails, the dialer falls back
+// to the next — mirroring the stdlib dialer's multi-record behavior, but only
+// over addresses that already passed verification.
+func TestDialContextTriesAllVerifiedIPs(t *testing.T) {
+	g := newDialGuard(Config{})
+	g.resolveFn = fakeResolver{ips: []net.IP{
+		net.ParseIP("93.184.216.34"),
+		net.ParseIP("1.1.1.1"),
+	}}.resolve
+
+	var dialed []string
+	dial := g.dialContext(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialed = append(dialed, addr)
+		return nil, errors.New("dial fails so the loop advances")
+	})
+	_, _ = dial(context.Background(), "tcp", "multi.example:443")
+	want := []string{"93.184.216.34:443", "1.1.1.1:443"}
+	if len(dialed) != len(want) || dialed[0] != want[0] || dialed[1] != want[1] {
+		t.Fatalf("dialed %v, want %v (both verified IPs tried in order)", dialed, want)
+	}
+}
+
 // --- defaultResolve: the production resolveFunc, exercised directly ---
 
 func TestDefaultResolveLiteralIPSkipsLookup(t *testing.T) {
@@ -155,6 +223,23 @@ func TestDefaultResolveUnresolvableHostnameErrors(t *testing.T) {
 	_, err := defaultResolve(context.Background(), "this..is..not..a..valid..hostname..")
 	if err == nil {
 		t.Fatal("expected an error resolving an invalid hostname")
+	}
+}
+
+func TestDialContextSurfacesResolveError(t *testing.T) {
+	g := newDialGuard(Config{})
+	g.resolveFn = fakeResolver{err: errors.New("dns server unreachable")}.resolve
+
+	dial := g.dialContext(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		t.Fatal("dialer must not be reached when resolution itself errors")
+		return nil, nil
+	})
+	_, err := dial(context.Background(), "tcp", "example.com:80")
+	if err == nil {
+		t.Fatal("expected the resolution error to be surfaced")
+	}
+	if errors.Is(err, ErrBlockedAddress) {
+		t.Error("a resolver failure is a different error class than a blocked address")
 	}
 }
 

@@ -41,11 +41,9 @@ func TestHTTPSenderBlocksLoopbackByDefault(t *testing.T) {
 // product that intentionally wants to deliver to an internal target can
 // allowlist it, and delivery then succeeds.
 func TestHTTPSenderAllowlistEscapeHatch(t *testing.T) {
-	var gotBody string
+	var gotHeader string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 2)
-		n, _ := r.Body.Read(buf)
-		gotBody = string(buf[:n])
+		gotHeader = r.Header.Get("X-Test")
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
@@ -62,7 +60,9 @@ func TestHTTPSenderAllowlistEscapeHatch(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", code)
 	}
-	_ = gotBody
+	if gotHeader != "1" {
+		t.Fatalf("X-Test header = %q, want %q (headers must still reach an allowlisted target)", gotHeader, "1")
+	}
 }
 
 func hostOnly(t *testing.T, hostport string) string {

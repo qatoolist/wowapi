@@ -50,7 +50,7 @@ db:
 
 webhook:
   outbound:
-    ssrf_protection_disabled: false  # DANGEROUS; refused in prod — see webhooks.md#outbound-ssrf-protection
+    ssrf_protection_disabled: false  # DANGEROUS; unsafe knob, refused in prod / warned in stage — see webhooks.md#outbound-ssrf-protection
     allowed_hosts: []                # exact-match hostname allowlist for intentional internal targets
     allowed_cidrs: []                # CIDR allowlist (e.g. "10.20.0.0/16") for resolved delivery addresses
 ```
@@ -81,7 +81,7 @@ db:
 | `db.platform_dsn` | secret | — | Cross-tenant DSN (`app_platform`); **required** — api/worker fail closed without it. |
 | `db.max_conns` | int | `16` | Pool size, clamped to 2–200. |
 | `db.query_timeout` | duration | `5s` | Server-side statement ceiling, clamped 100ms–60s. |
-| `webhook.outbound.ssrf_protection_disabled` | bool | `false` | Disables outbound webhook SSRF protection entirely. **Refused in prod.** See [Webhooks](webhooks.md#outbound-ssrf-protection). |
+| `webhook.outbound.ssrf_protection_disabled` | bool | `false` | Disables outbound webhook SSRF protection entirely. `unsafe:"true"` — **refused in prod, warned in stage.** See [Webhooks](webhooks.md#outbound-ssrf-protection). |
 | `webhook.outbound.allowed_hosts` | []string | `[]` | Exact-match hostname allowlist bypassing the address-class check for outbound webhook delivery. |
 | `webhook.outbound.allowed_cidrs` | []string | `[]` | CIDR allowlist for RESOLVED outbound webhook delivery addresses (e.g. `10.20.0.0/16`). |
 
