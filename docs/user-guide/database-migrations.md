@@ -192,24 +192,40 @@ Skipping step 2 leaves the catalog tables empty on a fresh database: every autho
 empty `resource_types` table. The failure is silent at deploy time — nothing warns you seeds were never
 applied — and surfaces only as scattered 403s and FK errors once the process is already serving.
 
-Two supported ways to run it, both idempotent (safe to re-run every deploy):
+**The production path is the generated `cmd/migrate`.** It loads the composed product config via
+`appcfg.Load()` (`configs/base.yaml` + `configs/<env>.yaml` + `secretref://` resolution), then runs
+migrations, `seeds.Sync`, and `rules.SyncDefinitions` — in that order, on one privileged connection:
 
 ```bash
-# 1. Generated cmd/migrate runs it automatically after migrations (recommended — no extra step):
-make migrate-up          # kernel migrations → module migrations → seeds.Sync, in one invocation
+make migrate-up          # kernel migrations → module migrations → seeds.Sync → rules.SyncDefinitions
+```
 
-# 2. Standalone, e.g. to re-sync catalogs without a full migrate run:
+**`wowapi seed sync` is a low-level, standalone escape hatch** — e.g. to re-sync seed catalogs without a
+full migrate run — not a substitute for the generated migrate on a fresh environment:
+
+```bash
 wowapi seed sync --module widgets=internal/modules/widgets/seeds \
                   --module billing=internal/modules/billing/seeds
 ```
 
-`wowapi seed sync` connects to `DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as
-`wowapi dlq`), loads and merges every named module's seed directory the same way `app.Boot` does, then
-calls `seeds.Sync`. It has no long-lived process, so it never holds an in-process authz cache to
-invalidate; a running api/worker with `AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call
-because `seeds.Sync` accepts the kernel's `AuthzCache` as a `SpineInvalidator` — pass it when calling
-`seeds.Sync` from a long-lived process (the generated migrate/CLI paths don't need to; they exit
-immediately after).
+It has real limitations relative to the generated migrate path:
+
+- **No product config.** It connects via a bare `DATABASE_URL` environment variable, not `appcfg.Load()` —
+  no `configs/<env>.yaml` layering, no `secretref://` resolution, and hardcoded pool defaults
+  (`config.Defaults().DB`) rather than the product's tuned `db.pool` settings.
+- **Does not sync rule definitions.** Unlike the generated migrate, this command never calls
+  `rules.SyncDefinitions` — see [Rule definitions](#rule-definitions) below for why: rule points exist only
+  as Go declarations inside a booted product process, and a framework-only CLI binary has no product rule
+  registry to read, so there is nothing to sync here even in principle. The command prints a warning to
+  this effect on every run.
+
+Both `seeds.Sync` calls are idempotent (safe to re-run every deploy). `wowapi seed sync` connects to
+`DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as `wowapi dlq`), loads and merges
+every named module's seed directory the same way `app.Boot` does, then calls `seeds.Sync`. It has no
+long-lived process, so it never holds an in-process authz cache to invalidate; a running api/worker with
+`AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call because `seeds.Sync` accepts the kernel's
+`AuthzCache` as a `SpineInvalidator` — pass it when calling `seeds.Sync` from a long-lived process (the
+generated migrate/CLI paths don't need to; they exit immediately after).
 
 A generated api process also wires a `/readyz` check (`app.CatalogsSeeded`) that fails loudly — naming
 `wowapi seed sync` — if any module's declared seeds are missing from the database, so a pod that skipped
