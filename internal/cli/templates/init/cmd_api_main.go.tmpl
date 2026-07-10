@@ -236,6 +236,33 @@ func run(ctx context.Context) error {
 		httpx.Recover(log),
 		httpx.SecureHeaders(),
 		httpx.CORS(httpx.CORSPolicy{AllowedOrigins: cfg.HTTP.CORSAllowedOrigins}),
+	}
+	// Backpressure (backlog B6/benchmark §Concurrency): a bounded in-flight
+	// semaphore that rejects with the configured overload status (503 default,
+	// or 429) + Retry-After BEFORE any auth/DB work runs, once more concurrent
+	// requests are in-flight than concurrency.http_max_in_flight. It sits inner
+	// to SecureHeaders/CORS (so a rejected request still carries those headers)
+	// but outer to Locale/RateLimit/BodyLimit/Timeout (a rejected request does
+	// no locale negotiation, is not counted against the per-client rate limit,
+	// and never reads its body) — the same slot the rate limiter occupies below,
+	// deliberately placed first so the CHEAPEST rejection check runs earliest.
+	//
+	// DISABLED BY DEFAULT (concurrency.http_max_in_flight == 0): shipping this
+	// must not make any existing deployment start returning the overload status
+	// unexpectedly (backlog B6 rollout guard: advisory-then-enforced applies to
+	// the capacity budget; the in-flight limiter itself defaults to "off").
+	// Size it using `wowapi config capacity` once a deployment shape is known.
+	if cfg.Concurrency.HTTPMaxInFlight > 0 {
+		mws = append(mws, httpx.Backpressure(cfg.Concurrency.HTTPMaxInFlight, cfg.Concurrency.Overload,
+			httpx.OnBackpressureOverload(func(route string) {
+				metrics.IncCounter("http_overload_rejected_total", 1, map[string]string{"route": route})
+			}),
+			httpx.OnInFlightChange(func(n int) {
+				metrics.SetGauge("http_in_flight_requests", float64(n), nil)
+			}),
+		))
+	}
+	mws = append(mws,
 		// Locale negotiation (kernel/i18n): binds the request's negotiated
 		// locale + the merged message catalog (framework English + every
 		// module's bundles) into the context before any handler runs, and
@@ -246,7 +273,7 @@ func run(ctx context.Context) error {
 		observability.Trace(tracer),     // OTel span per request when tracing is enabled
 		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),
-	}
+	)
 	// Rate limiting is ON by default (opt-out via http.rate_limit.disabled): an
 	// in-process per-IP token bucket returning 429 + Retry-After, with drops
 	// counted as rate_limit_dropped_total (roadmap S2/CA-2). It sits inner to

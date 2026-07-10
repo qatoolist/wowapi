@@ -57,15 +57,16 @@ type Framework struct {
 	// Environment carries NO default tag: it is fail-closed (D-0010/SEC-1) —
 	// the loader errors when it is absent from every layer. The compiled
 	// `local` value exists only through Defaults() for tests/local tooling.
-	Environment   Env        `conf:"environment" json:"environment" doc:"deployment environment (local|dev|stage|prod); must be set explicitly in deployed processes"`
-	SchemaVersion int        `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
-	HTTP          HTTP       `conf:"http" json:"http"`
-	Log           Log        `conf:"log" json:"log"`
-	DB            DB         `conf:"db" json:"db"`
-	Telemetry     Telemetry  `conf:"telemetry" json:"telemetry"`
-	Webhook       Webhook    `conf:"webhook" json:"webhook"`
-	Privileged    Privileged `conf:"privileged" json:"privileged"`
-	Security      Security   `conf:"security" json:"security"`
+	Environment   Env         `conf:"environment" json:"environment" doc:"deployment environment (local|dev|stage|prod); must be set explicitly in deployed processes"`
+	SchemaVersion int         `conf:"schema_version" default:"1" json:"schema_version" doc:"config file format version"`
+	HTTP          HTTP        `conf:"http" json:"http"`
+	Log           Log         `conf:"log" json:"log"`
+	DB            DB          `conf:"db" json:"db"`
+	Telemetry     Telemetry   `conf:"telemetry" json:"telemetry"`
+	Webhook       Webhook     `conf:"webhook" json:"webhook"`
+	Privileged    Privileged  `conf:"privileged" json:"privileged"`
+	Security      Security    `conf:"security" json:"security"`
+	Concurrency   Concurrency `conf:"concurrency" json:"concurrency"`
 }
 
 // Telemetry configures distributed tracing (roadmap O1). Tracing is OFF by
@@ -165,10 +166,11 @@ func Defaults() Framework {
 			MaxBodyBytes:      1 << 20, // 1 MiB
 			RateLimit:         RateLimit{Disabled: false, RequestsPerSecond: 20, Burst: 40},
 		},
-		Log:       Log{Level: "info", Format: "json"},
-		DB:        DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
-		Telemetry: Telemetry{TraceSampleRatio: 0},
-		Security:  DefaultSecurity(),
+		Log:         Log{Level: "info", Format: "json"},
+		DB:          DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
+		Telemetry:   Telemetry{TraceSampleRatio: 0},
+		Security:    DefaultSecurity(),
+		Concurrency: ConcurrencyDefaults(),
 	}
 }
 
@@ -239,6 +241,12 @@ func (f Framework) Validate() error {
 	}
 	if err := f.Security.Validate(); err != nil {
 		add("%s", err.Error())
+	}
+	if cerr := f.Concurrency.validate(); cerr != nil {
+		add("%s", cerr.Error())
+	}
+	if capErr := checkCapacityEnforced(f); capErr != nil {
+		add("%s", capErr.Error())
 	}
 
 	// Production safety floor. Dev-only conveniences added in later phases

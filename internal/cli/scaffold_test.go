@@ -476,6 +476,42 @@ func TestInitConfigsBaseDocumentsSecurityProfile(t *testing.T) {
 	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "profile: browser")
 }
 
+// TestInitAPIMainWiresBackpressureMiddleware proves the generated cmd/api/main.go
+// wires the backlog-B6 backpressure middleware (guarded by
+// concurrency.http_max_in_flight) and the metrics callbacks for the
+// rejected-overload counter and in-flight gauge — the "wire it into the
+// scaffold" half of the deliverable, not just the library function existing.
+func TestInitAPIMainWiresBackpressureMiddleware(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	for _, want := range []string{
+		"httpx.Backpressure(cfg.Concurrency.HTTPMaxInFlight, cfg.Concurrency.Overload",
+		"httpx.OnBackpressureOverload(",
+		"http_overload_rejected_total",
+		"httpx.OnInFlightChange(",
+		"http_in_flight_requests",
+	} {
+		assertFileContains(t, apiPath, want)
+	}
+}
+
+// TestInitConfigsBaseDocumentsConcurrency: the generated configs/base.yaml
+// should document the optional concurrency section, matching how it already
+// documents auth.oidc and storage.
+func TestInitConfigsBaseDocumentsConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "concurrency:")
+}
+
 // buildRenderedProduct scaffolds a product into a fresh temp dir, points its
 // go.mod at THIS wowapi checkout via a replace directive (so the compile test
 // runs entirely offline against the framework under development, never a

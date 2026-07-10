@@ -93,3 +93,20 @@ i18n:
 #       - "core.owner_of"
 #     allow_rule_keys:
 #       - "policy.retention.days"
+# concurrency — capacity budget + HTTP backpressure (see docs/user-guide/configuration.md
+# "Concurrency: capacity budget + backpressure"). Every field below defaults to 0/advisory,
+# which is a complete no-op: no in-flight limiter is installed and the capacity-budget check
+# is skipped until you declare a deployment shape. Uncomment and size once you know your
+# replica count and pool sizes, then run `wowapi config capacity` to confirm the shape fits
+# under db.max_conns before flipping capacity_mode to enforced.
+# concurrency:
+#   http_max_in_flight: 256      # 0 disables the backpressure middleware (default)
+#   replicas: 2                  # process replicas of this deployment sharing the database
+#   runtime_pool_max: 16         # runtime (app_rt) pool max_conns per replica
+#   platform_pool_max: 8         # platform (app_platform) pool max_conns per replica
+#   migrate_pool_max: 2          # migrate process pool max_conns (counted once, not per replica)
+#   reserved_admin: 4            # connections reserved for admin/operator access
+#   capacity_mode: advisory      # advisory (warn only, default) | enforced (fail boot)
+#   overload:
+#     api_status: 503            # 503 or 429
+#     retry_after: 2s
