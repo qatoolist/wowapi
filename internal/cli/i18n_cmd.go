@@ -41,6 +41,12 @@ retranslate framework strings but not invent new kernel.* keys), locale coverage
 locale), and placeholder compatibility (a translation's percent-verb count must
 match the framework/default template's, so a localized parameterised message
 can't drop or add a parameter).
+
+Scope: this command validates the framework defaults + the --dir file catalogs
+(YAML/JSON). It does NOT compile or load your internal/i18n/catalogs Go bundles —
+those are compiled product code and are validated at BOOT (a bad Go-bundle key
+fails app.Boot), not by this CLI. Keep Go bundles small, or add a product-side
+test that calls kernel/i18n.Validate with your compiled Go layer.
 `)
 }
 

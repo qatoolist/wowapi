@@ -2,7 +2,9 @@ package i18n
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"sort"
@@ -158,14 +160,25 @@ func (s *fsSource) origin(p string) string {
 	return p
 }
 
-// decodeCatalogFile strict-decodes one catalog file. Unknown top-level keys and
-// duplicate keys within the file are errors (typo/collision defense).
+// decodeCatalogFile strict-decodes one catalog file. Unknown top-level keys are
+// errors (typo defense). Duplicate keys within one YAML file are rejected by the
+// yaml.v3 decoder; encoding/json, by contrast, silently keeps the last value for
+// a repeated JSON object key (the stdlib gives no hook to detect it), so JSON
+// files do NOT get intra-file duplicate detection — prefer YAML when authoring by
+// hand, and rely on cross-file intra-layer duplicate detection (the Loader) plus
+// `wowapi i18n validate` for the coverage/ownership guarantees.
 func decodeCatalogFile(data []byte, isJSON bool) (catalogFile, string) {
 	var cf catalogFile
 	if isJSON {
 		dec := json.NewDecoder(strings.NewReader(string(data)))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&cf); err != nil {
+			// An empty (or whitespace-only) JSON file decodes to io.EOF; treat it as
+			// an empty catalog, mirroring the YAML branch's EOF tolerance below, so a
+			// placeholder file does not fail boot asymmetrically (review B1-corr #1).
+			if errors.Is(err, io.EOF) {
+				return catalogFile{}, ""
+			}
 			return cf, fmt.Sprintf("invalid JSON: %v", err)
 		}
 		return cf, ""
