@@ -206,6 +206,21 @@ func TestSchemaValidationRejections(t *testing.T) {
 		{"enum_bad_json", "core.t.enumbad", `{"enum":["low"]}`, `{bad`, errors.KindValidation},
 		{"value_not_json", "core.t.badval", `{"type":"integer"}`, `{bad`, errors.KindValidation},
 		{"schema_malformed", "core.t.badschema", `{bad`, `1`, errors.KindInternal},
+
+		// GAP-007: expanded JSON Schema keyword validation.
+		{"minimum_violation", "core.t.minv", `{"type":"number","minimum":0}`, `-1`, errors.KindValidation},
+		{"maximum_violation", "core.t.maxv", `{"type":"number","maximum":100}`, `101`, errors.KindValidation},
+		{"exclusive_minimum_violation_eq", "core.t.exminv", `{"type":"number","exclusiveMinimum":0}`, `0`, errors.KindValidation},
+		{"exclusive_minimum_violation_lt", "core.t.exminv2", `{"type":"number","exclusiveMinimum":0}`, `-1`, errors.KindValidation},
+		{"exclusive_maximum_violation_eq", "core.t.exmaxv", `{"type":"number","exclusiveMaximum":100}`, `100`, errors.KindValidation},
+		{"exclusive_maximum_violation_gt", "core.t.exmaxv2", `{"type":"number","exclusiveMaximum":100}`, `101`, errors.KindValidation},
+		{"min_length_violation", "core.t.minlenv", `{"type":"string","minLength":3}`, `"ab"`, errors.KindValidation},
+		{"max_length_violation", "core.t.maxlenv", `{"type":"string","maxLength":3}`, `"abcd"`, errors.KindValidation},
+		{"pattern_violation", "core.t.patv", `{"type":"string","pattern":"^[a-z]+$"}`, `"ABC"`, errors.KindValidation},
+		{"pattern_malformed", "core.t.patbadv", `{"type":"string","pattern":"("}`, `"x"`, errors.KindInternal},
+		{"min_items_violation", "core.t.minitemsv", `{"type":"array","minItems":2}`, `[1]`, errors.KindValidation},
+		{"max_items_violation", "core.t.maxitemsv", `{"type":"array","maxItems":2}`, `[1,2,3]`, errors.KindValidation},
+		{"required_missing", "core.t.reqv", `{"type":"object","required":["name"]}`, `{"other":1}`, errors.KindValidation},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -221,6 +236,59 @@ func TestSchemaValidationRejections(t *testing.T) {
 				t.Fatalf("error kind = %v, want %v (%v)", errors.KindOf(err), c.kind, err)
 			}
 		})
+	}
+}
+
+// ---------- integration: numeric bounds enforced at Propose (GAP-007) ----------
+
+// TestIntegrationRulePropose_RejectsOutOfBoundsNumeric is the GAP-007
+// headline acceptance criterion: Store.Propose rejects an out-of-bounds
+// numeric value when the point's schema declares minimum/maximum, against a
+// real database — this is what let wowsociety delete its product-side bounds
+// check (rulepoints.go checkValue) once the framework schema enforces it.
+func TestIntegrationRulePropose_RejectsOutOfBoundsNumeric(t *testing.T) {
+	const key = "policy.mh.interest_rate_cap_pct"
+	schema := `{"type":"number","minimum":0,"maximum":21}`
+	h := testkit.NewDB(t)
+	seedDefFull(t, h, key, schema, `21`)
+	r := rules.NewRegistry()
+	r.Register("policy", rules.Point{
+		Key: key, ValueSchema: json.RawMessage(schema), Default: json.RawMessage(`21`),
+		AllowedScopes: []rules.ScopeKind{rules.ScopePlatform, rules.ScopeTenant},
+		Description:   "interest rate cap",
+	})
+	if err := r.Err(); err != nil {
+		t.Fatal(err)
+	}
+	store := rules.NewStore(r, model.UUIDv7())
+	tn := testkit.CreateTenant(t, h)
+	ctx := testkit.TenantCtx(tn.ID)
+
+	// Below minimum.
+	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, e := store.Propose(ctx, db, rules.Proposal{Key: key, Scope: rules.ScopeTenant, Value: json.RawMessage(`-1`)})
+		return e
+	})
+	if errors.KindOf(err) != errors.KindValidation {
+		t.Fatalf("a value below minimum must be rejected at write: %v", err)
+	}
+
+	// Above maximum.
+	err = h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, e := store.Propose(ctx, db, rules.Proposal{Key: key, Scope: rules.ScopeTenant, Value: json.RawMessage(`22`)})
+		return e
+	})
+	if errors.KindOf(err) != errors.KindValidation {
+		t.Fatalf("a value above maximum must be rejected at write: %v", err)
+	}
+
+	// Within bounds: accepted.
+	err = h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, e := store.Propose(ctx, db, rules.Proposal{Key: key, Scope: rules.ScopeTenant, Value: json.RawMessage(`18`)})
+		return e
+	})
+	if err != nil {
+		t.Fatalf("a value within bounds must be accepted: %v", err)
 	}
 }
 

@@ -34,6 +34,11 @@ type PermissionSeed struct {
 	Sensitive   bool   `yaml:"sensitive"`
 	// GrantedVia declares the ReBAC rule fed into the authz registry.
 	GrantedVia string `yaml:"granted_via"`
+	// StepUp declares that this permission requires an elevated authentication
+	// factor (MFA): an otherwise-allowed decision becomes a step-up challenge
+	// when the actor's AMR carries no strong factor (roadmap S3). Propagated to
+	// authz.Permission.StepUp at boot and persisted to permissions.step_up.
+	StepUp bool `yaml:"step_up"`
 }
 
 // RoleSeed declares a platform-template role and the permissions it grants.
@@ -176,10 +181,11 @@ type SpineInvalidator interface{ InvalidateAll() }
 func Sync(ctx context.Context, db database.DBTX, b Bundle, invalidators ...SpineInvalidator) error {
 	for _, p := range b.Permissions {
 		if _, err := db.Exec(ctx,
-			`INSERT INTO permissions (key, module, description, sensitive)
-                  VALUES ($1, $2, $3, $4)
-             ON CONFLICT (key) DO UPDATE SET description = EXCLUDED.description, sensitive = EXCLUDED.sensitive`,
-			p.Key, moduleOf(p.Key), p.Description, p.Sensitive); err != nil {
+			`INSERT INTO permissions (key, module, description, sensitive, step_up)
+                  VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (key) DO UPDATE SET description = EXCLUDED.description, sensitive = EXCLUDED.sensitive,
+                   step_up = EXCLUDED.step_up`,
+			p.Key, moduleOf(p.Key), p.Description, p.Sensitive, p.StepUp); err != nil {
 			return kerr.Wrapf(err, "seeds.Sync", "upsert permission %s", p.Key)
 		}
 	}

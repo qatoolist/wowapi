@@ -50,11 +50,21 @@ import (
 // Kernel owns infrastructure and kernel services. Fields are read-only after
 // construction; the pool never leaves the kernel.
 type Kernel struct {
-	Cfg             config.Framework
-	Log             *slog.Logger
-	Pool            *pgxpool.Pool
-	Platform        *pgxpool.Pool // app_platform pool for cross-tenant kernel work; see Deps.Platform for the wiring contract (nil only for migrate)
-	Tx              database.TxManager
+	Cfg      config.Framework
+	Log      *slog.Logger
+	Pool     *pgxpool.Pool
+	Platform *pgxpool.Pool // app_platform pool for cross-tenant kernel work; see Deps.Platform for the wiring contract (nil only for migrate)
+	Tx       database.TxManager
+	// PlatformTx is a tenant-bindable TxManager over the app_platform pool
+	// (WithRole app_platform + RLS guard). It backs the scoped privileged services
+	// (kernel/privileged, GAP-006): platform write privilege for the protected
+	// relationships/rule_versions writes, but tenant-bound so RLS still isolates.
+	// Nil only when Deps.Platform is nil (the migrate process, which serves no
+	// tenant traffic and wires no privileged services).
+	PlatformTx database.TxManager
+	// RuleStore persists + activates rule versions; the privileged Rules service
+	// delegates the supersede+activate state machine to it.
+	RuleStore       *rules.Store
 	Authz           authz.Evaluator
 	Perms           *authz.Registry
 	Resources       *resource.Registry
@@ -228,6 +238,17 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		return authz.NewStore().OrgAncestors(ctx, db, orgID)
 	}
 	ruleResolver := rules.NewResolver(ruleReg, orgAncestry)
+	ruleStore := rules.NewStore(ruleReg, idgen)
+
+	// Platform TxManager backing the scoped privileged services (kernel/privileged,
+	// GAP-006): the app_platform pool, tenant-bindable (WithRole + RLS guard) so a
+	// privileged write runs with platform grants yet stays tenant-isolated by RLS.
+	// Nil when no platform pool is wired (migrate).
+	var platformTx database.TxManager
+	if deps.Platform != nil {
+		platformTx = database.NewManager(deps.Platform, cfg.DB,
+			database.WithRole("app_platform"), database.WithRLSGuard())
+	}
 
 	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
 	wfReg := workflow.NewRegistry()
@@ -276,6 +297,8 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Pool:                 deps.Pool,
 		Platform:             deps.Platform,
 		Tx:                   deps.Tx,
+		PlatformTx:           platformTx,
+		RuleStore:            ruleStore,
 		Authz:                eval,
 		Perms:                perms,
 		Resources:            resources,

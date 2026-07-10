@@ -111,6 +111,52 @@ func TestBootHappyPathWiresEverything(t *testing.T) {
 	}
 }
 
+// stepUpSeed declares one plain and one step-up-gated permission.
+const stepUpSeed = `
+permissions:
+  - key: widgets.widget.read
+    description: read a widget
+  - key: widgets.widget.approve
+    description: approve a widget
+    step_up: true
+`
+
+// TestBootPropagatesStepUp proves a seed-declared step_up: true permission
+// reaches the shared authz registry as Permission.StepUp — the seed→boot→
+// registry plumbing GAP-004 connects. A permission that omits step_up must
+// register as StepUp: false.
+func TestBootPropagatesStepUp(t *testing.T) {
+	h := testkit.NewDB(t)
+	k := discardKernel(t, h)
+
+	m := funcModule{name: "widgets", reg: func(mc module.Context) error {
+		mc.Seeds(fstest.MapFS{"seed.yaml": &fstest.MapFile{Data: []byte(stepUpSeed)}})
+		return nil
+	}}
+
+	a := app.New()
+	a.Register(m)
+	if _, err := a.Boot(context.Background(), k, nil); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	readPerm, ok := k.Perms.Get("widgets.widget.read")
+	if !ok {
+		t.Fatal("widgets.widget.read not registered")
+	}
+	if readPerm.StepUp {
+		t.Error("widgets.widget.read should not require step-up (seed omits step_up)")
+	}
+
+	approvePerm, ok := k.Perms.Get("widgets.widget.approve")
+	if !ok {
+		t.Fatal("widgets.widget.approve not registered")
+	}
+	if !approvePerm.StepUp {
+		t.Error("widgets.widget.approve should require step-up (seed sets step_up: true)")
+	}
+}
+
 // TestBootConfigNamespaceIsolation confirms Boot threads each module's own
 // config namespace into its context and nothing else (blueprint 06 §2).
 func TestBootConfigNamespaceIsolation(t *testing.T) {

@@ -263,6 +263,79 @@ func TestGenCRUDRejectsUnknownFieldType(t *testing.T) {
 	}
 }
 
+// ---------- seed sync ----------
+
+// TestSeedSyncMissingDSN mirrors TestDLQMissingDSN (db_helpers_test.go convention):
+// a DB-connecting CLI command must fail fast with a named error when
+// DATABASE_URL is unset, before attempting anything else.
+func TestSeedSyncMissingDSN(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	dir := t.TempDir()
+	writeFile(t, dir, "permissions.yaml", "permissions:\n  - key: widgets.widget.create\n    description: c\n")
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync", "--module", "widgets=" + dir}, &out, &errb)
+	if code != 1 {
+		t.Fatalf("missing DATABASE_URL should exit 1, got %d (%s)", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "DATABASE_URL is not set") {
+		t.Fatalf("expected DSN error, got %q", errb.String())
+	}
+}
+
+// TestSeedSyncRequiresModuleFlag: no --module means nothing to sync, a usage error.
+func TestSeedSyncRequiresModuleFlag(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync"}, &out, &errb)
+	if code != 2 {
+		t.Fatalf("missing --module should exit 2, got %d", code)
+	}
+}
+
+// TestSeedSyncBadModuleFlag: a --module value without "name=dir" shape is a usage error.
+func TestSeedSyncBadModuleFlag(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync", "--module", "widgets-no-equals-sign"}, &out, &errb)
+	if code != 2 {
+		t.Fatalf("malformed --module should exit 2, got %d (%s)", code, errb.String())
+	}
+}
+
+// TestSeedSyncDirNotADirectory: a --module dir that doesn't exist (or isn't a
+// directory) fails before any DATABASE_URL is even needed.
+func TestSeedSyncDirNotADirectory(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "afile")
+	writeFile(t, filepath.Dir(f), "afile", "x")
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync", "--module", "widgets=" + f}, &out, &errb)
+	if code != 1 {
+		t.Fatalf("--module dir pointing at a file should exit 1, got %d", code)
+	}
+	if !strings.Contains(errb.String(), "is not a directory") {
+		t.Fatalf("expected not-a-directory error, got %q", errb.String())
+	}
+}
+
+// TestSeedSyncLoadError: malformed seed YAML must fail before DATABASE_URL is
+// used. DATABASE_URL is unset so a DB-connection failure cannot masquerade as
+// the load failure — the exit-1 must come from the load path specifically
+// (review finding: assert the error source, not just the exit code).
+func TestSeedSyncLoadError(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	dir := t.TempDir()
+	writeFile(t, dir, "permissions.yaml", "permissions: [this is : not valid")
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync", "--module", "widgets=" + dir}, &out, &errb)
+	if code != 1 {
+		t.Fatalf("malformed seed should exit 1, got %d (%s)", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "load seeds for widgets") {
+		t.Fatalf("expected a seed load error, got %q", errb.String())
+	}
+	if strings.Contains(errb.String(), "DATABASE_URL") {
+		t.Fatalf("load failure must be reported before any DSN handling: %q", errb.String())
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {

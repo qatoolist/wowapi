@@ -10,12 +10,14 @@ import (
 	"syscall"
 
 	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
+	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
 	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/logging"
 	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/storage"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -107,10 +109,34 @@ func run(ctx context.Context) error {
 		}
 	}
 
+	// Object storage (optional, mirrors cmd/api): wired only when
+	// storage.endpoint is configured; otherwise Deps.Storage stays nil and
+	// app.Boot fails closed if a module registers a document class. The
+	// worker needs the same adapter as the api — retention voiding and
+	// document jobs touch the store from this process.
+	var store storage.Adapter
+	if cfg.Storage.Enabled() {
+		s3a, serr := s3adapter.New(ctx, s3adapter.Config{
+			Endpoint:     cfg.Storage.Endpoint,
+			Bucket:       cfg.Storage.Bucket,
+			Region:       cfg.Storage.Region,
+			AccessKey:    cfg.Storage.AccessKey.Reveal(),
+			SecretKey:    cfg.Storage.SecretKey.Reveal(),
+			UseSSL:       cfg.Storage.UseSSL,
+			PresignTTL:   cfg.Storage.PresignTTL,
+			CreateBucket: cfg.Storage.CreateBucket,
+		})
+		if serr != nil {
+			return fmt.Errorf("storage: %w", serr)
+		}
+		store = s3a
+	}
+
 	k, err := kernel.New(cfg.Framework, log, kernel.Deps{
 		Pool:     pool,
 		Platform: platformPool,
 		Tx:       txm,
+		Storage:  store,
 		Metrics:  metrics,
 		Tracer:   tracer,
 	})

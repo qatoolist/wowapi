@@ -53,6 +53,7 @@ graphify-out/
 .graphify_*.json
 .graphify_*.txt
 .graphify_old.json
+visuals/
 
 # Local infra data
 .docker-data/

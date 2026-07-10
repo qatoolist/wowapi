@@ -70,6 +70,42 @@ func TestLoadRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+// TestLoadParsesStepUp pins step_up: PermissionSeed.StepUp decodes from the
+// step_up YAML key, defaults to false when absent, and a typo'd field name
+// still fails strict decoding (no silent no-op).
+func TestLoadParsesStepUp(t *testing.T) {
+	src := fsys(map[string]string{
+		"p.yaml": `
+permissions:
+  - key: requests.request.read
+  - key: requests.request.approve
+    step_up: true
+`,
+	})
+	b, err := seeds.Load(src, "requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Permissions) != 2 {
+		t.Fatalf("unexpected bundle: %+v", b)
+	}
+	if b.Permissions[0].StepUp {
+		t.Errorf("step_up should default to false when absent: %+v", b.Permissions[0])
+	}
+	if !b.Permissions[1].StepUp {
+		t.Errorf("step_up: true not parsed: %+v", b.Permissions[1])
+	}
+}
+
+func TestLoadRejectsStepUpTypo(t *testing.T) {
+	src := fsys(map[string]string{
+		"p.yaml": "permissions:\n  - key: requests.request.read\n    step_upp: true\n",
+	})
+	if _, err := seeds.Load(src, "requests"); err == nil {
+		t.Fatal("step_upp typo must fail strict decode")
+	}
+}
+
 // SEC-32: a role may not grant a permission its module does not own.
 func TestLoadRejectsForeignRoleGrant(t *testing.T) {
 	src := fsys(map[string]string{

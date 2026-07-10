@@ -61,6 +61,12 @@ type Claims struct {
 	CapacityID         uuid.UUID `json:"capacity_id,omitempty"`
 	ImpersonatorUserID uuid.UUID `json:"impersonator_user_id,omitempty"`
 	BreakGlass         bool      `json:"break_glass,omitempty"`
+	// AMR is the standard authentication-methods-references claim (RFC 8176,
+	// e.g. ["pwd","mfa"]) surfaced by the IdP. Verifier.Actor propagates it to
+	// authz.Actor.AMR, which drives step-up (MFA) enforcement (roadmap S3). A
+	// malformed amr in the token (wrong JSON shape) fails the claims decode in
+	// Verify, so Actor never sees a token whose amr could not be parsed.
+	AMR []string `json:"amr,omitempty"`
 }
 
 // Subject returns the token subject (sub), which maps to a user's idp_subject.
@@ -197,6 +203,7 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 		TenantID:           claims.TenantID,
 		ImpersonatorUserID: claims.ImpersonatorUserID,
 		BreakGlass:         claims.BreakGlass,
+		AMR:                claims.AMR,
 	}, nil
 }
 

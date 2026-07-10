@@ -346,7 +346,7 @@ func TestSeedNoArgsUsage(t *testing.T) {
 	if code := runSeed(nil, &out, &errb); code != 2 {
 		t.Fatalf("seed no args should exit 2, got %d", code)
 	}
-	if !strings.Contains(errb.String(), "usage: wowapi seed validate") {
+	if !strings.Contains(errb.String(), "usage: wowapi seed <validate|sync>") {
 		t.Fatalf("expected seed usage, got %q", errb.String())
 	}
 }
