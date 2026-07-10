@@ -12,6 +12,14 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- `kernel/httpclient`: SSRF-safe outbound HTTP client (dial-time resolve-then-verify blocking of loopback/link-local/metadata/RFC1918/ULA/CGNAT, allowlist escape hatch, per-hop redirect re-verification); `kernel/webhook` delivery now uses it by default (B2).
+- Full-chain benchmark gates: `BenchmarkDispatch` (50/500/2000 routes through the real SecureHandler chain), authz-gate cached/uncached, JSON decode/body-limit — with budgets in `bench-budgets.txt`; measured data parks the P2 router replacement (B5).
+
+### Fixed
+- `kernel/rules` value schemas fail closed: unknown `type` values and unknown keywords are rejected, defaults are validated at registration, and the contract is renamed to the strict `RuleValueSchema` grammar it actually implements (B3).
+- `wowapi seed sync` is now framed as a low-level escape hatch in `--help`, runtime output, and docs — the generated `cmd/migrate` (migrations → seeds → rule definitions) is the production lifecycle path (B4).
+
+### Added
 - **Standard storage/OIDC/i18n scaffold wiring in `wowapi init` (GAP-008, the last framework gap)** — closes
   the gap that forced `wowsociety` to hand-write its own `tools/configcheck`, `internal/appcfg.StorageConfig`,
   and S3/OIDC wiring in `cmd/api`/`cmd/worker`. The generated `internal/appcfg.Config` now carries a
