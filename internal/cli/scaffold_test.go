@@ -462,6 +462,20 @@ func TestInitConfigsBaseDocumentsStorage(t *testing.T) {
 	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "storage:")
 }
 
+// TestInitConfigsBaseDocumentsSecurityProfile: the generated configs/base.yaml
+// should document the SecurityProfile section (backlog B7) the same way it
+// documents storage/auth.oidc, so a product discovers the browser profile
+// opt-in without reading kernel/config source.
+func TestInitConfigsBaseDocumentsSecurityProfile(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "security:")
+	assertFileContains(t, filepath.Join(dir, "configs", "base.yaml"), "profile: browser")
+}
+
 // buildRenderedProduct scaffolds a product into a fresh temp dir, points its
 // go.mod at THIS wowapi checkout via a replace directive (so the compile test
 // runs entirely offline against the framework under development, never a
