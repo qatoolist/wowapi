@@ -238,7 +238,6 @@ func checkRawPool(m Manifest) []Violation {
 // because "escaping its transaction" is the specific failure class B9 calls
 // out and deserves its own violation class/message for operators.
 func checkTenantEscape(m Manifest) []Violation {
-	idx := m.ByProvides()
 	var out []Violation
 	for _, d := range m.Descriptors {
 		if d.Scope != ScopeTenantTx {
@@ -265,7 +264,6 @@ func checkTenantEscape(m Manifest) []Violation {
 			}
 		}
 	}
-	_ = idx // idx kept for symmetry/future use; current check needs only Requires scan
 	return out
 }
 
