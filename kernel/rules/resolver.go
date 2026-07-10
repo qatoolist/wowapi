@@ -51,6 +51,18 @@ func NewResolver(reg *Registry, ancestry OrgAncestry) *Resolver {
 // → platform → code default. Versions are immutable, so any historical `at`
 // resolves deterministically (blueprint 02 §2.2). An unregistered key is a
 // programming error.
+// Resolve validates the winning value against the point's CURRENT
+// value_schema before returning it (B3 defect 4): the value was validated
+// against whatever schema was live at Propose time, but a point's schema can
+// be tightened later (module upgrade) — a stored value that conformed to an
+// earlier, looser schema can drift out of conformance with the schema the
+// point is registered under now. Re-checking here is cheap (pure in-memory,
+// no extra I/O — the point's schema is already loaded from the registry) and
+// turns silent schema drift into a loud KindInternal error naming the rule
+// key, rather than handing a caller a value that violates the very contract
+// it is being served under. The code default itself is never re-checked here
+// — it was already validated against this same schema at Register (B3 defect
+// 3), so it is trusted by construction.
 func (r *Resolver) Resolve(ctx context.Context, db database.TenantDB, key string, org uuid.UUID, at time.Time) (Resolved, error) {
 	point, ok := r.reg.Get(key)
 	if !ok {
@@ -69,7 +81,7 @@ func (r *Resolver) Resolve(ctx context.Context, db database.TenantDB, key string
 			if res, found, err := r.lookup(ctx, db, key, ScopeOrg, oid, at); err != nil {
 				return Resolved{}, err
 			} else if found {
-				return res, nil
+				return validateResolved(point, res)
 			}
 		}
 	}
@@ -78,16 +90,27 @@ func (r *Resolver) Resolve(ctx context.Context, db database.TenantDB, key string
 	if res, found, err := r.lookup(ctx, db, key, ScopeTenant, uuid.Nil, at); err != nil {
 		return Resolved{}, err
 	} else if found {
-		return res, nil
+		return validateResolved(point, res)
 	}
 	// Platform scope.
 	if res, found, err := r.lookup(ctx, db, key, ScopePlatform, uuid.Nil, at); err != nil {
 		return Resolved{}, err
 	} else if found {
-		return res, nil
+		return validateResolved(point, res)
 	}
-	// Code default.
+	// Code default: already validated against this schema at Register.
 	return Resolved{Key: key, Value: point.Default, IsDefault: true}, nil
+}
+
+// validateResolved re-checks a resolved (non-default) value against the
+// point's current schema, surfacing schema drift as a loud KindInternal
+// error instead of returning a value that no longer conforms.
+func validateResolved(point Point, res Resolved) (Resolved, error) {
+	if err := validateAgainstSchema(point.ValueSchema, res.Value); err != nil {
+		return Resolved{}, kerr.E(kerr.KindInternal, "rule_schema_drift",
+			"stored rule value for "+point.Key+" no longer conforms to its current value_schema: "+err.Error())
+	}
+	return res, nil
 }
 
 // lookup finds the version of key that was IN EFFECT at `at` for a scope+id.

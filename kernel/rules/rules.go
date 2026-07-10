@@ -1,7 +1,7 @@
 // Package rules is wowapi's rule/configuration engine: modules register rule
-// points (a key, a JSON-Schema'd value, a default, allowed scopes, and whether
-// changes require approval); values are stored as versioned rows with temporal
-// validity; and resolution picks the most specific active value for a
+// points (a key, a RuleValueSchema'd value, a default, allowed scopes, and
+// whether changes require approval); values are stored as versioned rows with
+// temporal validity; and resolution picks the most specific active value for a
 // (tenant, org, at) — org-ancestry → tenant → platform → code default. Versions
 // are immutable (never mutated, only superseded), so any historical `at`
 // resolves deterministically. Contract: blueprint 02 §2.
@@ -9,6 +9,40 @@
 // Rule points are the ONLY sanctioned place for values that must change without
 // a deploy (feature flags, tenant overrides); framework config holds only their
 // platform defaults (12 §6).
+//
+// # RuleValueSchema
+//
+// A Point's ValueSchema is NOT JSON Schema — it never was a full
+// implementation, and as of B3 the contract is corrected to say so plainly.
+// It is RuleValueSchema: a small, closed, framework-specific grammar (ratified
+// Decision 2 — a strict limited grammar, no JSON-Schema library dependency)
+// recognizing exactly these top-level keywords:
+//
+//   - "type": one of integer/number/string/boolean/object/array/null (any
+//     other value is rejected at Register — B3 defect 1);
+//   - "enum": a JSON array of allowed literal values;
+//   - "minimum" / "maximum" / "exclusiveMinimum" / "exclusiveMaximum": numeric bounds;
+//   - "minLength" / "maxLength" / "pattern" (RE2): string constraints;
+//   - "minItems" / "maxItems": array length bounds;
+//   - "required": a shallow presence check for object keys (NOT recursive
+//     per-property validation — there is no nested "properties" schema).
+//
+// Any keyword outside this list — "multipleOf", "additionalProperties",
+// "items" sub-schemas, "properties", "patternProperties", etc — is REJECTED
+// at Register, not silently ignored (B3 defect 2: json.Unmarshal into an
+// unexported struct used to drop unrecognized keys, so a schema author could
+// write a constraint the framework never enforced without any error). A rule
+// point needing per-property typing should declare separate top-level rule
+// points instead of one object-shaped point with nested constraints.
+//
+// Register also validates that a Point's Default conforms to its own
+// ValueSchema (B3 defect 3) — a schema that can't even validate its own
+// default is broken by construction and must never boot. Resolver.Resolve
+// re-validates the winning STORED value against the point's CURRENT schema
+// before returning it (B3 defect 4): a value that conformed to an earlier,
+// looser schema can drift out of conformance after a module upgrade
+// tightens the schema, and Resolve surfaces that as an error rather than
+// silently handing back a non-conforming value.
 package rules
 
 import (
@@ -34,10 +68,14 @@ var keyRE = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_
 
 // Point is a registered rule point: the schema + default + policy for a key.
 type Point struct {
-	Key              string
-	Module           string
-	ValueSchema      json.RawMessage // JSON Schema (validated at write + resolve)
-	Default          json.RawMessage // compiled default value
+	Key    string
+	Module string
+	// ValueSchema is a RuleValueSchema document (see the package doc above) —
+	// a small closed grammar, NOT JSON Schema. Validated at Register (schema
+	// well-formedness + Default conformance), at Propose (write time), and at
+	// Resolve (defense in depth against post-write schema drift).
+	ValueSchema      json.RawMessage
+	Default          json.RawMessage // compiled default value; must conform to ValueSchema (checked at Register)
 	AllowedScopes    []ScopeKind
 	RequiresApproval bool
 	Description      string
@@ -66,8 +104,12 @@ type Registry struct {
 func NewRegistry() *Registry { return &Registry{points: map[string]Point{}} }
 
 // Register adds a rule point. Malformed keys, a module-prefix mismatch, a
-// missing schema/default, or a duplicate are recorded as errors surfaced by
-// Err().
+// missing schema/default, a schema that is malformed or names an unknown
+// type/keyword outside the RuleValueSchema grammar (B3 defect 1/2), a default
+// that violates its own schema (B3 defect 3), or a duplicate are recorded as
+// errors surfaced by Err() — the boot-error-accumulation gate (app/boot.go
+// calls k.Rules.Err()) turns any of these into a boot failure, so a
+// silently-unenforced or self-contradictory rule point can never go live.
 func (r *Registry) Register(module string, p Point) {
 	if !keyRE.MatchString(p.Key) {
 		r.errf("rule key must be module.area.name: %s", p.Key)
@@ -83,6 +125,10 @@ func (r *Registry) Register(module string, p Point) {
 	}
 	if _, dup := r.points[p.Key]; dup {
 		r.errf("rule point registered more than once: %s", p.Key)
+		return
+	}
+	if err := validateAgainstSchema(p.ValueSchema, p.Default); err != nil {
+		r.errf("rule point %s: default violates its own value_schema: %s", p.Key, err.Error())
 		return
 	}
 	p.Module = module

@@ -15,7 +15,7 @@ always with `tenant_id` + RLS, and register resource rows for anything needing k
 | Append-only | `audit_logs`, `events_outbox`, `document_versions`, `job_runs`, `webhook_events`, `notification_deliveries`: INSERT-only; app role gets no UPDATE/DELETE grant (except narrow status columns via `SECURITY DEFINER` functions or a separate relay role where noted). |
 | RLS | Tenant-scoped tables: `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `tenant_id = current_setting('app.tenant_id')::uuid` for USING and WITH CHECK. Global tables: no RLS, kernel-service access only. |
 | Indexes | Every FK gets an index. Tenant-scoped hot paths use composite `(tenant_id, …)` leading indexes. Keyset pagination indexes `(tenant_id, created_at DESC, id DESC)` where listed. |
-| JSONB — yes | payloads whose schema is owned elsewhere (event payloads, rule values validated by JSON Schema, workflow definitions/context, provider configs, metadata/extension bags). |
+| JSONB — yes | payloads whose schema is owned elsewhere (event payloads, rule values validated by RuleValueSchema — a small closed grammar, not JSON Schema, see 02 §2.1, workflow definitions/context, provider configs, metadata/extension bags). |
 | JSONB — no | anything you filter/join/aggregate on, money, statuses, foreign keys, dates driving logic. If a module keeps querying into a JSONB field → promote to a column (expand-contract migration). |
 | Money | `numeric(18,4)` + `currency char(3)` columns (kernel `Money` type). Never float, never JSONB. |
 | Migrations | goose, per-module dirs, expand-contract for breaking changes (add-new → dual-write/backfill → cut-over → drop-old). |
@@ -42,7 +42,7 @@ Scope: **G**=global, **T**=tenant-scoped(RLS). Flags: **A**=append-only, **V**=o
 | role_permissions | G+T | — | PK `(role_id,permission_key)` |
 | actor_assignments | T | Tm,V | role grants at scope; idx `(tenant_id,capacity_id,valid_to)`, `(tenant_id,scope_kind,scope_id)` |
 | policies / policy_conditions | G+T | V,S | ABAC layer; conditions FK policy |
-| rule_definitions | G | — | persisted rule points; PK `key`; JSON Schema |
+| rule_definitions | G | — | persisted rule points; PK `key`; `value_schema` is RuleValueSchema (not JSON Schema, see 02 §2.1) |
 | rule_versions | T+G | A(status transitions only),Tm | values; exclusion constraint prevents overlapping active versions per scope |
 | feature_flags | — | — | implemented as `feature.*` rule points (no separate table) |
 | workflow_definitions | G+T | — | immutable per `(key,version,tenant_id?)` |
@@ -297,7 +297,7 @@ CREATE TABLE policy_conditions (
 -- ============ rules ============
 CREATE TABLE rule_definitions (
   key text PRIMARY KEY, module text NOT NULL,
-  value_schema jsonb NOT NULL,            -- JSON Schema
+  value_schema jsonb NOT NULL,            -- RuleValueSchema (a small closed grammar; NOT JSON Schema — see 02 §2.1)
   default_value jsonb NOT NULL,
   allowed_scopes text[] NOT NULL DEFAULT '{platform,tenant,org}',
   requires_approval boolean NOT NULL DEFAULT false,

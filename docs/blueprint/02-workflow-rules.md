@@ -100,7 +100,9 @@ complaint escalation) are just YAML in the future society module — no engine c
 
 Three pieces, all core:
 
-1. **Rule point** (code-registered, from modules): `key`, value **JSON Schema**, default value, scope
+1. **Rule point** (code-registered, from modules): `key`, value **RuleValueSchema** (a small closed
+   grammar — type/enum/bounds/lengths/pattern/required — NOT JSON Schema; see `kernel/rules` package
+   docs and the database-migrations user-guide page), default value, scope
    levels allowed, `requires_approval bool`, description. Naming `module.area.name`:
    `core.retention.audit_days`, `core.upload.max_size_mb`, `notify.digest.hour`,
    `workflow.escalation.default_sla`, `billing.late_fee.percent` (generic), `feature.requests.bulk_ops`.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/httpclient"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
@@ -49,6 +51,19 @@ func (failingResolver) Resolve(_ context.Context, _ string) (string, error) {
 // HTTPSender (real net/http Sender) via httptest
 // =============================================================================
 
+// testAllowlistFor builds an httpclient.Config allowlisting rawURL's host —
+// the SSRF guard is on by default (backlog B2), so any test that dials a
+// loopback httptest server for reasons OTHER than SSRF policy itself must
+// opt that specific target in. hostOnly is defined in sender_test.go.
+func testAllowlistFor(t *testing.T, rawURL string) httpclient.Config {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("testAllowlistFor: parse %q: %v", rawURL, err)
+	}
+	return httpclient.Config{AllowedHosts: []string{hostOnly(t, u.Host)}}
+}
+
 // TestIntegrationHTTPSender_PostSuccess proves the production Sender POSTs the
 // body + headers to a live server and returns its status code.
 func TestIntegrationHTTPSender_PostSuccess(t *testing.T) {
@@ -66,7 +81,11 @@ func TestIntegrationHTTPSender_PostSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	sender := webhook.NewHTTPSender()
+	// This test exercises POST mechanics (method/headers/body forwarding), not
+	// SSRF policy (that's kernel/webhook/sender_test.go), so the loopback
+	// httptest target must be allowlisted — the default sender now blocks it
+	// dial-time (backlog B2).
+	sender := webhook.NewHTTPSender(webhook.WithHTTPClientConfig(testAllowlistFor(t, srv.URL)))
 	body := []byte(`{"hello":"world"}`)
 	code, err := sender.Post(context.Background(), srv.URL, body,
 		map[string]string{"X-Signature": "sha256=abc", "Content-Type": "application/json"})
@@ -92,9 +111,10 @@ func TestIntegrationHTTPSender_PostSuccess(t *testing.T) {
 func TestIntegrationHTTPSender_PostConnectionError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := srv.URL
-	srv.Close() // nothing is listening now
+	clientCfg := testAllowlistFor(t, url) // capture the allowlist before Close
+	srv.Close()                           // nothing is listening now
 
-	sender := webhook.NewHTTPSender()
+	sender := webhook.NewHTTPSender(webhook.WithHTTPClientConfig(clientCfg))
 	code, err := sender.Post(context.Background(), url, []byte(`{}`), nil)
 	if err == nil {
 		t.Fatal("want transport error against a closed server, got nil")

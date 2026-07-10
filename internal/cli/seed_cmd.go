@@ -1,12 +1,22 @@
-// seed_cmd.go — `wowapi seed validate`/`wowapi seed sync` (Phase 10, GAP-003).
-// validate loads a module's seed bundle through the same kernel/seeds.Load the
-// app uses at boot, so a seed error is caught in CI (exit 1) rather than at
-// deploy time. sync is the production lifecycle path: it loads one or more
-// modules' seed bundles and applies them to a real database with
-// kernel/seeds.Sync, on a platform-privileged connection — the generated
-// cmd/migrate calls the same Sync after migrations, and this command exists as
-// a first-class, standalone alternative (e.g. to re-sync catalogs without a
-// full migrate run, or for a product with a custom migrate main).
+// seed_cmd.go — `wowapi seed validate`/`wowapi seed sync` (Phase 10, GAP-003;
+// escape-hatch framing per B4). validate loads a module's seed bundle through
+// the same kernel/seeds.Load the app uses at boot, so a seed error is caught
+// in CI (exit 1) rather than at deploy time. sync loads one or more modules'
+// seed bundles and applies them to a real database with kernel/seeds.Sync, on
+// a platform-privileged connection — but it is a LOW-LEVEL STANDALONE ESCAPE
+// HATCH, not the production lifecycle path: the generated cmd/migrate is
+// (loads the composed product config via appcfg.Load(), runs migrations, then
+// seeds.Sync, then rules.SyncDefinitions — see
+// internal/cli/templates/init/cmd_migrate_main.go.tmpl and
+// docs/user-guide/database-migrations.md). This command connects via a bare
+// DATABASE_URL env var (no product config layering, no secretref://
+// resolution, hardcoded pool defaults) and never calls rules.SyncDefinitions:
+// rule points exist only as Go declarations registered by a booted product
+// process (mc.Rules().Register(...)), so a framework-only binary has no
+// registry to read — there is nothing for this command to sync even in
+// principle (see kernel/rules.SyncDefinitions's doc comment). Use it to
+// re-sync seed catalogs without a full migrate run; it is not a substitute
+// for the generated migrate on a fresh environment.
 package cli
 
 import (
@@ -29,7 +39,7 @@ func seedUsage(w io.Writer) {
 Subcommands:
   validate   load and validate a module's seed bundle (no database needed)
   sync       load one or more modules' seed bundles and apply them to a
-             database (production seed-sync lifecycle, GAP-003)
+             database (LOW-LEVEL ESCAPE HATCH — see below)
 
 Flags (validate):
   --dir      directory holding the module's seed YAML (default "seeds")
@@ -39,8 +49,29 @@ Flags (sync):
   --module   name=dir pair identifying a module's seed directory; repeatable,
              e.g. --module widgets=modules/widgets/seeds (at least one required)
 
+THE PRODUCTION PATH IS THE GENERATED "cmd/migrate": it loads the composed
+product config via appcfg.Load() (configs/base.yaml + configs/<env>.yaml +
+secretref:// resolution), then runs migrations, seeds.Sync, AND
+rules.SyncDefinitions, in that order — see
+docs/user-guide/database-migrations.md#seeds and #rule-definitions.
+
+'wowapi seed sync' is a low-level escape hatch (e.g. to re-sync catalogs
+without a full migrate run) with real limitations vs. that path:
+  - connects to a bare DATABASE_URL env var as app_platform — no product
+    config layering, no secretref:// resolution, hardcoded pool defaults
+    (config.Defaults().DB), unlike appcfg.Load().
+  - does NOT sync rule definitions (rule_definitions / GAP-007). Rule points
+    exist only as Go declarations registered by a booted product process
+    (mc.Rules().Register(...)); this framework-only binary has no product
+    rule registry to read, so there is nothing to sync here even in
+    principle. Run the generated migrate (or call
+    rules.SyncDefinitions(ctx, pool, registry) from a custom migrate main)
+    to keep rule_definitions converged — otherwise any rule_versions.Propose
+    for a new key fails its rule_key foreign key.
+
 sync connects to DATABASE_URL as app_platform (the kernel maintenance role,
-same convention as 'wowapi dlq') and upserts the merged bundle idempotently.
+same convention as 'wowapi dlq') and upserts the merged seed bundle
+idempotently.
 `)
 }
 
@@ -119,6 +150,16 @@ func runSeedSync(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "wowapi seed sync: at least one --module name=dir is required")
 		return 2
 	}
+
+	// Escape-hatch disclosure (B4): print unconditionally, before any work,
+	// so a user who never reads --help still sees it. This command is not the
+	// production lifecycle path — it has no product config/secretref
+	// resolution and, unlike the generated migrate, rule definitions are NOT
+	// synced by this command (no product rule registry to read from a
+	// framework-only binary). See docs/user-guide/database-migrations.md.
+	fmt.Fprintln(stderr, "wowapi seed sync: WARNING: low-level escape hatch — rule definitions are NOT synced "+
+		"by this command (no product rule registry available here); run the generated 'migrate' for the full "+
+		"production lifecycle (migrations -> seeds.Sync -> rules.SyncDefinitions).")
 
 	// Load and merge every module's bundle BEFORE touching the database, so a
 	// seed error (typo, ownership violation) is reported without a partial

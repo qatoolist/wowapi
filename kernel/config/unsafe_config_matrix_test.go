@@ -53,9 +53,14 @@ type unsafeKnob struct {
 //     defence-in-depth concern. Their current gates are symmetric (same range in
 //     all envs); if a prod-specific tighter floor is ever needed, add it to
 //     Validate() and update this table.
-//   - No "unsafe:true"-tagged struct field exists on Framework yet. The
-//     enforceUnsafe binder path is exercised via load_test.go when product
-//     configs add such fields.
+//   - "webhook.outbound.ssrf_protection_disabled" (backlog B2) is the FIRST
+//     "unsafe:true"-tagged struct field on Framework. It is refused here via a
+//     dedicated Validate() branch AND via the generic enforceUnsafe binder path
+//     (which additionally warns in stage) — see
+//     TestLoadWebhookSSRFProtectionDisabledIsUnsafeKnob in load_test.go for the
+//     Load()-level prod/stage/dev matrix. TestLoadUnsafeKnobMatrix above still
+//     covers the enforceUnsafe mechanism generically via a synthetic product
+//     config, for cases where no real Framework field carries the tag.
 var prodUnsafeKnobs = []unsafeKnob{
 	// ── Production-only format gate ──────────────────────────────────────────
 	{
@@ -68,6 +73,15 @@ var prodUnsafeKnobs = []unsafeKnob{
 		name:    "log.level=debug rejected in prod",
 		mutate:  func(f *Framework) { f.Log.Level = "debug" },
 		wantErr: "debug is not allowed in prod",
+	},
+	// ── Production-only SSRF-protection-disable gate (backlog B2) ────────────
+	// This is Validate()'s OWN defense-in-depth check; the generic
+	// enforceUnsafe path (which also warns in stage) is proven separately by
+	// TestLoadWebhookSSRFProtectionDisabledIsUnsafeKnob in load_test.go.
+	{
+		name:    "webhook.outbound.ssrf_protection_disabled=true rejected in prod",
+		mutate:  func(f *Framework) { f.Webhook.Outbound.SSRFProtectionDisabled = true },
+		wantErr: "webhook.outbound.ssrf_protection_disabled",
 	},
 	// ── Always-invalid knobs: rejected regardless of environment ──────────────
 	// These are included so the matrix covers every Validate() error path;

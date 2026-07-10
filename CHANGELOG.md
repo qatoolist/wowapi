@@ -12,6 +12,8 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- `kernel/httpclient`: SSRF-safe outbound HTTP client (dial-time resolve-then-verify blocking of loopback/link-local/metadata/RFC1918/ULA/CGNAT, allowlist escape hatch, per-hop redirect re-verification); `kernel/webhook` delivery now uses it by default (B2).
+- Full-chain benchmark gates: `BenchmarkDispatch` (50/500/2000 routes through the real SecureHandler chain), authz-gate cached/uncached, JSON decode/body-limit — with budgets in `bench-budgets.txt`; measured data parks the P2 router replacement (B5).
 - **Standard storage/OIDC/i18n scaffold wiring in `wowapi init` (GAP-008, the last framework gap)** — closes
   the gap that forced `wowsociety` to hand-write its own `tools/configcheck`, `internal/appcfg.StorageConfig`,
   and S3/OIDC wiring in `cmd/api`/`cmd/worker`. The generated `internal/appcfg.Config` now carries a
@@ -147,6 +149,10 @@ changes to it require a new major version.
   catalog migration + a JWT-reparsing authenticator wrapper).
 
 ### Fixed
+- `kernel/httpclient.New` now sets `transport.Proxy = nil` on the cloned default transport, closing a real SSRF bypass: `http.DefaultTransport.Clone()` retains `Proxy: http.ProxyFromEnvironment`, so with `HTTP_PROXY`/`HTTPS_PROXY` set, the transport dialed the *proxy's* address (which can legitimately pass the guard on its own merits) and handed the proxy the attacker-controlled destination URL — the guarded `DialContext` never saw, let alone validated, the real target. `kernel/webhook`'s sender inherits the fix automatically (it always builds its client via `httpclient.New`, independent review follow-up on B2). An explicit egress-proxy option is a distinct future feature, not reintroduced here.
+- `kernel/httpclient`'s SSRF guard (`isBlockedIP`) now unwraps IPv6 transition/embedding forms — NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, and the `::ffff:0:0/96` SIIT/alt-mapped range — extracting the embedded IPv4 address and re-checking it against every existing block rule, so a blocked v4 target (e.g. 169.254.169.254 cloud metadata, RFC1918, loopback) can no longer bypass the guard by being wrapped in one of these IPv6 disguises (independent review follow-up on B2).
+- `kernel/rules` value schemas fail closed: unknown `type` values and unknown keywords are rejected, defaults are validated at registration, and the contract is renamed to the strict `RuleValueSchema` grammar it actually implements (B3).
+- `wowapi seed sync` is now framed as a low-level escape hatch in `--help`, runtime output, and docs — the generated `cmd/migrate` (migrations → seeds → rule definitions) is the production lifecycle path (B4).
 - `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB
   DSNs + a running Postgres (fail-closed). The hint now points to the generated README's "Getting started".
 - **GAP-001 acceptance gap: problem-details `detail` was never localized** (external merge-review finding).
