@@ -1,73 +1,28 @@
 package i18n
 
-import "github.com/qatoolist/wowapi/kernel/errors"
-
-// frameworkProblemTitles is the framework's own English problem-detail titles,
-// keyed by errors.Kind. These MUST stay byte-for-byte identical to kernel/httpx's
-// `titles` map so the localized path and the zero-config path produce exactly the
-// same English title for every kind (no behavior change). In particular
-// KindIdempotencyExpired is intentionally ABSENT from BOTH maps: httpx renders an
-// absent title as "Internal error" via its p.Title=="" fallback, and this catalog
-// mirrors that by having no entry (localizeTitle then also resolves to the
-// KindInternal title), keeping the two paths in lockstep.
-var frameworkProblemTitles = map[errors.Kind]string{
-	errors.KindValidation:          "Validation failed",
-	errors.KindUnauthenticated:     "Authentication required",
-	errors.KindForbidden:           "Permission denied",
-	errors.KindTenantIsolation:     "Not found",
-	errors.KindNotFound:            "Not found",
-	errors.KindConflict:            "Conflict",
-	errors.KindVersionConflict:     "Version conflict",
-	errors.KindIdempotencyInFlight: "Retry later",
-	errors.KindRuleViolation:       "Rule violation",
-	errors.KindWorkflowState:       "Invalid transition",
-	errors.KindRateLimited:         "Rate limited",
-	errors.KindExternal:            "Upstream error",
-	errors.KindInternal:            "Internal error",
-}
-
-// frameworkValidationMessages is the framework's own English validation-tag
-// messages, keyed by validator tag. Parameterised tags (min/max/len/oneof) carry
-// a Go %s placeholder filled by kernel/validation with the tag param at render
-// time; a locale that omits the placeholder simply renders without the param.
-// These mirror kernel/validation's historical messageForTag output verbatim.
-var frameworkValidationMessages = map[string]string{
-	"required": "this field is required",
-	"email":    "must be a valid email address",
-	"min":      "must be at least %s",
-	"max":      "must be at most %s",
-	"len":      "must be exactly %s characters long",
-	"oneof":    "must be one of: %s",
-	"uuid":     "must be a valid UUID",
-	"gte":      "must be at least %s",
-	"lte":      "must be at most %s",
-}
-
-// frameworkDetails is the framework's own English problem-detail Detail
-// messages, keyed by the STABLE machine code (errors.Kind.DefaultCode()), for
-// codes where the framework itself produces a stable, user-facing message.
-// This is intentionally NOT a complete enumeration of every kernel error code:
-// most codes have no entry here and simply fall back to the producing layer's
-// Msg (see httpx.localizeDetail). "validation_failed" mirrors kernel/validation
-// .StructCtx's literal English Msg ("validation failed") verbatim, so English
-// output is unchanged whether or not a catalog is wired.
-var frameworkDetails = map[string]string{
-	"validation_failed": "validation failed",
-}
-
-// installFramework adds the framework's English catalog into cat under the
-// reserved kernel.* namespace. Called once by NewRegistry so every catalog the
-// framework hands out already localizes problem titles, validation messages,
-// and the framework's own well-known problem details in English (the default
-// locale and ultimate fallback).
+// installFramework merges the framework's embedded per-locale YAML defaults into
+// cat under the reserved kernel.* namespace. Called once by NewRegistry so every
+// catalog the framework hands out already localizes problem titles, validation
+// messages, and the framework's own well-known problem details.
+//
+// The strings themselves live in kernel/i18n/locales/<locale>/kernel.yaml and
+// are compiled in via go:embed (embed.go) — they are NOT hardcoded Go maps
+// anymore (B1). The framework_catalog_golden_test.go golden test asserts the
+// loaded values are byte-identical to the historical hardcoded maps, so zero-
+// config products localize in English exactly as before.
+//
+// A malformed embedded file is a programming error in the framework itself, not
+// a product misconfiguration, so any load error panics: it can only happen if a
+// developer breaks the shipped YAML, and it must fail every build's tests
+// loudly rather than silently ship an empty framework catalog.
 func installFramework(cat *Catalog) {
-	for kind, title := range frameworkProblemTitles {
-		cat.Add(DefaultLocale, KeyProblemTitle(kind), title)
+	bundles, err := FrameworkDefaultsSource().Load()
+	if err != nil {
+		panic("i18n: embedded framework catalog is malformed: " + err.Error())
 	}
-	for tag, msg := range frameworkValidationMessages {
-		cat.Add(DefaultLocale, KeyValidationMessage(tag), msg)
-	}
-	for code, msg := range frameworkDetails {
-		cat.Add(DefaultLocale, KeyDetail(code), msg)
+	for _, b := range bundles {
+		for key, msg := range b.Messages {
+			cat.Add(b.Locale, key, msg)
+		}
 	}
 }
