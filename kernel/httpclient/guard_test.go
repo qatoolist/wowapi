@@ -74,6 +74,30 @@ func TestIsBlockedIP(t *testing.T) {
 		{"public v4 (google dns)", "8.8.8.8", false},
 		{"public v4 (cloudflare dns)", "1.1.1.1", false},
 		{"public v6", "2606:4700:4700::1111", false},
+
+		// IPv6 transition/embedding forms that carry a blocked IPv4 address
+		// inside an otherwise-global-unicast-looking IPv6 address. Without
+		// unwrapping these, a webhook attacker on a network with DNS64/NAT64
+		// routing (or a 6to4 relay) could reach the blocked v4 target while
+		// the literal IPv6 address classifies as public.
+		//
+		// NAT64 well-known prefix 64:ff9b::/96 (RFC 6052): bytes 12-15 are
+		// the embedded IPv4 octets.
+		{"NAT64 embedding cloud metadata", "64:ff9b::a9fe:a9fe", true},
+		{"NAT64 embedding rfc1918", "64:ff9b::a00:1", true},
+		{"NAT64 embedding loopback", "64:ff9b::7f00:1", true},
+
+		// 6to4 2002::/16 (RFC 3056): bytes 2-5 are the embedded IPv4 octets.
+		{"6to4 embedding cloud metadata", "2002:a9fe:a9fe::", true},
+		{"6to4 embedding rfc1918", "2002:0a00:0001::", true},
+		{"6to4 embedding loopback", "2002:7f00:0001::", true},
+
+		// ::ffff:0:0/96 SIIT/alt-mapped form (RFC 4291's "IPv4-translatable"
+		// range, distinct from the ::ffff:a.b.c.d IPv4-mapped range already
+		// handled by To4()): bytes 12-15 are the embedded IPv4 octets.
+		{"::ffff:0:0/96 embedding cloud metadata", "::ffff:0:a9fe:a9fe", true},
+		{"::ffff:0:0/96 embedding rfc1918", "::ffff:0:a00:1", true},
+		{"::ffff:0:0/96 embedding loopback", "::ffff:0:7f00:1", true},
 	}
 
 	for _, c := range cases {
