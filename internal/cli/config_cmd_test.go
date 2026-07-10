@@ -82,6 +82,94 @@ func TestConfigValidateNoBaseFileSkipsLayer(t *testing.T) {
 	}
 }
 
+// ---------- security profile (backlog B7) ----------
+
+// TestConfigValidateDefaultSecurityProfileIsAPI proves the zero-config path
+// (no security: section at all) validates cleanly — the API profile is the
+// default and must not require anything new.
+func TestConfigValidateDefaultSecurityProfileIsAPI(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "base.yaml", "environment: dev\n")
+
+	code, out, errOut := run(t, "config", "validate", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr: %s", code, errOut)
+	}
+	if !strings.Contains(out, "config OK") {
+		t.Errorf("stdout missing 'config OK': %q", out)
+	}
+}
+
+// TestConfigValidateRejectsIncoherentBrowserProfile is the acceptance test
+// for "config validate rejects incoherent combos": a browser profile missing
+// its CSRF cookie name must fail the gate with a message naming the problem.
+func TestConfigValidateRejectsIncoherentBrowserProfile(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "base.yaml", `environment: dev
+security:
+  profile: browser
+  csrf:
+    cookie_name: ""
+    header_name: "X-CSRF-Token"
+`)
+
+	code, _, errOut := run(t, "config", "validate", "--dir", dir)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1; stderr: %s", code, errOut)
+	}
+	if !strings.Contains(errOut, "security.csrf.cookie_name") {
+		t.Errorf("stderr should name the missing field: %q", errOut)
+	}
+}
+
+// TestConfigValidateAcceptsCoherentBrowserProfile: a well-formed browser
+// profile passes the gate.
+func TestConfigValidateAcceptsCoherentBrowserProfile(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "base.yaml", `environment: dev
+security:
+  profile: browser
+  csrf:
+    cookie_name: "csrf_token"
+    header_name: "X-CSRF-Token"
+  cookie:
+    same_site: lax
+    secure: true
+`)
+
+	code, out, errOut := run(t, "config", "validate", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr: %s", code, errOut)
+	}
+	if !strings.Contains(out, "config OK") {
+		t.Errorf("stdout missing 'config OK': %q", out)
+	}
+}
+
+// TestConfigValidateRejectsSameSiteNoneWithoutSecure: same_site: none without
+// secure: true is another incoherent combo the gate must catch.
+func TestConfigValidateRejectsSameSiteNoneWithoutSecure(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "base.yaml", `environment: dev
+security:
+  profile: browser
+  csrf:
+    cookie_name: "csrf_token"
+    header_name: "X-CSRF-Token"
+  cookie:
+    same_site: none
+    secure: false
+`)
+
+	code, _, errOut := run(t, "config", "validate", "--dir", dir)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1; stderr: %s", code, errOut)
+	}
+	if !strings.Contains(errOut, "security.cookie.secure") {
+		t.Errorf("stderr should name the incoherent combo: %q", errOut)
+	}
+}
+
 // ---------- print ----------
 
 func TestConfigPrintRequiresRedacted(t *testing.T) {

@@ -84,9 +84,61 @@ db:
 | `webhook.outbound.ssrf_protection_disabled` | bool | `false` | Disables outbound webhook SSRF protection entirely. `unsafe:"true"` — **refused in prod, warned in stage.** See [Webhooks](webhooks.md#outbound-ssrf-protection). |
 | `webhook.outbound.allowed_hosts` | []string | `[]` | Exact-match hostname allowlist bypassing the address-class check for outbound webhook delivery. |
 | `webhook.outbound.allowed_cidrs` | []string | `[]` | CIDR allowlist for RESOLVED outbound webhook delivery addresses (e.g. `10.20.0.0/16`). |
+| `security.profile` | enum | `api` | `api` (default) or `browser` — see [Security profile](#security-profile-api-vs-browser) below. |
+| `security.csrf.cookie_name` | string | `csrf_token` | Only consulted under `security.profile: browser`. |
+| `security.csrf.header_name` | string | `X-CSRF-Token` | Only consulted under `security.profile: browser`. |
+| `security.cookie.same_site` | enum | `lax` | `strict`/`lax`/`none`; only consulted under `security.profile: browser`. |
+| `security.cookie.secure` | bool | `true` | Required `true` when `same_site: none`. |
 
 > Modules read their own config namespace via `mc.Config().Decode(&cfg)` inside `Register` — see
 > [Modules](modules.md). Unknown keys are **rejected**, so a typo'd module config key fails the boot.
+
+## Security profile: `api` vs `browser`
+
+`config.Security` (`kernel/config/security.go`) selects the framework's security posture **by profile**,
+not by hand-assembling middleware per product (backlog B7; see the benchmark's "Security: Profiles, Not
+Handler-Level Advice"). There are exactly two profiles:
+
+```yaml
+security:
+  profile: api        # DEFAULT — leaving this section out is identical to profile: api
+```
+
+- **`api`** (the default): bearer/API-key auth, **no cookies**, CSRF disabled by contract (there is no
+  cookie session to forge), strict JSON, CORS allowlist, RLS guard. This is exactly what wowapi does
+  today — selecting it, or omitting `security:` entirely, changes **nothing**.
+- **`browser`** (opt-in): additionally wires **CSRF token enforcement** on every state-changing request,
+  **SameSite/Secure cookie defaults**, and a **CSP header profile** suited to HTML. No product gains any
+  of this by doing anything other than explicitly selecting it.
+
+```yaml
+security:
+  profile: browser
+  csrf:
+    cookie_name: "csrf_token"     # default shown
+    header_name: "X-CSRF-Token"   # default shown
+    field_name: "csrf_token"      # form-field fallback for classic HTML posts
+  cookie:
+    same_site: lax                # strict | lax | none
+    secure: true                  # required when same_site: none
+  csp: ""                        # empty uses the built-in HTML-safe default
+```
+
+**CSRF defense: double-submit cookie, not synchronizer tokens.** `kernel/httpx.CSRFProtect` needs no
+server-side session store (backlog B7 deliberately scopes that out): a token is generated once, handed to
+the browser as a (non-`HttpOnly`) cookie, and the client must echo it back via the configured header (or a
+form field, for classic HTML form posts that can't set custom headers) on every state-changing request. A
+request whose echoed token doesn't match the cookie is rejected with `403`. Safe methods (`GET`/`HEAD`/
+`OPTIONS`/`TRACE`) are exempt and simply (re-)issue the cookie if one isn't already present.
+
+`wowapi config validate` rejects an **incoherent** browser profile — e.g. a blank `csrf.cookie_name`, an
+unrecognized `same_site`, or `same_site: none` without `secure: true` (browsers reject that combination
+outright) — so a misconfigured browser profile fails the boot gate instead of silently shipping without
+CSRF protection.
+
+The safe outbound HTTP client (DNS/IP-blocking SSRF guard for anything wowapi calls out to) is a separate,
+already-shipped concern: `kernel/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
+the security profile selected here.
 
 ## Environment variables (`WOWAPI__*`)
 

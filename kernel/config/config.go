@@ -65,6 +65,7 @@ type Framework struct {
 	Telemetry     Telemetry  `conf:"telemetry" json:"telemetry"`
 	Webhook       Webhook    `conf:"webhook" json:"webhook"`
 	Privileged    Privileged `conf:"privileged" json:"privileged"`
+	Security      Security   `conf:"security" json:"security"`
 }
 
 // Telemetry configures distributed tracing (roadmap O1). Tracing is OFF by
@@ -167,6 +168,7 @@ func Defaults() Framework {
 		Log:       Log{Level: "info", Format: "json"},
 		DB:        DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
 		Telemetry: Telemetry{TraceSampleRatio: 0},
+		Security:  DefaultSecurity(),
 	}
 }
 
@@ -233,6 +235,9 @@ func (f Framework) Validate() error {
 		}
 	}
 	if err := f.Privileged.Validate(); err != nil {
+		add("%s", err.Error())
+	}
+	if err := f.Security.Validate(); err != nil {
 		add("%s", err.Error())
 	}
 

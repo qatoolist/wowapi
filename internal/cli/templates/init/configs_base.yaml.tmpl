@@ -45,6 +45,25 @@ i18n:
 #     audience: "{{.Name}}"
 #     jwks_uri: ""
 
+# security — SecurityProfile (framework-owned; docs/blueprint/07 §1, backlog
+# B7). Default is the "api" profile and reproduces exactly today's behavior
+# (bearer/API-key auth, CSRF-free by contract, CORS allowlist, RLS guard) —
+# leaving this section out, as below, is identical to setting profile: api.
+# Only switch to "browser" if this product serves a cookie/session browser
+# client; doing so wires CSRF token enforcement (double-submit cookie) on
+# every state-changing request plus SameSite cookie defaults and a CSP header
+# profile for HTML. `wowapi config validate` rejects an incoherent browser
+# profile (e.g. missing csrf.cookie_name).
+# security:
+#   profile: browser
+#   csrf:
+#     cookie_name: "csrf_token"
+#     header_name: "X-CSRF-Token"
+#     field_name: "csrf_token"
+#   cookie:
+#     same_site: lax
+#     secure: true
+
 # storage — optional S3/MinIO object storage for the document framework
 # (adapters/storage/s3). Leave endpoint unset to keep object storage disabled
 # (app.Boot fails closed if a module registers a document class with no

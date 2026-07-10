@@ -244,4 +244,9 @@ See [Testing](testing.md) for the full harness.
 | 403 where you expected a re-auth prompt | `StepUpRequired` not handled by the client | Handle the step-up challenge; ensure `AMR` reflects satisfied factors. |
 | List returns rows the user shouldn't see | not using `Filter` | Build the query from `Evaluator.Filter`'s `ListFilter`. |
 
+> **Serving a browser/cookie-session client?** Authentication here still stays product-owned — but wowapi's
+> **security profile** (`security.profile: browser` in [Configuration](configuration.md#security-profile-api-vs-browser))
+> additionally wires CSRF token enforcement and SameSite cookie defaults for you. The default `api`
+> profile (bearer/API-key, no cookies) is unaffected either way.
+
 Next: [Validation & errors](validation-errors.md) · [Testing](testing.md).
