@@ -1,0 +1,52 @@
+# Framework-owned English message catalog (the reserved kernel.* namespace).
+#
+# These are the framework's default English strings for problem-detail titles,
+# validation-tag messages, and the framework's own stable problem details. They
+# are embedded into the wowapi binary via go:embed (see embed.go) and loaded as
+# the FIRST precedence layer at boot, so a zero-config product localizes in
+# English with no product-authored catalog files.
+#
+# The values here MUST stay byte-for-byte identical to the historical
+# kernel/httpx `titles` map and kernel/validation `messageForTag` output — the
+# framework_catalog_golden_test.go golden test enforces this. A product may
+# override any of these keys through a sanctioned product framework-override
+# source (precedence layer 2); it may NOT add new keys under kernel.* .
+#
+# locale is redundant with the en/ directory but is recorded so a single file is
+# self-describing to the loader and to `wowapi i18n validate`.
+locale: en
+messages:
+  # Problem-detail titles, keyed by the kind's stable machine code
+  # (errors.Kind.DefaultCode()). KindIdempotencyExpired is intentionally ABSENT:
+  # httpx renders an absent title as the Internal title via its fallback, and
+  # this catalog mirrors that by omitting the entry.
+  kernel.problem.validation_failed: "Validation failed"
+  kernel.problem.unauthenticated: "Authentication required"
+  kernel.problem.permission_denied: "Permission denied"
+  kernel.problem.tenant_mismatch: "Not found"
+  kernel.problem.not_found: "Not found"
+  kernel.problem.conflict: "Conflict"
+  kernel.problem.version_conflict: "Version conflict"
+  kernel.problem.retry_later: "Retry later"
+  kernel.problem.rule_violation: "Rule violation"
+  kernel.problem.invalid_transition: "Invalid transition"
+  kernel.problem.rate_limited: "Rate limited"
+  kernel.problem.upstream_error: "Upstream error"
+  kernel.problem.internal: "Internal error"
+
+  # Validation-tag messages. Parameterised tags (min/max/len/oneof/gte/lte) carry
+  # a Go %s placeholder filled by kernel/validation with the tag param at render
+  # time; a locale that omits the placeholder simply renders without the param.
+  kernel.validation.required: "this field is required"
+  kernel.validation.email: "must be a valid email address"
+  kernel.validation.min: "must be at least %s"
+  kernel.validation.max: "must be at most %s"
+  kernel.validation.len: "must be exactly %s characters long"
+  kernel.validation.oneof: "must be one of: %s"
+  kernel.validation.uuid: "must be a valid UUID"
+  kernel.validation.gte: "must be at least %s"
+  kernel.validation.lte: "must be at most %s"
+
+  # Framework-owned problem details, keyed by stable machine code. Intentionally
+  # sparse: only codes for which the framework ships a stable user-facing message.
+  kernel.detail.validation_failed: "validation failed"

@@ -67,6 +67,56 @@ func (r *Registry) Register(module string, b Bundle) {
 	}
 }
 
+// RegisterFrameworkLocale is the SANCTIONED path for a product to supply
+// translations of the framework's own kernel.* strings (e.g. a Marathi
+// translation of the framework's problem titles). It is the guarded replacement
+// for raw Catalog.Add: unlike Add it validates that every key is a kernel.* key
+// AND already exists in the framework defaults (so a product may retranslate a
+// framework string but not invent a new kernel.* key), recording violations via
+// Err() like every other registration path. The product composition root calls
+// this; modules must not (they have no reason to touch kernel.*, and Register
+// rejects kernel.* from them).
+//
+// In practice the scaffold wires product kernel.* overrides through the config-
+// driven fs override layer (ApplyLayers), which is the file-based equivalent;
+// RegisterFrameworkLocale is the in-code equivalent for products that prefer a
+// Go bundle for their framework overrides.
+func (r *Registry) RegisterFrameworkLocale(b Bundle) {
+	if b.Locale == "" {
+		r.errf("i18n: framework-locale bundle registered with no locale")
+		return
+	}
+	for key, msg := range b.Messages {
+		if !strings.HasPrefix(key, reservedPrefix) {
+			r.errf("i18n: RegisterFrameworkLocale key %q must be in the reserved %q namespace", key, reservedPrefix)
+			continue
+		}
+		if !r.cat.hasKeyAnyLocale(key) {
+			r.errf("i18n: RegisterFrameworkLocale may retranslate framework keys, not invent %q", key)
+			continue
+		}
+		r.cat.Add(b.Locale, key, msg)
+	}
+}
+
+// ApplyLayers merges configured source layers (framework overrides, product/
+// module catalog files, Go bundles) into the registry's live catalog in
+// precedence order, ON TOP of the framework defaults and any module bundles
+// already registered. It applies the same ownership and intra-layer duplicate
+// rules as LoadCatalog. Boot calls this once after modules have registered and
+// before Freeze; a violation is recorded via Err() so boot fails closed with
+// every other registration error. Pass the framework-defaults layer FIRST only
+// when constructing a standalone catalog — here the registry already carries the
+// framework defaults, so callers pass just the product layers.
+func (r *Registry) ApplyLayers(layers ...Layer) {
+	if err := mergeLayers(r.cat, layers); err != nil {
+		r.errs = append(r.errs, err)
+	}
+}
+
+// Freeze seals the catalog after boot so request-time reads never race a write.
+func (r *Registry) Freeze() { r.cat.Freeze() }
+
 // Catalog returns the merged catalog. Safe to call at any point; the returned
 // pointer reflects later Register calls (it is the live catalog).
 func (r *Registry) Catalog() *Catalog { return r.cat }

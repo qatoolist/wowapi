@@ -38,6 +38,7 @@ import "sort"
 type Catalog struct {
 	def      string
 	messages map[string]map[string]string // locale -> key -> message
+	frozen   bool                         // sealed after boot; blocks further Add
 }
 
 // NewCatalog returns an empty Catalog whose fallback locale is def. def should
@@ -49,7 +50,16 @@ func NewCatalog(def string) *Catalog {
 
 // Add registers message for (locale, key), overwriting any prior value. Must be
 // called on a Catalog built with NewCatalog (the zero value is not usable).
+//
+// Add is a no-op after Freeze: catalogs are sealed at boot (Decision 3) and are
+// read-only on the request path, so a post-freeze mutation attempt is silently
+// ignored rather than racing concurrent Lookups. Boot-time construction (the
+// Loader, Registry) writes before Freeze; if you need a post-boot overlay, that
+// is the separate opt-in B13 concern, not raw Add.
 func (c *Catalog) Add(locale, key, message string) {
+	if c.frozen {
+		return
+	}
 	m, ok := c.messages[locale]
 	if !ok {
 		m = make(map[string]string)
@@ -57,6 +67,20 @@ func (c *Catalog) Add(locale, key, message string) {
 	}
 	m[key] = message
 }
+
+// Freeze seals the catalog for request-time reads. After Freeze, Add is a no-op,
+// so the messages map is never mutated concurrently with Lookup. Boot calls this
+// once, after every source and module bundle has been merged. Freeze is
+// idempotent. A nil *Catalog Freeze is a no-op.
+func (c *Catalog) Freeze() {
+	if c == nil {
+		return
+	}
+	c.frozen = true
+}
+
+// Frozen reports whether the catalog has been sealed.
+func (c *Catalog) Frozen() bool { return c != nil && c.frozen }
 
 // Lookup resolves key for locale. It returns the resolved message and the locale
 // it was actually served from. Resolution is deterministic:
