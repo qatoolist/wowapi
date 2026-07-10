@@ -33,6 +33,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi config doctor` | `--dir`, `--base`, `--env`, `--env-prefix` | Per-key provenance table + fingerprint. |
 | `wowapi config diff` | `--from` **(req)**, `--to` **(req)**, `--dir`, `--env-prefix` | Redacted effective-config diff between two environments. |
 | `wowapi config schema` | — | Emit JSON Schema derived from struct tags. |
+| `wowapi config capacity` | `--dir`, `--base`, `--env`, `--env-prefix` | Check the concurrency capacity budget; exit 0 within budget/not configured, exit 1 oversubscribed. |
 
 ### Migrations, seeds, OpenAPI
 

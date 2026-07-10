@@ -139,6 +139,60 @@ CSRF protection.
 The safe outbound HTTP client (DNS/IP-blocking SSRF guard for anything wowapi calls out to) is a separate,
 already-shipped concern: `kernel/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
 the security profile selected here.
+## Concurrency: capacity budget + backpressure
+
+`config.Concurrency` (`kernel/config/concurrency.go`) reasons about concurrency **across the whole
+deployment shape**, not just one knob at a time: it bounds in-flight HTTP requests at the edge, and
+validates that the declared shape (replica count × per-replica pool sizes + migration + admin reserve)
+cannot exhaust the database before rate limits or backpressure engage.
+
+```yaml
+concurrency:
+  http_max_in_flight: 0        # 0 = disabled (safe default); the backpressure limiter is off
+  worker_max_jobs: 0           # worker pool size, for capacity bookkeeping only
+  platform_max_in_flight: 0    # platform-pool in-flight cap, for bookkeeping only
+  replicas: 0                  # 0 = deployment shape not declared; capacity check is a no-op
+  runtime_pool_max: 0          # runtime (app_rt) pool max_conns per replica
+  platform_pool_max: 0         # platform (app_platform) pool max_conns per replica
+  migrate_pool_max: 0          # migrate process pool max_conns (counted once, not per replica)
+  reserved_admin: 0            # connections reserved for admin/operator access
+  capacity_mode: advisory      # advisory (warn only, default) | enforced (fail boot)
+  overload:
+    api_status: 503            # 503 or 429
+    retry_after: 2s
+```
+
+**Capacity-budget formula** (checked whenever `concurrency.replicas` is non-zero):
+
+```
+replicas*(runtime_pool_max + platform_pool_max) + migrate_pool_max + reserved_admin <= db.max_conns
+```
+
+- `concurrency.replicas == 0` (the default): the shape is **not configured**, so the check is a
+  deliberate no-op — it never passes or fails spuriously.
+- `capacity_mode: advisory` (**the default**): an oversubscribed shape is reported as a warning
+  (`wowapi config capacity`, boot logs) but **does not fail** `config validate` or process boot.
+- `capacity_mode: enforced` (**opt-in**): the same oversubscribed shape **fails** `config validate`
+  (and therefore boot) with a message citing the computed demand vs. `db.max_conns`.
+
+Run `wowapi config capacity --dir configs --env <env>` to lint the budget independent of
+`capacity_mode` — it always exits 1 on an oversubscribed shape, so CI can catch the problem early even
+while production boot itself stays advisory.
+
+**Migration path (advisory → enforced):** size `replicas`/`runtime_pool_max`/`platform_pool_max`/
+`migrate_pool_max`/`reserved_admin` for your deployment, run `wowapi config capacity` until it reports
+`capacity OK`, then flip `capacity_mode: enforced` in the environment overlay once you're confident the
+shape is correct. Because the default is advisory, upgrading the framework never breaks an existing
+deployment that hasn't set these fields yet.
+
+**Backpressure middleware** (`httpx.Backpressure`, wired in the generated `cmd/api/main.go` when
+`concurrency.http_max_in_flight > 0`): a bounded semaphore that rejects requests with `overload.api_status`
+(503 default) + `Retry-After: overload.retry_after` **before** they reach auth or the database, once more
+requests are concurrently in-flight than the configured cap. It is **disabled by default**
+(`http_max_in_flight: 0`), so upgrading never causes an existing deployment to start returning the overload
+status unexpectedly — size the cap using the capacity-budget knobs above, then set it explicitly. Rejected
+requests increment the `http_overload_rejected_total` counter (labeled by route) and current occupancy is
+exported as the `http_in_flight_requests` gauge.
 
 ## Environment variables (`WOWAPI__*`)
 
@@ -187,6 +241,7 @@ db:
 | `wowapi config print --env <env> --redacted` | Print the effective config as JSON (secrets redacted; `--redacted` is required). |
 | `wowapi config doctor --env <env>` | Per-key **provenance** table (which layer set each key) + the fingerprint. |
 | `wowapi config schema` | Emit the JSON Schema derived from struct tags. |
+| `wowapi config capacity --env <env>` | Check the concurrency capacity budget; exit 0 = within budget or shape not configured, exit 1 = oversubscribed. |
 
 Common flags: `--dir` (config dir, default `configs`), `--base` (base file), `--env` (overlay/environment
 name), `--env-prefix` (default `WOWAPI__`).
