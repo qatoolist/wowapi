@@ -233,12 +233,51 @@ this step never reports ready instead of silently denying every request.
 
 ## Rule definitions
 
-A module registers **rule points** in Go (`mc.Rules().Register(module, rules.Point{...})` — key, JSON
-Schema, default value, allowed scopes, whether changes require approval, description). Registering a
-point only builds the in-memory registry; `rule_versions.rule_key` carries a foreign key onto
-`rule_definitions`, so the framework must also persist a mirror of every registered point into that table
-before any tenant/platform/org rule VALUE can be proposed for it (blueprint 02 §2.1: "Rule definition row
-… persisted mirror of the registered point — makes points introspectable/auditable in the DB").
+A module registers **rule points** in Go (`mc.Rules().Register(module, rules.Point{...})` — key, a
+**RuleValueSchema**, default value, allowed scopes, whether changes require approval, description).
+Registering a point only builds the in-memory registry; `rule_versions.rule_key` carries a foreign key
+onto `rule_definitions`, so the framework must also persist a mirror of every registered point into that
+table before any tenant/platform/org rule VALUE can be proposed for it (blueprint 02 §2.1: "Rule
+definition row … persisted mirror of the registered point — makes points introspectable/auditable in the
+DB").
+
+### RuleValueSchema (not JSON Schema)
+
+`Point.ValueSchema` is **not** JSON Schema, despite the historical name and older comments/docs that said
+so. It is `RuleValueSchema`: a small, closed grammar the framework validates by hand — no JSON-Schema
+library dependency (ratified Decision 2). The ONLY recognized top-level keywords are:
+
+| Keyword | Applies to | Meaning |
+|---|---|---|
+| `type` | any | one of `integer`, `number`, `string`, `boolean`, `object`, `array`, `null` |
+| `enum` | any | JSON array of allowed literal values |
+| `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` | numbers | numeric bounds |
+| `minLength`, `maxLength`, `pattern` (RE2) | strings | length/pattern constraints |
+| `minItems`, `maxItems` | arrays | length bounds |
+| `required` | objects | shallow presence check for the named keys — **not** recursive per-property validation |
+
+There is no nested `properties`/`items` sub-schema evaluator, no `additionalProperties`, no
+`multipleOf`, and no other JSON Schema keyword — a rule point needing per-property typing should
+declare separate top-level rule points instead of one object-shaped point with nested constraints.
+
+This is enforced, not just documented — `Registry.Register` **fails registration** (surfaced through
+`Registry.Err()`, the same boot-error-accumulation gate `app.Boot` already calls) if:
+
+- `type` is anything other than the seven recognized values (an unrecognized type used to be silently
+  accepted — that was a real bug, now closed);
+- the schema contains any keyword outside the table above (previously silently dropped by a lax JSON
+  decode, so a typo'd or unsupported constraint was never enforced — now a strict decode rejects it);
+- the `Default` value does not itself conform to `ValueSchema` (previously never checked at all — a
+  point could ship with a default that violated its own schema).
+
+A schema that fails any of these checks can never reach `rule_definitions` — `SyncDefinitions` only ever
+sees points that already passed `Register`.
+
+`Resolver.Resolve` additionally re-validates the winning **stored** value against the point's *current*
+schema before returning it (cheap — pure in-memory, no extra I/O) — this catches the case where a
+schema was tightened after a value was written (module upgrade) and the old stored value no longer
+conforms; Resolve surfaces that drift as an error rather than silently handing back a non-conforming
+value.
 
 `kernel/rules.SyncDefinitions(ctx, db, registry)` is that lifecycle step — the rule-registry analogue of
 `kernel/seeds.Sync` (GAP-007). It upserts every point the registry holds into `rule_definitions`,
