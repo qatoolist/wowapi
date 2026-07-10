@@ -68,6 +68,19 @@ func New(cfg Config) *http.Client {
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// SSRF safety: http.DefaultTransport.Proxy is http.ProxyFromEnvironment,
+	// which Clone() preserves. If left in place, an HTTP_PROXY/HTTPS_PROXY
+	// env var would make the transport dial the PROXY's address instead of
+	// the request's real destination — the proxy's IP passes the guard (it
+	// may be entirely legitimate), but the attacker-controlled final URL is
+	// then sent to the proxy in the request/CONNECT line, and the guarded
+	// DialContext below never sees, let alone validates, the actual target.
+	// Disabling the proxy is the only way to guarantee the dial-time IP
+	// check always runs against the real destination. A deployment that
+	// genuinely needs an explicit egress proxy for outbound calls is a
+	// distinct future feature (the proxy's own address/allowlisting would
+	// need first-class support here) — not a config knob to bolt on now.
+	transport.Proxy = nil
 	transport.DialContext = g.dialContext((&net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,

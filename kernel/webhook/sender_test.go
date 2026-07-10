@@ -65,6 +65,37 @@ func TestHTTPSenderAllowlistEscapeHatch(t *testing.T) {
 	}
 }
 
+// TestHTTPSenderIgnoresProxyEnvironment confirms the SSRF-safe-by-default
+// sender inherits kernel/httpclient's proxy-disable fix automatically: since
+// NewHTTPSender always builds its client via httpclient.New (unless SSRF
+// protection is explicitly disabled), an HTTP_PROXY env var must not let a
+// blocked delivery target escape the guard by routing through a proxy.
+func TestHTTPSenderIgnoresProxyEnvironment(t *testing.T) {
+	proxyStandIn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxyStandIn.Close()
+
+	t.Setenv("HTTP_PROXY", proxyStandIn.URL)
+	t.Setenv("HTTPS_PROXY", proxyStandIn.URL)
+
+	// Allowlist the proxy stand-in host, mirroring the httpclient-level test:
+	// if the sender's transport honored the proxy env, this allowlisted,
+	// reachable "proxy" would let the request through without ever checking
+	// the real (blocked) target below.
+	sender := webhook.NewHTTPSender(webhook.WithHTTPClientConfig(httpclient.Config{
+		AllowedHosts: []string{hostOnly(t, proxyStandIn.Listener.Addr().String())},
+	}))
+
+	_, err := sender.Post(context.Background(), "http://169.254.169.254/latest/meta-data/", []byte(`{}`), nil)
+	if err == nil {
+		t.Fatal("expected the blocked metadata target to be refused even with HTTP_PROXY set")
+	}
+	if !errors.Is(err, httpclient.ErrBlockedAddress) {
+		t.Errorf("expected the error chain to contain httpclient.ErrBlockedAddress, got %v", err)
+	}
+}
+
 func hostOnly(t *testing.T, hostport string) string {
 	t.Helper()
 	for i := len(hostport) - 1; i >= 0; i-- {
