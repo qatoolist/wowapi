@@ -41,6 +41,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi migrate create` | `--dir` (`migrations`), `--name` **(req)** | Scaffold the next-numbered goose migration. |
 | `wowapi seed validate` | `--dir` (`seeds`), `--module` **(req)** | Load + validate a module seed bundle (no database). |
 | `wowapi seed sync` | `--module name=dir` **(req, repeatable)** | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
+| `wowapi i18n validate` | `--dir` (`locales`), `--default-locale` (`en`), `--supported` (`en`), `--strict` | Load + validate a product's locale catalogs (no database): coverage, `kernel.*` ownership, intra-layer duplicates, placeholder drift. Exit 0 OK / 1 with every problem listed. See [Validation & error handling § Localizing responses](validation-errors.md#localizing-responses-i18n). |
 | `wowapi openapi merge` | `--dir` (`.`), `--title` (`wowapi API`), `--version` (`0.0.0`), `--out` | Merge OpenAPI 3.1 fragments into one document. |
 
 > Applying migrations at runtime is the **product** `cmd/migrate` (`go run ./cmd/migrate up` / `make
