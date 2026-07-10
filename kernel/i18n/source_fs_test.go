@@ -27,6 +27,17 @@ func TestFSSourceInvalidYAMLErrors(t *testing.T) {
 	}
 }
 
+func TestFSSourceEmptyJSONTolerated(t *testing.T) {
+	// An empty/whitespace-only JSON catalog is a placeholder, not a boot failure —
+	// symmetric with an empty YAML file (review B1-corr #1).
+	for _, body := range []string{"", "   \n", "{}"} {
+		fsys := fstest.MapFS{"locales/en.json": &fstest.MapFile{Data: []byte(body)}}
+		if _, err := i18n.NewFSSource(fsys, "locales", "json").Load(); err != nil {
+			t.Fatalf("empty JSON %q should be tolerated, got %v", body, err)
+		}
+	}
+}
+
 func TestFSSourceInvalidJSONErrors(t *testing.T) {
 	fsys := fstest.MapFS{"locales/en.json": &fstest.MapFile{Data: []byte(`{"messages": {`)}}
 	if _, err := i18n.NewFSSource(fsys, "locales", "json").Load(); err == nil || !strings.Contains(err.Error(), "invalid JSON") {
