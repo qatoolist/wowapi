@@ -113,6 +113,11 @@ type moduleContext struct {
 	platformTx database.TxManager
 	ruleStore  *rules.Store
 	priv       *privileged.Services
+	// privCfg is this module's boot-validated allow-list widening (backlog B10,
+	// config.Framework.Privileged), or the zero value when the product declares
+	// none for this module — in which case Privileged() behaves EXACTLY as
+	// before (prefix-ownership only).
+	privCfg config.PrivilegedGrant
 }
 
 // moduleDeps bundles the shared registries/services the app injects into every
@@ -151,6 +156,11 @@ type moduleDeps struct {
 
 	platformTx database.TxManager
 	ruleStore  *rules.Store
+	// privCfg carries each module's boot-validated allow-list widening
+	// (backlog B10, config.Framework.Privileged) keyed by module name; a
+	// module absent from the map gets the zero value (prefix-ownership only,
+	// unchanged from before this config section existed).
+	privCfg config.Privileged
 }
 
 func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, deps moduleDeps) module.Context {
@@ -170,7 +180,8 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 		intReg: deps.intReg, intStore: deps.intStore,
 		audit: deps.audit, sequence: deps.sequence, bulk: deps.bulk, artifacts: deps.artifacts,
 		platformTx: deps.platformTx, ruleStore: deps.ruleStore,
-		boot: deps.boot,
+		privCfg: deps.privCfg[name],
+		boot:    deps.boot,
 	}
 }
 
@@ -271,15 +282,23 @@ func (c *moduleContext) Artifacts() *artifact.Pipeline { return c.artifacts }
 // Privileged returns the module's scoped privileged-service surface (GAP-006),
 // built once and bound to THIS module's name so ownership is enforced against
 // the calling module. Prefix-ownership only by default: the module may manage
-// relationship types and rule keys prefixed "<name>."; a product that must widen
-// this can build its own privileged.Services with a Config allow-list from its
-// own wiring. In a process wired without a platform pool (the migrate process,
-// which registers no modules that perform privileged writes) the underlying
-// platform manager is nil, so a Grant/Revoke/ActivateTenant call would fail at
-// invocation — but such a process never reaches those calls.
+// relationship types and rule keys prefixed "<name>.". A product config can
+// widen this per module (backlog B10) via config.Framework.Privileged, an
+// explicit allow-list of concrete relationship types / rule keys — boot-
+// validated to reject wildcards/globs/empty entries (config.Privileged.Validate,
+// fail closed). A module the product declares no allow-list for keeps EXACTLY
+// today's prefix-only behavior; one module's allow-list never widens another's
+// (privCfg is looked up per module name in newModuleContext). In a process
+// wired without a platform pool (the migrate process, which registers no
+// modules that perform privileged writes) the underlying platform manager is
+// nil, so a Grant/Revoke/ActivateTenant call would fail at invocation — but
+// such a process never reaches those calls.
 func (c *moduleContext) Privileged() *privileged.Services {
 	if c.priv == nil {
-		c.priv = privileged.New(c.name, c.platformTx, c.ruleStore, c.Audit(), c.IDGen(), privileged.Config{})
+		c.priv = privileged.New(c.name, c.platformTx, c.ruleStore, c.Audit(), c.IDGen(), privileged.Config{
+			AllowRelTypes: c.privCfg.AllowRelTypes,
+			AllowRuleKeys: c.privCfg.AllowRuleKeys,
+		})
 	}
 	return c.priv
 }

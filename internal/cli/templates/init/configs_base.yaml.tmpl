@@ -59,3 +59,18 @@ i18n:
 #   use_ssl: false
 #   presign_ttl: 15m
 #   create_bucket: false
+
+# privileged — per-module allow-list widening for mc.Privileged() (kernel/privileged).
+# By default a module may only Grant/Revoke relationship types and activate rule
+# keys prefixed with its own name ("<module>."). Add an entry here ONLY when a
+# module has a legitimate reason to manage a kernel- or another-namespace-owned
+# key (e.g. a "committee" module sanctioned to grant the kernel "core.owner_of"
+# relationship type). SECURITY: every entry must be a concrete, fully-spelled
+# key — wildcards/glob syntax ("*", "?", "[...]") and empty entries are REJECTED
+# at boot (fail closed). See docs/user-guide/modules.md, "Privileged services".
+# privileged:
+#   committee:
+#     allow_rel_types:
+#       - "core.owner_of"
+#     allow_rule_keys:
+#       - "policy.retention.days"
