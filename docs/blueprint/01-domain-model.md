@@ -86,7 +86,7 @@ Hierarchy `tenant ⊃ organization(subtree) ⊃ resource_type ⊃ resource`. An 
 Definition: versioned JSON graph of steps registered per tenant (or template). Instance: one run bound to a `ResourceRef`. Task: a unit of human/auto work with assignees, due dates, decisions.
 
 ### Rule definition / Rule version — core (see [02-workflow-rules.md](02-workflow-rules.md))
-Definition = a typed *rule point* (key + JSON Schema + default). Version = a value with `effective_from/to`, scope (platform|tenant|org), approval status. Historical evaluation = resolve *as of* a timestamp.
+Definition = a typed *rule point* (key + RuleValueSchema — a small closed grammar, not JSON Schema — + default). Version = a value with `effective_from/to`, scope (platform|tenant|org), approval status. Historical evaluation = resolve *as of* a timestamp.
 
 ### Feature flag — core
 `key`, scope (platform/tenant), `enabled`, optional variant jsonb. Implemented as a thin special case of the rule engine (rule point of type boolean/variant) — one resolution path, one audit trail.

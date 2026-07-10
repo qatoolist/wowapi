@@ -34,7 +34,7 @@ PostgreSQL database, tenant isolation via `tenant_id` + Row-Level Security enfor
 | Migrations | `goose` with per-module embedded FS | Simple, embeddable, ordered. |
 | Background jobs | **River** (Postgres-backed, pgx-native) behind a thin `jobs.Runner` interface | Transactional enqueue in the same tx as business writes; no extra infra. Redis/Kafka rejected for v1: operational cost, loses atomicity. |
 | Workflow engine | **Custom Postgres-backed engine** in the kernel (see [02-workflow-rules.md](02-workflow-rules.md)) | Temporal is overkill for approval-style workflows and drags in a cluster; revisit if durable code-orchestration emerges. |
-| Rules/config | Custom versioned rule registry, JSONB values validated by JSON Schema | See [02-workflow-rules.md](02-workflow-rules.md). |
+| Rules/config | Custom versioned rule registry, JSONB values validated by RuleValueSchema (a small closed grammar, not JSON Schema) | See [02-workflow-rules.md](02-workflow-rules.md). |
 | AuthN | OIDC (external IdP: Zitadel/Keycloak/Auth0) + JWT middleware | Don't build identity; build *authorization*. |
 | AuthZ | In-process evaluator: RBAC + scoped assignments + ReBAC relationships + policy conditions, deny-by-default | OPA/SpiceDB rejected for v1: network hop on the hottest path, second datastore to keep consistent. |
 | Events | Transactional **outbox** table + relay worker; in-process handlers first, bus adapter later | Atomicity with business writes is non-negotiable. |
