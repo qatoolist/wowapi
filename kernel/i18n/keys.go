@@ -25,6 +25,19 @@ func KeyValidationMessage(tag string) string {
 	return reservedPrefix + "validation." + tag
 }
 
+// KeyDetail is the well-known catalog key under which a localized
+// problem-details Detail is stored for the given machine code (an
+// *errors.Error's Code, or kind.DefaultCode() when Code is unset — exactly the
+// code kernel/httpx.WriteError computes). Keyed by the stable machine code,
+// never the English text, so a translation can never drift the code on the
+// wire. Unlike KeyProblemTitle/KeyValidationMessage, there is no guarantee a
+// given code has an entry: Detail only localizes where the framework (or a
+// product) ships a stable, user-facing message for that code; otherwise the
+// producer's Msg is used verbatim (see httpx.WriteError).
+func KeyDetail(code string) string {
+	return reservedPrefix + "detail." + code
+}
+
 // DefaultLocale is the framework's default locale and ultimate fallback. English
 // is always present in the framework catalog.
 const DefaultLocale = "en"

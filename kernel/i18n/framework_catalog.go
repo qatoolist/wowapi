@@ -43,15 +43,31 @@ var frameworkValidationMessages = map[string]string{
 	"lte":      "must be at most %s",
 }
 
+// frameworkDetails is the framework's own English problem-detail Detail
+// messages, keyed by the STABLE machine code (errors.Kind.DefaultCode()), for
+// codes where the framework itself produces a stable, user-facing message.
+// This is intentionally NOT a complete enumeration of every kernel error code:
+// most codes have no entry here and simply fall back to the producing layer's
+// Msg (see httpx.localizeDetail). "validation_failed" mirrors kernel/validation
+// .StructCtx's literal English Msg ("validation failed") verbatim, so English
+// output is unchanged whether or not a catalog is wired.
+var frameworkDetails = map[string]string{
+	"validation_failed": "validation failed",
+}
+
 // installFramework adds the framework's English catalog into cat under the
 // reserved kernel.* namespace. Called once by NewRegistry so every catalog the
-// framework hands out already localizes problem titles and validation messages
-// in English (the default locale and ultimate fallback).
+// framework hands out already localizes problem titles, validation messages,
+// and the framework's own well-known problem details in English (the default
+// locale and ultimate fallback).
 func installFramework(cat *Catalog) {
 	for kind, title := range frameworkProblemTitles {
 		cat.Add(DefaultLocale, KeyProblemTitle(kind), title)
 	}
 	for tag, msg := range frameworkValidationMessages {
 		cat.Add(DefaultLocale, KeyValidationMessage(tag), msg)
+	}
+	for code, msg := range frameworkDetails {
+		cat.Add(DefaultLocale, KeyDetail(code), msg)
 	}
 }

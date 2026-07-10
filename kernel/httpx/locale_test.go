@@ -175,6 +175,94 @@ func TestAcceptanceProofEndToEnd(t *testing.T) {
 	}
 }
 
+// TestWriteErrorValidationDetailLocalizesViaShippedEntry proves the framework's
+// own shipped `detail.validation_failed` English catalog entry localizes the
+// validation error's top-level Detail (not just field messages), while Code and
+// field Code/Field stay byte-stable — closing GAP-001's Detail gap.
+func TestWriteErrorValidationDetailLocalizesViaShippedEntry(t *testing.T) {
+	cat := i18n.NewRegistry().Catalog()
+	cat.Add("mr", i18n.KeyValidationMessage("required"), "हे फील्ड आवश्यक आहे")
+	cat.Add("mr", i18n.KeyDetail("validation_failed"), "प्रमाणीकरण अयशस्वी झाले")
+
+	v := validation.New()
+	type body struct {
+		Name string `json:"name" validate:"required"`
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := httpx.BindAndValidate[body](r, v, 1<<20)
+		if err != nil {
+			httpx.WriteError(r.Context(), w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	h := httpx.Chain(handler, httpx.RequestID(), httpx.Locale(cat))
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":""}`))
+	req.Header.Set("Accept-Language", "mr")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	p := decodeProblem(t, rec.Body.Bytes())
+	if p.Detail != "प्रमाणीकरण अयशस्वी झाले" {
+		t.Errorf("validation detail not localized: %q", p.Detail)
+	}
+	if p.Code != "validation_failed" {
+		t.Errorf("machine code changed: %q", p.Code)
+	}
+	if len(p.Errors) != 1 || p.Errors[0].Field != "name" || p.Errors[0].Code != "required" {
+		t.Fatalf("field error field/code not stable: %+v", p.Errors)
+	}
+}
+
+// ---------- localized Detail ----------
+
+func TestWriteErrorLocalizesDetailWithStableCode(t *testing.T) {
+	cat := buildTestCatalog(t)
+	// Test-bundle detail.<code> entry in the second locale (mirrors the title
+	// test-bundle pattern above).
+	cat.Add("mr", i18n.KeyDetail("not_found"), "आढळले नाही")
+	ctx := httpx.WithLocale(context.Background(), "mr", cat)
+
+	rec := httptest.NewRecorder()
+	httpx.WriteError(ctx, rec, errors.E(errors.KindNotFound, "not_found", "gone"))
+
+	p := decodeProblem(t, rec.Body.Bytes())
+	if p.Detail != "आढळले नाही" {
+		t.Errorf("detail not localized: %q", p.Detail)
+	}
+	if p.Code != "not_found" { // machine code stays byte-stable
+		t.Errorf("code changed: %q, want not_found", p.Code)
+	}
+}
+
+func TestWriteErrorDetailFallsBackToMsgWhenNoCatalogEntry(t *testing.T) {
+	cat := buildTestCatalog(t) // has no detail.not_found entry
+	ctx := httpx.WithLocale(context.Background(), "mr", cat)
+
+	rec := httptest.NewRecorder()
+	httpx.WriteError(ctx, rec, errors.E(errors.KindNotFound, "not_found", "gone"))
+
+	p := decodeProblem(t, rec.Body.Bytes())
+	if p.Detail != "gone" {
+		t.Errorf("detail should fall back to producer Msg byte-identically, got %q", p.Detail)
+	}
+}
+
+func TestWriteErrorInternalKindStillExposesNoDetail(t *testing.T) {
+	cat := buildTestCatalog(t)
+	cat.Add("mr", i18n.KeyDetail("internal"), "should never be used")
+	ctx := httpx.WithLocale(context.Background(), "mr", cat)
+
+	rec := httptest.NewRecorder()
+	httpx.WriteError(ctx, rec, errors.E(errors.KindInternal, "internal", "sensitive cause"))
+
+	p := decodeProblem(t, rec.Body.Bytes())
+	if p.Detail != "" {
+		t.Errorf("internal-kind Detail must stay empty, got %q", p.Detail)
+	}
+}
+
 func TestWriteErrorUnknownLocaleFallsBackToEnglishTitle(t *testing.T) {
 	cat := buildTestCatalog(t)
 	// A locale with no translation for this key falls back to en deterministically.

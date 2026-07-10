@@ -81,13 +81,17 @@ func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
 		RequestID: reqID,
 		Errors:    e.Fields,
 	}
-	// Internal errors never expose their message; everything else exposes the
-	// deliberately user-safe Msg only (never Op or the wrapped cause). Detail is
-	// the user-safe Msg the producing layer already localized (or left English);
-	// WriteError does not translate it — kernel/validation localizes field
-	// messages at production time, and other callers pass locale-appropriate Msg.
+	// Internal errors never expose their message; everything else exposes a
+	// user-safe Detail derived from the producer's Msg (never Op or the wrapped
+	// cause). Detail localizes the SAME way Title does: WriteError looks up
+	// detail.<code> (code, computed above) in the negotiated locale via
+	// localizeDetail; if the catalog resolves it, the localized string is used,
+	// otherwise Detail falls back to e.Msg exactly as written by the producer
+	// (byte-identical zero-config behavior — no catalog entry means no change).
+	// Only codes with a stable, user-facing framework/product message get a
+	// detail.<code> entry; most codes simply fall back to Msg.
 	if kind != errors.KindInternal {
-		p.Detail = e.Msg
+		p.Detail = localizeDetail(ctx, code, e.Msg)
 	}
 	if p.Title == "" {
 		p.Title = localizeTitle(ctx, errors.KindInternal, titles[errors.KindInternal])

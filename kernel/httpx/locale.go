@@ -75,3 +75,23 @@ func localizeTitle(ctx context.Context, kind errors.Kind, fallback string) strin
 	}
 	return msg
 }
+
+// localizeDetail resolves the problem Detail for code (an *errors.Error's Code,
+// or kind.DefaultCode() when Code is unset) in the request's negotiated locale,
+// falling back to fallback (the producer's user-safe Msg) whenever no catalog is
+// bound, or the catalog has no detail.<code> entry — a missing entry is the
+// common case (only codes with a stable, framework/product-shipped message
+// resolve here), so the fallback path must reproduce today's byte-identical
+// output. Mirrors localizeTitle's lookup/fallback exactly.
+func localizeDetail(ctx context.Context, code string, fallback string) string {
+	cat := CatalogFrom(ctx)
+	if cat == nil {
+		return fallback
+	}
+	key := i18n.KeyDetail(code)
+	msg, _ := cat.Lookup(LocaleFrom(ctx), key)
+	if msg == key {
+		return fallback
+	}
+	return msg
+}

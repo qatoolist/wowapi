@@ -111,9 +111,13 @@ changes to it require a new major version.
   titles + validation-tag messages, under the reserved `kernel.` namespace) and accepts module bundles
   under their `<module>.` prefix, and an RFC 9110 §12.5.4 `Negotiate` (q-values, primary-subtag match).
   `httpx.Locale(catalog)` middleware negotiates the request locale, binds it to the request context,
-  and sets `Content-Language`; `httpx.WriteError` localizes problem `title` and `kernel/validation`'s
-  `StructCtx` localizes field messages — **machine `code`s and field paths stay byte-stable across
-  locales**, and internal logs stay technical English. `module.Context.I18n(bundle)` registers a
+  and sets `Content-Language`; `httpx.WriteError` localizes problem `title` and (where a `detail.<code>`
+  catalog entry exists for the error's machine code) `detail`, and `kernel/validation`'s `StructCtx`
+  localizes field messages — **machine `code`s and field paths stay byte-stable across locales**, and
+  internal logs stay technical English. `i18n.KeyDetail(code)` is the well-known key for a localized
+  `detail`; the framework ships one shipped entry, `detail.validation_failed`, for its own stable
+  validation-failure message — most codes have no `detail.<code>` entry and `detail` falls back to the
+  producer's `Msg` verbatim (byte-identical to no i18n at all). `module.Context.I18n(bundle)` registers a
   module's localized bundle; `app.Boot` merges all bundles with the framework catalog and exposes it as
   `Booted.I18n` to pass to `httpx.Locale`. **Zero-config behavior is unchanged**: with no catalog wired,
   responses stay English-only, byte-for-byte as before. `testkit` adds `AssertNegotiatedLocale`,
@@ -142,6 +146,19 @@ changes to it require a new major version.
 ### Fixed
 - `wowapi init` next-steps hint no longer implies a bare `make migrate-up` works — it needs `APP_ENV` + the DB
   DSNs + a running Postgres (fail-closed). The hint now points to the generated README's "Getting started".
+- **GAP-001 acceptance gap: problem-details `detail` was never localized** (external merge-review finding).
+  `kernel/httpx.WriteError` set `Detail = e.Msg` verbatim regardless of the negotiated locale, and its doc
+  comment explicitly (and incorrectly) claimed `Detail` is never translated by `WriteError` — contradicting
+  GAP-001's stated acceptance criterion that both `title` **and** `detail` localize. Added `i18n.KeyDetail
+  (code)` (keyed by the error's stable machine code, mirroring `KeyProblemTitle`/`KeyValidationMessage`) and
+  `httpx.localizeDetail`, which `WriteError` now calls: a `detail.<code>` catalog entry localizes `Detail`;
+  otherwise it falls back to the producer's `Msg` exactly as before (byte-identical zero-config behavior).
+  Internal-kind errors still never expose `Detail`. Shipped the framework's own `detail.validation_failed`
+  English entry (kernel/validation's stable top-level validation message) — most codes intentionally have
+  no entry and keep falling back to `Msg`; enumerating every kernel code was explicitly out of scope, and
+  product codes remain product-catalog territory. Fixed the stale doc comment and updated the user guide
+  (Validation & Error Handling → Localizing responses) to state the real contract: title and field messages
+  always localize, detail localizes only where a `detail.<code>` entry exists.
 
 ## [1.0.0] — 2026-07-06 — first stable release
 
