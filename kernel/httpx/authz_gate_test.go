@@ -55,6 +55,49 @@ func TestIntegrationAuthzGateStepUpChallenge(t *testing.T) {
 	}
 }
 
+// stepUpEvalWithChallenge forces the step-up path with a caller-chosen
+// challenge string, so tests can prove the gate advertises the DECISION's
+// factor rather than a hardcoded "mfa" (B8).
+type stepUpEvalWithChallenge struct{ challenge string }
+
+func (e stepUpEvalWithChallenge) Evaluate(context.Context, database.TenantDB, authz.Actor, string, authz.Target) (authz.Decision, error) {
+	return authz.Decision{StepUpRequired: true, StepUpChallenge: e.challenge}, nil
+}
+
+func (stepUpEvalWithChallenge) Filter(context.Context, database.TenantDB, authz.Actor, string, string) (authz.ListFilter, error) {
+	return authz.ListFilter{}, nil
+}
+
+// TestIntegrationAuthzGateAdvertisesPolicyChallenge proves the HTTP gate
+// advertises the POLICY's factor (e.g. "hwk") in WWW-Authenticate, not a
+// hardcoded "mfa" — the whole point of B8's per-permission challenge.
+func TestIntegrationAuthzGateAdvertisesPolicyChallenge(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	capID := testkit.CreateCapacity(t, h, tn.ID, userID)
+
+	router := httpx.NewRouter()
+	router.Handle(http.MethodPost, "/vault", httpx.RouteMeta{Permission: "vault.secret.export"},
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	if err := router.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	act := authz.Actor{Kind: authz.ActorUser, UserID: userID, CapacityID: capID, TenantID: tn.ID}
+	mux := router.SecureHandler(fakeAuth{actor: act}, stepUpEvalWithChallenge{challenge: "hwk"}, h.TxM)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/vault", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("step-up must return 401, got %d", rec.Code)
+	}
+	want := `Bearer error="insufficient_user_authentication", step_up="hwk"`
+	if got := rec.Header().Get("WWW-Authenticate"); got != want {
+		t.Fatalf("WWW-Authenticate = %q, want %q (must reflect the policy's factor, not a hardcoded mfa)", got, want)
+	}
+}
+
 // authz_gate_test.go — the runtime enforcement gap (Finding 1). Proves the
 // framework now ENFORCES the RouteMeta permission per request: Public routes are
 // open, unauthenticated requests 401, unauthorized 403, and an authorized actor

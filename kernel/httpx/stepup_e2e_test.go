@@ -35,7 +35,8 @@ type dbPrincipalStore struct {
 func (s dbPrincipalStore) UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error) {
 	var id uuid.UUID
 	err := s.platform.Platform(ctx, func(ctx context.Context, db database.DB) error {
-		return db.QueryRow(ctx,
+		return db.QueryRow(
+			ctx,
 			`SELECT id FROM users WHERE idp_subject = $1 AND status = 'active'`, subject,
 		).Scan(&id)
 	})
@@ -53,7 +54,8 @@ func (s dbPrincipalStore) ValidateCapacity(ctx context.Context, userID, tenantID
 	ctx = database.WithTenantID(ctx, tenantID)
 	var ok bool
 	err := s.runtime.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
-		return db.QueryRow(ctx,
+		return db.QueryRow(
+			ctx,
 			`SELECT EXISTS (
 			   SELECT 1 FROM acting_capacities
 			    WHERE id = $1 AND user_id = $2 AND status = 'active' AND valid_to IS NULL
@@ -185,5 +187,105 @@ func TestIntegrationStepUpEndToEnd(t *testing.T) {
 	rec = do(mfaTok)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("with-AMR request: status = %d, want 200, body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIntegrationStepUpPolicyEndToEnd is TestIntegrationStepUpEndToEnd's B8
+// extension: a permission declaring the RICHER seed form (step_up_amr: [hwk],
+// step_up_challenge: hwk) propagates through the exact same
+// seed→boot-propagation→JWT-claims→Actor.AMR→evaluator→HTTP-gate chain, and
+// the evaluator enforces the SPECIFIC factor — a generic strong factor (otp)
+// is NOT enough, only hwk satisfies it, and the challenge advertised is "hwk"
+// (not a hardcoded "mfa").
+func TestIntegrationStepUpPolicyEndToEnd(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+
+	tenant := testkit.CreateTenant(t, h)
+	subject := "idp|stepup-hwk-" + uuid.NewString()[:8]
+	userID := seedUserWithSubject(t, h, subject)
+	capID := testkit.CreateCapacity(t, h, tenant.ID, userID)
+
+	const perm = "vault.secret.export"
+
+	// 1. Seed declares the richer step-up form.
+	bundle := seeds.Bundle{
+		Permissions: []seeds.PermissionSeed{
+			{
+				Key: perm, Description: "export a vault secret", StepUp: true,
+				StepUpAMR: []string{"hwk"}, StepUpChallenge: "hwk",
+			},
+		},
+	}
+	if err := seeds.Sync(ctx, h.Platform, bundle); err != nil {
+		t.Fatalf("seeds.Sync: %v", err)
+	}
+	// permissions.step_up persists the plain bool; the AMR subset does not
+	// round-trip through the DB (registry-declared only — see
+	// authz.Permission.StepUpPolicy doc comment for the rationale).
+	var stepUpCol bool
+	if err := h.Admin.QueryRow(ctx, `SELECT step_up FROM permissions WHERE key = $1`, perm).Scan(&stepUpCol); err != nil {
+		t.Fatalf("read step_up column: %v", err)
+	}
+	if !stepUpCol {
+		t.Fatal("seeds.Sync did not persist step_up=true")
+	}
+
+	// 2. Registry propagation mirrors app.Boot's PermissionSeed -> authz.Permission
+	// wiring, extended for the richer form (app/boot.go).
+	reg := authz.NewRegistry()
+	for _, p := range bundle.Permissions {
+		perm := authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp}
+		if len(p.StepUpAMR) > 0 || p.StepUpChallenge != "" {
+			perm.StepUpPolicy = &authz.StepUpPolicy{RequiredAMR: p.StepUpAMR, Challenge: p.StepUpChallenge}
+		}
+		reg.Register(perm)
+	}
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. RBAC grant: the actor is otherwise permitted (real evaluator, real store).
+	role := testkit.CreateRole(t, h, tenant.ID, "vault.exporter", perm)
+	testkit.GrantRole(t, h, tenant.ID, capID, role, "tenant", nil, "")
+	eval := authz.New(authz.Options{Store: authz.NewStore(), Registry: reg, Policies: policy.New()})
+
+	router := httpx.NewRouter()
+	router.Handle(http.MethodPost, "/vault/export", httpx.RouteMeta{Permission: perm},
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	if err := router.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	ti := testkit.NewTokenIssuer()
+	verifier := auth.NewVerifier(ti.KeySource(), auth.Config{Issuer: "wowapi-test", Audience: "wowapi"})
+	principals := dbPrincipalStore{platform: h.PlatformTxM, runtime: h.TxM}
+	authenticator := auth.NewAuthenticator(verifier, principals)
+
+	mux := router.SecureHandler(authenticator, eval, h.TxM)
+	do := func(tok string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/vault/export", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// --- A generic strong factor (otp) is NOT the specifically-required hwk. ---
+	otpTok := ti.Issue(subject, tenant.ID, capID, testkit.WithAMR("pwd", "otp"))
+	rec := do(otpTok)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("otp against a hwk-only policy: status = %d, want 401", rec.Code)
+	}
+	wantWA := `Bearer error="insufficient_user_authentication", step_up="hwk"`
+	if got := rec.Header().Get("WWW-Authenticate"); got != wantWA {
+		t.Fatalf("WWW-Authenticate = %q, want %q", got, wantWA)
+	}
+
+	// --- hwk satisfies it. ---
+	hwkTok := ti.Issue(subject, tenant.ID, capID, testkit.WithAMR("pwd", "hwk"))
+	rec = do(hwkTok)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("hwk against a hwk-only policy: status = %d, want 200, body=%q", rec.Code, rec.Body.String())
 	}
 }

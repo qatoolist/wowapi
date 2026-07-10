@@ -85,6 +85,12 @@ type Decision struct {
 	// The HTTP gate turns this into a re-authentication challenge rather than a
 	// flat 403.
 	StepUpRequired bool
+	// StepUpChallenge names the factor/hint to advertise in the step-up
+	// challenge (WWW-Authenticate's `step_up="…"` parameter) when
+	// StepUpRequired is set — the permission's StepUpPolicy.Challenge, or the
+	// deployment's configured default challenge for the plain `step_up: true`
+	// shorthand. Empty when StepUpRequired is false.
+	StepUpChallenge string
 }
 
 // ListFilter is the structured constraint Filter returns so list queries embed
