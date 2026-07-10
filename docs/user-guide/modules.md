@@ -45,7 +45,7 @@ set (`module/module.go`):
 | `Workflows()` / `WorkflowRuntime()` | workflow registry/runtime | State machines. |
 | `RetentionClasses()` | `*retention.Registry` | Dispose/export/erase callbacks (DSR). |
 | `DocumentClasses()`/`DocumentHooks()`/`Documents()`/`Comments()`/`Attachments()` | document subsystem | Files, comments, attachments. |
-| `NotifyTemplates()`/`Notify()`/`Webhooks()`/`IntegrationProviders()`/`Integrations()` | comms subsystem | Notifications, webhooks, integrations. |
+| `NotifyTemplates()`/`Notify()`/`Webhooks()`/`IntegrationProviders()`/`Integrations()` | comms subsystem | Notifications, webhooks (outbound delivery is SSRF-safe by default — see [Webhooks](webhooks.md)), integrations. |
 | `Privileged()` | `*privileged.Services` | Scoped, audited platform-privilege operations — grant/revoke ReBAC edges, activate tenant rules — on keys the module **owns**. See below. |
 
 > The Context grows one accessor per kernel capability. While wowapi is **v0**, widening this interface is
