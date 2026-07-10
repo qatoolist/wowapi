@@ -150,10 +150,19 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("kernel: %w", err)
 	}
 
+	// i18n catalog sources (framework overrides + product YAML/JSON + Go bundles).
+	// cmd/api, cmd/worker, AND cmd/migrate build these identically from cfg.I18n so
+	// all three load one catalog through one lifecycle; Boot merges them on top of
+	// the framework's embedded English defaults and freezes the catalog for serving.
+	i18nLayers, err := cfg.I18n.Layers()
+	if err != nil {
+		return fmt.Errorf("i18n: %w", err)
+	}
+
 	a := app.New()
 	a.Register(wire.Modules()...)
 	// Modules receive only their own modules.<name>.* namespace.
-	booted, err := a.Boot(ctx, k, cfg.Modules)
+	booted, err := a.Boot(ctx, k, cfg.Modules, app.WithI18nLayers(i18nLayers...))
 	if err != nil {
 		return fmt.Errorf("boot: %w", err)
 	}

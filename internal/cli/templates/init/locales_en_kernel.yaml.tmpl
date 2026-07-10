@@ -1,0 +1,14 @@
+# Product-local overrides of the framework's own kernel.* strings for English.
+#
+# The framework ships default English messages for problem-detail titles and
+# validation errors (the reserved kernel.* namespace). This file lets {{.Name}}
+# retranslate any of them WITHOUT editing framework code: it is loaded as a
+# sanctioned framework-override source, so a kernel.* key here BEATS the embedded
+# framework default. You may retranslate an existing framework key but not invent
+# a new kernel.* key — `wowapi i18n validate` enforces that.
+#
+# The sample below overrides the "not found" problem title. Delete this file if
+# you are happy with the framework defaults.
+locale: en
+messages:
+  kernel.problem.not_found: "Resource not found"
