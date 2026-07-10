@@ -26,6 +26,29 @@
 // English is the default locale and the ultimate fallback. Internal logs are
 // unaffected — they stay technical English by never routing through this package.
 //
+// # Sources, precedence, and loading (B1 / GAP-001B)
+//
+// Catalogs are built from first-class Sources (Source/Loader) in a fixed
+// precedence: embedded framework YAML defaults -> product framework-override
+// files -> product/module catalog files -> compiled Go bundles -> (reserved)
+// DB overlay. See loader.go (LoadCatalog/Layer/Policy), the fs and Go sources,
+// and config.go (BuildLayers). The framework's own English strings live in
+// embedded per-locale YAML (locales/<locale>/kernel.yaml), not hardcoded maps.
+// After boot merges everything, the catalog is Frozen: request-time reads never
+// race a write, and Add becomes a no-op (Decision 3). Products supply kernel.*
+// translations through the sanctioned override files or Registry.RegisterFrameworkLocale,
+// never raw post-boot Add.
+//
+// # Scope: static strings only (v1)
+//
+// This package stores and returns STATIC strings. It has no message-template
+// engine, named placeholders, or plural selection. The only parameter mechanism
+// is the framework's %s-style validation messages, whose argument kernel/validation
+// fills at render time — not the catalog; a translation must keep the same
+// %-verb count (wowapi i18n validate enforces this). Products needing rich
+// interpolation/pluralization format the final string in the handler and store
+// only static fragments here. This is a deliberate, documented v1 limit.
+//
 // Import boundary: stdlib + kernel/errors only. Never module, app, adapters, or
 // testkit.
 package i18n
