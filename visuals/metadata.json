@@ -1,9 +1,0 @@
-{
-  "tool": "wow-codegraph",
-  "version": "1.0.0",
-  "schema_version": 1,
-  "generated_at": "2026-07-05T19:46:46Z",
-  "repo_root": "/Users/qatoolist/go_home/src/github.com/qatoolist/wowapi",
-  "module": "github.com/qatoolist/wowapi",
-  "go_version": "go1.26.4"
-}
