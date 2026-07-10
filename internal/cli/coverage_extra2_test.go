@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel/lifecycle"
 )
 
 // ---------- dlq oneLine truncation (long last_error) ----------
@@ -155,6 +157,25 @@ func TestLintDispatchLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(got, "kernel.Tx") {
 		t.Fatalf("expected the manifest table to be printed, got %q", got)
+	}
+}
+
+// TestLintLifecycleDirtyManifestExit1 exercises the CLI wrapper's non-zero
+// exit path: a deliberately-broken manifest (a missing provider) must print
+// the violation to stderr and return exit code 1 so CI gates on it.
+func TestLintLifecycleDirtyManifestExit1(t *testing.T) {
+	broken := lifecycle.Manifest{Descriptors: []lifecycle.ProviderDescriptor{
+		{Provides: "a", Requires: []string{"missing.provider"}, Scope: lifecycle.ScopeProcess},
+	}}
+	var out, errb bytes.Buffer
+	if code := lintLifecycleManifest(broken, &out, &errb); code != 1 {
+		t.Fatalf("a dirty manifest must exit 1, got %d", code)
+	}
+	if !strings.Contains(errb.String(), "LIFECYCLE VIOLATIONS:") {
+		t.Fatalf("expected violations header on stderr, got %q", errb.String())
+	}
+	if strings.Contains(out.String(), "lifecycle lint: OK") {
+		t.Fatalf("must not print OK for a dirty manifest, got %q", out.String())
 	}
 }
 

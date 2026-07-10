@@ -68,7 +68,14 @@ func runLintLifecycle(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	m := lifecycle.CurrentManifest()
+	return lintLifecycleManifest(lifecycle.CurrentManifest(), stdout, stderr)
+}
+
+// lintLifecycleManifest prints m and lints it, returning the process exit code
+// (0 clean, 1 on any violation). Split out from runLintLifecycle so the
+// exit-code contract can be tested against a deliberately-broken manifest
+// without needing CurrentManifest (which is always clean) to be dirty.
+func lintLifecycleManifest(m lifecycle.Manifest, stdout, stderr io.Writer) int {
 	fmt.Fprint(stdout, m.Print())
 
 	violations := lifecycle.Lint(m)
