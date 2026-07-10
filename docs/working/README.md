@@ -4,6 +4,9 @@ A reusable operating system for developing, testing, reviewing, remediating, and
 Grounded in the actual codebase, roadmaps, workflows, and three review passes' findings — not generic
 advice. **Read this first, then keep these artifacts current as the project evolves.**
 
+Codex users should also read [`../../CODEX.md`](../../CODEX.md); it is the repo-local workflow entrypoint
+for Codex-oriented runs and should stay aligned with these working artifacts.
+
 ## The artifacts
 
 | # | Artifact | Use it to… |

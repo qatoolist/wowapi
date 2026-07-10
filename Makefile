@@ -263,13 +263,34 @@ config-doctor:
 
 ##@ Graphify
 
+NEO4J_URI ?= bolt://localhost:7687
+NEO4J_USER ?= neo4j
+NEO4J_PASSWORD ?= wowapi-local-only
+NEO4J_DATABASE ?= neo4j
+GRAPHIFY_CYPHER_PATH ?= graphify-out/cypher.txt
+
 .PHONY: graph-check
 graph-check: ## Graphify freshness check
 	sh scripts/graphify_refresh.sh check
 
 .PHONY: graph-update
-graph-update: ## Graphify incremental update
+graph-update: ## Graphify incremental update (code-only, no LLM)
 	sh scripts/graphify_refresh.sh update
+
+.PHONY: graph-build
+graph-build: ## Full semantic graph build — Kimi/Moonshot ONLY, never Claude (needs MOONSHOT_API_KEY). Prefer this over in-session /graphify for the AI extraction.
+	@test -n "$$MOONSHOT_API_KEY" || { echo "graph-build: MOONSHOT_API_KEY not set — required for Kimi/Moonshot semantic extraction (backend is pinned to kimi)"; exit 2; }
+	GRAPHIFY_BACKEND=kimi sh scripts/graphify_refresh.sh extract
+
+.PHONY: graph-neo4j
+graph-neo4j: ## Export the current graph and load it into the local Neo4j container (needs `make up`)
+	@test -n "$(NEO4J_URI)" || { echo "graph-neo4j: NEO4J_URI is required"; exit 2; }
+	@test -n "$(NEO4J_USER)" || { echo "graph-neo4j: NEO4J_USER is required"; exit 2; }
+	@test -n "$(NEO4J_PASSWORD)" || { echo "graph-neo4j: NEO4J_PASSWORD is required"; exit 2; }
+	@test -n "$(NEO4J_DATABASE)" || { echo "graph-neo4j: NEO4J_DATABASE is required"; exit 2; }
+	graphify export neo4j
+	@test -f "$(GRAPHIFY_CYPHER_PATH)" || { echo "graph-neo4j: $(GRAPHIFY_CYPHER_PATH) not found after export"; exit 1; }
+	$(COMPOSE) exec -T neo4j cypher-shell --non-interactive -a "$(NEO4J_URI)" -u "$(NEO4J_USER)" -p "$(NEO4J_PASSWORD)" -d "$(NEO4J_DATABASE)" < "$(GRAPHIFY_CYPHER_PATH)"
 
 ##@ CI
 

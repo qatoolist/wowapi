@@ -77,3 +77,7 @@ visuals/
 /VERIFICATION-wowapi-hardening.md
 /HANDOVER-wowapi-engineering.md
 /reviewer content/
+
+.agents/
+# Added by code-review-graph
+.code-review-graph/
