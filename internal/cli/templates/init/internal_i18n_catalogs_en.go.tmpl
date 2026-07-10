@@ -1,0 +1,30 @@
+// Package catalogs holds {{.Name}}'s compiled Go message-catalog bundles: the
+// Go-native alternative to the YAML/JSON files under locales/, for translations
+// you want the compiler to own (generated tables, or keys referenced from Go so
+// a rename is a build error). appcfg feeds Bundles() into the loader's Go layer,
+// which sits at the highest static precedence — above locales/ files and the
+// framework defaults.
+//
+// This sample ships one product-owned key in English. Add locales by returning
+// more RawBundles; keep product/module keys under your own "<name>." namespace
+// (only framework kernel.* keys go through the locales/ override files). Run
+// `wowapi i18n validate` to check coverage and namespace ownership.
+package catalogs
+
+import "github.com/qatoolist/wowapi/kernel/i18n"
+
+// Bundles returns {{.Name}}'s compiled Go catalog bundles. Enabled/disabled by
+// appcfg's i18n.go_bundles flag.
+func Bundles() []i18n.RawBundle {
+	return []i18n.RawBundle{
+		{
+			Locale: "en",
+			Origin: "internal/i18n/catalogs/en.go",
+			Messages: map[string]string{
+				// A product-owned key proving the compiled-Go source loads with no
+				// loader code. Namespace it under your product/module name.
+				"{{.Name}}.i18n.sample_go": "Loaded from a compiled Go catalog bundle",
+			},
+		},
+	}
+}

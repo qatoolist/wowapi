@@ -172,6 +172,18 @@ type Deps struct {
 	// another pod, so keep the TTL short and call Kernel.AuthzCache.Invalidate
 	// from your role grant/revoke paths for immediate effect on this pod.
 	AuthzCacheTTL time.Duration
+	// StepUpStrongFactors overrides the default set of AMR values that satisfy
+	// a plain `step_up: true` permission (backlog B8). Empty/nil uses
+	// authz.DefaultStrongFactors (mfa, otp, totp, hwk, fpt, face — "sms" is
+	// EXCLUDED by default per Decision 5: SMS-based step-up is opt-in only). A
+	// deployment re-adds "sms" — or narrows/widens the set further — by setting
+	// this slice, with NO CODE CHANGES. Per-permission AMR requirements
+	// (StepUpPolicy, e.g. "require hwk specifically") are declared in seed YAML
+	// instead and are unaffected by this deployment-wide default.
+	StepUpStrongFactors []string
+	// StepUpDefaultChallenge overrides the factor/hint advertised in
+	// WWW-Authenticate for a plain `step_up: true` permission. Empty uses "mfa".
+	StepUpDefaultChallenge string
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -223,11 +235,13 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	}
 
 	eval := authz.New(authz.Options{
-		Store:         authzStore,
-		Registry:      perms,
-		Policies:      policy.New(),
-		Relationships: relationship.NewChecker(),
-		Audit:         audit,
+		Store:            authzStore,
+		Registry:         perms,
+		Policies:         policy.New(),
+		Relationships:    relationship.NewChecker(),
+		Audit:            audit,
+		StrongFactors:    deps.StepUpStrongFactors,
+		DefaultChallenge: deps.StepUpDefaultChallenge,
 	})
 
 	writer := outbox.NewWriter(idgen, outbox.WithWriterTracer(tracer))

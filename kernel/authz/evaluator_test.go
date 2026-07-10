@@ -79,6 +79,18 @@ func newEval(t *testing.T, store authz.Store, reg *authz.Registry, rels authz.Re
 	})
 }
 
+// newEvalWithFactors is newEval plus an explicit deployment-configured
+// strong-factor set / default challenge (B8's config surface), for tests that
+// need to prove the default set is override-able without code changes.
+func newEvalWithFactors(t *testing.T, store authz.Store, reg *authz.Registry, factors []string, defaultChallenge string) authz.Evaluator {
+	t.Helper()
+	return authz.New(authz.Options{
+		Store: store, Registry: reg, Policies: policy.New(),
+		StrongFactors: factors, DefaultChallenge: defaultChallenge,
+		Now: func() time.Time { return time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC) },
+	})
+}
+
 var actor = authz.Actor{Kind: authz.ActorUser, UserID: uuid.New(), CapacityID: uuid.New(), TenantID: uuid.New()}
 
 // ---------- deny by default ----------

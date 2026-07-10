@@ -187,26 +187,66 @@ func (m *Module) Register(mc module.Context) error {
 `Booted.I18n`. Ownership is validated at boot: a module registering a key outside its prefix (or under
 the reserved `kernel.` namespace) fails boot with the other registry checks.
 
-**Translating the framework's own strings (`kernel.*` titles/validation messages/details) for a new
-locale.** There is no `Register`-based path for this today — `Register` enforces per-module ownership
-and always rejects the reserved `kernel.` prefix, by design, so one module can't shadow another's (or
-the framework's) strings. The supported mechanism is to add directly to the catalog `app.Boot` returns,
-which is a plain `*i18n.Catalog` with an unguarded `Add(locale, key, message)`:
+### Catalog sources, precedence, and the file-based workflow (GAP-001B)
 
-```go
-booted, err := app.Boot(...)
-// ...
-booted.I18n.Add("mr", i18n.KeyProblemTitle(errors.KindNotFound), "सापडले नाही")
-booted.I18n.Add("mr", i18n.KeyValidationMessage("required"), "हे फील्ड आवश्यक आहे")
-booted.I18n.Add("mr", i18n.KeyDetail("validation_failed"), "प्रमाणीकरण अयशस्वी झाले")
-httpx.Locale(booted.I18n) // wire the same catalog into the middleware, as below
+Translations do not have to live in Go maps. `wowapi init` scaffolds a **`locales/` tree** and an
+**`i18n:` config section**, and the generated `cmd/api`, `cmd/worker`, and `cmd/migrate` binaries load
+the configured sources through **one lifecycle** before boot completes — no product-authored loader
+code. The framework loads four first-class source kinds, merged in a fixed **precedence** order:
+
+1. **framework defaults** — the framework's own English `kernel.*` strings, embedded per-locale YAML
+   (`kernel/i18n/locales/<locale>/kernel.yaml`); always present, lowest precedence.
+2. **product framework-override files** — `locales/<locale>/kernel.yaml` in your repo. A `kernel.*` key
+   here **overrides** the embedded framework default for that locale. You may *retranslate* a framework
+   key but **not invent** a new `kernel.*` key.
+3. **product/module catalog files** — `locales/<locale>/*.yaml` and `locales/<locale>.json` (or
+   `locales/*.json`) under **your own `<name>.` namespace**. YAML for hand-authoring, JSON for
+   tooling/large text-as-key catalogs.
+4. **compiled Go bundles** — `internal/i18n/catalogs` returning `[]i18n.RawBundle`, for translations you
+   want the compiler to own; highest static precedence.
+
+A **DB overlay** is reserved as a future opt-in source (precedence would sit last, after validation) but
+is **not** built today (catalogs freeze at boot — see below).
+
+**Rules the loader enforces (and `wowapi i18n validate` checks in CI):** duplicate keys *within one
+layer* fail; a later layer overriding an earlier layer's key is allowed (that is precedence); only the
+framework-defaults and a sanctioned override layer may write `kernel.*`; every key must exist in the
+default locale (so a lookup always has a fallback).
+
+The canonical config the scaffold emits:
+
+```yaml
+i18n:
+  default_locale: en
+  supported_locales: [en, mr]
+  locales_dir: locales   # loaded as a sanctioned framework-override source
+  go_bundles: true       # load internal/i18n/catalogs
 ```
 
-This is exactly how the framework's own mr-IN acceptance test proves localization
-(`kernel/httpx/locale_test.go`'s `buildTestCatalog`), and it is the only way to extend the `kernel.`
-namespace with a new locale's strings. Registering a per-locale `kernel.*` bundle through
-`module.Context.I18n` (as opposed to `Catalog.Add`) is not supported; adding one is a tracked follow-up,
-not part of this contract.
+**Sanctioned in-code override path.** If you prefer Go over a `locales/<locale>/kernel.yaml` file, the
+registry exposes a guarded `RegisterFrameworkLocale(bundle)` — the replacement for raw `Catalog.Add`. It
+validates that every key is an existing `kernel.*` key (retranslate, don't invent) and records
+violations at boot like every other registry. Raw `Catalog.Add` still exists but is a **no-op after the
+catalog is frozen** (see below); use the config-driven `locales/` files or `RegisterFrameworkLocale`.
+
+**Validation.** Run `wowapi i18n validate --dir locales --supported en,mr` (add `--strict` to require
+every supported locale to define every key rather than relying on fallback). It fails on the four defect
+classes: missing coverage, intra-layer duplicates, `kernel.*` ownership violations, and placeholder
+drift. Wire it into your product CI.
+
+**Freeze-at-boot (Decision 3).** After boot merges every source and module bundle, the catalog is
+**frozen**: request-time reads never race a write, and a post-boot `Add` is silently ignored. Hot-reload
+and the DB overlay are a separate opt-in concern, not part of this contract.
+
+**Interpolation / pluralization — v1 is static strings only.** The catalog stores and returns **static
+strings**; it has no message-template engine, named placeholders, or plural-form selection. The one
+supported parameter mechanism is the framework's own `%s`-style validation messages (`min`, `max`,
+`len`, `oneof`, `gte`, `lte`), whose single argument is filled by `kernel/validation` at render time —
+**not** by the catalog. A translation of one of those messages must keep the same `%`-verb count as the
+English template; `wowapi i18n validate` fails on a mismatch (placeholder drift). If your product needs
+rich interpolation or pluralization, format the final string in your handler and store only the static
+fragments in the catalog. This is a deliberate v1 scope limit, stated (not silently omitted) so you can
+plan around it.
 
 **Wiring the middleware.** Pass the merged catalog to `httpx.Locale`, placed after `RequestID` and
 before your routes:

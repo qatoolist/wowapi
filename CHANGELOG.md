@@ -12,6 +12,14 @@ changes to it require a new major version.
 ## [Unreleased]
 
 ### Added
+- Step-up policy registry: `StepUpPolicy{RequiredAMR, Challenge}`, per-permission required AMR, configurable strong-factor set with `sms` excluded from the default (opt-in only), challenge advertises the policy factor; `step_up: true` remains shorthand. AMR-only (no MaxAge) pending IdP `auth_time` support (B8).
+- `kernel/i18n` localization subsystem: source/loader contract (embedded framework YAML defaults, product YAML/JSON, compiled Go bundles), explicit precedence with guarded `kernel.*` override registration, boot-time catalog freeze, `wowapi i18n validate`, and scaffold `locales/` + config loading across api/worker/migrate (B1).
+- `config.Privileged` allow-list: per-module explicit enumeration (no wildcards) of relationship types / rule keys, boot-validated, wired into `module.Context.Privileged()`; prefix-only default unchanged (B10).
+- `config.Concurrency` profile + fail-closed capacity validation (`wowapi config capacity`) + `httpx.Backpressure` in-flight limiter (503/429 before pool exhaustion) with overload/in-flight metrics; advisory-then-enforced, limiter off by default (B6).
+- `config.Security` profiles: `api` (default, unchanged) and opt-in `browser` wiring CSRF (double-submit cookie) + SameSite + CSP via `httpx.SecurityChain`, spliced into the generated `cmd/api` (B7).
+- Static provider/lifecycle manifest + `wowapi lint lifecycle`: scope descriptors (process/request/tenant_tx/job/migrate) with scope-leak / missing-provider / cycle lints over the real kernel wiring (B9).
+
+### Added
 - `kernel/httpclient`: SSRF-safe outbound HTTP client (dial-time resolve-then-verify blocking of loopback/link-local/metadata/RFC1918/ULA/CGNAT, allowlist escape hatch, per-hop redirect re-verification); `kernel/webhook` delivery now uses it by default (B2).
 - Full-chain benchmark gates: `BenchmarkDispatch` (50/500/2000 routes through the real SecureHandler chain), authz-gate cached/uncached, JSON decode/body-limit — with budgets in `bench-budgets.txt`; measured data parks the P2 router replacement (B5).
 - **Standard storage/OIDC/i18n scaffold wiring in `wowapi init` (GAP-008, the last framework gap)** — closes

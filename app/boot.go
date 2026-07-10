@@ -55,7 +55,23 @@ type RecurringJob struct {
 // BootOption tunes Boot. See SkipRLSEnforcementCheck.
 type BootOption func(*bootOpts)
 
-type bootOpts struct{ skipRLSCheck bool }
+type bootOpts struct {
+	skipRLSCheck bool
+	i18nLayers   []i18n.Layer
+}
+
+// WithI18nLayers supplies product-configured i18n source layers (framework
+// overrides, product/module catalog files, compiled Go bundles) to merge into
+// the catalog after modules register and before it is frozen for serving. The
+// generated api, worker, AND migrate binaries pass the SAME layers (resolved
+// from the product's i18n config), so all three load one catalog through one
+// lifecycle (B1 acceptance). Layers are applied in precedence order on top of
+// the framework's embedded defaults; ownership violations fail boot like any
+// other registration error. Omit it (zero-config) and boot ships the framework
+// English catalog exactly as before.
+func WithI18nLayers(layers ...i18n.Layer) BootOption {
+	return func(o *bootOpts) { o.i18nLayers = append(o.i18nLayers, layers...) }
+}
 
 // SkipRLSEnforcementCheck disables the boot-time assertion that the runtime pool
 // cannot bypass row-level security. Use it ONLY for a process that does not serve
@@ -136,7 +152,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			notifyReg: k.NotifyTemplates, notifySvc: k.Notify, webhooks: k.Webhooks,
 			intReg: k.IntegrationProviders, intStore: k.Integrations,
 			audit: k.Audit, sequence: k.Sequence, bulk: k.Bulk, artifacts: k.Artifacts,
-			platformTx: k.PlatformTx, ruleStore: k.RuleStore,
+			platformTx: k.PlatformTx, ruleStore: k.RuleStore, privCfg: k.Cfg.Privileged,
 			boot: boot,
 		})
 		if err := m.Register(mc); err != nil {
@@ -166,7 +182,17 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		bundle.ResourceTypes = append(bundle.ResourceTypes, b.ResourceTypes...)
 		bundle.RelationshipTypes = append(bundle.RelationshipTypes, b.RelationshipTypes...)
 		for _, p := range b.Permissions {
-			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp})
+			perm := authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp}
+			// A richer step-up seed form (specific AMR subset and/or challenge
+			// hint) becomes a StepUpPolicy on the registry entry — registry-
+			// declared, in-memory only (not persisted; permissions.step_up stays
+			// a plain bool). seeds.validate already rejected these fields set
+			// without step_up: true, so p.StepUp is true here whenever either is
+			// non-empty (B8).
+			if len(p.StepUpAMR) > 0 || p.StepUpChallenge != "" {
+				perm.StepUpPolicy = &authz.StepUpPolicy{RequiredAMR: p.StepUpAMR, Challenge: p.StepUpChallenge}
+			}
+			k.Perms.Register(perm)
 		}
 		for _, rt := range b.ResourceTypes {
 			k.Resources.Register(name, resource.TypeSpec{Key: rt.Key, Description: rt.Description})
@@ -210,6 +236,14 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if err := k.IntegrationProviders.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
+	// Merge product-configured i18n source layers (framework overrides, product/
+	// module catalog files, Go bundles) on top of the framework defaults and the
+	// module bundles registered above, in precedence order. Ownership/duplicate
+	// violations are recorded on the registry and surface via Err() below, so a
+	// bad catalog fails boot with every other registration error.
+	if len(bo.i18nLayers) > 0 {
+		boot.i18n.ApplyLayers(bo.i18nLayers...)
+	}
 	// i18n bundle ownership (module-prefixed keys, no reserved kernel.* shadowing)
 	// is boot-validated like every other registry.
 	if err := boot.i18n.Err(); err != nil {
@@ -226,6 +260,12 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if len(regErrs) > 0 {
 		return nil, fmt.Errorf("app: boot validation failed: %w", errors.Join(regErrs...))
 	}
+
+	// Seal the catalog for request-time reads (Decision 3): every source and
+	// module bundle has merged and validated, so no further writes are legitimate.
+	// After Freeze, Catalog.Add is a no-op, so request-path Lookups never race a
+	// write and a post-boot mutation cannot silently change served strings.
+	boot.i18n.Freeze()
 
 	return &Booted{
 		Kernel:     k,
