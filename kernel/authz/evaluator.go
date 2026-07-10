@@ -21,12 +21,14 @@ type PolicyEngine interface {
 
 // engine is the concrete deny-by-default evaluator.
 type engine struct {
-	store    Store
-	rels     RelationshipChecker
-	registry *Registry
-	policies PolicyEngine
-	audit    AuditSink
-	now      func() time.Time
+	store         Store
+	rels          RelationshipChecker
+	registry      *Registry
+	policies      PolicyEngine
+	audit         AuditSink
+	now           func() time.Time
+	strongFactors map[string]bool
+	defaultChal   string
 }
 
 // Options configures New. Store, Registry, and PolicyEngine are required;
@@ -38,7 +40,27 @@ type Options struct {
 	Policies      PolicyEngine
 	Audit         AuditSink
 	Now           func() time.Time
+	// StrongFactors is the deployment-configurable default strong-factor AMR
+	// set used by the `step_up: true` shorthand (a permission with no
+	// StepUpPolicy). Empty/nil uses DefaultStrongFactors (mfa, otp, totp, hwk,
+	// fpt, face — "sms" is EXCLUDED by default, per Decision 5: SMS-based
+	// step-up is opt-in only, added by naming "sms" explicitly here). This is
+	// the config surface a deployment overrides WITHOUT code changes (wired
+	// via kernel.Deps.StepUpStrongFactors — see kernel/kernel.go).
+	StrongFactors []string
+	// DefaultChallenge is the factor/hint advertised in WWW-Authenticate for a
+	// permission using the default strong-factor set (no per-permission
+	// StepUpPolicy.Challenge). Empty defaults to "mfa".
+	DefaultChallenge string
 }
+
+// DefaultStrongFactors is the out-of-the-box default strong-factor AMR set:
+// AMR values that count as an elevated (second) authentication factor. "mfa"
+// is the OIDC aggregate; the rest are common specific methods. "sms" is
+// deliberately excluded — SMS-based step-up is opt-in only (Decision 5,
+// framework-engineering-backlog B8): a deployment adds it back by listing it
+// in Options.StrongFactors / kernel.Deps.StepUpStrongFactors.
+var DefaultStrongFactors = []string{"mfa", "otp", "totp", "hwk", "fpt", "face"}
 
 // New builds an Evaluator. It panics on missing required collaborators — that
 // is a wiring error at composition, not a runtime condition.
@@ -50,9 +72,22 @@ func New(o Options) Evaluator {
 	if now == nil {
 		now = time.Now
 	}
+	factors := o.StrongFactors
+	if len(factors) == 0 {
+		factors = DefaultStrongFactors
+	}
+	sf := make(map[string]bool, len(factors))
+	for _, f := range factors {
+		sf[f] = true
+	}
+	chal := o.DefaultChallenge
+	if chal == "" {
+		chal = "mfa"
+	}
 	return &engine{
 		store: o.Store, rels: o.Relationships, registry: o.Registry,
 		policies: o.Policies, audit: o.Audit, now: now,
+		strongFactors: sf, defaultChal: chal,
 	}
 }
 
@@ -178,28 +213,69 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 	}
 
 	// --- Step-up: a permission may require an elevated auth factor. If the actor
-	// would otherwise be allowed but carries no strong factor in its AMR, downgrade
-	// to a step-up challenge (roadmap S3). This never grants — it only gates an
-	// existing allow — so deny-by-default is preserved. ---
-	if decision.Allowed && pdef.StepUp && !hasStrongFactor(a.AMR) {
-		decision.Allowed = false
-		decision.StepUpRequired = true
-		decision.Reason = "step_up_required"
+	// would otherwise be allowed but carries no qualifying factor in its AMR,
+	// downgrade to a step-up challenge (roadmap S3). This never grants — it only
+	// gates an existing allow — so deny-by-default is preserved.
+	//
+	// A permission's StepUpPolicy (set via the richer seed form), when present,
+	// REPLACES the default-set behavior with its own RequiredAMR ("any of"
+	// semantics — the actor needs a single matching factor, not all of them) and
+	// Challenge hint. A plain `step_up: true` (StepUpPolicy nil) falls back to
+	// the engine's configured default strong-factor set and default challenge. ---
+	if decision.Allowed {
+		if pol := pdef.StepUpPolicy; pol != nil {
+			if !e.satisfiesAMR(a.AMR, pol.RequiredAMR) {
+				decision.Allowed = false
+				decision.StepUpRequired = true
+				decision.StepUpChallenge = e.challengeFor(pol)
+				decision.Reason = "step_up_required"
+			}
+		} else if pdef.StepUp && !e.hasStrongFactor(a.AMR) {
+			decision.Allowed = false
+			decision.StepUpRequired = true
+			decision.StepUpChallenge = e.defaultChal
+			decision.Reason = "step_up_required"
+		}
 	}
 
 	e.maybeAudit(ctx, a, perm, t, pdef, decision)
 	return decision, nil
 }
 
-// strongFactors are AMR values that count as an elevated (second) authentication
-// factor. "mfa" is the OIDC aggregate; the rest are common specific methods.
-var strongFactors = map[string]bool{
-	"mfa": true, "otp": true, "totp": true, "hwk": true, "sms": true, "fpt": true, "face": true,
+// satisfiesAMR reports whether amr contains at least one value from required
+// (any-of — the usual step-up semantic). An empty required set falls back to
+// the engine's configured default strong-factor set.
+func (e *engine) satisfiesAMR(amr []string, required []string) bool {
+	if len(required) == 0 {
+		return e.hasStrongFactor(amr)
+	}
+	want := make(map[string]bool, len(required))
+	for _, r := range required {
+		want[r] = true
+	}
+	for _, m := range amr {
+		if want[m] {
+			return true
+		}
+	}
+	return false
 }
 
-func hasStrongFactor(amr []string) bool {
+// challengeFor returns the factor/hint to advertise for a per-permission
+// StepUpPolicy: its own Challenge if set, else the engine's default.
+func (e *engine) challengeFor(pol *StepUpPolicy) string {
+	if pol.Challenge != "" {
+		return pol.Challenge
+	}
+	return e.defaultChal
+}
+
+// hasStrongFactor reports whether amr contains any value from the engine's
+// configured default strong-factor set (deployment-configurable via
+// Options.StrongFactors; see DefaultStrongFactors).
+func (e *engine) hasStrongFactor(amr []string) bool {
 	for _, m := range amr {
-		if strongFactors[m] {
+		if e.strongFactors[m] {
 			return true
 		}
 	}
@@ -279,7 +355,7 @@ func (e *engine) attributes(a Actor, t Target, now time.Time) map[string]any {
 		"actor.kind":          string(a.Kind),
 		"actor.impersonating": a.ImpersonatorUserID != uuid.Nil,
 		"actor.break_glass":   a.BreakGlass,
-		"env.mfa":             hasStrongFactor(a.AMR),
+		"env.mfa":             e.hasStrongFactor(a.AMR),
 		"env.time":            now.Format(time.RFC3339),
 		"env.hour":            now.Hour(),
 		"resource.type":       t.Resource.Type,

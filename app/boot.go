@@ -166,7 +166,17 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		bundle.ResourceTypes = append(bundle.ResourceTypes, b.ResourceTypes...)
 		bundle.RelationshipTypes = append(bundle.RelationshipTypes, b.RelationshipTypes...)
 		for _, p := range b.Permissions {
-			k.Perms.Register(authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp})
+			perm := authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp}
+			// A richer step-up seed form (specific AMR subset and/or challenge
+			// hint) becomes a StepUpPolicy on the registry entry — registry-
+			// declared, in-memory only (not persisted; permissions.step_up stays
+			// a plain bool). seeds.validate already rejected these fields set
+			// without step_up: true, so p.StepUp is true here whenever either is
+			// non-empty (B8).
+			if len(p.StepUpAMR) > 0 || p.StepUpChallenge != "" {
+				perm.StepUpPolicy = &authz.StepUpPolicy{RequiredAMR: p.StepUpAMR, Challenge: p.StepUpChallenge}
+			}
+			k.Perms.Register(perm)
 		}
 		for _, rt := range b.ResourceTypes {
 			k.Resources.Register(name, resource.TypeSpec{Key: rt.Key, Description: rt.Description})
