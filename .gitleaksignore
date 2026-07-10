@@ -1,0 +1,3 @@
+# graphify visuals false positives (graph node hashes near the literal string "apikey"); files untracked in f0895cc but present in PR history
+cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/edges.ndjson:generic-api-key:10892
+cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/graph.json:generic-api-key:284445
