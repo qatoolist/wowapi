@@ -1,3 +1,8 @@
 # graphify visuals false positives (graph node hashes near the literal string "apikey"); files untracked in f0895cc but present in PR history
 cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/edges.ndjson:generic-api-key:10892
 cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/graph.json:generic-api-key:284445
+# architecture-directive prose false positives ("signature/key version", "SBOM/provenance
+# attestations" design vocabulary tripping the generic-api-key entropy rule); verified by
+# direct read — no secret material. Flagged when PR #22's scan range re-covered e6bed50.
+e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:394
+e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:806
