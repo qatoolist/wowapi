@@ -248,9 +248,11 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 
 	// Rules: registry + resolver (org ancestry via the authz store) — the
 	// registry is populated during module Register; the resolver reads it.
+	// Reuses the composed authzStore (not a fresh authz.NewStore()) so this
+	// path honors the same caching/decoration as the evaluator (AR-06 T1).
 	ruleReg := rules.NewRegistry()
 	orgAncestry := func(ctx context.Context, db database.TenantDB, orgID uuid.UUID) ([]uuid.UUID, error) {
-		return authz.NewStore().OrgAncestors(ctx, db, orgID)
+		return authzStore.OrgAncestors(ctx, db, orgID)
 	}
 	ruleResolver := rules.NewResolver(ruleReg, orgAncestry)
 	ruleStore := rules.NewStore(ruleReg, idgen)

@@ -134,6 +134,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	jobReg := jobs.NewRegistry()
 
 	var regErrs []error
+	knownModules := make(map[string]struct{}, len(ordered))
 	for _, m := range ordered {
 		var view config.ModuleView
 		if namespaces != nil {
@@ -141,6 +142,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 				view = v
 			}
 		}
+		knownModules[m.Name()] = struct{}{}
 		mc := newModuleContext(m.Name(), k.Log, view, moduleDeps{
 			router: router, val: val, perms: k.Perms, rtypes: k.Resources,
 			eval: k.Authz, tx: k.Tx, idgen: idgen,
@@ -157,6 +159,24 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		})
 		if err := m.Register(mc); err != nil {
 			regErrs = append(regErrs, fmt.Errorf("module %q: Register: %w", m.Name(), err))
+		}
+	}
+
+	// Reject unknown module namespaces (AR-04 T1): a config `modules.<name>`
+	// namespace with no corresponding registered module is otherwise retained as
+	// opaque, unvalidated data and never rejected — silently masking a typo (e.g.
+	// modules.polcy) or a stale namespace left behind by a removed module. Sort
+	// the offending keys so the error is deterministic (ARCH-52).
+	if len(namespaces) > 0 {
+		var unknown []string
+		for name := range namespaces {
+			if _, ok := knownModules[name]; !ok {
+				unknown = append(unknown, name)
+			}
+		}
+		if len(unknown) > 0 {
+			sort.Strings(unknown)
+			regErrs = append(regErrs, fmt.Errorf("config: unknown module namespace(s) %v: no registered module matches", unknown))
 		}
 	}
 

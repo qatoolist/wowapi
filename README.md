@@ -20,9 +20,9 @@ and scheduler, HTTP primitives, configuration, observability, and a set of compl
 resources, permissions, routes, workflows, events, jobs, seeds, and migrations **without touching kernel
 code**.
 
-> Status: **pre-1.0 (v0.1.0).** The public surface (`kernel` / `module` / `app` / `adapters` / `testkit`
-> / `migrations` + `cmd/wowapi`) may still make breaking changes between minor versions. See
-> [Versioning](#versioning--stability).
+> Status: **stable v1** (current: `v1.1.0`). As of `v1.0.0` the public surface (`kernel` / `module` /
+> `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking changes to it require
+> a new major version (`/v2`). See [Versioning](#versioning--stability).
 
 - 📘 **New here? Start with the [User Guide](docs/user-guide/README.md)** and
   [Getting Started](docs/user-guide/getting-started.md).
@@ -79,7 +79,7 @@ society-specific lives in the core** — it is a general enterprise backend kern
 - Engineers comfortable with Go, PostgreSQL, and a modular-monolith deployment (one `api` + `worker` +
   `migrate` binary set per product, one database).
 
-It is **not** a micro-framework, an ORM, or a frontend framework, and it is not (yet) a stable 1.0 API.
+It is **not** a micro-framework, an ORM, or a frontend framework.
 
 ## Highlights
 
@@ -149,7 +149,7 @@ This is the **framework** repo. (A *product* repo scaffolded by `wowapi init` lo
 |---|---|
 | `kernel/` | The platform services (authz, database, httpx, outbox, jobs, audit, retention, sequence, bulk, artifact, config, observability, …). Public API. |
 | `module/` | The product-facing SDK contract: `module.Module` + `module.Context`. Public API. |
-| `app/` | The composition root: `kernel.New` + `App.Boot` + `StartWorker`. Public API. |
+| `app/` | Composition-root helpers: `App.New`/`App.Register`/`App.Boot` register modules against a kernel the product constructs (`kernel.New`) and passes in, plus the free function `StartWorker`. Public API. |
 | `adapters/` | Vendor bindings behind kernel ports (`metrics/prometheus`, `tracing/otel`, `secrets/*`). |
 | `testkit/` | Public test harness: isolated per-test DBs, fixtures, `RunModuleContract`. |
 | `migrations/` | Embedded goose SQL migrations (`00001…`), kernel-owned. |
@@ -174,8 +174,11 @@ You consume `wowapi` from a **separate product repository**. The `wowapi` CLI sc
 **1. Get the `wowapi` CLI.** Either install a published version:
 
 ```bash
-go install github.com/qatoolist/wowapi/cmd/wowapi@latest   # or @vX.Y.Z once tagged
+go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0   # pin an exact tag; see Versioning below
 ```
+
+(`@latest` is discouraged — the [upgrade policy](docs/operations/upgrade-and-deprecation-policy.md) requires
+an exact version pin, never `@latest`.)
 
 …or build it from a clone of this repo (works even if no version is published yet):
 
@@ -337,11 +340,14 @@ A green host suite can be hollow if DB tests silently skip — always trust `mak
 
 ## Versioning & stability
 
-- **Semantic-ish, pre-1.0.** Current: `v0.1.0`. Per [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog), the
-  public surface may make **breaking changes between minor versions** until 1.0.
-- **Product pinning.** A product pins an exact `wowapi` version in its `go.mod`. The module contract-test
-  suite (`testkit.RunModuleContract`) is the upgrade tripwire: run it in CI against a new framework
-  version before upgrading.
+- **Stable v1.** Current: `v1.1.0`. Per [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog), as of `v1.0.0`
+  the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
+  is stable: it stays backward-compatible throughout v1, and an incompatible change requires a `/v2`
+  module path. See the [upgrade & deprecation policy](docs/operations/upgrade-and-deprecation-policy.md)
+  for the full v1/N-1 support rules.
+- **Product pinning.** A product pins an **exact** `wowapi` version in its `go.mod` — never `@latest`. The
+  module contract-test suite (`testkit.RunModuleContract`) is the upgrade tripwire: run it in CI against a
+  new framework version before upgrading.
 - **Migrations are additive + reversible** — every migration ships an Up and a Down; the reversibility
   drill runs in `ci-container`.
 

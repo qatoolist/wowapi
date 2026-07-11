@@ -213,7 +213,10 @@ func TestBootPropagatesStepUpPolicy(t *testing.T) {
 }
 
 // TestBootConfigNamespaceIsolation confirms Boot threads each module's own
-// config namespace into its context and nothing else (blueprint 06 §2).
+// config namespace into its context and nothing else (blueprint 06 §2). Both
+// namespaces belong to registered modules (AR-04 T1 now rejects a namespace
+// with no matching module), so "other" is a second real module rather than a
+// phantom namespace.
 func TestBootConfigNamespaceIsolation(t *testing.T) {
 	h := testkit.NewDB(t)
 	k := discardKernel(t, h)
@@ -222,8 +225,13 @@ func TestBootConfigNamespaceIsolation(t *testing.T) {
 	m := funcModule{name: "widgets", reg: func(mc module.Context) error {
 		return mc.Config().Decode(&seen)
 	}}
+	other := funcModule{name: "other", reg: func(mc module.Context) error {
+		var v map[string]any
+		return mc.Config().Decode(&v)
+	}}
 	a := app.New()
 	a.Register(m)
+	a.Register(other)
 	ns := config.Namespaces{
 		"widgets": config.MapView{"size": "large"},
 		"other":   config.MapView{"secret": "hidden"},
@@ -236,6 +244,32 @@ func TestBootConfigNamespaceIsolation(t *testing.T) {
 	}
 	if _, leaked := seen["secret"]; leaked {
 		t.Errorf("module leaked another namespace's key: %v", seen)
+	}
+}
+
+// TestBootFailsOnUnknownConfigNamespace proves Boot rejects a config
+// `modules.<name>` namespace that has no corresponding registered module
+// (AR-04 T1) — e.g. a typo like modules.polcy instead of modules.policy, or a
+// leftover namespace for a module that was removed. Before this check such a
+// namespace was silently retained as opaque, unvalidated data.
+func TestBootFailsOnUnknownConfigNamespace(t *testing.T) {
+	h := testkit.NewDB(t)
+	k := discardKernel(t, h)
+
+	m := funcModule{name: "widgets", reg: func(mc module.Context) error {
+		var seen map[string]any
+		return mc.Config().Decode(&seen)
+	}}
+	a := app.New()
+	a.Register(m)
+	ns := config.Namespaces{
+		"widgets": config.MapView{"size": "large"},
+		"polcy":   config.MapView{"enabled": true}, // typo: no "polcy" module registered
+	}
+	_, err := a.Boot(context.Background(), k, ns)
+	if err == nil || !strings.Contains(err.Error(), "polcy") ||
+		!strings.Contains(err.Error(), "unknown module namespace") {
+		t.Fatalf("Boot error = %v, want unknown-module-namespace failure naming %q", err, "polcy")
 	}
 }
 

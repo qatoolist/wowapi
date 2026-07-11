@@ -91,9 +91,9 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
-      - name: authoritative gate (make ci inside toolbox, WOWAPI_REQUIRE_DB=1)
-        # Mirrors `make ci-container`: DB-backed tests fail (not skip) if the DB
-        # is unreachable, so coverage cannot silently evaporate.
+      - name: authoritative gate (make ci inside toolbox, WOWAPI_REQUIRE_DB=1 + WOWAPI_REQUIRE_S3=1)
+        # Mirrors `make ci-container`: DB- and S3-backed tests fail (not skip) if
+        # the DB/MinIO are unreachable, so coverage cannot silently evaporate.
         run: make ci-container
       - name: fuzz seed corpus (filter DSL + cursor decoder)
         run: |
