@@ -10,17 +10,20 @@ name: ci
 #                   only because every test skipped for lack of a DSN), plus
 #                   vet/lint/boundaries/build — these are NOT repeated in the
 #                   containers (same pinned Go version proves the same thing).
-#   gate (matrix) — authoritative, fanned out into three PARALLEL container legs
-#                   with the identical required-env posture as `make ci-container`
+#   gate (matrix) — authoritative, PARALLEL container legs with the identical
+#                   required-env posture as `make ci-container`
 #                   (WOWAPI_REQUIRE_DB=1 + WOWAPI_REQUIRE_S3=1 — DB/S3 tests MUST
 #                   run, never skip):
 #                     test  — test-unit (DB+S3) + fuzz seed corpus
 #                     race  — full-tree -race (DB+S3; unscoped, per PR)
-#                     bench — bench-budget + lint-lifecycle
 #                   Wall-clock = slowest leg instead of the sum. Go build/module
 #                   caches are persisted across runs via actions/cache mounted
 #                   into the toolbox (the named compose volumes start empty on
 #                   hosted runners otherwise, recompiling the world every run).
+#   gate-bench    — bench-budget + lint-lifecycle. Path-scoped on PRs (runs only
+#                   when the diff can affect a budgeted measurement); ALWAYS runs
+#                   on main pushes and the nightly schedule, so a regression that
+#                   slips path-scoping is caught minutes after merge, pre-release.
 #   coverage      — publishes a coverage profile artifact and enforces a floor.
 #   reference-smoke — B-7/CA-6: scaffolds a product, runs it behind the reference
 #                   nginx (TLS) via compose, and asserts the security-header posture
@@ -31,6 +34,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge queue: checks run ONCE per PR on the merge-group ref (the exact tree
+  # that will land on main) when the merge is requested — the "bench once,
+  # before merge" provision. The changes job classifies against the merge
+  # group's own base, so docs-only PRs stay fast in the queue too.
+  merge_group:
+  schedule:
+    # Nightly full sweep: runs everything unconditionally (the changes job
+    # fail-safes to code=true / bench=true with no diff base), catching any
+    # perf drift a path-scoped PR bench could miss via dependencies.
+    - cron: "17 3 * * *"
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -53,11 +66,12 @@ env:
 
 jobs:
   changes:
-    name: classify diff (docs-only?)
+    name: classify diff (docs-only? bench-relevant?)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code: ${{ steps.classify.outputs.code }}
+      bench: ${{ steps.classify.outputs.bench }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -68,18 +82,24 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
             base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          elif [ "$EVENT_NAME" = "merge_group" ] && [ -n "$MG_BASE_SHA" ] && git cat-file -e "$MG_BASE_SHA" 2>/dev/null; then
+            base="$MG_BASE_SHA"
           elif [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
             base="$BEFORE_SHA"
           else
             base=""
           fi
           if [ -z "$base" ]; then
-            echo "no usable base — treating as code change (fail safe)"
-            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "no usable base — treating as code + bench change (fail safe)"
+            {
+              echo "code=true"
+              echo "bench=true"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed="$(git diff --name-only "$base" HEAD)"
@@ -94,6 +114,27 @@ jobs:
           else
             echo "docs-only diff — container gate legs will be skipped"
             echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Bench-relevant = the diff can plausibly change a budgeted ns/op:
+          # the eight benchmarked kernel packages and their load-bearing
+          # dependencies (database/model/errors underpin the DB-backed audit
+          # and sequence benches), the budgets file, the benchbudget tool, the
+          # module graph/toolchain, or this pipeline itself. Anything else
+          # cannot move the measured numbers; full bench still runs on every
+          # main push and nightly, so path-scoping only defers, never drops,
+          # detection. Fail-safe direction: unlisted kernel packages that are
+          # true dependencies (e.g. kernel/errors) are INCLUDED below rather
+          # than reasoned away.
+          bench_re='^(kernel/(authz|policy|httpx|config|filtering|pagination|audit|sequence|database|model|errors|i18n)/|bench-budgets\.txt$|internal/tools/benchbudget/|go\.(mod|sum)$|Dockerfile$|deployments/compose\.yaml$|\.github/workflows/ci\.yml$|Makefile$)'
+          if [ "$EVENT_NAME" != "pull_request" ] && [ "$EVENT_NAME" != "merge_group" ]; then
+            # main push / nightly schedule: always measure.
+            echo "bench=true" >> "$GITHUB_OUTPUT"
+          elif echo "$changed" | grep -qE "$bench_re"; then
+            echo "bench-relevant diff — bench leg runs"
+            echo "bench=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "diff cannot affect budgeted benchmarks — bench deferred to main push + nightly"
+            echo "bench=false" >> "$GITHUB_OUTPUT"
           fi
 
   workflow-lint:
@@ -149,7 +190,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        leg: [test, race, bench]
+        leg: [test, race]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: restore container Go caches
@@ -184,6 +225,52 @@ jobs:
         # bind-mount so actions/cache persists them across runs.
         run: |
           make ci-container-${{ matrix.leg }} \
+            CI_TOOLS_ENV="-e GOCACHE=/src/.cicache/go-build -e GOMODCACHE=/src/.cicache/gomod"
+      - name: fix cache ownership for the post-job cache save
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .cicache 2>/dev/null || true
+      - name: tear down
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v
+
+  gate-bench:
+    # Separate from the gate matrix so it can carry its own condition: on PRs
+    # it runs ONLY when the diff can affect a budgeted benchmark (see the
+    # changes job); on main pushes and the nightly schedule it always runs.
+    # Benchmarks are ~7-9 min of irreducible measurement — the single largest
+    # PR wall-clock cost — so they are measured where they can change, not on
+    # every commit of every PR.
+    name: authoritative gate — bench (container, DB+S3 required)
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: restore container Go caches
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cicache
+          key: cicache-bench-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
+          restore-keys: |
+            cicache-bench-${{ hashFiles('go.sum', 'Dockerfile') }}-
+            cicache-bench-
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: prebuild toolbox image (GHA-layer-cached)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: dev
+          tags: wowapi-tools:latest
+          push: false
+          load: true
+          cache-from: type=gha,scope=toolbox
+          cache-to: type=gha,scope=toolbox,mode=max
+      - name: start compose services (postgres, minio, mailpit)
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
+      - name: gate leg bench
+        run: |
+          make ci-container-bench \
             CI_TOOLS_ENV="-e GOCACHE=/src/.cicache/go-build -e GOMODCACHE=/src/.cicache/gomod"
       - name: fix cache ownership for the post-job cache save
         if: always()
