@@ -63,3 +63,22 @@ Reproduces B5's recorded budget (577 / 604 / 666 ns/op) in `bench-budgets.txt`.
 | B13 hot-reload overlays | Parked | No operational need demonstrated (Decision 3); freeze invariant sufficient |
 
 P2 delivery this cycle is **W1** (wowsociety consumes the B1 i18n loaders), which required and exercised real framework capability rather than speculative building.
+
+## Re-verification — 2026-07-11 (see decisions.md D-0090)
+
+An independent `/goal` pass re-derived all three items' evidence from live source (not from this doc) with
+no code changes in between. Result: **all three decisions confirmed unchanged.**
+
+- B11: live `BenchmarkDispatch` re-run measured 571.2/590.4/629.6 ns/op at 50/500/2000 routes, flat 14
+  allocs/op — matches (slightly beats) the table above. RouteMeta boot-validation is confirmed live
+  (`app/boot.go:254` permission-sync gate); OpenAPI generation stays hand-authored and unwired to
+  `Route`/`Router.Routes()` (test-only callers) — see decisions.md D-0090 for the correction.
+- B12: wowsociety recount matched exactly — 2 fragments/434 lines, 5 validate-tagged files, only 2 modules
+  with request bodies (well under the ≈5-6 reopen trigger).
+- B13: freeze-at-boot confirmed live in `app/boot.go`/`kernel/i18n`; no operational-need documentation found
+  anywhere in the repo. New clarifying note: rule *values* already resolve live from `rule_versions` per
+  request (`kernel/rules/resolver.go`), so the no-redeploy-mutation goal is already met for rules today —
+  the B13 gap, if it ever materializes, is i18n-only.
+
+Full citations and reasoning in `docs/implementation/decisions.md` D-0090. No reopen trigger was met for any
+item; no code changed.

@@ -3,6 +3,62 @@
 Format per entry: context → options → decision → tradeoffs → affected files/tests.
 Blueprint deviations MUST land here before the code that implements them.
 
+## D-0090 — B11/B12/B13 re-verification (2026-07-11): all three stay PARKED, evidence reproduced independently
+- **Context:** `docs/implementation/framework-backlog-p2-decisions.md` (2026-07-10, commit `0e578e8`) parked
+  B11/B12/B13 with measured evidence. A `/goal` run asked for an independent re-verification from source
+  (not from the doc) before accepting the parked status, with a mandate to reopen and implement the smallest
+  safe increment if evidence had shifted. No kernel/product code changed between the two passes.
+- **B11 (radix router) — reproduced, decision unchanged.** Ran `BenchmarkDispatch` live (Apple M3 Max,
+  `-benchtime=200000x`): 50/500/2000 routes → 571.2 / 590.4 / 629.6 ns/op, flat at 14 allocs/op — an even
+  flatter curve than the recorded 579.9/607.3/656.2 ns/op (≈10% growth over 40× routes vs. the doc's ≈13%).
+  Matches `bench-budgets.txt`; independently re-confirmed by the review-gate reviewer's own two additional runs
+  (596-633 ns/op range, same flat 14-allocs shape). Confirmed `RouteMeta` (`kernel/httpx/router.go:20-45`) is
+  still the mandatory, boot-validated contract (`meta.validate()` fails registration; `Router.Handle`
+  accumulates errors that fail boot). **Correction (caught by the independent review gate):** an earlier draft
+  of this entry claimed `Route` "backs OpenAPI/permission-sync" as if both were equally live — only
+  permission-sync is: `Router.Permissions()` is consumed at `app/boot.go:254` to boot-gate every route's
+  permission against the registry. OpenAPI generation is **not** wired to `Route`/`Router.Routes()` today —
+  `internal/cli/openapi_cmd.go` only merges hand-authored fragments, and `Router.Routes()` has zero production
+  callers in either repo (test-only). `router.go:46-47`'s own doc comment already hedges this correctly
+  ("exposed for permission-sync and OpenAPI generation **(later phases)**"). No reopen trigger met — dispatch
+  is still flat, not a bottleneck. **Stays PARKED.**
+- **B12 (schema unification) — reproduced, decision unchanged.** Confirmed `BindAndValidate[T]`
+  (`kernel/httpx/decode.go:52-55`) and `moduleContext.OpenAPI` (`app/context.go:324`) as the two hand-maintained
+  sides; `internal/cli/openapi_cmd.go` still only merges fragments (`gatherFragments`/`mergeFragment`), no
+  generator exists. Recounted wowsociety directly: `internal/modules/{identity,policy}/openapi.json` = 200 +
+  234 = **434 lines** across **2 fragments**; **5** files carry `validate:"…"` tags — exact match to the prior
+  doc. wowsociety has exactly **2** modules with request bodies (identity, policy), far below the ≈5–6-module
+  reopen trigger; no traced OpenAPI-vs-handler drift defect found. `kernel/rules.RuleValueSchema`
+  (`kernel/rules/schema.go:60-77`) confirmed as a separate, out-of-scope grammar (rule config values, not API
+  DTOs). No reopen trigger met. **Stays PARKED** (generator remains overbuild for 2 modules; the
+  drift-detection contract test remains the correct first increment only if/when this reopens).
+- **B13 (hot-reloadable DB overlays) — reproduced, decision unchanged, with one clarifying finding.** i18n
+  freeze-at-boot is real and enforced: `Catalog.frozen`/`Freeze()`/`Frozen()` (`kernel/i18n/catalog.go:64,98,106`),
+  `boot.i18n.Freeze()` called in `app/boot.go:268` after layer merge + ownership validation. `KindDBOverlay` is
+  a reserved-but-refused source kind (`kernel/i18n/loader.go:28-33`, `kernel/i18n/config.go:70`: "db_overlay
+  source is not supported yet ... disable it") — the extension point exists, nothing wires it. Grepped
+  `docs/` for a concrete operational requirement to mutate i18n/rules at runtime without redeploy: found none
+  — only forward-looking design notes (`docs/implementation/wowsociety-framework-gap-design-review.md`,
+  `docs/implementation/framework-competitive-architecture-benchmark.md`,
+  `docs/user-guide/validation-errors.md:238`) that describe the freeze invariant and defer hot-reload, not a
+  demonstrated need. **Clarifying finding (new, not in the prior doc):** rule *values* are already
+  runtime-mutable without redeploy today — `Resolver.Resolve` (`kernel/rules/resolver.go:66,125-135`) reads
+  `rule_versions` live from the DB per request; only the rule *definition/schema* registry is boot-synced
+  (`kernel/rules/sync.go` `SyncDefinitions`). So the practical goal B13 names for rules — edit a value without
+  a redeploy — is already met by the existing design; the gap, if any, is i18n-only, and no need has been
+  shown there either. **Stays PARKED.**
+- **W1 spot-check (out of scope for B11-13, noted for completeness):** wowsociety's Go-map i18n catalogs are
+  gone, `locales/{en,mr}/product.yaml` + `locales/mr/kernel.yaml` exist (mr kernel.* coverage present), no
+  `Catalog.Add`/manual `Register` remnants found. One acceptance clause is NOT met: `wowapi i18n validate` is
+  not wired into wowsociety's CI (no reference in `.github/workflows/` or `Makefile`). Not fixed here — outside
+  this goal's B11/B12/B13 scope; flagged for a future small W1 follow-up.
+- **Decision:** no code or backlog-status changes. All three P2 items remain PARKED with their existing reopen
+  triggers unchanged; this entry is the re-verification record so a future pass doesn't have to redo the
+  reproduction work.
+- **Affected:** docs/implementation/decisions.md (this entry), docs/implementation/framework-backlog-p2-decisions.md
+  (re-verification appendix), docs/working/review-learning-register.md (process-learning entries). No
+  kernel/product/test files changed.
+
 ## D-0089 — Pre-v1.0.0 close-out: pinned lint gate + full-tree enforcement + B-7 reference-stack smoke
 - **Context:** the last three tracked pre-tag items, finished to enterprise standard: pin golangci-lint,
   promote full-tree `make lint` to the enforced gate, and close B-7 (reference-stack header smoke in CI).
