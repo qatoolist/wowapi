@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "review_id": "architecture-review-2026-07-11",
+  "recorded_at": "2026-07-11T06:04:16Z",
+  "last_validated_at": "2026-07-11T06:44:41Z",
+  "finalized_at": "2026-07-11T06:44:41Z",
+  "source_sha": "d3c2640dbe1a0fe27e826cdf053945c4f49bc034",
+  "source_sha_purpose": "immutable source revision reviewed; not the artifact commit",
+  "artifact_state": "untracked working-tree deliverables; commit/publication not authorized by this review",
+  "branch": "main",
+  "environment": {
+    "os": "Darwin 25.5.0 arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5 darwin/arm64",
+    "docker_client": "29.4.0"
+  },
+  "commands": [
+    {
+      "id": "E-01",
+      "command": "scripts/graphify_refresh.sh check",
+      "exit_status": 0,
+      "result": "graph corpus current"
+    },
+    {
+      "id": "E-02",
+      "command": "make ci",
+      "exit_status": 0,
+      "result": "vet, boundaries, lifecycle, unit, race, benchmark budget, and build passed",
+      "caveat": "some package test results were cache-served"
+    },
+    {
+      "id": "E-03",
+      "command": "make ci-container",
+      "exit_status": 0,
+      "result": "authoritative toolbox gate passed with required database tests",
+      "environment": {
+        "WOWAPI_REQUIRE_DB": "1"
+      },
+      "caveat": "target does not force S3 tests"
+    },
+    {
+      "id": "E-04",
+      "command": "make lint-new",
+      "exit_status": 0,
+      "result": "zero golangci-lint issues"
+    },
+    {
+      "id": "E-05",
+      "command": "miscellaneous/check_migrations.sh",
+      "exit_status": 0,
+      "result": "30 migrations registered and contiguous with Up/Down markers",
+      "caveat": "static marker and ledger check; does not execute rollback"
+    },
+    {
+      "id": "E-06",
+      "command": "docker compose -f deployments/compose.yaml run --rm -e WOWAPI_REQUIRE_DB=1 tools go test ./migrations -run '^TestIntegrationMigrationsReversible$' -count=1 -v",
+      "exit_status": 0,
+      "result": "uncached reversible migration drill passed in 0.707s"
+    },
+    {
+      "id": "E-07",
+      "command": "miscellaneous/check_test_skips.sh",
+      "exit_status": 0,
+      "result": "22 skip sites inventoried"
+    },
+    {
+      "id": "E-08",
+      "command": "docker compose -f deployments/compose.yaml run --rm -e WOWAPI_REQUIRE_S3=1 tools go test ./adapters/storage/s3 -count=1 -v",
+      "exit_status": 1,
+      "result": "diagnostic failed closed because tests fell back to container-local localhost:9000",
+      "finding": "toolbox exports S3_ENDPOINT while integration tests read S3_TEST_ENDPOINT"
+    },
+    {
+      "id": "E-09",
+      "command": "docker compose -f deployments/compose.yaml run --rm -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 tools go test ./adapters/storage/s3 -count=1 -v",
+      "exit_status": 0,
+      "result": "uncached S3 and document integration suite passed in 0.231s"
+    },
+    {
+      "id": "E-10",
+      "command": "go test ./kernel/httpx -run '^$' -bench '^BenchmarkDispatch$' -benchmem -count=3",
+      "exit_status": 0,
+      "result": "dispatch benchmark passed in 16.965s"
+    },
+    {
+      "id": "E-11",
+      "command": "go build ./...",
+      "exit_status": 0,
+      "result": "all packages built"
+    },
+    {
+      "id": "E-12",
+      "command": "go vet ./...",
+      "exit_status": 0,
+      "result": "vet passed"
+    },
+    {
+      "id": "E-13",
+      "command": "source-citation resolver over architecture directive",
+      "exit_status": 0,
+      "result": "124 distinct source citations resolved to existing files and in-range lines"
+    },
+    {
+      "id": "E-14",
+      "command": "npx --yes prettier --check review artifacts",
+      "exit_status": 0,
+      "result": "all review artifacts matched Prettier style"
+    },
+    {
+      "id": "E-15",
+      "command": "jq empty evidence.json and trailing-whitespace scan over review artifacts",
+      "exit_status": 0,
+      "result": "JSON parsed and no trailing whitespace was found"
+    },
+    {
+      "id": "E-16",
+      "command": "final post-edit source-citation, Prettier, JSON, trailing-whitespace, and Graphify-current checks",
+      "exit_status": 0,
+      "result": "latest content passed; 124 source citations resolved and graph freshness remained clean"
+    },
+    {
+      "id": "E-17",
+      "command": "finding-heading/closure-row set equality validator",
+      "exit_status": 0,
+      "result": "38 finding headings matched 38 unique closure contracts with no missing, duplicate, or extra IDs"
+    }
+  ],
+  "independent_review": {
+    "completed_at": "2026-07-11T06:43:13Z",
+    "mode": "fresh low-cost high-reasoning read-only agent",
+    "scope": "review-deliverable factual accuracy, completeness, closure contracts, and internal consistency",
+    "verdict": "PASS",
+    "findings": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    }
+  },
+  "artifacts": [
+    {
+      "path": "docs/implementation/architecture-directive-2026-07-11.md",
+      "sha256": "674a5f7045f27d060116c297a4d7267c5ecbb00420a96a7ee3184cd4e570eb56"
+    },
+    {
+      "path": "docs/implementation/evidence/architecture-review-2026-07-11/command-log.md",
+      "sha256": "e0b4adbb5feb6eeefa0f9668b72de5c4653444363c8fbfa02dac9c894889c9a2"
+    }
+  ],
+  "self_hash_policy": "evidence.json is not self-hashed; hash it in the preserving commit or external evidence index",
+  "benchmarks": {
+    "dispatch": {
+      "host": {
+        "iterations": 3,
+        "routes_50_median_ns_per_op": 588.3,
+        "routes_500_median_ns_per_op": 612.7,
+        "routes_2000_median_ns_per_op": 641.1,
+        "bytes_per_op": 1194,
+        "allocations_per_op": 14
+      },
+      "container_budget_invocation": {
+        "iterations": 1,
+        "routes_50_ns_per_op": 1000.0,
+        "routes_500_ns_per_op": 990.3,
+        "routes_2000_ns_per_op": 933.0,
+        "bytes_per_op": 1194,
+        "allocations_per_op": 14
+      },
+      "decision": "B11 remains parked"
+    }
+  },
+  "skip_inventory": {
+    "total": 22,
+    "by_area": {
+      "cli_scaffolding": 6,
+      "cli_database_helper": 1,
+      "end_to_end_cli": 3,
+      "build_information": 1,
+      "testkit_database_environment": 1,
+      "scratch_consumer": 3,
+      "s3_adapter": 3,
+      "outbox": 1,
+      "rls_guard": 2,
+      "mfa_totp": 1
+    }
+  },
+  "parked_backlog": {
+    "B11": "parked",
+    "B12": "parked",
+    "B13": "parked"
+  },
+  "limitations": [
+    "no production traffic, SLO traces, or production query plans",
+    "no external penetration test",
+    "no deployment IAM or GitHub protection-state audit",
+    "no disaster-recovery execution record"
+  ]
+}
