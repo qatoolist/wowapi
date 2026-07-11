@@ -76,7 +76,11 @@ requires a `/v2` module path (see Versioning above). A symbol may still be super
 ## Framework-purity gate
 
 Every issue shaken out of a product lands upstream as a **domain-neutral** fix in wowapi or in
-`ROADMAP-wowapi.md` — never as a product-side workaround. Society/product-specific concepts do not enter
+the framework backlog (`docs/implementation/premier-framework-implementation-plan.md` §5 plus the
+fable5 review's task register; historical backlogs `ROADMAP-wowapi.md` and
+`framework-engineering-backlog.md` are archived in `wowapi2/archive/`) — never as a product-side
+workaround.
+Society/product-specific concepts do not enter
 the framework (blueprint 13 §3).
 
 ## Before Phase 2 of any product

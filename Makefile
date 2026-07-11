@@ -80,7 +80,7 @@ migrate: ## Apply kernel migrations to the local compose database
 
 .PHONY: seed
 seed:
-	@echo "make seed: available in Phase 5 (seed loader) — see docs/implementation/phase-plan.md" >&2; exit 2
+	@echo "make seed: available in Phase 5 (seed loader) — see docs/GOALS-TRACKER.md" >&2; exit 2
 
 ##@ Operational drills (backup/restore & migration reversibility)
 

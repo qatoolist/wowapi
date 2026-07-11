@@ -4,7 +4,7 @@
 
 Date: 2026-07-10. Branch: `feat/backlog-p2` (off `feat/backlog-p1` @ 18c9589).
 
-The P2 items in [`framework-engineering-backlog.md`](framework-engineering-backlog.md) are, by their own charter, "**only if data/need demands**". This document records the evidence gathered and the decision for each. Two items carry explicit gates (B11: benchmark; B13: operational need); B12 is gated on the "do not overbuild / defer until a bottleneck is proven" P2 rule. **All three are PARKED**, each with the concrete trigger that would reopen it. The corresponding delivery of value in this cycle is **W1** (wowsociety i18n migration), tracked separately.
+The P2 items in `framework-engineering-backlog.md` (completed B1–B10 programme record, archived 2026-07-11 to `wowapi2/archive/reports/`; each parked item's substance is restated in full below) are, by their own charter, "**only if data/need demands**". This document records the evidence gathered and the decision for each. Two items carry explicit gates (B11: benchmark; B13: operational need); B12 is gated on the "do not overbuild / defer until a bottleneck is proven" P2 rule. **All three are PARKED**, each with the concrete trigger that would reopen it. The corresponding delivery of value in this cycle is **W1** (wowsociety i18n migration), tracked separately.
 
 ## B11 — Radix-router strategy → PARKED
 

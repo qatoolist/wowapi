@@ -1,7 +1,7 @@
 # 00 — Executive Recommendation, Principles, Architecture
 
 > Blueprint for a reusable, domain-agnostic enterprise backend framework ("platform kernel") in Go.
-> Source of truth: [Goal.md](../../Goal.md). The housing society product is a *reference domain only*;
+> Source of truth: `Goal.md` (original vision prompt, archived in `wowapi2/archive/prompts-and-mandates/`; durable requirements in [../SRS.md](../SRS.md)). The housing society product is a *reference domain only*;
 > nothing society-specific exists in the core. See [10-delivery.md](10-delivery.md) §Boundary Check.
 
 ## 1. Executive recommendation

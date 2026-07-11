@@ -20,9 +20,18 @@ and scheduler, HTTP primitives, configuration, observability, and a set of compl
 resources, permissions, routes, workflows, events, jobs, seeds, and migrations **without touching kernel
 code**.
 
-> Status: **stable v1** (current: `v1.1.0`). As of `v1.0.0` the public surface (`kernel` / `module` /
-> `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking changes to it require
-> a new major version (`/v2`). See [Versioning](#versioning--stability).
+> Status: **stable v1 API surface** (current: `v1.1.0`). As of `v1.0.0` the public surface (`kernel` /
+> `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking changes to
+> it require a new major version (`/v2`). See [Versioning](#versioning--stability).
+>
+> **Production-readiness note:** an active architecture-review programme
+> ([architecture directive](docs/implementation/architecture-directive-2026-07-11.md) →
+> [final review](docs/implementation/fable5-final-architecture-review-2026-07-11.md) →
+> [closure-depth matrix](docs/implementation/fable5-closure-depth-matrix-2026-07-11.md) →
+> [implementation plan](docs/implementation/premier-framework-implementation-plan.md)) tracks open
+> P0/P1 findings; until that programme's P0 set lands, wowapi is a strong pre-production foundation —
+> suitable for internal/pilot development — and does **not** claim to be a production-grade "premier"
+> framework.
 
 - 📘 **New here? Start with the [User Guide](docs/user-guide/README.md)** and
   [Getting Started](docs/user-guide/getting-started.md).

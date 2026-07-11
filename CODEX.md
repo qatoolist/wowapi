@@ -58,7 +58,7 @@ Use the cheapest tool that answers the question.
 
 Start with:
 1. [`graphify-out/GRAPH_REPORT.md`](graphify-out/GRAPH_REPORT.md)
-2. [`docs/implementation/framework-engineering-backlog.md`](docs/implementation/framework-engineering-backlog.md)
+2. [`docs/implementation/premier-framework-implementation-plan.md`](docs/implementation/premier-framework-implementation-plan.md) §5 (task backlog) + [`docs/implementation/fable5-closure-depth-matrix-2026-07-11.md`](docs/implementation/fable5-closure-depth-matrix-2026-07-11.md) (closure specs)
 3. the relevant package source
 
 Then inspect the shortest path through the graph, not the whole tree.

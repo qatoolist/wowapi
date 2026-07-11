@@ -27,8 +27,9 @@ boundary lint (not the full `golangci-lint`); the B-1 lint backlog is **closed**
 
 ## 2. Build phases (Goal 2 — Phase 0–12)
 
-All phases delivered with per-phase evidence bundles (`docs/implementation/evidence/phase-XX/`) and decision records
-(`D-XXXX`). Kernel subsystems verified present under `kernel/`.
+All phases delivered with per-phase evidence bundles (archived 2026-07-11 to `wowapi2/archive/evidence/phase-XX/`;
+redirect map at `docs/implementation/evidence/README.md`) and decision records (`D-XXXX`). Kernel subsystems
+verified present under `kernel/`.
 
 | Phase | Deliverable | Status | Key code |
 |---|---|---|---|
@@ -124,11 +125,24 @@ gaps (D-0083) and review follow-ups (D-0084/D-0085) are fixed. Pre-tag hardening
 golangci-lint is pinned (`GOLANGCI_VERSION`) and full-tree `make lint` is now
 the enforced CI gate. None are architectural.
 
+> **Status reconciliation (2026-07-11 architecture review).** The paragraph above describes the
+> *v1.0.0-tag backlog*, which is indeed closed. It does **not** mean no architectural work remains: the
+> Fable 5 architecture-review programme
+> ([directive](implementation/architecture-directive-2026-07-11.md) →
+> [final review](implementation/fable5-final-architecture-review-2026-07-11.md) →
+> [closure-depth matrix](implementation/fable5-closure-depth-matrix-2026-07-11.md) →
+> [implementation plan](implementation/premier-framework-implementation-plan.md)) opened 38+ findings,
+> several P0/architectural (SEC-01, DATA-01/02/03/08, AR-01/02, FBL-01 kernel re-home). That programme
+> is the authoritative outstanding-work register; this tracker's per-goal tables remain the record of
+> *completed* goals.
+
 ---
 
 ## 7. Notes on retired working files
 The AI-prompt / conversation files that seeded this project (`Goal.md`, `Goal 1.1.md`, `Goal 1.2.md`, `Goal 2.md`,
-`goal-test.md`, `ROADMAP-wowapi.md`, `VERIFICATION-wowapi-hardening.md`) have been **retired from the repository** and
-their durable content folded into [SRS.md](SRS.md) and this tracker. They are preserved **locally** (git-ignored) for
-reference. `bench-budgets.txt` is **not** a prompt file — it is live perf-gate config (`make bench-budget`) and stays
-tracked. `CHANGELOG.md` remains the release ledger.
+`goal-test.md`, `ROADMAP-wowapi.md`, `VERIFICATION-wowapi-hardening.md`, `WOW-Review.md`) have been **retired from
+the repository** and their durable content folded into [SRS.md](SRS.md) and this tracker. As of 2026-07-11 they are
+preserved in the **`wowapi2` documentation archive** (`archive/prompts-and-mandates/`, `archive/plans/`,
+`archive/reviews/` — see its `ARCHIVE-INDEX.md` for the full path/provenance map), no longer as loose git-ignored
+local files. `bench-budgets.txt` is **not** a prompt file — it is live perf-gate config (`make bench-budget`) and
+stays tracked. `CHANGELOG.md` remains the release ledger.
