@@ -11,8 +11,8 @@ import (
 // coverage_test.go — QA G8: completes coverage of the CI performance gate.
 // Covers the parseBenchOutput edge branches (malformed/short lines, unparsable
 // values), the loadBudgets scanner-error branch, and every exit path of main()
-// (usage error, load error, parse error, budget violation) plus its in-process
-// happy path (OK + WARN reporting).
+// (usage error, load error, parse error, budget violation — including a
+// budgeted-but-missing benchmark, PERF-06 T1) plus its in-process happy path.
 
 // writeFile writes content to a fresh file in dir and returns its path.
 func writeFile(t *testing.T, dir, name, content string) string {
@@ -97,6 +97,39 @@ func TestParseBenchOutputEdgeCases(t *testing.T) {
 	}
 }
 
+// TestMainMissingBenchmarkFails re-exercises the exit-path harness below to
+// confirm a budgeted-but-absent benchmark causes a real CI failure (exit 1),
+// not just a warning. See PERF-06 T1.
+func TestMainMissingBenchmarkFails(t *testing.T) {
+	if mode := os.Getenv("BB_MAIN_MODE"); mode != "" {
+		runMainChild(t, mode)
+		return
+	}
+
+	dir := t.TempDir()
+	// BenchmarkGhost is budgeted but never appears in the bench output —
+	// simulates a renamed/deleted benchmark.
+	budgets := writeFile(t, dir, "budgets.txt", "BenchmarkGhost 100 0\n")
+	bench := writeFile(t, dir, "bench.txt",
+		"BenchmarkOther-8 \t 1000000 \t 30.0 ns/op \t 0 B/op \t 2 allocs/op\n")
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainMissingBenchmarkFails$")
+	cmd.Env = append(os.Environ(), "BB_MAIN_MODE=violation:"+budgets)
+	cmd.Stdin = openFile(t, bench)
+	out, err := cmd.CombinedOutput()
+
+	ee, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("missing budgeted benchmark should exit non-zero (%v); output: %s", err, out)
+	}
+	if got := ee.ExitCode(); got != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", got, out)
+	}
+	if !strings.Contains(string(out), "BenchmarkGhost") || !strings.Contains(string(out), "budgeted but not found in bench output") {
+		t.Fatalf("output should explain the missing-benchmark failure, got: %s", out)
+	}
+}
+
 // TestParseBenchOutputScannerError covers parseBenchOutput's sc.Err() branch.
 func TestParseBenchOutputScannerError(t *testing.T) {
 	dir := t.TempDir()
@@ -147,22 +180,23 @@ func readAll(f *os.File) string {
 	return sb.String()
 }
 
-func TestMainHappyPathOKAndWarn(t *testing.T) {
+func TestMainHappyPathOK(t *testing.T) {
 	dir := t.TempDir()
-	// BenchmarkFast is within budget (OK); BenchmarkGhost is budgeted but not in
-	// the bench output (WARN). Neither triggers os.Exit, so main() returns.
+	// Both budgeted benchmarks are present and within budget: no violations,
+	// so main() returns without calling os.Exit.
 	budgets := writeFile(t, dir, "budgets.txt",
-		"BenchmarkFast 1000 5\nBenchmarkGhost 100 0\n")
+		"BenchmarkFast 1000 5\nBenchmarkFaster 1000 5\n")
 	bench := writeFile(t, dir, "bench.txt",
-		"BenchmarkFast-8 \t 1000000 \t 30.0 ns/op \t 0 B/op \t 2 allocs/op\n")
+		"BenchmarkFast-8 \t 1000000 \t 30.0 ns/op \t 0 B/op \t 2 allocs/op\n"+
+			"BenchmarkFaster-8 \t 1000000 \t 10.0 ns/op \t 0 B/op \t 1 allocs/op\n")
 
-	stdout, stderr := captureMain(t, []string{"benchbudget", budgets}, bench)
+	stdout, _ := captureMain(t, []string{"benchbudget", budgets}, bench)
 
 	if !strings.Contains(stdout, "OK") || !strings.Contains(stdout, "BenchmarkFast") {
 		t.Errorf("stdout should report OK for BenchmarkFast, got %q", stdout)
 	}
-	if !strings.Contains(stderr, "WARN") || !strings.Contains(stderr, "BenchmarkGhost") {
-		t.Errorf("stderr should WARN about missing BenchmarkGhost, got %q", stderr)
+	if !strings.Contains(stdout, "OK") || !strings.Contains(stdout, "BenchmarkFaster") {
+		t.Errorf("stdout should report OK for BenchmarkFaster, got %q", stdout)
 	}
 }
 

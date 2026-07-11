@@ -86,7 +86,7 @@ func TestIntegrationStartInErrors(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -126,7 +126,7 @@ func TestIntegrationStartInUnregisteredDefinition(t *testing.T) {
 
 	// Runtime knows only linearDef; the DB carries a row for a key that is NOT in
 	// the registry, so definition resolution succeeds but the graph lookup fails.
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.unreg", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -147,7 +147,7 @@ func TestIntegrationStartInRecordsActor(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	actorID := uuid.New()
@@ -181,7 +181,7 @@ func TestIntegrationDecideErrors(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef, taskDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef, taskDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.task", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
@@ -239,7 +239,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, commentDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, commentDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.comment", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 	a := actor(tn.ID, userID, cap)
@@ -264,7 +264,7 @@ func TestIntegrationCompleteTaskNotFound(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	userID := testkit.CreateUser(t, h)
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-	rt := buildRT(t, h, cap, nil, taskDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, taskDef)
 	if err := rt.CompleteTask(testkit.TenantCtx(tn.ID), uuid.New(), nil); kerr.KindOf(err) != kerr.KindNotFound {
 		t.Fatalf("CompleteTask on missing task must be not-found, got %v", err)
 	}
@@ -277,7 +277,7 @@ func TestIntegrationDelegateErrors(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -307,7 +307,7 @@ func TestIntegrationInstanceLoad(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -358,7 +358,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, multiDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, multiDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.multiassign", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -413,7 +413,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, slaDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, slaDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.sla", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -477,6 +477,58 @@ func TestIntegrationOverrideAuthzGate(t *testing.T) {
 	simOK.ExpectStep("end_done").ExpectStatus("completed")
 	if n := countEvents(t, h, tn.ID, "workflow.requests.approval.overridden"); n < 1 {
 		t.Fatalf("overridden events = %d, want >=1", n)
+	}
+}
+
+// TestIntegrationOverrideFailsClosedWithoutPermission is the SEC-02 regression
+// test: Override must never grant a privileged state jump to an actor who
+// lacks workflow.instance.override, and NewRuntime must never accept a nil
+// evaluator that could silently disable the check. Before the SEC-02 fix,
+// NewRuntime tolerated a nil authz.Evaluator and Override's permission check
+// ran only `if rt.authz != nil`, so a runtime built with a nil evaluator let
+// ANY actor override ANY running instance. This test proves both halves of
+// the fix: (1) construction with a nil evaluator now panics rather than
+// silently degrading, and (2) a Runtime built the normal way (non-nil,
+// permission-denying evaluator) fails the override closed with KindForbidden.
+func TestIntegrationOverrideFailsClosedWithoutPermission(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
+	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+	act := actor(tn.ID, userID, cap)
+	ctx := testkit.TenantCtx(tn.ID)
+
+	// Half 1: a nil evaluator must never reach a constructed Runtime.
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("NewRuntime with a nil evaluator must panic (SEC-02 fail-closed guard)")
+			}
+		}()
+		workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+	}()
+
+	// Half 2: a normally-constructed Runtime (real, non-nil evaluator) with an
+	// actor who holds no permissions must fail Override closed, not open.
+	rt := buildRT(t, h, cap, fakeEvaluator{allow: map[string]bool{}}, linearDef)
+	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
+	sim := testkit.NewWorkflowSim(t, h, rt)
+	sim.Start("requests.approval", res, nil)
+
+	err := rt.Override(ctx, act, sim.InstanceID(), "end_rejected", "adversarial: no permission")
+	if kerr.KindOf(err) != kerr.KindForbidden {
+		t.Fatalf("Override by an unpermitted actor must fail closed with KindForbidden, got %v", err)
+	}
+	// The instance must NOT have moved — a failed authz check must not have
+	// any side effect on workflow state.
+	var status, step string
+	if qerr := h.Admin.QueryRow(context.Background(),
+		`SELECT status, current_step FROM workflow_instances WHERE id=$1`, sim.InstanceID()).Scan(&status, &step); qerr != nil {
+		t.Fatal(qerr)
+	}
+	if status != "running" || step != "manager_review" {
+		t.Fatalf("unauthorized override must not mutate instance state, got status=%q step=%q", status, step)
 	}
 }
 
@@ -558,7 +610,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, autoErrDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, autoErrDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.autoerr", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -593,7 +645,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, autoNoHandlerDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, autoNoHandlerDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.autohard", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -630,7 +682,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, gwDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, gwDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.gwnodefault", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -674,7 +726,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, escDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, escDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.escalate", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -752,7 +804,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, cancelDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, cancelDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.cancel", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
@@ -776,7 +828,7 @@ func TestIntegrationCompleteTaskBadOutput(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, taskDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, taskDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.task", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -803,7 +855,7 @@ func TestIntegrationOpenTasksForDefaultLimit(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	testkit.NewWorkflowSim(t, h, rt).Start("requests.approval", res, nil)
 
@@ -840,7 +892,7 @@ steps:
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, failDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, failDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.failresolve", 1, "requests.request", nil)
 
 	err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
@@ -864,7 +916,7 @@ func TestIntegrationAuthorizeDelegateOnly(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -903,7 +955,7 @@ func TestIntegrationAuthorizeDelegateOnly(t *testing.T) {
 // what a registry-less runtime will parse.
 func startWithStoredDef(t *testing.T, h *testkit.DBHandle, tn testkit.TenantHandle, cap uuid.UUID, res resource.Ref, key, validDef, storedRaw, initialStep string) (uuid.UUID, uuid.UUID) {
 	t.Helper()
-	rtA := buildRT(t, h, cap, nil, validDef)
+	rtA := buildRT(t, h, cap, fakeEvaluator{}, validDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, key, 1, "requests.request", []byte(storedRaw))
 	sim := testkit.NewWorkflowSim(t, h, rtA)
 	sim.Start(key, res, nil)
@@ -927,7 +979,7 @@ func TestIntegrationDefFallbackSuccess(t *testing.T) {
 	instID, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.task", taskDef, storedJSON, "do_work")
 
 	// A registry-less runtime: definitions must come from the persisted JSON.
-	rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+	rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 	if err := rtB.CompleteTask(testkit.TenantCtx(tn.ID), taskID, nil); err != nil {
 		t.Fatalf("CompleteTask via parsed def: %v", err)
 	}
@@ -957,7 +1009,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"manager_review":{"type":"approval","on_approve":{"next":"ghost"},"on_reject":{"next":"end_rejected"}},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindInternal {
 			t.Fatalf("dangling transition target must be an internal error, got %v", err)
@@ -977,7 +1029,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"manager_review":{"type":"approval","on_approve":{"next":"end_done"}},` +
 			`"end_done":{"type":"terminal","outcome":"completed"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionReject})
 		if kerr.KindOf(err) != kerr.KindWorkflowState {
 			t.Fatalf("missing transition must be a workflow-state error, got %v", err)
@@ -999,7 +1051,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"end_done":{"type":"terminal","outcome":"completed"},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindInternal {
 			t.Fatalf("unregistered auto action must be an internal error, got %v", err)
@@ -1021,7 +1073,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"end_done":{"type":"terminal","outcome":"completed"},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+		rtB := workflow.NewRuntime(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindValidation {
 			t.Fatalf("unknown assignee kind must be a validation error, got %v", err)
@@ -1038,7 +1090,7 @@ func TestIntegrationInstanceNullContext(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRT(t, h, cap, nil, linearDef)
+	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)

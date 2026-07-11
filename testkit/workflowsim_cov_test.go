@@ -63,7 +63,7 @@ func buildCovRuntime(t *testing.T, h *DBHandle, approverCap uuid.UUID, raws ...s
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntime(h.TxM, reg, nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+	return workflow.NewRuntime(h.TxM, reg, covEvaluator(), outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 }
 
 func covActor(tenant, userID, cap uuid.UUID) authz.Actor {

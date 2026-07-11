@@ -80,11 +80,17 @@ func (s *Service) Attach(ctx context.Context, db database.TenantDB, in AttachIn)
 		return uuid.Nil, kerr.Wrapf(err, "attachment.Attach", "insert attachment")
 	}
 	if s.ob != nil {
-		_ = s.ob.Write(ctx, db, outbox.Event{
+		// The outbox write is part of the attachment's compliance evidence trail
+		// (DATA-08 W0-T1): a failed write must fail Attach so the caller's tenant
+		// transaction rolls back the attachment row too, rather than leaving an
+		// attachment persisted with no corresponding event.
+		if err := s.ob.Write(ctx, db, outbox.Event{
 			Type:     "attachment.created",
 			Resource: in.Resource,
 			Payload:  map[string]any{"attachment_id": id.String()},
-		})
+		}); err != nil {
+			return uuid.Nil, kerr.Wrapf(err, "attachment.Attach", "write outbox event")
+		}
 	}
 	return id, nil
 }

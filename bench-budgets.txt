@@ -36,6 +36,8 @@
 #   BenchmarkCachingStoreHit                136 ns/op   4 allocs/op
 #   BenchmarkCachingStoreMiss               208 ns/op   5 allocs/op
 #   BenchmarkTokenBucketAllow                26 ns/op   0 allocs/op
+#   BenchmarkTokenBucketSweepAt10k         23492 ns/op   0 allocs/op
+#   BenchmarkTokenBucketSweepAt100k       280212 ns/op   0 allocs/op
 #   BenchmarkEdgeMiddlewareChain           2908 ns/op  28 allocs/op
 #
 # Full-chain dispatch gate (backlog B5 / competitive-benchmark §Routing).
@@ -84,6 +86,11 @@ BenchmarkRouteMetaValidate           1500   15
 # Per-request rate-limit decision + the fixed edge chain (SecureHeaders→CORS→
 # BodyLimit→Timeout). TokenBucket.Allow is zero-alloc on the steady-state path.
 BenchmarkTokenBucketAllow             300    0
+# Sweep cost at the production sweepAt threshold (10k) and 10x that (100k) —
+# roadmap PERF-01. Both zero-alloc; sweep is a plain map scan with no
+# allocation. ~10x measured headroom, consistent with the rest of this file.
+BenchmarkTokenBucketSweepAt10k      250000    0
+BenchmarkTokenBucketSweepAt100k    2900000    0
 BenchmarkEdgeMiddlewareChain        30000  120
 # Full-chain dispatch gate (backlog B5): ServeMux route match -> gateRoute
 # (authN/tenant-bind/authZ) -> handler, at increasing route cardinality. Flat

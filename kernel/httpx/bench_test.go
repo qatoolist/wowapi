@@ -111,6 +111,41 @@ func BenchmarkTokenBucketAllow(b *testing.B) {
 	}
 }
 
+// benchmarkTokenBucketSweepAt builds a TokenBucket pre-populated with n
+// one-shot keys (each hit exactly once — no key is ever looked up twice), all
+// idle past idleTTL, then times sweep cost via SweepForTest. This isolates
+// sweep's O(N) scan cost (PERF-01: sweep runs synchronously on the request
+// path once the map reaches sweepAt) independent of Allow's own per-call cost,
+// which BenchmarkTokenBucketAllow already covers.
+func benchmarkTokenBucketSweepAt(b *testing.B, n int) {
+	fixed := time.Unix(1_700_000_000, 0)
+	clockAt := fixed
+	tb := httpx.NewTokenBucketWithOptions(1, 5, func() time.Time { return clockAt })
+	for i := 0; i < n; i++ {
+		_, _ = tb.Allow("k" + strconv.Itoa(i)) // each key hit exactly once
+	}
+	swept := fixed.Add(11 * time.Minute) // past idleTTL for every key above
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		httpx.SweepForTest(tb, swept)
+	}
+}
+
+// BenchmarkTokenBucketSweepAt10k measures sweep cost over 10,000 idle one-shot
+// keys — the production sweepAt threshold (roadmap PERF-01).
+func BenchmarkTokenBucketSweepAt10k(b *testing.B) {
+	benchmarkTokenBucketSweepAt(b, 10_000)
+}
+
+// BenchmarkTokenBucketSweepAt100k measures sweep cost over 100,000 idle
+// one-shot keys — 10x the production sweepAt threshold, proving the O(N) scan
+// stays linear rather than degrading further (roadmap PERF-01).
+func BenchmarkTokenBucketSweepAt100k(b *testing.B) {
+	benchmarkTokenBucketSweepAt(b, 100_000)
+}
+
 // BenchmarkEdgeMiddlewareChain measures the kernel's fixed edge chain per request
 // (blueprint 07 §1, backlog B-2): SecureHeaders → CORS → BodyLimit → Timeout
 // wrapped around a terminal 200 handler. The request carries an allowed Origin so
