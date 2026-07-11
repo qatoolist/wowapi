@@ -160,6 +160,21 @@ jobs:
           restore-keys: |
             cicache-${{ matrix.leg }}-${{ hashFiles('go.sum', 'Dockerfile') }}-
             cicache-${{ matrix.leg }}-
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: prebuild toolbox image (GHA-layer-cached)
+        # Builds the compose `tools` image once with the GitHub Actions BuildKit
+        # cache and tags it exactly as compose would name it (wowapi-tools), so
+        # `docker compose run tools` reuses it instead of rebuilding from scratch
+        # (base-image pull + apk + go mod download) on every leg of every run.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: dev
+          tags: wowapi-tools:latest
+          push: false
+          load: true
+          cache-from: type=gha,scope=toolbox
+          cache-to: type=gha,scope=toolbox,mode=max
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
       - name: gate leg ${{ matrix.leg }}
@@ -212,6 +227,17 @@ jobs:
           restore-keys: |
             cicache-coverage-${{ hashFiles('go.sum', 'Dockerfile') }}-
             cicache-coverage-
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: prebuild toolbox image (GHA-layer-cached)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: dev
+          tags: wowapi-tools:latest
+          push: false
+          load: true
+          cache-from: type=gha,scope=toolbox
+          cache-to: type=gha,scope=toolbox,mode=max
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
       - name: coverage + floor (real DB, inside toolbox)
