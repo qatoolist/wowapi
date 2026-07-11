@@ -1,8 +1,10 @@
 # Platform Kernel Blueprint — Index
 
 Coding-ready architecture & implementation blueprint for the reusable, domain-agnostic Go enterprise
-backend framework specified in [Goal.md](../../Goal.md), refined per [Goal 1.1.md](../../Goal%201.1.md)
-(distribution model) and [Goal 1.2.md](../../Goal%201.2.md) (configuration & deployment).
+backend framework specified in `Goal.md`, refined per `Goal 1.1.md` (distribution model) and
+`Goal 1.2.md` (configuration & deployment) — the original prompt/vision files, retired from this
+repository and archived in the `wowapi2` documentation archive (`archive/prompts-and-mandates/`);
+their durable requirements live in [docs/SRS.md](../SRS.md).
 The housing society product is a reference domain only; the core is fully reusable for schools,
 clubs, facilities, vendor/case management, and other multi-tenant, workflow-heavy SaaS.
 

@@ -7,8 +7,8 @@
 // The tool reads benchmark output from stdin and a budget file from the first
 // argument. It exits non-zero and prints a report of every benchmark that
 // exceeds its budget. Benchmarks in the budget file that do not appear in the
-// input emit a warning (not a failure) — the test binary may not have been run
-// with -bench matching that name.
+// input are treated as a failure — the tool fails closed, so renaming or
+// deleting a budgeted benchmark cannot silently disable the gate.
 //
 // Budget file format (bench-budgets.txt at repo root):
 //
@@ -50,7 +50,7 @@ func main() {
 	for name, budget := range budgets {
 		res, ok := results[name]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "WARN benchbudget: %s is budgeted but not found in bench output\n", name)
+			violations = append(violations, fmt.Sprintf("FAIL  %-55s  budgeted but not found in bench output", name))
 			continue
 		}
 		var v []string

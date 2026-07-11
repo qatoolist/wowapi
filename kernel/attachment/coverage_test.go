@@ -2,6 +2,7 @@ package attachment_test
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,6 +15,15 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/testkit"
 )
+
+// failingOutboxWriter is a fault-injecting outbox.Writer double: every Write
+// call returns err. Used to prove Attach propagates an outbox-write failure
+// instead of discarding it (DATA-08 W0-T1).
+type failingOutboxWriter struct{ err error }
+
+func (f failingOutboxWriter) Write(context.Context, database.TenantDB, outbox.Event) error {
+	return f.err
+}
 
 // seedComment inserts a comments row via Admin (bypasses RLS) so it can satisfy
 // the attachments.comment_id FK, and returns the new comment id.
@@ -309,5 +319,50 @@ func TestListQueryError(t *testing.T) {
 	}
 	if errors.KindOf(err) != errors.KindInternal {
 		t.Fatalf("canceled List query should wrap to KindInternal, got kind=%v err=%v", errors.KindOf(err), err)
+	}
+}
+
+// TestAttachOutboxWriteErrorRollsBack is the DATA-08 W0-T1 fault-injection
+// regression: when the outbox write after the attachment INSERT fails, Attach
+// must propagate the error (not discard it), and the caller's tenant
+// transaction must roll back so the attachment row does NOT exist afterward —
+// the whole operation rolls back, not just "Attach returned an error but the
+// row is still there."
+func TestAttachOutboxWriteErrorRollsBack(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	ctx := testkit.TenantCtx(tn.ID)
+	injected := stderrors.New("outbox backend unavailable")
+	svc := attachment.New(model.UUIDv7(), failingOutboxWriter{err: injected})
+	ref := resource.Ref{Type: "test.thing", ID: uuid.New()}
+	dvID := seedDocVersion(t, h, tn.ID)
+
+	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, e := svc.Attach(ctx, db, attachment.AttachIn{Resource: ref, DocumentVersionID: dvID})
+		return e
+	})
+	if err == nil {
+		t.Fatal("expected Attach to propagate the injected outbox-write error, got nil")
+	}
+	if !stderrors.Is(err, injected) {
+		t.Fatalf("Attach error should wrap the injected outbox error, got %v", err)
+	}
+	if errors.KindOf(err) != errors.KindInternal {
+		t.Fatalf("outbox-write failure should wrap to KindInternal, got kind=%v err=%v", errors.KindOf(err), err)
+	}
+
+	// The whole operation must roll back: since WithTenant's callback returned a
+	// non-nil error, the outer transaction never committed, so the attachment
+	// row must not exist in a fresh transaction either.
+	var count int
+	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(ctx,
+			`SELECT count(*) FROM attachments WHERE resource_type = $1 AND resource_id = $2`,
+			ref.Type, ref.ID).Scan(&count)
+	}); err != nil {
+		t.Fatalf("query attachments: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("failed Attach (outbox write error) must persist nothing, got %d attachment rows", count)
 	}
 }

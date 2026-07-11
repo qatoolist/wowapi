@@ -66,4 +66,5 @@ saturates.
 
 R2 is **closed** by this pass: the throughput envelope is measured by a repeatable test and the
 sub-sharding strategy is documented (roadmap CA-4). It was previously declassified to "doc-only" in
-`docs/implementation/hardening-plan.md` without the required evidence; that evidence now exists here.
+`hardening-plan.md` (superseded; archived 2026-07-11 to the `wowapi2` archive, `archive/plans/`)
+without the required evidence; that evidence now exists here.

@@ -63,39 +63,65 @@ type Module interface {
 }
 
 // Context is capability-scoped: modules get registries and services, never raw pools.
+// This listing matches module/module.go's Context interface method-for-method.
 type Context interface {
-    // registration
-    Routes() httpx.Router                       // Handle(method, pattern, meta, h)
-    Permissions() authz.PermissionRegistry      // usually fed from seeds/permissions.yaml
-    Roles() authz.RoleRegistry
-    ResourceTypes() resource.TypeRegistry
-    RelationshipTypes() relationship.TypeRegistry
-    Rules() rules.Registry                      // points (+defaults from seeds)
-    Workflows() workflow.Registry               // definitions, auto-actions, assignee resolvers
-    Events() outbox.HandlerRegistry             // Subscribe(eventType, handlerName, fn)
-    Jobs() jobs.Registry                        // RegisterKind(kind, worker, retryPolicy)
-    DocumentClasses() document.ClassRegistry
-    NotificationTemplates() notify.TemplateRegistry
-    Hooks() hooks.Registry
-    Migrations(fs fs.FS)                        // embedded goose dir
-    Seeds(fs fs.FS)                             // embedded yaml bundle
-    Health(name string, check health.Check)
-    OpenAPI(fragment []byte)
+    Logger() *slog.Logger                        // module-scoped structured logger
+    Config() config.ModuleView                   // strict Decode of modules.<name>.* ONLY — no global framework config (see 12)
 
-    // runtime dependencies (constructor-inject these into your services in Register)
+    // registration
+    Routes() *httpx.Router                        // Handle(method, pattern, meta, h)
+    Validator() *validation.Validator             // shared request validator (httpx.BindAndValidate)
+    Permissions() *authz.Registry                // usually fed from seeds/permissions.yaml
+    Resources() *resource.Registry
+    Authz() authz.Evaluator                       // record-level checks + list filtering
+
     Tx() database.TxManager
-    Authz() authz.Evaluator
-    RulesResolver() rules.Resolver
-    WorkflowRuntime() workflow.Runtime
-    Documents() document.Service
-    Notify() notify.Sender
-    Webhooks() webhook.Service
-    Logger() *slog.Logger
-    Config() config.ModuleView                  // strict Decode of modules.<name>.* ONLY — no global framework config (see 12)
     IDGen() model.IDGen
-    Clock() model.Clock
-    Port(name string) (any, error)              // fetch another module's declared port (checked at boot)
-    ProvidePort(name string, impl any)          // declare a port for dependents
+
+    Migrations(fsys fs.FS)                        // embedded goose dir
+    Seeds(fsys fs.FS)                             // embedded yaml bundle
+    OpenAPI(fragment []byte)
+    I18n(bundle i18n.Bundle)                      // module's localized message bundle, one call per locale
+
+    Health(name string, check func(context.Context) error)
+
+    ProvidePort(name string, impl any)            // declare a port for dependents
+    Port(name string) (any, error)                // fetch another module's declared port (checked at boot)
+
+    Events() *outbox.HandlerRegistry              // Subscribe(eventType, handlerName, fn)
+    Outbox() outbox.Writer                        // emit events in a business transaction
+
+    Jobs() *jobs.Registry                         // RegisterKind(kind, worker, retryPolicy)
+    RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error)
+
+    Rules() *rules.Registry                       // rule-point registry
+    RulesResolver() *rules.Resolver               // effective rule values
+    Workflows() *workflow.Registry                // definitions, auto-actions, assignee resolvers
+    WorkflowRuntime() *workflow.Runtime           // drive workflow instances
+
+    RetentionClasses() *retention.Registry        // dispose/export/erase callbacks
+
+    // Evidence-layer services, all operating in the caller's tenant transaction.
+    Audit() *kaudit.Writer                        // field-level change capture + hash chain
+    Sequence() *sequence.Allocator                // gap-free per-tenant numbered series
+    Bulk() *bulk.Service                          // chunked, resumable bulk operations
+    Artifacts() *artifact.Pipeline                // immutable versioned artifacts
+
+    Privileged() *privileged.Services             // scoped, audited PLATFORM-privilege operations
+
+    // Document / file framework.
+    DocumentClasses() *document.Registry
+    DocumentHooks() *document.Hooks               // OnFileUpload / OnDocumentAccess
+    Documents() *document.Service                 // nil when no object-storage adapter is wired
+    Comments() *comment.Service
+    Attachments() *attachment.Service
+
+    // Notification / webhook / integration framework.
+    NotifyTemplates() *notify.Registry
+    Notify() *notify.Service
+    Webhooks() *webhook.Service
+    IntegrationProviders() *integration.Registry
+    Integrations() *integration.Store
 }
 ```
 
@@ -106,7 +132,7 @@ import "github.com/qatoolist/wowapi/module"
 func (m Module) Register(mc module.Context) error {
     repo := store.NewRequestRepo()
     svc := app.NewService(repo, mc.RulesResolver(), mc.WorkflowRuntime(),
-        mc.Authz(), mc.IDGen(), mc.Clock())
+        mc.Authz(), mc.IDGen())
     h := api.NewHandlers(svc, mc.Tx(), validation.Default())
 
     api.MountRoutes(mc.Routes(), h)

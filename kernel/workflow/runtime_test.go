@@ -86,7 +86,13 @@ func buildRuntime(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, raws
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntime(h.TxM, reg, nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+	// NewRuntime requires a non-nil evaluator (SEC-02: Override's permission
+	// check is unconditional). This suite doesn't exercise the authz gate
+	// itself (see runtime_extra_test.go's TestIntegrationOverrideAuthzGate for
+	// that), so wire a permissive fake that allows the one permission Override
+	// checks.
+	ev := fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}}
+	return workflow.NewRuntime(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
 }
 
 func countEvents(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID, typ string) int {

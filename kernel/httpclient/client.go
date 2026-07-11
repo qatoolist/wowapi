@@ -13,7 +13,8 @@
 // Because http.Client re-invokes the Transport (and therefore DialContext)
 // for every redirect hop, each hop is independently re-verified for free.
 //
-// Contract: backlog B2 (docs/implementation/framework-engineering-backlog.md).
+// Contract: backlog item B2 (historical backlog archived to the wowapi2 documentation
+// archive); current closure record: docs/implementation/fable5-closure-depth-matrix-2026-07-11.md CS-24.
 package httpclient
 
 import (

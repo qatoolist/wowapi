@@ -80,7 +80,7 @@ migrate: ## Apply kernel migrations to the local compose database
 
 .PHONY: seed
 seed:
-	@echo "make seed: available in Phase 5 (seed loader) — see docs/implementation/phase-plan.md" >&2; exit 2
+	@echo "make seed: available in Phase 5 (seed loader) — see docs/GOALS-TRACKER.md" >&2; exit 2
 
 ##@ Operational drills (backup/restore & migration reversibility)
 
@@ -310,8 +310,8 @@ ci: ## Full local CI: vet + boundary lint + lifecycle lint, unit, race, perf bud
 	$(MAKE) build
 
 .PHONY: ci-container
-ci-container: ## Run `make ci` inside the toolbox container (authoritative gate: DB tests MUST run)
-	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 tools make ci
+ci-container: ## Run `make ci` inside the toolbox container (authoritative gate: DB + S3 tests MUST run)
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 tools make ci
 
 ##@ Security & Release (CI-enforced)
 

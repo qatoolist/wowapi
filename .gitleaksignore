@@ -1,3 +1,12 @@
 # graphify visuals false positives (graph node hashes near the literal string "apikey"); files untracked in f0895cc but present in PR history
 cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/edges.ndjson:generic-api-key:10892
 cfee51703591ec8d640ec8f76f15b4a77563d04d:visuals/graph.json:generic-api-key:284445
+# architecture-directive prose false positives: webhook-rotation and supply-chain design
+# vocabulary tripping the entropy rule (do not quote the phrases here — quoting them re-trips
+# the scanner on this file). Verified by direct read; no secret material. Surfaced when the
+# PR scan range re-covered e6bed50.
+e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:394
+e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:806
+# this file's own earlier comment (commit 5223495) quoted the flagged vocabulary and tripped
+# the rule in that commit's diff; the comment is reworded at HEAD, the history stays allowlisted.
+522349585ed864297c6767f6b3932e9969cd9ca3:.gitleaksignore:generic-api-key:4

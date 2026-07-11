@@ -353,6 +353,8 @@ leakage; api/worker/migrate E2E smoke green.
 
 ## 8. Traceability
 Requirement → phase → code → test traceability, plus done/deferred/pending status, is maintained in
-[GOALS-TRACKER.md](GOALS-TRACKER.md). Per-phase evidence bundles live under `docs/implementation/evidence/phase-XX/`;
+[GOALS-TRACKER.md](GOALS-TRACKER.md). Per-phase evidence bundles are archived in the `wowapi2` documentation
+archive under `archive/evidence/phase-XX/` (see `docs/implementation/evidence/README.md` for the redirect map);
 architectural decisions are recorded as `D-XXXX`; the hardening closure matrix is `VERIFICATION-wowapi-hardening.md`
-§6 (mirrored into the tracker).
+§6 (archived to `wowapi2/archive/reviews/`; mirrored into the tracker). The retired prompt/hardening source files
+named in this document's provenance notes live in the same archive — see GOALS-TRACKER §7.

@@ -175,7 +175,7 @@ func TestIntegrationWorkflowOverride(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRuntime(t, h, cap, linearDef) // authz nil → gate skipped; mechanics tested
+	rt := buildRuntime(t, h, cap, linearDef) // permissive fake evaluator; mechanics tested here, the gate itself in TestIntegrationOverrideAuthzGate
 	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)

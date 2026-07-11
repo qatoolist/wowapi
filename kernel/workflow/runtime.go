@@ -81,11 +81,13 @@ type Runtime struct {
 	now      func() time.Time
 }
 
-// NewRuntime wires the runtime. authz may be nil (assignee check is then the
-// sole gate); the others are required.
+// NewRuntime wires the runtime. All dependencies, including the authz
+// Evaluator, are required: Override's privileged permission check is
+// unconditional, so a nil evaluator would silently disable it rather than
+// gate it (blueprint §1.3, review finding SEC-02).
 func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen) *Runtime {
-	if txm == nil || reg == nil || ob == nil || idgen == nil {
-		panic("workflow.NewRuntime: txm, registry, outbox, and idgen are required")
+	if txm == nil || reg == nil || ev == nil || ob == nil || idgen == nil {
+		panic("workflow.NewRuntime: txm, registry, authz evaluator, outbox, and idgen are required")
 	}
 	return &Runtime{txm: txm, registry: reg, authz: ev, outbox: ob, idgen: idgen, now: time.Now}
 }
@@ -291,16 +293,16 @@ func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID u
 		}
 		// Override is a privileged state jump — it MUST be gated by the
 		// workflow.instance.override permission (blueprint §1.3, review finding
-		// SEC-39), unlike a normal Decide which is gated by task assignment.
-		if rt.authz != nil {
-			d, aerr := rt.authz.Evaluate(ctx, db, actor, "workflow.instance.override",
-				authz.Target{Scope: authz.ScopeResource, Resource: inst.Resource})
-			if aerr != nil {
-				return aerr
-			}
-			if !d.Allowed {
-				return kerr.E(kerr.KindForbidden, "permission_denied", "not permitted to override this workflow")
-			}
+		// SEC-02/SEC-39), unlike a normal Decide which is gated by task
+		// assignment. NewRuntime requires a non-nil evaluator, so this check is
+		// unconditional: there is no construction path that can bypass it.
+		d, aerr := rt.authz.Evaluate(ctx, db, actor, "workflow.instance.override",
+			authz.Target{Scope: authz.ScopeResource, Resource: inst.Resource})
+		if aerr != nil {
+			return aerr
+		}
+		if !d.Allowed {
+			return kerr.E(kerr.KindForbidden, "permission_denied", "not permitted to override this workflow")
 		}
 		if inst.Status != "running" {
 			return kerr.E(kerr.KindWorkflowState, "instance_not_running",

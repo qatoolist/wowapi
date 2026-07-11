@@ -48,7 +48,7 @@ type Permission struct {
 // are not required in combination). Challenge names the factor/hint the HTTP
 // gate advertises in WWW-Authenticate (e.g. "hwk", "mfa").
 //
-// Scope (Decision 4, framework-engineering-backlog B8): this is AMR-only. The
+// Scope (Decision 4, framework-engineering-backlog B8, archived to the wowapi2 doc archive): this is AMR-only. The
 // production IdP's ability to reliably emit `auth_time` could not be confirmed
 // from the codebase, so no MaxAge/freshness field exists here. The struct is
 // shaped so a MaxAge *time.Duration could be added later as an additive field

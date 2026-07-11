@@ -5,6 +5,12 @@ but nothing ran the *full* set in CI, so a backlog of pre-existing issues accumu
 on **changed code only** (`make lint-new`), so this backlog does not block work — but it is tracked here
 and burned down incrementally. See [quality-gates.md](quality-gates.md).
 
+> **Scope note (2026-07-12).** "CLOSED" below refers only to the historical **B-1** burn-down of the
+> *currently-enabled* linter set. It does **not** mean lint work is finished: the active lint programme
+> is now **FBL-05/FBL-07** (enable `sqlclosecheck`/`rowserrcheck`/`bodyclose`/`noctx`/`gosec`/etc.) —
+> see `docs/implementation/fable5-closure-depth-matrix-2026-07-11.md` CS-23. Do not read this file as
+> a reason to skip those tasks.
+
 ## Status: CLOSED (2026-07-05) — `make lint` reports **0 issues** (D-0087)
 
 The full advisory backlog (B-1) is burned down. Closed with **no behavior change** — full test suite green,

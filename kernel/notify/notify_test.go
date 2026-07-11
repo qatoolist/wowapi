@@ -13,6 +13,7 @@ import (
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/notify"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/testkit"
 )
 
@@ -634,6 +635,158 @@ func TestSendPendingInAppChannel(t *testing.T) {
 	}
 	if status != "sent" {
 		t.Fatalf("expected status=sent for inapp, got %s", status)
+	}
+}
+
+// TestSendPendingLegalImportanceWritesAuditEvent is the DATA-08 W0-T2
+// positive regression: an ImportanceLegal delivery that sends successfully
+// must produce a durable "notify.legal_delivery" outbox event carrying the
+// provider's message id as receipt, written in the same transaction as the
+// 'sent' status update.
+func TestSendPendingLegalImportanceWritesAuditEvent(t *testing.T) {
+	db := testkit.NewDB(t)
+	reg := notify.NewRegistry()
+	reg.Register("core", notify.TemplateSpec{
+		Key:      "core.notify.legal",
+		Vars:     []string{"Name"},
+		Channels: []string{"email"},
+	})
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	fake := &notify.FakeSender{}
+	ob := outbox.NewWriter(model.UUIDv7())
+	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
+	svc.RegisterSender(notify.ChannelEmail, fake)
+
+	tenant := testkit.CreateTenant(t, db).ID
+	actor := uuid.New()
+	ctx := database.WithActorID(testkit.TenantCtx(tenant), actor)
+	seedTemplate(t, db, nil, "core.notify.legal", "email", "en", "Legal notice", "Hi {{.Name}}")
+
+	var id uuid.UUID
+	if err := db.TxM.WithTenant(ctx, func(ctx context.Context, tx database.TenantDB) error {
+		var e error
+		id, e = svc.Send(ctx, tx, notify.Message{
+			TemplateKey:      "core.notify.legal",
+			RecipientPartyID: uuid.New(),
+			Variables:        map[string]any{"Name": "Grace"},
+			Channels:         []notify.ChannelDest{{Channel: notify.ChannelEmail, Destination: "grace@example.test"}},
+			Importance:       notify.ImportanceLegal,
+		})
+		return e
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	n, err := svc.SendPending(context.Background(), db.PlatformTxM, tenant, time.Now())
+	if err != nil {
+		t.Fatalf("SendPending: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 sent, got %d", n)
+	}
+
+	var deliveryID uuid.UUID
+	var providerMsgID string
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT id, COALESCE(provider_message_id, '') FROM notification_deliveries
+		  WHERE notification_id = $1`, id,
+	).Scan(&deliveryID, &providerMsgID); err != nil {
+		t.Fatalf("read delivery: %v", err)
+	}
+	if providerMsgID == "" {
+		t.Fatal("expected provider_message_id to be set")
+	}
+
+	var count int
+	var payload []byte
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM events_outbox
+		  WHERE event_type = 'notify.legal_delivery'
+		    AND resource_id = $1`, deliveryID,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events_outbox: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("want exactly 1 notify.legal_delivery outbox event for delivery %s, got %d", deliveryID, count)
+	}
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT payload FROM events_outbox
+		  WHERE event_type = 'notify.legal_delivery' AND resource_id = $1`, deliveryID,
+	).Scan(&payload); err != nil {
+		t.Fatalf("read outbox payload: %v", err)
+	}
+	if !strings.Contains(string(payload), providerMsgID) {
+		t.Fatalf("legal delivery audit payload must carry the provider message id %q, got %s", providerMsgID, payload)
+	}
+}
+
+// TestSendPendingNonLegalImportanceWritesNoAuditEvent is the DATA-08 W0-T2
+// negative regression: a successful delivery for a NON-legal importance must
+// NOT write the "notify.legal_delivery" outbox event, even when the Service is
+// wired with an outbox writer — proving the audit write is conditional on
+// ImportanceLegal, not unconditional.
+func TestSendPendingNonLegalImportanceWritesNoAuditEvent(t *testing.T) {
+	db := testkit.NewDB(t)
+	reg := notify.NewRegistry()
+	reg.Register("core", notify.TemplateSpec{
+		Key:      "core.notify.normal",
+		Vars:     []string{"Name"},
+		Channels: []string{"email"},
+	})
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	fake := &notify.FakeSender{}
+	ob := outbox.NewWriter(model.UUIDv7())
+	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
+	svc.RegisterSender(notify.ChannelEmail, fake)
+
+	tenant := testkit.CreateTenant(t, db).ID
+	actor := uuid.New()
+	ctx := database.WithActorID(testkit.TenantCtx(tenant), actor)
+	seedTemplate(t, db, nil, "core.notify.normal", "email", "en", "Notice", "Hi {{.Name}}")
+
+	var id uuid.UUID
+	if err := db.TxM.WithTenant(ctx, func(ctx context.Context, tx database.TenantDB) error {
+		var e error
+		id, e = svc.Send(ctx, tx, notify.Message{
+			TemplateKey:      "core.notify.normal",
+			RecipientPartyID: uuid.New(),
+			Variables:        map[string]any{"Name": "Hank"},
+			Channels:         []notify.ChannelDest{{Channel: notify.ChannelEmail, Destination: "hank@example.test"}},
+			// Importance intentionally left as default (normal), not legal.
+		})
+		return e
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	n, err := svc.SendPending(context.Background(), db.PlatformTxM, tenant, time.Now())
+	if err != nil {
+		t.Fatalf("SendPending: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 sent, got %d", n)
+	}
+
+	var deliveryID uuid.UUID
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT id FROM notification_deliveries WHERE notification_id = $1`, id,
+	).Scan(&deliveryID); err != nil {
+		t.Fatalf("read delivery: %v", err)
+	}
+
+	var count int
+	if err := db.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM events_outbox
+		  WHERE event_type = 'notify.legal_delivery' AND resource_id = $1`, deliveryID,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events_outbox: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("non-legal delivery must NOT write a notify.legal_delivery outbox event, got %d", count)
 	}
 }
 

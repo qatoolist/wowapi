@@ -8,10 +8,11 @@ contains no real product modules — only neutral standalone examples and privat
 
 ## 1. Distribution model
 
-- **One Go module:** `github.com/qatoolist/wowapi`, semver-tagged. `v0.x` during Phase 0 (public
-  API may still move); `v1.0.0` when the acceptance criteria in [10-delivery.md](10-delivery.md)
-  are green and the public surface freezes to additive-only changes. `v2+` uses `/v2` module paths
-  per Go convention.
+- **One Go module:** `github.com/qatoolist/wowapi`, semver-tagged. The repository is on the **stable
+  v1 line** (`v1.0.0`, `v1.1.0` tagged): the public surface follows additive-only changes within v1.
+  `v2+` uses `/v2` module paths per Go convention for any incompatible change. See
+  [Versioning & stability](../../README.md#versioning--stability) and the
+  [upgrade & deprecation policy](../operations/upgrade-and-deprecation-policy.md).
 - **Stability contract:** public root packages (`kernel`, `module`, `app`, `adapters`, `testkit`,
   `migrations`, and `cmd/wowapi`) follow semver. Deprecations keep working for ≥1 minor release
   with a `// Deprecated:` notice and a changelog entry. `/internal` is private; `/examples` are
@@ -29,7 +30,7 @@ contains no real product modules — only neutral standalone examples and privat
 |---|---|---|
 | `wowapi/kernel/...` | **public** | primitives + service contracts modules import: `model`, `errors`, `validation`, `pagination`, `filtering`, `httpx`, `database` (TxManager/TenantDB), `tenant`, `auth`, `authz`, `policy`, `resource`, `relationship`, `workflow`, `rules`, `audit`, `outbox`, `jobs`, `document`, `notify`, `webhook`, `integration`, `secrets`, `config`, `health` |
 | `wowapi/module` | **public** | `Module`, `Context`, registries, lifecycle contracts |
-| `wowapi/app` | **public** | composition helpers: `app.New`, `RunAPI`, `RunWorker`, `RunMigrate` |
+| `wowapi/app` | **public** | composition helpers: `App.New`, `App.Register`, `App.Boot(ctx, *kernel.Kernel, ...)` (product constructs the kernel via `kernel.New` and passes it in), plus the free function `StartWorker` |
 | `wowapi/adapters/...` | **public** | postgres, s3, smtp, sms, push, oidc, secrets, scanner |
 | `wowapi/testkit` | **public** | fixtures, fakes, asserts, `RunModuleContract` — importable by product test code |
 | `wowapi/migrations` | **public** | kernel goose migrations as `embed.FS` via `migrations.Kernel()` |
@@ -75,8 +76,11 @@ package main
 
 import (
     "context"
+    "log/slog"
+    "os"
 
     "github.com/qatoolist/wowapi/app"
+    "github.com/qatoolist/wowapi/kernel"
 
     "example.com/acme-ops/internal/appcfg"      // product-owned Config (embeds config.Framework), scaffolded by wowapi init
     "example.com/acme-ops/internal/modules/assets"
@@ -85,8 +89,17 @@ import (
 
 func main() {
     ctx := context.Background() // production main wraps this with SIGTERM/SIGINT handling
-    app.RunAPI(ctx, appcfg.MustLoad(), requests.Module{}, assets.Module{})
-    // cmd/worker: app.RunWorker(...)   cmd/migrate: app.RunMigrate(...) — same module list
+    log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+    cfg := appcfg.MustLoad()    // loads + validates configs/{base,<env>}.yaml
+    k, err := kernel.New(cfg.Framework, log, kernel.Deps{ /* adapters: metrics, tracer, secrets, storage, … */ })
+    if err != nil { die(err) }
+
+    a := app.New()
+    a.Register(requests.Module{}, assets.Module{})
+    booted, err := a.Boot(ctx, k, cfg.ModuleNamespaces() /* modules.* config, product-defined */)
+    if err != nil { die(err) }
+    // cmd/api serves booted.Router; cmd/worker calls app.StartWorker(ctx, booted, opts);
+    // cmd/migrate applies booted.Migrations + booted.Seeds — same module list, same Boot call, every time.
 }
 ```
 
@@ -98,7 +111,8 @@ func main() {
 
 ## 4. Combined migrations (kernel + product modules)
 
-`app.RunMigrate` (used by the product's `cmd/migrate`) composes, in order:
+The product's `cmd/migrate` calls `App.Boot` (same call as `cmd/api`/`cmd/worker`) and applies
+`Booted.Migrations` — a `map[string]fs.FS` keyed by module name — composed in order:
 
 1. **Kernel migrations** from `wowapi/migrations` (`migrations.Kernel()` embed.FS) — always first.
 2. **Product module migrations** — each module's embedded goose dir, ordered by the module

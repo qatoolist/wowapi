@@ -15,6 +15,7 @@ import (
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
@@ -116,6 +117,7 @@ type Service struct {
 	now     func() time.Time
 	senders map[string]ChannelSender
 	tracer  observability.Tracer
+	ob      outbox.Writer // optional; when set, ImportanceLegal deliveries write a delivery-audit event
 }
 
 // Option customizes the notify Service.
@@ -130,6 +132,22 @@ func WithTracer(tr observability.Tracer) Option {
 	return func(s *Service) {
 		if tr != nil {
 			s.tracer = tr
+		}
+	}
+}
+
+// WithOutbox wires an outbox.Writer so ImportanceLegal deliveries write a
+// durable "notify.legal_delivery" audit event (with the provider's message id
+// as receipt) in the SAME transaction as the 'sent' status update (DATA-08
+// W0-T2, blueprint 07 §5: "importance=legal deliveries additionally write an
+// audit row with provider receipt"). Migration 00011 grants app_platform
+// INSERT on events_outbox specifically for this use case. Default: nil (no
+// legal-delivery audit event written) — matches the previous deferred
+// behavior for callers that do not opt in.
+func WithOutbox(ob outbox.Writer) Option {
+	return func(s *Service) {
+		if ob != nil {
+			s.ob = ob
 		}
 	}
 }
@@ -448,9 +466,13 @@ func (s *Service) channelDisabled(ctx context.Context, db database.TenantDB, par
 // holding locks during I/O; the fake sender in tests is synchronous so this is
 // safe for the test suite.
 //
-// NOTE: ImportanceLegal deliveries would additionally write an audit trail, but
-// app_platform lacks INSERT on events_outbox (see migration 00007). Legal
-// delivery auditing is deferred to a future audit_logs writer.
+// NOTE: ImportanceLegal deliveries additionally write a durable
+// "notify.legal_delivery" outbox event carrying the provider's message id as
+// receipt, in the same transaction as the 'sent' status update (DATA-08
+// W0-T2). Migration 00011 grants app_platform INSERT on events_outbox for
+// exactly this use case. Requires the Service to be wired with WithOutbox; if
+// no outbox writer is configured, the event is skipped (no error) — the same
+// nil-guard convention as kernel/attachment's optional outbox writer.
 //
 // Returns the number of deliveries successfully sent.
 func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, now time.Time) (int, error) {
@@ -555,8 +577,25 @@ func (s *Service) SendPending(ctx context.Context, plat database.TxManager, tena
 					return kerr.Wrapf(err, "notify.SendPending", "mark sent %s", d.id)
 				}
 				sent++
-				// Legal delivery audit: deferred — app_platform cannot INSERT into
-				// events_outbox (GRANT SELECT, UPDATE only per migration 00007).
+				// Legal delivery audit (DATA-08 W0-T2): a durable outbox event with
+				// the provider's message id as receipt, written in the SAME
+				// transaction as the 'sent' status update above so the audit trail
+				// and the status advance commit or roll back together.
+				if s.ob != nil && d.importance == string(ImportanceLegal) {
+					if err := s.ob.Write(ctx, db, outbox.Event{
+						Type:     "notify.legal_delivery",
+						Resource: resource.Ref{Type: "notify.delivery", ID: d.id},
+						Payload: map[string]any{
+							"delivery_id":     d.id.String(),
+							"notification_id": d.notifID.String(),
+							"channel":         d.channel,
+							"provider_msg_id": providerMsgID,
+							"sent_at":         now,
+						},
+					}); err != nil {
+						return kerr.Wrapf(err, "notify.SendPending", "write legal delivery audit event %s", d.id)
+					}
+				}
 			} else {
 				newStatus := "failed"
 				// A dead delivery is never re-claimed, so its next_attempt_at is

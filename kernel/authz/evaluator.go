@@ -58,7 +58,7 @@ type Options struct {
 // AMR values that count as an elevated (second) authentication factor. "mfa"
 // is the OIDC aggregate; the rest are common specific methods. "sms" is
 // deliberately excluded — SMS-based step-up is opt-in only (Decision 5,
-// framework-engineering-backlog B8): a deployment adds it back by listing it
+// framework-engineering-backlog B8, archived to the wowapi2 doc archive): a deployment adds it back by listing it
 // in Options.StrongFactors / kernel.Deps.StepUpStrongFactors.
 var DefaultStrongFactors = []string{"mfa", "otp", "totp", "hwk", "fpt", "face"}
 

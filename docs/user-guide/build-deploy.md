@@ -78,7 +78,7 @@ make down          # stop (keep volumes)
 make reset         # stop and DELETE volumes
 ```
 
-The `tools` service is preconfigured with `S3_ENDPOINT`, `SMTP_ADDR`, and
+The `tools` service is preconfigured with `S3_TEST_ENDPOINT`, `SMTP_ADDR`, and
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318`, so the container gate exercises object storage, email, and
 tracing against real services — not mocks.
 
