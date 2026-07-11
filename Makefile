@@ -313,6 +313,25 @@ ci: ## Full local CI: vet + boundary lint + lifecycle lint, unit, race, perf bud
 ci-container: ## Run `make ci` inside the toolbox container (authoritative gate: DB + S3 tests MUST run)
 	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 tools make ci
 
+# Hosted CI fans the container gate out into three parallel legs (same required-env
+# posture as ci-container, so nothing can silently skip; vet/boundaries/build are
+# proven by the host `unit` job at the same pinned Go version and are not repeated
+# in-container). `make ci-container` remains the serial local equivalent.
+# CI_TOOLS_ENV lets the workflow inject cacheable GOCACHE/GOMODCACHE paths.
+CI_TOOLS_ENV ?=
+
+.PHONY: ci-container-test ci-container-race ci-container-bench
+ci-container-test: ## Parallel gate leg 1: unit+integration tests (DB+S3 required) + fuzz seed corpus
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
+		sh -c 'make test-unit && go test ./kernel/filtering/ ./kernel/pagination/ -run "^Fuzz" -count=1'
+
+ci-container-race: ## Parallel gate leg 2: full-tree race detector (DB+S3 required)
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools make test-race
+
+ci-container-bench: ## Parallel gate leg 3: performance budgets + lifecycle lint (DB required)
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
+		sh -c 'make bench-budget && make lint-lifecycle'
+
 ##@ Security & Release (CI-enforced)
 
 .PHONY: actionlint

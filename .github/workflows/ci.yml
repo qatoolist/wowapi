@@ -1,13 +1,26 @@
 name: ci
 
-# Authoritative correctness gate. Four jobs:
+# Authoritative correctness gate.
+#   changes       — classifies the diff; documentation-only changes skip the
+#                   container gate/coverage/smoke jobs entirely (they cannot
+#                   affect Go behaviour), while unit + workflow-lint always run.
 #   workflow-lint — actionlint over every workflow (dogfood the CI config itself).
 #   unit          — fast, NO database. Proves the pure unit tests pass standalone
 #                   (un-gating the DB-skip path: a package must not report `ok`
-#                   only because every test skipped for lack of a DSN).
-#   gate          — authoritative. Runs `make ci` inside the toolbox container
-#                   against the real compose Postgres with WOWAPI_REQUIRE_DB=1, so
-#                   DB-backed tests MUST run, plus the fuzz seed corpus.
+#                   only because every test skipped for lack of a DSN), plus
+#                   vet/lint/boundaries/build — these are NOT repeated in the
+#                   containers (same pinned Go version proves the same thing).
+#   gate (matrix) — authoritative, fanned out into three PARALLEL container legs
+#                   with the identical required-env posture as `make ci-container`
+#                   (WOWAPI_REQUIRE_DB=1 + WOWAPI_REQUIRE_S3=1 — DB/S3 tests MUST
+#                   run, never skip):
+#                     test  — test-unit (DB+S3) + fuzz seed corpus
+#                     race  — full-tree -race (DB+S3; unscoped, per PR)
+#                     bench — bench-budget + lint-lifecycle
+#                   Wall-clock = slowest leg instead of the sum. Go build/module
+#                   caches are persisted across runs via actions/cache mounted
+#                   into the toolbox (the named compose volumes start empty on
+#                   hosted runners otherwise, recompiling the world every run).
 #   coverage      — publishes a coverage profile artifact and enforces a floor.
 #   reference-smoke — B-7/CA-6: scaffolds a product, runs it behind the reference
 #                   nginx (TLS) via compose, and asserts the security-header posture
@@ -39,6 +52,50 @@ env:
   ACTIONLINT_VERSION: "v1.7.12"
 
 jobs:
+  changes:
+    name: classify diff (docs-only?)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: classify changed files
+        id: classify
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          elif [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
+            base="$BEFORE_SHA"
+          else
+            base=""
+          fi
+          if [ -z "$base" ]; then
+            echo "no usable base — treating as code change (fail safe)"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          echo "$changed"
+          # Docs-only = every changed file is markdown, docs/, or a text-only
+          # governance file. Anything else (Go, YAML, Makefile, scripts, SQL,
+          # templates, go.mod …) counts as code — fail safe toward running.
+          if [ -z "$changed" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif echo "$changed" | grep -qvE '^(docs/|.*\.md$|LICENSE$|\.gitleaksignore$)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs-only diff — container gate legs will be skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   workflow-lint:
     name: workflow lint (actionlint)
     runs-on: ubuntu-latest
@@ -84,27 +141,46 @@ jobs:
         run: make build
 
   gate:
-    name: authoritative gate (ci-container + DB + fuzz seeds)
+    name: authoritative gate — ${{ matrix.leg }} (container, DB+S3 required)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [test, race, bench]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: restore container Go caches
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cicache
+          key: cicache-${{ matrix.leg }}-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
+          restore-keys: |
+            cicache-${{ matrix.leg }}-${{ hashFiles('go.sum', 'Dockerfile') }}-
+            cicache-${{ matrix.leg }}-
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
-      - name: authoritative gate (make ci inside toolbox, WOWAPI_REQUIRE_DB=1 + WOWAPI_REQUIRE_S3=1)
-        # Mirrors `make ci-container`: DB- and S3-backed tests fail (not skip) if
-        # the DB/MinIO are unreachable, so coverage cannot silently evaporate.
-        run: make ci-container
-      - name: fuzz seed corpus (filter DSL + cursor decoder)
+      - name: gate leg ${{ matrix.leg }}
+        # Same required-env posture as `make ci-container`: DB- and S3-backed
+        # tests fail (not skip) if the DB/MinIO are unreachable, so coverage
+        # cannot silently evaporate. GOCACHE/GOMODCACHE point into the repo
+        # bind-mount so actions/cache persists them across runs.
         run: |
-          docker compose -f deployments/compose.yaml run --rm -T tools \
-            go test ./kernel/filtering/ ./kernel/pagination/ -run '^Fuzz' -count=1
+          make ci-container-${{ matrix.leg }} \
+            CI_TOOLS_ENV="-e GOCACHE=/src/.cicache/go-build -e GOMODCACHE=/src/.cicache/gomod"
+      - name: fix cache ownership for the post-job cache save
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .cicache 2>/dev/null || true
       - name: tear down
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
 
   reference-smoke:
     name: reference-stack header smoke (nginx TLS)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -122,10 +198,20 @@ jobs:
 
   coverage:
     name: coverage (profile + floor)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: restore container Go caches
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .cicache
+          key: cicache-coverage-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
+          restore-keys: |
+            cicache-coverage-${{ hashFiles('go.sum', 'Dockerfile') }}-
+            cicache-coverage-
       - name: start compose services (postgres, minio, mailpit)
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit
       - name: coverage + floor (real DB, inside toolbox)
@@ -134,7 +220,12 @@ jobs:
         # coverage.html and fails if total coverage drops below COVERAGE_FLOOR.
         run: |
           docker compose -f deployments/compose.yaml run --rm -T \
-            -e WOWAPI_REQUIRE_DB=1 tools make coverage-check
+            -e WOWAPI_REQUIRE_DB=1 \
+            -e GOCACHE=/src/.cicache/go-build -e GOMODCACHE=/src/.cicache/gomod \
+            tools make coverage-check
+      - name: fix cache ownership for the post-job cache save
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" .cicache 2>/dev/null || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
