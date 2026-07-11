@@ -85,3 +85,4 @@ visuals/
 .claude/
 .mcp.json
 CLAUDE.md
+.cicache/
