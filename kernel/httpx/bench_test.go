@@ -121,14 +121,22 @@ func benchmarkTokenBucketSweepAt(b *testing.B, n int) {
 	fixed := time.Unix(1_700_000_000, 0)
 	clockAt := fixed
 	tb := httpx.NewTokenBucketWithOptions(1, 5, func() time.Time { return clockAt })
-	for i := 0; i < n; i++ {
-		_, _ = tb.Allow("k" + strconv.Itoa(i)) // each key hit exactly once
-	}
-	swept := fixed.Add(11 * time.Minute) // past idleTTL for every key above
+	swept := fixed.Add(11 * time.Minute) // past idleTTL for every seeded key
 
+	// Seed directly (SeedBucketsForTest): populating via Allow is O(n²) once
+	// the map passes sweepAt — every insert triggers a full synchronous scan —
+	// which made setup dominate the benchmark's own wall-clock (~68s/invocation
+	// at n=100k, re-run per b.N ramp step). Re-seed before EVERY timed
+	// iteration: a sweep evicts all n idle keys, so without re-seeding every
+	// iteration after the first would measure a scan over an empty map and the
+	// reported ns/op would mostly average no-ops, not the O(N) scan this
+	// benchmark exists to pin (same bench-bug class as the B5 gate finding).
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		httpx.SeedBucketsForTest(tb, n, fixed)
+		b.StartTimer()
 		httpx.SweepForTest(tb, swept)
 	}
 }
