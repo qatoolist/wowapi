@@ -34,6 +34,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge queue: checks run ONCE per PR on the merge-group ref (the exact tree
+  # that will land on main) when the merge is requested — the "bench once,
+  # before merge" provision. The changes job classifies against the merge
+  # group's own base, so docs-only PRs stay fast in the queue too.
+  merge_group:
   schedule:
     # Nightly full sweep: runs everything unconditionally (the changes job
     # fail-safes to code=true / bench=true with no diff base), catching any
@@ -77,10 +82,13 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
             base="$(git merge-base "origin/${BASE_REF}" HEAD)"
+          elif [ "$EVENT_NAME" = "merge_group" ] && [ -n "$MG_BASE_SHA" ] && git cat-file -e "$MG_BASE_SHA" 2>/dev/null; then
+            base="$MG_BASE_SHA"
           elif [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
             base="$BEFORE_SHA"
           else
@@ -118,10 +126,11 @@ jobs:
           # true dependencies (e.g. kernel/errors) are INCLUDED below rather
           # than reasoned away.
           bench_re='^(kernel/(authz|policy|httpx|config|filtering|pagination|audit|sequence|database|model|errors|i18n)/|bench-budgets\.txt$|internal/tools/benchbudget/|go\.(mod|sum)$|Dockerfile$|deployments/compose\.yaml$|\.github/workflows/ci\.yml$|Makefile$)'
-          if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ] && [ "$EVENT_NAME" != "merge_group" ]; then
+            # main push / nightly schedule: always measure.
             echo "bench=true" >> "$GITHUB_OUTPUT"
           elif echo "$changed" | grep -qE "$bench_re"; then
-            echo "bench-relevant diff — bench leg runs on this PR"
+            echo "bench-relevant diff — bench leg runs"
             echo "bench=true" >> "$GITHUB_OUTPUT"
           else
             echo "diff cannot affect budgeted benchmarks — bench deferred to main push + nightly"
