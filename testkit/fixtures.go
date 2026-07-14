@@ -22,7 +22,12 @@ type TenantHandle struct {
 }
 
 // CreateTenant inserts a tenant and returns its handle.
-func CreateTenant(t testing.TB, h *DBHandle) TenantHandle {
+func CreateTenant(t *testing.T, h *DBHandle) TenantHandle {
+	return CreateTenantTB(t, h)
+}
+
+// CreateTenantTB is the testing.TB variant for benchmarks and shared harnesses.
+func CreateTenantTB(t testing.TB, h *DBHandle) TenantHandle {
 	t.Helper()
 	id := uuid.New()
 	execAdmin(t, h, `INSERT INTO tenants (id, slug, display_name, created_by) VALUES ($1,$2,$3,$4)`,

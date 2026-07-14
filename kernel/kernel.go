@@ -298,7 +298,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 
 	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
 	wfReg := workflow.NewRegistry()
-	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
+	wfRuntime := workflow.NewRuntimeWithCompliance(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
 
 	// Documents: the class registry + hook set modules register into, plus the
 	// service (only when an object-storage adapter is wired). The two document
@@ -308,7 +308,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	retClasses := retention.NewRegistry()
 	retHolds := retention.NewHolds(idgen)
 	retArtifacts := newArtifactWriter(log, auditWriter)
-	retEngine := retention.NewEngine(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
+	retEngine := retention.NewEngineWithCompliance(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
 
 	docClasses := document.NewRegistry()
 	docHooks := document.NewHooks()

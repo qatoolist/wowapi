@@ -12,7 +12,7 @@ import (
 // BEGIN -> SET LOCAL tenant binding -> COMMIT path used by every tenant request.
 func BenchmarkTenantTransactionOpenCommit(b *testing.B) {
 	h := testkit.NewDB(b)
-	tenant := testkit.CreateTenant(b, h)
+	tenant := testkit.CreateTenantTB(b, h)
 	ctx := testkit.TenantCtx(tenant.ID)
 
 	b.ReportAllocs()

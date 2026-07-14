@@ -19,7 +19,7 @@ import (
 func BenchmarkRelayDispatchBatch(b *testing.B) {
 	const batchSize = 10
 	h := testkit.NewDB(b)
-	tenant := testkit.CreateTenant(b, h)
+	tenant := testkit.CreateTenantTB(b, h)
 	ctx := testkit.TenantCtx(tenant.ID)
 	if _, err := h.Admin.Exec(context.Background(),
 		`INSERT INTO resource_types (key, module, description)

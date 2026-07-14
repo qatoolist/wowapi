@@ -90,7 +90,7 @@ func TestIntegrationJobsRunnerCrossTenantAfterRLS(t *testing.T) {
 	tenantB := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil // trivially succeeds; we only care the runner processes both tenants
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {

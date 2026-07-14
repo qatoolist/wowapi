@@ -132,7 +132,7 @@ func TestIntegrationJobsWorkerSucceeds(t *testing.T) {
 	}
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
 		// The worker must see exactly tenant A's seeded row (RLS scoped).
 		var seen int
 		if err := db.QueryRow(ctx, `SELECT count(*) FROM events_outbox WHERE event_type = 'seed.for.tenant'`).Scan(&seen); err != nil {
@@ -190,7 +190,7 @@ func TestIntegrationJobsRetryToDLQ(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("always fails")
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 0 }})
 	if err := reg.Err(); err != nil {
@@ -251,7 +251,7 @@ func TestIntegrationJobsBackoffReschedules(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("transient")
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
@@ -344,7 +344,7 @@ func TestIntegrationJobsTenantIsolation(t *testing.T) {
 	tenantB := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
 		_, err := db.Exec(ctx,
 			`INSERT INTO events_outbox (id, tenant_id, event_type, created_by) VALUES ($1, app_tenant_id(), 'isolation.marker', $2)`,
 			uuid.New(), uuid.Nil)
@@ -383,7 +383,7 @@ func TestIntegrationJobsClaimAssignsLease(t *testing.T) {
 	claimed := make(chan struct{})
 	release := make(chan struct{})
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		close(claimed)
 		<-release
 		return nil
@@ -439,7 +439,7 @@ func TestIntegrationJobsStaleFinalizeRejectedAndReclaimBumpsGeneration(t *testin
 	release := make(chan struct{})
 	var closeBlocked sync.Once
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		closeBlocked.Do(func() { close(blocked) })
 		<-release
 		return nil
@@ -576,7 +576,7 @@ func TestIntegrationJobsEffectLedgerCatchesIdempotencyIgnoringWorker(t *testing.
 	var closeBlocked sync.Once
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
 		jobID := jobs.JobIDFromContext(ctx)
 		if jobID == 0 {
 			return fmt.Errorf("worker did not receive job id in context")

@@ -124,7 +124,7 @@ func (r *Relay) DispatchOnce(ctx context.Context) (int, error) {
 	maxLag := time.Duration(0)
 	defer func() {
 		r.metrics.SetGauge("worker_queue_lag_seconds", maxLag.Seconds(), outboxRelayMetricLabels)
-		r.metrics.ObserveHistogram("worker_batch_duration_seconds", time.Since(started).Seconds(), outboxRelayMetricLabels)
+		observability.ObserveHistogram(r.metrics, "worker_batch_duration_seconds", time.Since(started).Seconds(), outboxRelayMetricLabels)
 	}()
 
 	// Stage 1 — claim and commit. The W04 DATA-02 Lease value is persisted as

@@ -54,7 +54,7 @@
     {
       "id": "tenantfk-gate",
       "job_ref": ".github/workflows/ci.yml#tenantfk-gate",
-      "command": "DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable go run ./internal/tools/migrate up && DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable make tenantfk-gate",
+      "command": "go run ./internal/tools/migrate up && make tenantfk-gate",
       "owner": "data-integrity",
       "required_from_wave": 2,
       "timeout_minutes": 10,

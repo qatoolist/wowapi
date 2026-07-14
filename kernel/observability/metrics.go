@@ -29,14 +29,25 @@ type Metrics interface {
 	// delivery failures (blueprint 07 §9).
 	IncCounter(name string, value float64, labels map[string]string)
 
-	// ObserveHistogram records a sampled distribution such as operation bytes
-	// or duration. Labels must remain low-cardinality.
-	ObserveHistogram(name string, value float64, labels map[string]string)
-
 	// SetGauge sets a named gauge to value. Intended for: outbox_pending,
 	// job queue depth, workflow open tasks, pool stats,
 	// outbox_dispatch_lag_seconds (blueprint 07 §9).
 	SetGauge(name string, value float64, labels map[string]string)
+}
+
+// HistogramMetrics is the additive v1 extension for sampled distributions.
+type HistogramMetrics interface {
+	Metrics
+	ObserveHistogram(name string, value float64, labels map[string]string)
+}
+
+// ObserveHistogram records a histogram sample when the configured sink
+// supports HistogramMetrics. Legacy v1 Metrics implementations safely ignore
+// the additive signal.
+func ObserveHistogram(metrics Metrics, name string, value float64, labels map[string]string) {
+	if sink, ok := metrics.(HistogramMetrics); ok {
+		sink.ObserveHistogram(name, value, labels)
+	}
 }
 
 // NoOp is the safe-default Metrics implementation whose methods are all

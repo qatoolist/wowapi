@@ -20,10 +20,10 @@ func (benchmarkJob) Kind() string { return "benchmark.claim-finalize" }
 // Enqueue setup is excluded from the timed region.
 func BenchmarkJobClaimFinalize(b *testing.B) {
 	h := testkit.NewDB(b)
-	tenant := testkit.CreateTenant(b, h)
+	tenant := testkit.CreateTenantTB(b, h)
 	ctx := testkit.TenantCtx(tenant.ID)
 	registry := jobs.NewRegistry()
-	registry.RegisterKind(benchmarkJob{}.Kind(),
+	registry.RegisterKindWithIdempotency(benchmarkJob{}.Kind(),
 		func(context.Context, database.TenantDB, []byte) error { return nil },
 		jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := registry.Err(); err != nil {

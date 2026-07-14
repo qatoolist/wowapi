@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ func TestGoAPIDiffGateFixtures(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command("sh", script, filepath.Join(root, "baseline"), filepath.Join(root, tt.current))
+			cmd.Env = append(os.Environ(), "GO_API_COMPAT_ALLOWLIST=/dev/null")
 			output, err := cmd.CombinedOutput()
 			if (err == nil) != tt.wantSuccess {
 				t.Fatalf("success=%v want=%v; output=%s", err == nil, tt.wantSuccess, output)

@@ -43,6 +43,17 @@ linters:
             - "!**/kernel/kernel.go"
             # kernel/mfa/shim.go is a deprecated forwarding shim and is exempt
             - "!**/kernel/mfa/*.go"
+            # These deprecated v1 forwarding shims preserve legacy import paths
+            # after their implementations moved to foundation. Keep the
+            # exception file-scoped so new kernel code remains subject to FBL-01.
+            - "!**/kernel/artifact/compat.go"
+            - "!**/kernel/attachment/compat.go"
+            - "!**/kernel/bulk/compat.go"
+            - "!**/kernel/comment/compat.go"
+            - "!**/kernel/document/compat.go"
+            - "!**/kernel/integration/compat.go"
+            - "!**/kernel/notify/compat.go"
+            - "!**/kernel/webhook/compat.go"
             # kernel/jobs/chaos is a chaos test utility package and is exempt
             - "!**/kernel/jobs/chaos/*.go"
           deny:

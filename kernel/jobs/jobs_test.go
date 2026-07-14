@@ -79,11 +79,11 @@ func noopWorker(context.Context, database.TenantDB, []byte) error { return nil }
 
 func TestRegistryDuplicateKind(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("k1", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("k1", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := r.Err(); err != nil {
 		t.Fatalf("single registration errored: %v", err)
 	}
-	r.RegisterKind("k1", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry()) // duplicate
+	r.RegisterKindWithIdempotency("k1", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry()) // duplicate
 	if err := r.Err(); err == nil {
 		t.Fatal("duplicate kind did not produce an error")
 	}
@@ -91,8 +91,8 @@ func TestRegistryDuplicateKind(t *testing.T) {
 
 func TestRegistryInvalidRegistrations(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry()) // empty kind
-	r.RegisterKind("k2", nil, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())      // nil worker
+	r.RegisterKindWithIdempotency("", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry()) // empty kind
+	r.RegisterKindWithIdempotency("k2", nil, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())      // nil worker
 	if err := r.Err(); err == nil {
 		t.Fatal("invalid registrations did not produce an error")
 	}
@@ -100,8 +100,8 @@ func TestRegistryInvalidRegistrations(t *testing.T) {
 
 func TestRegistryCleanErr(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("a", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{}) // zero policy is filled
-	r.RegisterKind("b", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("a", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{}) // zero policy is filled
+	r.RegisterKindWithIdempotency("b", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := r.Err(); err != nil {
 		t.Fatalf("valid registrations errored: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestRegistryCleanErr(t *testing.T) {
 
 func TestRegistryRejectsMissingIdempotency(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("no-idem", noopWorker, jobs.Idempotency{}, jobs.DefaultRetry()) // zero value = no valid mechanism
+	r.RegisterKindWithIdempotency("no-idem", noopWorker, jobs.Idempotency{}, jobs.DefaultRetry()) // zero value = no valid mechanism
 	if err := r.Err(); err == nil {
 		t.Fatal("worker without idempotency declaration should be rejected")
 	}
@@ -117,7 +117,7 @@ func TestRegistryRejectsMissingIdempotency(t *testing.T) {
 
 func TestRegistryRejectsEffectLedgerWithoutEffectName(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("no-effect-name", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("no-effect-name", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger}, jobs.DefaultRetry())
 	if err := r.Err(); err == nil {
 		t.Fatal("effect-ledger idempotency without EffectName should be rejected")
 	}
@@ -125,9 +125,9 @@ func TestRegistryRejectsEffectLedgerWithoutEffectName(t *testing.T) {
 
 func TestRegistryAcceptsEachIdempotencyKind(t *testing.T) {
 	r := jobs.NewRegistry()
-	r.RegisterKind("ledger", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger, EffectName: "test.effect"}, jobs.DefaultRetry())
-	r.RegisterKind("cas", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
-	r.RegisterKind("provider", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyProviderKey}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("ledger", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger, EffectName: "test.effect"}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("cas", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
+	r.RegisterKindWithIdempotency("provider", noopWorker, jobs.Idempotency{Kind: jobs.IdempotencyProviderKey}, jobs.DefaultRetry())
 	if err := r.Err(); err != nil {
 		t.Fatalf("valid idempotency declarations errored: %v", err)
 	}

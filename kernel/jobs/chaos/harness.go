@@ -155,14 +155,14 @@ func NewHarness(cfg Config) *Harness {
 
 	// Register a single kind whose worker distinguishes A vs B by reading the
 	// lease context and uses the harness callbacks to attempt each boundary.
-	cfg.Registry.RegisterKind("chaos.duplicate_worker", h.worker,
+	cfg.Registry.RegisterKindWithIdempotency("chaos.duplicate_worker", h.worker,
 		jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger, EffectName: "chaos.effect"},
 		jobs.DefaultRetry())
 	if err := cfg.Registry.Err(); err != nil {
 		cfg.T.Fatalf("registry: %v", err)
 	}
 
-	tenant := testkit.CreateTenant(cfg.T, cfg.H)
+	tenant := testkit.CreateTenantTB(cfg.T, cfg.H)
 	ctx := testkit.TenantCtx(tenant.ID)
 	if err := cfg.H.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		return jobs.Enqueue(ctx, db, chaosJob{})

@@ -11,6 +11,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 const sweepSLABatchSize = 100
@@ -45,7 +46,7 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 	maxLag := time.Duration(0)
 	defer func() {
 		rt.metrics.SetGauge("worker_queue_lag_seconds", maxLag.Seconds(), workflowSLAMetricLabels)
-		rt.metrics.ObserveHistogram("worker_batch_duration_seconds", time.Since(started).Seconds(), workflowSLAMetricLabels)
+		observability.ObserveHistogram(rt.metrics, "worker_batch_duration_seconds", time.Since(started).Seconds(), workflowSLAMetricLabels)
 	}()
 	now = now.UTC()
 

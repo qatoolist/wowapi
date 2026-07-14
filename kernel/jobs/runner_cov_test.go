@@ -170,7 +170,7 @@ func TestIntegrationLongErrorTruncated(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New(strings.Repeat("x", 5000))
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
@@ -202,7 +202,7 @@ func TestIntegrationRunnerOptionsAndDeadHook(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("always fails")
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 2, Backoff: func(int) time.Duration { return 0 }})
 	if err := reg.Err(); err != nil {
@@ -260,7 +260,7 @@ func TestIntegrationRecordSuccessConflictLogged(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil // both jobs succeed
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
@@ -303,7 +303,7 @@ func TestIntegrationRecordFailureConflictLogged(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("boom")
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
@@ -375,7 +375,7 @@ func TestIntegrationRunnerRunReclaimsStalled(t *testing.T) {
 	id := singleJobID(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
@@ -428,7 +428,7 @@ func TestIntegrationRunnerRunGracefulDrain(t *testing.T) {
 	started := make(chan struct{})
 	var once sync.Once
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		once.Do(func() { close(started) })
 		time.Sleep(200 * time.Millisecond) // in-flight when cancel arrives
 		return nil

@@ -239,20 +239,19 @@ func IsGrantRejection(err error, r GrantRejection) bool {
 type PrincipalStore interface {
 	// UserIDBySubject returns the framework user id for an IdP subject.
 	UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error)
-	// ActiveTenantAccess returns a non-nil error if userID does not have a live
-	// (status='active', valid_to IS NULL) membership row in tenantID.
-	ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error
-	// ActiveCapacityCount returns the number of active acting capacities userID
-	// holds in tenantID. It is used by Verifier.Actor to enforce explicit
-	// capacity selection when an actor has more than one active capacity.
-	ActiveCapacityCount(ctx context.Context, userID, tenantID uuid.UUID) (int, error)
 	// ValidateCapacity returns a non-nil error if capacityID is not an active
 	// capacity of userID in tenantID.
 	ValidateCapacity(ctx context.Context, userID, tenantID, capacityID uuid.UUID) error
-	// ResolveGrant looks up a privileged-session grant by opaque grant ID and
-	// validates it belongs to userID in tenantID. On success it returns the
-	// verified grant state; on failure it returns one of the rejection reasons
-	// named by GrantRejection (detectable with IsGrantRejection).
+}
+
+// AssurancePrincipalStore is the additive v1 extension used for live tenant
+// membership, capacity-count, and privileged-session checks. Legacy
+// PrincipalStore implementations remain source-compatible; production stores
+// should implement this interface to enable the stricter assurance posture.
+type AssurancePrincipalStore interface {
+	PrincipalStore
+	ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error
+	ActiveCapacityCount(ctx context.Context, userID, tenantID uuid.UUID) (int, error)
 	ResolveGrant(ctx context.Context, userID, tenantID, grantID uuid.UUID) (*ResolvedGrant, error)
 }
 
@@ -284,10 +283,13 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 		return authz.Actor{}, unauth("unknown subject", err)
 	}
 
+	assurance, hasAssurance := ps.(AssurancePrincipalStore)
 	if claims.TenantID != uuid.Nil {
-		if err := ps.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
-			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-				"tenant access not permitted", err, errors.Op("auth.Actor"))
+		if hasAssurance {
+			if err := assurance.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
+				return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+					"tenant access not permitted", err, errors.Op("auth.Actor"))
+			}
 		}
 	} else {
 		return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",
@@ -300,10 +302,14 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 				"capacity not permitted", err, errors.Op("auth.Actor"))
 		}
 	} else {
-		count, err := ps.ActiveCapacityCount(ctx, userID, claims.TenantID)
-		if err != nil {
-			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-				"capacity count unavailable", err, errors.Op("auth.Actor"))
+		count := 0
+		if hasAssurance {
+			var err error
+			count, err = assurance.ActiveCapacityCount(ctx, userID, claims.TenantID)
+			if err != nil {
+				return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+					"capacity count unavailable", err, errors.Op("auth.Actor"))
+			}
 		}
 		if count > 1 {
 			return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",
@@ -325,7 +331,11 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 	}
 
 	if claims.GrantID != uuid.Nil {
-		grant, err := ps.ResolveGrant(ctx, userID, claims.TenantID, claims.GrantID)
+		if !hasAssurance {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"principal store does not support privileged sessions", errors.Op("auth.Actor"))
+		}
+		grant, err := assurance.ResolveGrant(ctx, userID, claims.TenantID, claims.GrantID)
 		if err != nil {
 			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
 				"privileged session not permitted", err, errors.Op("auth.Actor"))

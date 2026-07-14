@@ -114,15 +114,6 @@ type Context interface {
 	Seeds(fsys fs.FS)
 	OpenAPI(fragment []byte)
 
-	// I18n registers a module's localized message bundle (GAP-001): the messages
-	// for one locale, keyed under the module's own "<name>." prefix. Called once
-	// per locale during Register (mirroring Seeds/OpenAPI collection). The app
-	// merges every module's bundles with the framework's own English catalog into
-	// one Catalog, which the httpx.Locale middleware negotiates against and
-	// WriteError/validation localize from. Product-specific translations stay in
-	// product-owned bundles — the framework ships only its own English strings.
-	I18n(bundle i18n.Bundle)
-
 	// Health registers a named readiness check (Phase 5).
 	Health(name string, check func(context.Context) error)
 
@@ -177,19 +168,6 @@ type Context interface {
 	Bulk() *bulk.Service
 	Artifacts() *artifact.Pipeline
 
-	// Privileged returns the module's scoped privileged-service surface (GAP-006):
-	// the sanctioned, audited way to perform a valid tenant-scoped operation that
-	// needs PLATFORM privilege at the database — granting/revoking ReBAC
-	// relationship edges (Privileged().Relationships()) and activating tenant-scope
-	// rule versions (Privileged().Rules()) — WITHOUT the module writing its own
-	// SECURITY DEFINER SQL or ever seeing a platform pool. Each operation runs in a
-	// tenant-bound app_platform transaction and is restricted to relationship types
-	// and rule keys the module owns (module-name prefix ownership through this
-	// accessor), so a module can never manage another module's edges or rules.
-	// Products needing a wider allow-list construct their own privileged.New(...)
-	// at wiring time; see docs/user-guide/module-development.
-	Privileged() *privileged.Services
-
 	// Document / file framework (Phase 8, blueprint 07 §4). DocumentClasses is the
 	// registry a module declares its document classes into during Register;
 	// DocumentHooks registers OnFileUpload / OnDocumentAccess hooks. Documents is
@@ -213,6 +191,20 @@ type Context interface {
 	Webhooks() *webhook.Service
 	IntegrationProviders() *integration.Registry
 	Integrations() *integration.Store
+}
+
+// I18nContext is the additive v1 registration extension for localized bundles.
+// Modules that use it should type-assert their Context so legacy Context
+// implementations remain source-compatible.
+type I18nContext interface {
+	Context
+	I18n(bundle i18n.Bundle)
+}
+
+// PrivilegedContext is the additive v1 extension for scoped platform services.
+type PrivilegedContext interface {
+	Context
+	Privileged() *privileged.Services
 }
 
 // nameRE constrains module names; ValidName is used by app.Validate.

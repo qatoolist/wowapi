@@ -108,14 +108,14 @@ func newSweepRuntime(tb testing.TB, h *testkit.DBHandle, metrics observability.M
 	if err := reg.Err(); err != nil {
 		tb.Fatalf("registry: %v", err)
 	}
-	rt := workflow.NewRuntime(h.TxM, reg, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}},
+	rt := workflow.NewRuntimeWithCompliance(h.TxM, reg, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}},
 		outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil), workflow.WithRuntimeMetrics(metrics))
 	return rt
 }
 
 func seedSweepFixture(tb testing.TB, h *testkit.DBHandle, cardinality int) (uuid.UUID, uuid.UUID) {
 	tb.Helper()
-	tenant := testkit.CreateTenant(tb, h)
+	tenant := testkit.CreateTenantTB(tb, h)
 	definitionID := uuid.New()
 	instanceID := uuid.New()
 	resourceID := uuid.New()

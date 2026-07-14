@@ -98,13 +98,19 @@ func WithRuntimeMetrics(metrics observability.Metrics) RuntimeOption {
 	}
 }
 
-// NewRuntime wires the runtime. All dependencies, including the authz
+// NewRuntime preserves the v1 constructor and wires the mandatory audit writer
+// with the supplied ID generator.
+func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen) *Runtime {
+	return NewRuntimeWithCompliance(txm, reg, ev, ob, idgen, audit.New(idgen, nil))
+}
+
+// NewRuntimeWithCompliance wires the runtime. All dependencies, including the authz
 // Evaluator and audit Writer, are required: Override's privileged permission
 // check is unconditional, and every override must be durable-audited in the
 // same transaction (blueprint §1.3, review finding SEC-02).
-func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen, aud *audit.Writer, opts ...RuntimeOption) *Runtime {
+func NewRuntimeWithCompliance(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen, aud *audit.Writer, opts ...RuntimeOption) *Runtime {
 	if txm == nil || reg == nil || ev == nil || ob == nil || idgen == nil || aud == nil {
-		panic("workflow.NewRuntime: txm, registry, authz evaluator, outbox, idgen, and audit writer are required")
+		panic("workflow.NewRuntimeWithCompliance: txm, registry, authz evaluator, outbox, idgen, and audit writer are required")
 	}
 	rt := &Runtime{
 		txm: txm, registry: reg, authz: ev, outbox: ob, audit: aud, idgen: idgen,

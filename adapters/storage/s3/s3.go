@@ -297,7 +297,7 @@ func (a *Adapter) RepairChecksum(ctx context.Context, key string, opts storage.R
 	a.metrics.IncCounter("storage_checksum_repair_hits_total", 1, labels)
 	started := time.Now()
 	defer func() {
-		a.metrics.ObserveHistogram("storage_checksum_repair_duration_seconds", time.Since(started).Seconds(), labels)
+		observability.ObserveHistogram(a.metrics, "storage_checksum_repair_duration_seconds", time.Since(started).Seconds(), labels)
 	}()
 
 	repairCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
@@ -318,7 +318,7 @@ func (a *Adapter) RepairChecksum(ctx context.Context, key string, opts storage.R
 	if n > opts.MaxBytes {
 		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_object_too_large", "storage object exceeds checksum repair byte bound")
 	}
-	a.metrics.ObserveHistogram("storage_checksum_repair_bytes", float64(n), labels)
+	observability.ObserveHistogram(a.metrics, "storage_checksum_repair_bytes", float64(n), labels)
 	checksum := hex.EncodeToString(h.Sum(nil))
 	metadata := make(map[string]string, len(info.UserMetadata)+1)
 	for name, value := range info.UserMetadata {

@@ -24,7 +24,7 @@ func engineWith(t *testing.T, c retention.RecordClass) (*retention.Engine, *rete
 	}
 	dsr := retention.NewDSR(nil) // nil idgen → default UUIDv7 generator
 	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
-	return retention.NewEngine(reg, dsr, nil, artifacts, nil), dsr
+	return retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil), dsr
 }
 
 // TestIntegrationHoldsList exercises Holds.List (formerly uncovered) and the
@@ -250,7 +250,7 @@ func TestIntegrationRunExportBranches(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		if _, e := eng.RunExport(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
+		if _, e := eng.RunExportDetailed(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
 			t.Errorf("run export on erasure DSR: got %v, want conflict", e)
 		}
 		return nil
@@ -267,7 +267,7 @@ func TestIntegrationRunExportBranches(t *testing.T) {
 		if e := dsr.Complete(ctx, db, id); e != nil {
 			return e
 		}
-		if _, e := eng.RunExport(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
+		if _, e := eng.RunExportDetailed(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
 			t.Errorf("run export on completed DSR: got %v, want conflict", e)
 		}
 		return nil
@@ -277,7 +277,7 @@ func TestIntegrationRunExportBranches(t *testing.T) {
 
 	// Get error: unknown request id → not-found propagated.
 	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
-		if _, e := eng.RunExport(ctx, db, uuid.New()); kerr.KindOf(e) != kerr.KindNotFound {
+		if _, e := eng.RunExportDetailed(ctx, db, uuid.New()); kerr.KindOf(e) != kerr.KindNotFound {
 			t.Errorf("run export on unknown id: got %v, want not-found", e)
 		}
 		return nil
@@ -298,7 +298,7 @@ func TestIntegrationRunExportBranches(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		_, e = badEng.RunExport(ctx, db, id)
+		_, e = badEng.RunExportDetailed(ctx, db, id)
 		if !errors.Is(e, sentinel) {
 			t.Errorf("run export callback error = %v, want wrapped sentinel", e)
 		}
@@ -321,7 +321,7 @@ func TestIntegrationRunErasureBranches(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		if _, e := eng.RunErasure(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
+		if _, e := eng.RunErasureDetailed(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
 			t.Errorf("run erasure on export DSR: got %v, want conflict", e)
 		}
 		return nil
@@ -338,7 +338,7 @@ func TestIntegrationRunErasureBranches(t *testing.T) {
 		if e := dsr.Complete(ctx, db, id); e != nil {
 			return e
 		}
-		if _, e := eng.RunErasure(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
+		if _, e := eng.RunErasureDetailed(ctx, db, id); kerr.KindOf(e) != kerr.KindConflict {
 			t.Errorf("run erasure on completed DSR: got %v, want conflict", e)
 		}
 		return nil
@@ -348,7 +348,7 @@ func TestIntegrationRunErasureBranches(t *testing.T) {
 
 	// Get error: unknown request id → not-found propagated.
 	if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
-		if _, e := eng.RunErasure(ctx, db, uuid.New()); kerr.KindOf(e) != kerr.KindNotFound {
+		if _, e := eng.RunErasureDetailed(ctx, db, uuid.New()); kerr.KindOf(e) != kerr.KindNotFound {
 			t.Errorf("run erasure on unknown id: got %v, want not-found", e)
 		}
 		return nil
@@ -369,7 +369,7 @@ func TestIntegrationRunErasureBranches(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		_, e = badEng.RunErasure(ctx, db, id)
+		_, e = badEng.RunErasureDetailed(ctx, db, id)
 		if !errors.Is(e, sentinel) {
 			t.Errorf("run erasure callback error = %v, want wrapped sentinel", e)
 		}

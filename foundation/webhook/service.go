@@ -16,6 +16,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/retry"
 )
@@ -260,7 +261,7 @@ func (s *Service) DispatchOutbound(ctx context.Context, plat database.TxManager,
 func (s *Service) RetryOutbound(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, now time.Time) error {
 	started := time.Now()
 	defer func() {
-		s.metrics.ObserveHistogram("worker_batch_duration_seconds", time.Since(started).Seconds(), webhookRetryMetricLabels)
+		observability.ObserveHistogram(s.metrics, "worker_batch_duration_seconds", time.Since(started).Seconds(), webhookRetryMetricLabels)
 	}()
 	return plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
 		rows, err := db.Query(ctx,

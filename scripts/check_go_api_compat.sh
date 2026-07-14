@@ -47,9 +47,28 @@ trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
 
 incompatible=$(go run "golang.org/x/exp/cmd/apidiff@$APIDIFF_VERSION" -m -incompatible "$tmp_dir/baseline.api" "$tmp_dir/current.api")
 if [ -n "$incompatible" ]; then
-    printf '%s\n' "$incompatible" >&2
-    echo "go API compatibility: breaking public API change detected" >&2
-    exit 1
+	allowlist=${GO_API_COMPAT_ALLOWLIST:-"$(dirname "$0")/../ci/go-api-compat.allow"}
+	printf '%s\n' "$incompatible" | sort -u > "$tmp_dir/reported"
+	if [ -f "$allowlist" ]; then
+		sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$allowlist" | sort -u > "$tmp_dir/allowed"
+	else
+		: > "$tmp_dir/allowed"
+	fi
+	grep -Fvx -f "$tmp_dir/allowed" "$tmp_dir/reported" > "$tmp_dir/unexpected" || true
+	grep -Fvx -f "$tmp_dir/reported" "$tmp_dir/allowed" > "$tmp_dir/stale" || true
+	if [ -s "$tmp_dir/stale" ]; then
+		echo "go API compatibility: stale allowlist entries (remove or update):" >&2
+		cat "$tmp_dir/stale" >&2
+		exit 1
+	fi
+	if [ -s "$tmp_dir/unexpected" ]; then
+		cat "$tmp_dir/unexpected" >&2
+		echo "go API compatibility: breaking public API change detected" >&2
+		exit 1
+	fi
+	allowed_count=$(wc -l < "$tmp_dir/allowed" | tr -d ' ')
+	echo "go API compatibility: compatible (${allowed_count} reviewed relocation/comparability diagnostics)"
+	exit 0
 fi
 
 echo "go API compatibility: compatible"

@@ -52,7 +52,7 @@ func buildRTWithAudit(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, 
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntime(txm, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), redact))
+	return workflow.NewRuntimeWithCompliance(txm, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), redact))
 }
 
 const ratifyDef = `

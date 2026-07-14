@@ -40,7 +40,7 @@ func TestIntegrationDSRArtifactWriteAndChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsr := retention.NewDSR(model.UUIDv7())
-	eng := retention.NewEngine(reg, dsr, nil, artifacts, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)
@@ -56,7 +56,7 @@ func TestIntegrationDSRArtifactWriteAndChecksum(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		manifest, e = eng.RunExport(ctx, db, reqID)
+		manifest, e = eng.RunExportDetailed(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run export: %v", err)
@@ -150,7 +150,7 @@ func TestIntegrationDSRExportArtifactWriteFailure(t *testing.T) {
 	reg := retention.NewRegistry()
 	reg.Register(peopleClass())
 	dsr := retention.NewDSR(model.UUIDv7())
-	eng := retention.NewEngine(reg, dsr, nil, failingWriter{err: sentinel}, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, nil, failingWriter{err: sentinel}, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)
@@ -163,7 +163,7 @@ func TestIntegrationDSRExportArtifactWriteFailure(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		_, e = eng.RunExport(ctx, db, reqID)
+		_, e = eng.RunExportDetailed(ctx, db, reqID)
 		if !errors.Is(e, sentinel) {
 			t.Fatalf("run export error = %v, want sentinel", e)
 		}
@@ -226,7 +226,7 @@ func TestIntegrationCentralLegalHoldBlocksDisposeErase(t *testing.T) {
 
 	// Dispose is blocked.
 	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
-	eng := retention.NewEngine(reg, dsr, holds, artifacts, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, holds, artifacts, nil)
 	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		_, e := eng.SweepDisposition(ctx, db, time.Now())
 		return e
@@ -251,7 +251,7 @@ func TestIntegrationCentralLegalHoldBlocksDisposeErase(t *testing.T) {
 
 	// Erasure is blocked.
 	err = h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
-		_, e := eng.RunErasure(ctx, db, reqID)
+		_, e := eng.RunErasureDetailed(ctx, db, reqID)
 		return e
 	})
 	if !errors.Is(err, retention.ErrHeld) {
@@ -289,7 +289,7 @@ func TestIntegrationExplicitPerClassExportStatus(t *testing.T) {
 	}
 	dsr := retention.NewDSR(model.UUIDv7())
 	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
-	eng := retention.NewEngine(reg, dsr, nil, artifacts, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)
@@ -301,7 +301,7 @@ func TestIntegrationExplicitPerClassExportStatus(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		manifest, e = eng.RunExport(ctx, db, reqID)
+		manifest, e = eng.RunExportDetailed(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run export: %v", err)
@@ -331,7 +331,7 @@ func TestIntegrationExplicitPerClassErasureStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsr := retention.NewDSR(model.UUIDv7())
-	eng := retention.NewEngine(reg, dsr, nil, nil, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, nil, nil, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)
@@ -343,7 +343,7 @@ func TestIntegrationExplicitPerClassErasureStatus(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		result, e = eng.RunErasure(ctx, db, reqID)
+		result, e = eng.RunErasureDetailed(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run erasure: %v", err)
@@ -442,7 +442,7 @@ func TestIntegrationDSRExportEmptyClassStatus(t *testing.T) {
 	})
 	dsr := retention.NewDSR(model.UUIDv7())
 	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
-	eng := retention.NewEngine(reg, dsr, nil, artifacts, nil)
+	eng := retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)
@@ -453,7 +453,7 @@ func TestIntegrationDSRExportEmptyClassStatus(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		manifest, e = eng.RunExport(ctx, db, reqID)
+		manifest, e = eng.RunExportDetailed(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run export: %v", err)
@@ -474,7 +474,7 @@ func TestIntegrationDSRExportArtifactRoundTrip(t *testing.T) {
 	reg := retention.NewRegistry()
 	reg.Register(peopleClass())
 	dsr := retention.NewDSR(model.UUIDv7())
-	_ = retention.NewEngine(reg, dsr, nil, artifacts, nil)
+	_ = retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil)
 
 	tenant := uuid.New()
 	ctx := dsrCtx(tenant)

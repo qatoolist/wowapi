@@ -93,7 +93,7 @@ func buildRuntime(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, raws
 	// that), so wire a permissive fake that allows the one permission Override
 	// checks.
 	ev := fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}}
-	return workflow.NewRuntime(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	return workflow.NewRuntimeWithCompliance(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 }
 
 func countEvents(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID, typ string) int {

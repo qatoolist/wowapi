@@ -57,7 +57,7 @@ func TestIntegrationJobsTracePropagation(t *testing.T) {
 
 	var ran int64
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
@@ -127,7 +127,7 @@ func TestIntegrationJobsNoTracerNoContext(t *testing.T) {
 
 	var ran int64
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())

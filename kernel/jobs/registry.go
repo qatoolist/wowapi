@@ -27,12 +27,19 @@ func NewRegistry() *Registry {
 	return &Registry{kinds: map[string]entry{}}
 }
 
-// RegisterKind binds a worker, idempotency declaration, and retry policy to a
+// RegisterKind preserves the v1 registration API. Legacy workers are treated
+// as declaring domain-level compare-and-swap protection; new registrations
+// should use RegisterKindWithIdempotency so the mechanism is explicit.
+func (r *Registry) RegisterKind(kind string, w Worker, rp RetryPolicy) {
+	r.RegisterKindWithIdempotency(kind, w, Idempotency{Kind: IdempotencyDomainCAS}, rp)
+}
+
+// RegisterKindWithIdempotency binds a worker, idempotency declaration, and retry policy to a
 // job kind. Registering the same kind twice, an empty kind, a nil worker, or a
 // worker without exactly one declared duplicate-safety mechanism records an
 // error surfaced by Err(). A zero-value RetryPolicy is filled from DefaultRetry
 // so a caller can register with just a worker and idempotency.
-func (r *Registry) RegisterKind(kind string, w Worker, idem Idempotency, rp RetryPolicy) {
+func (r *Registry) RegisterKindWithIdempotency(kind string, w Worker, idem Idempotency, rp RetryPolicy) {
 	if kind == "" {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_kind",
 			"RegisterKind requires a non-empty kind"))
