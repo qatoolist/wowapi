@@ -7,6 +7,10 @@ on:
         description: Full 40-hex commit SHA whose exact tree must pass every required gate
         required: true
         type: string
+      hosted_results_sha:
+        description: Full SHA used by GitHub Actions to index hosted scanner runs
+        required: true
+        type: string
     outputs:
       source_sha:
         description: Exact verified source commit
@@ -34,12 +38,17 @@ jobs:
       - name: prove checkout is the requested commit (never branch HEAD)
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
+          HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
         run: |
           set -euo pipefail
           case "$SOURCE_SHA" in
             *[!0-9a-f]*|'') echo "source_sha must be lowercase hex" >&2; exit 1 ;;
           esac
           [ "${#SOURCE_SHA}" -eq 40 ] || { echo "source_sha must be 40 hex characters" >&2; exit 1; }
+          case "$HOSTED_RESULTS_SHA" in
+            *[!0-9a-f]*|'') echo "hosted_results_sha must be lowercase hex" >&2; exit 1 ;;
+          esac
+          [ "${#HOSTED_RESULTS_SHA}" -eq 40 ] || { echo "hosted_results_sha must be 40 hex characters" >&2; exit 1; }
           test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
       - name: validate versioned manifest
         run: python3 scripts/validation/release_contract.py validate-gates --manifest ci/release-gates.yaml --schema ci/release-gates.schema.json
@@ -62,6 +71,7 @@ jobs:
       WOWAPI_REQUIRE_DB: "1"
       WOWAPI_REQUIRE_S3: "1"
       WOWAPI_GATE_SOURCE_SHA: ${{ inputs.source_sha }}
+      WOWAPI_HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

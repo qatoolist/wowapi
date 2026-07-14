@@ -30,6 +30,7 @@ jobs:
     uses: ./.github/workflows/required-gates.yml
     with:
       source_sha: ${{ github.sha }}
+      hosted_results_sha: ${{ github.sha }}
 
   hosted-security:
     name: require exact-SHA security workflow success

@@ -123,7 +123,7 @@
     {
       "id": "hosted-scanner-meta",
       "job_ref": ".github/workflows/security-scan.yml#hosted-scanner-meta",
-      "command": "python3 scripts/validation/security_contract.py workflow-policy --visibility auto --source-sha $WOWAPI_GATE_SOURCE_SHA",
+      "command": "python3 scripts/validation/security_contract.py workflow-policy --visibility auto --source-sha $WOWAPI_HOSTED_RESULTS_SHA",
       "owner": "release-security",
       "required_from_wave": 6,
       "timeout_minutes": 15,

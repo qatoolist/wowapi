@@ -75,6 +75,7 @@ jobs:
     uses: ./.github/workflows/required-gates.yml
     with:
       source_sha: ${{ github.sha }}
+      hosted_results_sha: ${{ github.event.pull_request.head.sha || github.sha }}
 
   changes:
     name: classify diff (docs-only? bench-relevant?)
