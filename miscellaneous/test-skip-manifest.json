@@ -433,6 +433,18 @@
       "classification": "required-fail-closed",
       "rationale": "The environment fallback branch is optional locally and mandatory when the DB gate asserts DATABASE_URL.",
       "guard": "WOWAPI_REQUIRE_DB causes t.Fatal before this skip"
+    },
+    {
+      "id": "SKIP-039",
+      "path": "kernel/rules/resolver_perf_test.go",
+      "function": "TestIntegrationResolverQueryCountConstantWithDepth",
+      "method": "Skip",
+      "message": "query-count comparison requires a database",
+      "ordinal": 1,
+      "owner": "rules-maintainers",
+      "classification": "required-fail-closed",
+      "rationale": "The query-count comparison is optional without local PostgreSQL and mandatory in the authoritative database gate.",
+      "guard": "WOWAPI_REQUIRE_DB causes testkit.NewDB to fail before every skipped subtest"
     }
   ]
 }

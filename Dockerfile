@@ -18,7 +18,10 @@ FROM base AS dev
 # `allure-commandline` npm distribution. golurectl converts `go test -json`
 # into Allure result files; its version is pinned by go.mod's tool directive.
 RUN apk add --no-cache gcc musl-dev nodejs npm openjdk21-jre-headless \
-    && npm install --global --omit=dev "allure-commandline@2.43.0" \
+    && mkdir -p /opt/allure
+COPY tools/allure/package.json tools/allure/package-lock.json /opt/allure/
+RUN npm ci --omit=dev --prefix /opt/allure \
+    && ln -s /opt/allure/node_modules/.bin/allure /usr/local/bin/allure \
     && go build -o /usr/local/bin/golurectl github.com/robotomize/go-allure/cmd/golurectl \
     && allure --version \
     && golurectl version

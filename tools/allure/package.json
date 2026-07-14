@@ -1,0 +1,7 @@
+{
+  "name": "wowapi-allure-toolchain",
+  "private": true,
+  "dependencies": {
+    "allure-commandline": "2.43.0"
+  }
+}
