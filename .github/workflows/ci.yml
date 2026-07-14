@@ -481,6 +481,9 @@ jobs:
 
   compatibility-gates:
     name: compatibility gates (OpenAPI, Go API, config, migration)
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/compatibility-gates.yml
     with:
       baseline_ref: v1.0.0
