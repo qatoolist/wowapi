@@ -14,7 +14,7 @@ import (
 )
 
 // DATA-01 / MATRIX CS-18 adversarial matrix: a seeded cross-tenant parent/child
-// insert must FAIL on every one of the 8 confirmed tenant-FK edges. RLS proves
+// insert must FAIL on every confirmed tenant-FK edge. RLS proves
 // the child row's own tenant; only a composite FK on (tenant_id, <ref>) pointing
 // at the parent's UNIQUE (tenant_id, id) proves parent and child AGREE — FK
 // lookups bypass RLS by design, so before migrations 00034/00035/00036 a child
@@ -66,9 +66,9 @@ type tenantFKEdge struct {
 	childRow func(t *testing.T, h *DBHandle, tenant, parentID uuid.UUID) map[string]any
 }
 
-// tenantFKEdges is the 8-edge DATA-01 matrix (PLAN's own evidence set,
-// re-confirmed mechanically by internal/tools/tenantfk and the edge census
-// test below).
+// tenantFKEdges is the DATA-01 matrix (PLAN's original evidence set plus each
+// subsequently introduced tenant FK), re-confirmed mechanically by
+// internal/tools/tenantfk and the edge census test below.
 func tenantFKEdges() []tenantFKEdge {
 	return []tenantFKEdge{
 		{
@@ -157,6 +157,17 @@ func tenantFKEdges() []tenantFKEdge {
 				}
 			},
 		},
+		{
+			child: "webhook_failed_signature_audit", fkCol: "endpoint_id", parent: "webhook_endpoints",
+			constraint: "webhook_failed_signature_audit_tenant_id_endpoint_id_fkey",
+			seedParent: seedWebhookEndpoint,
+			childRow: func(t *testing.T, h *DBHandle, tenant, parentID uuid.UUID) map[string]any {
+				return map[string]any{
+					"id": uuid.New(), "endpoint_id": parentID,
+					"event_type": "test.event", "failure_reason": "invalid signature",
+				}
+			},
+		},
 	}
 }
 
@@ -201,7 +212,7 @@ func adminInsert(ctx context.Context, h *DBHandle, table string, cols map[string
 }
 
 // TestIntegrationTenantFKCrossTenantInsertBlocked is the DATA-01 T7 / CS-18
-// adversarial matrix: for each of the 8 edges, seed the parent in tenant A and
+// adversarial matrix: for each edge, seed the parent in tenant A and
 // attempt a child insert in tenant B that references it, under admin
 // (BYPASSRLS), app_rt, and app_platform. Every attempt must fail; the admin
 // probe must fail with a pure foreign_key_violation, proving the database's own
@@ -274,7 +285,7 @@ func assertCrossTenantBlocked(t *testing.T, role string, e tenantFKEdge, err err
 	}
 }
 
-// TestIntegrationTenantFKEdgeCensus keeps the hand-written 8-edge matrix honest
+// TestIntegrationTenantFKEdgeCensus keeps the hand-written edge matrix honest
 // against the live catalog (the same self-maintenance posture as
 // TestIntegrationRLSCensusComplete): the set of composite tenant FKs actually
 // present in the schema must be exactly the set probed above — an edge gaining

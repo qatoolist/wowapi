@@ -47,17 +47,22 @@ func exerciseGoldenConsumerRealInfrastructure(t *testing.T, productDir string, g
 	t.Setenv("APP_ENV", "local")
 	t.Setenv("S3_ACCESS_KEY", "wowapi")
 	t.Setenv("S3_SECRET_KEY", "wowapi-local-only")
-	t.Setenv("WOWAPI__STORAGE__ENDPOINT", "http://localhost:9000")
+	minioEndpoint := goldenEnvOr("S3_TEST_ENDPOINT", "localhost:9000")
+	minioURL := minioEndpoint
+	if !strings.HasPrefix(minioURL, "http://") && !strings.HasPrefix(minioURL, "https://") {
+		minioURL = "http://" + minioURL
+	}
+	t.Setenv("WOWAPI__STORAGE__ENDPOINT", minioURL)
 	t.Setenv("WOWAPI__STORAGE__BUCKET", "golden-"+strings.ToLower(uuid.NewString()))
 	t.Setenv("WOWAPI__STORAGE__ACCESS_KEY", "secretref://env/S3_ACCESS_KEY")
 	t.Setenv("WOWAPI__STORAGE__SECRET_KEY", "secretref://env/S3_SECRET_KEY")
 	t.Setenv("WOWAPI__STORAGE__CREATE_BUCKET", "true")
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", goldenEnvOr("WOWAPI_GOLDEN_OTEL_ENDPOINT", "localhost:4317"))
 	t.Setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
 
-	assertGoldenService(t, "MinIO", "http://localhost:9000/minio/health/live")
-	assertGoldenService(t, "Mailpit", "http://localhost:8025/api/v1/info")
-	assertGoldenService(t, "Jaeger", "http://localhost:16686/api/services")
+	assertGoldenService(t, "MinIO", minioURL+"/minio/health/live")
+	assertGoldenService(t, "Mailpit", goldenEnvOr("WOWAPI_GOLDEN_MAILPIT_URL", "http://localhost:8025")+"/api/v1/info")
+	assertGoldenService(t, "Jaeger", goldenEnvOr("WOWAPI_GOLDEN_JAEGER_URL", "http://localhost:16686")+"/api/services")
 
 	runPipelineStep(t, "migrate generated consumer database", productDir, goEnv,
 		"go", "run", "./cmd/migrate", "up")
@@ -109,6 +114,13 @@ func exerciseGoldenConsumerRealInfrastructure(t *testing.T, productDir string, g
 	waitGoldenEventStatus(t, h, tenantA.ID, 2, "dispatched", 30*time.Second)
 
 	goldenJSONRequest(t, http.MethodDelete, base+"/item/"+id, tokenA, "", http.StatusNoContent)
+}
+
+func goldenEnvOr(key, fallback string) string {
+	if value := strings.TrimRight(os.Getenv(key), "/"); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func goldenConsumerDatabaseURL(t *testing.T, database string) string {

@@ -58,6 +58,7 @@ jobs:
         gate: ${{ fromJSON(needs.prepare.outputs.gates) }}
     env:
       DATABASE_URL: postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
+      GH_TOKEN: ${{ github.token }}
       WOWAPI_REQUIRE_DB: "1"
       WOWAPI_REQUIRE_S3: "1"
       WOWAPI_GATE_SOURCE_SHA: ${{ inputs.source_sha }}

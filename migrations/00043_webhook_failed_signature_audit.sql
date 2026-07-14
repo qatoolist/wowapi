@@ -16,14 +16,19 @@
 
 -- +goose Up
 
+CREATE UNIQUE INDEX webhook_endpoints_tenant_id_id_uidx
+    ON webhook_endpoints (tenant_id, id);
+
 CREATE TABLE webhook_failed_signature_audit (
     id          uuid PRIMARY KEY,
     tenant_id   uuid NOT NULL,
-    endpoint_id uuid NOT NULL REFERENCES webhook_endpoints(id),
+    endpoint_id uuid NOT NULL,
     event_type  text NOT NULL,
     signature_header text,               -- the value that failed verification, if present
     failure_reason text NOT NULL,
-    received_at timestamptz NOT NULL DEFAULT now()
+    received_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (tenant_id, endpoint_id)
+        REFERENCES webhook_endpoints (tenant_id, id)
 );
 
 CREATE INDEX wfsa_endpoint ON webhook_failed_signature_audit (tenant_id, endpoint_id, received_at DESC);
@@ -40,3 +45,4 @@ GRANT SELECT, INSERT ON webhook_failed_signature_audit TO app_platform;
 -- +goose Down
 
 DROP TABLE IF EXISTS webhook_failed_signature_audit;
+DROP INDEX IF EXISTS webhook_endpoints_tenant_id_id_uidx;
