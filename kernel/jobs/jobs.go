@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/lease"
 )
 
 // Job is a payload that knows its own kind. Payload structs implement it; the
@@ -46,7 +48,89 @@ type Job interface {
 // idempotent (upserts, version checks); a worker with an EXTERNAL side effect
 // (email, webhook, payment) MUST carry its own idempotency key against the
 // provider, or it can double-fire (review finding ARCH-59).
+//
+// At registration time every worker must declare exactly one duplicate-safety
+// mechanism via Idempotency (see RegisterKind). The runner passes the stable
+// job idempotency key and lease context to the worker through ctx using
+// WithJobContext; workers read them back with JobIDFromContext,
+// IdempotencyKeyFromContext, and LeaseFromContext.
 type Worker func(ctx context.Context, db database.TenantDB, payload []byte) error
+
+// IdempotencyKind enumerates the duplicate-safety mechanisms a worker may
+// declare. A worker must declare exactly one.
+type IdempotencyKind int
+
+const (
+	// IdempotencyEffectLedger means the worker writes its effect to an
+	// inbox/effect ledger unique on (job_id, effect_name).
+	IdempotencyEffectLedger IdempotencyKind = iota
+	// IdempotencyDomainCAS means the worker uses a domain compare-and-swap
+	// (e.g. a version column or conditional upsert) to make itself safe.
+	IdempotencyDomainCAS
+	// IdempotencyProviderKey means the worker carries its own idempotency key
+	// against an external provider.
+	IdempotencyProviderKey
+)
+
+// Idempotency declares how a worker protects against duplicate effects. Exactly
+// one kind must be set; EffectName is required only for IdempotencyEffectLedger.
+type Idempotency struct {
+	Kind       IdempotencyKind
+	EffectName string // required when Kind == IdempotencyEffectLedger
+}
+
+// Validate checks that exactly one mechanism is declared.
+func (i Idempotency) Validate() error {
+	switch i.Kind {
+	case IdempotencyEffectLedger:
+		if i.EffectName == "" {
+			return kerr.E(kerr.KindInternal, "invalid_idempotency", "effect-ledger idempotency requires EffectName")
+		}
+		return nil
+	case IdempotencyDomainCAS, IdempotencyProviderKey:
+		return nil
+	default:
+		return kerr.E(kerr.KindInternal, "invalid_idempotency", "worker must declare exactly one duplicate-safety mechanism: effect ledger, domain CAS, or provider idempotency key")
+	}
+}
+
+// jobContextKey is the private type for context values passed to workers.
+type jobContextKey int
+
+const (
+	jobIDKey jobContextKey = iota
+	idempotencyKey
+	leaseKey
+)
+
+// WithJobContext injects the job id, stable idempotency key, and lease context
+// into ctx for a worker invocation. Callers should not need this directly; it
+// is used by the runner.
+func WithJobContext(ctx context.Context, jobID int64, idempKey string, l lease.Lease) context.Context {
+	ctx = context.WithValue(ctx, jobIDKey, jobID)
+	ctx = context.WithValue(ctx, idempotencyKey, idempKey)
+	return context.WithValue(ctx, leaseKey, l)
+}
+
+// JobIDFromContext returns the job ID passed to the worker, or 0 if absent.
+func JobIDFromContext(ctx context.Context) int64 {
+	v, _ := ctx.Value(jobIDKey).(int64)
+	return v
+}
+
+// IdempotencyKeyFromContext returns the stable idempotency key passed to the
+// worker, or "" if absent.
+func IdempotencyKeyFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(idempotencyKey).(string)
+	return v
+}
+
+// LeaseFromContext returns the lease context passed to the worker, or a zero
+// Lease if absent.
+func LeaseFromContext(ctx context.Context) lease.Lease {
+	v, _ := ctx.Value(leaseKey).(lease.Lease)
+	return v
+}
 
 // BackoffPolicy maps a (1-based) attempt number to the delay before the next
 // retry. It must be a pure function of attempt — no time.Now or rand at package
@@ -102,6 +186,9 @@ func ExpJitterBackoff(attempt int) time.Duration {
 	// retries without any global randomness. Adding to a capped d and re-capping
 	// keeps the value bounded and monotonic across the plateau.
 	if span := d / 4; span > 0 {
+		// #nosec G115 -- attempt≥1 (guarded above) reinterpreted as a splitmix64
+		// seed (distribution-only); the modulo result is < span, a positive
+		// time.Duration, so the uint64→int64 conversion cannot overflow.
 		d += time.Duration(jitter(uint64(attempt)) % uint64(span))
 	}
 	if d > backoffCap {

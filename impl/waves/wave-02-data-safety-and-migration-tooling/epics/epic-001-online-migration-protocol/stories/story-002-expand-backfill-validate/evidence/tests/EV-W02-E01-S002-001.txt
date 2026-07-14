@@ -1,0 +1,4 @@
+=== RUN   TestExpandPhaseOldReaderCompatibility
+--- PASS: TestExpandPhaseOldReaderCompatibility (0.32s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.576s

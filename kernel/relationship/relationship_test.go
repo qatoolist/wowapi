@@ -135,3 +135,152 @@ func mustExec(t *testing.T, h *testkit.DBHandle, ctx context.Context, sql string
 		t.Fatalf("seed exec: %v\n%s", err, sql)
 	}
 }
+
+// seedParty creates a person party and returns its party id.
+func seedParty(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant uuid.UUID) uuid.UUID {
+	t.Helper()
+	partyID := uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO parties (id, tenant_id, kind, display_name, created_by)
+		VALUES ($1,$2,'person',$3,$4)`, partyID, tenant, "party-"+partyID.String()[:8], uuid.Nil)
+	mustExec(t, h, ctx, `INSERT INTO persons (party_id, tenant_id, given_name)
+		VALUES ($1,$2,$3)`, partyID, tenant, "given")
+	return partyID
+}
+
+// seedCapacityWithParty creates a user, party, and active capacity linking them.
+func seedCapacityWithParty(t *testing.T, h *testkit.DBHandle, ctx context.Context, tenant uuid.UUID) (capID, partyID uuid.UUID) {
+	t.Helper()
+	userID := uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO users (id, idp_subject, email, created_by) VALUES ($1,$2,$3,$4)`,
+		userID, "idp-"+uuid.New().String()[:8], uuid.New().String()[:8]+"@example.test", uuid.Nil)
+	partyID = seedParty(t, h, ctx, tenant)
+	capID = uuid.New()
+	mustExec(t, h, ctx, `INSERT INTO acting_capacities (id, tenant_id, user_id, party_id, label, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6)`, capID, tenant, userID, partyID, "member", uuid.Nil)
+	return capID, partyID
+}
+
+// TestIntegrationRelationshipHasPartySubject proves DATA-07 T1: an actor whose
+// active capacity resolves to a party is granted access via party-subject edges.
+func TestIntegrationRelationshipHasPartySubject(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := uuid.New()
+	relType := "core.owner_of"
+	seedTenant(t, h, ctx, tenant)
+	seedResourceType(t, h, ctx, "requests.request")
+	mustExec(t, h, ctx, `INSERT INTO relationship_types (key, module, subject_kind, object_kind, description)
+		VALUES ($1,$2,'party','resource',$3)`, relType, "core", "owner")
+
+	capID, partyID := seedCapacityWithParty(t, h, ctx, tenant)
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+
+	mustExec(t, h, ctx, `INSERT INTO relationships
+		(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, version, created_by)
+		VALUES ($1,$2,$3,'party',$4,'resource',$5, now(), 1, $6)`,
+		gen.New(), tenant, relType, partyID, obj.ID, uuid.Nil)
+
+	checker := relationship.NewChecker()
+	actor := authz.Actor{Kind: authz.ActorUser, CapacityID: capID, TenantID: tenant}
+	var has bool
+	if err := h.TxM.WithTenantRO(database.WithTenantID(ctx, tenant),
+		func(ctx context.Context, db database.TenantDB) error {
+			var e error
+			has, e = checker.Has(ctx, db, actor, relType, obj, time.Now().Add(time.Minute))
+			return e
+		}); err != nil {
+		t.Fatalf("Has: %v", err)
+	}
+	if !has {
+		t.Fatal("Has(party-subject edge) = false; want true")
+	}
+}
+
+// TestIntegrationRelationshipSubjectKindMatrix proves DATA-07 T2: every
+// schema-enumerated subject_kind is evaluated correctly, and an unenumerated
+// kind fails closed with a permission-denied error.
+func TestIntegrationRelationshipSubjectKindMatrix(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := uuid.New()
+	seedTenant(t, h, ctx, tenant)
+	seedResourceType(t, h, ctx, "requests.request")
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+
+	cases := []struct {
+		name        string
+		relType     string
+		subjectKind string
+		seed        func() (actor authz.Actor, subjectID uuid.UUID)
+		want        bool
+	}{
+		{
+			name:        "capacity-subject",
+			relType:     "core.capacity_owner",
+			subjectKind: "capacity",
+			seed: func() (authz.Actor, uuid.UUID) {
+				capID := seedCapacity(t, h, ctx, tenant)
+				mustExec(t, h, ctx, `INSERT INTO relationship_types (key, module, subject_kind, object_kind, description)
+					VALUES ($1,$2,'capacity','resource',$3) ON CONFLICT (key) DO NOTHING`, "core.capacity_owner", "core", "owner")
+				mustExec(t, h, ctx, `INSERT INTO relationships
+					(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, version, created_by)
+					VALUES ($1,$2,$3,'capacity',$4,'resource',$5, now(), 1, $6)`,
+					gen.New(), tenant, "core.capacity_owner", capID, obj.ID, uuid.Nil)
+				return authz.Actor{Kind: authz.ActorUser, CapacityID: capID, TenantID: tenant}, capID
+			},
+			want: true,
+		},
+		{
+			name:        "party-subject",
+			relType:     "core.party_owner",
+			subjectKind: "party",
+			seed: func() (authz.Actor, uuid.UUID) {
+				capID, partyID := seedCapacityWithParty(t, h, ctx, tenant)
+				mustExec(t, h, ctx, `INSERT INTO relationship_types (key, module, subject_kind, object_kind, description)
+					VALUES ($1,$2,'party','resource',$3) ON CONFLICT (key) DO NOTHING`, "core.party_owner", "core", "owner")
+				mustExec(t, h, ctx, `INSERT INTO relationships
+					(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, version, created_by)
+					VALUES ($1,$2,$3,'party',$4,'resource',$5, now(), 1, $6)`,
+					gen.New(), tenant, "core.party_owner", partyID, obj.ID, uuid.Nil)
+				return authz.Actor{Kind: authz.ActorUser, CapacityID: capID, TenantID: tenant}, partyID
+			},
+			want: true,
+		},
+		{
+			name:        "resource-subject-not-actor-resolvable",
+			relType:     "core.resource_owner",
+			subjectKind: "resource",
+			seed: func() (authz.Actor, uuid.UUID) {
+				mustExec(t, h, ctx, `INSERT INTO relationship_types (key, module, subject_kind, object_kind, description)
+					VALUES ($1,$2,'resource','resource',$3) ON CONFLICT (key) DO NOTHING`, "core.resource_owner", "core", "owner")
+				mustExec(t, h, ctx, `INSERT INTO relationships
+					(id, tenant_id, rel_type, subject_kind, subject_id, object_kind, object_id, valid_from, version, created_by)
+					VALUES ($1,$2,$3,'resource',$4,'resource',$5, now(), 1, $6)`,
+					gen.New(), tenant, "core.resource_owner", obj.ID, obj.ID, uuid.Nil)
+				return authz.Actor{Kind: authz.ActorUser, CapacityID: seedCapacity(t, h, ctx, tenant), TenantID: tenant}, obj.ID
+			},
+			want: false,
+		},
+	}
+
+	checker := relationship.NewChecker()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			actor, _ := tc.seed()
+			var has bool
+			if err := h.TxM.WithTenantRO(database.WithTenantID(ctx, tenant),
+				func(ctx context.Context, db database.TenantDB) error {
+					var e error
+					has, e = checker.Has(ctx, db, actor, tc.relType, obj, time.Now().Add(time.Minute))
+					return e
+				}); err != nil {
+				t.Fatalf("Has: %v", err)
+			}
+			if has != tc.want {
+				t.Fatalf("Has = %v; want %v", has, tc.want)
+			}
+		})
+	}
+}

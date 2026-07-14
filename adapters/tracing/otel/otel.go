@@ -52,10 +52,14 @@ func New(exporter sdktrace.SpanExporter, sampleRatio float64) *Tracer {
 	}
 }
 
-// StartSpan begins an OTel span as a child of any span in ctx.
+// StartSpan begins an OTel span as a child of any span in ctx. The returned
+// context carries the port-level Span (observability.SpanFromContext), so
+// vendor-neutral consumers — the log-correlation handler, the pgx query
+// tracer — can reach the active span without touching OTel types.
 func (t *Tracer) StartSpan(ctx context.Context, name string) (context.Context, observability.Span) {
 	ctx, span := t.tracer.Start(ctx, name)
-	return ctx, otelSpan{span: span}
+	s := otelSpan{span: span}
+	return observability.ContextWithSpan(ctx, s), s
 }
 
 // Inject returns the W3C traceparent for the span in ctx (embed it in an outgoing
@@ -108,6 +112,26 @@ func (s otelSpan) RecordError(err error) {
 	}
 	s.span.RecordError(err)
 	s.span.SetStatus(codes.Error, err.Error())
+}
+
+// TraceID returns the canonical lowercase-hex trace ID, or "" when the span has
+// no valid trace context (e.g. the SDK returned a non-recording placeholder).
+func (s otelSpan) TraceID() string {
+	sc := s.span.SpanContext()
+	if !sc.HasTraceID() {
+		return ""
+	}
+	return sc.TraceID().String()
+}
+
+// SpanID returns the canonical lowercase-hex span ID, or "" when the span has
+// no valid span context.
+func (s otelSpan) SpanID() string {
+	sc := s.span.SpanContext()
+	if !sc.HasSpanID() {
+		return ""
+	}
+	return sc.SpanID().String()
 }
 
 // Compile-time assurance the adapter satisfies the port.

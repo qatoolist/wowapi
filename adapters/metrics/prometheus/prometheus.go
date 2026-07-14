@@ -36,6 +36,9 @@ type Prometheus struct {
 
 	gaugeMu sync.Mutex
 	gauges  map[string]*prometheus.GaugeVec
+
+	histogramMu sync.Mutex
+	histograms  map[string]*prometheus.HistogramVec
 }
 
 // New returns a Prometheus with a fresh, isolated registry pre-registered with
@@ -52,10 +55,11 @@ func New() *Prometheus {
 	)
 	reg.MustRegister(requests)
 	return &Prometheus{
-		reg:      reg,
-		requests: requests,
-		counters: make(map[string]*prometheus.CounterVec),
-		gauges:   make(map[string]*prometheus.GaugeVec),
+		reg:        reg,
+		requests:   requests,
+		counters:   make(map[string]*prometheus.CounterVec),
+		gauges:     make(map[string]*prometheus.GaugeVec),
+		histograms: make(map[string]*prometheus.HistogramVec),
 	}
 }
 
@@ -71,6 +75,12 @@ func (p *Prometheus) ObserveRequest(route, method string, status int, dur time.D
 func (p *Prometheus) IncCounter(name string, value float64, labels map[string]string) {
 	cv := p.getOrRegisterCounter(name, labels)
 	cv.With(safeLabels(labels)).Add(value)
+}
+
+// ObserveHistogram records a value in a lazily registered histogram.
+func (p *Prometheus) ObserveHistogram(name string, value float64, labels map[string]string) {
+	hv := p.getOrRegisterHistogram(name, labels)
+	hv.With(safeLabels(labels)).Observe(value)
 }
 
 // SetGauge sets a named gauge to value. The first call for a given name
@@ -119,6 +129,21 @@ func (p *Prometheus) getOrRegisterGauge(name string, labels map[string]string) *
 	p.reg.MustRegister(gv)
 	p.gauges[name] = gv
 	return gv
+}
+
+func (p *Prometheus) getOrRegisterHistogram(name string, labels map[string]string) *prometheus.HistogramVec {
+	p.histogramMu.Lock()
+	defer p.histogramMu.Unlock()
+	if hv, ok := p.histograms[name]; ok {
+		return hv
+	}
+	hv := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{Name: name, Help: name, Buckets: prometheus.DefBuckets},
+		sortedKeys(labels),
+	)
+	p.reg.MustRegister(hv)
+	p.histograms[name] = hv
+	return hv
 }
 
 // sortedKeys returns the keys of m in ascending order. A stable order is

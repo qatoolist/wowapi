@@ -11,9 +11,8 @@
 //
 //	go test -run TestE2E -count=1 ./internal/e2e/
 //
-// Requires: go toolchain on PATH. Skips (never fails) when the module cache
-// is cold (network-dependent resolution), matching the offline-skip pattern in
-// testkit/consumer_test.go.
+// Requires: go toolchain on PATH. Local runs may skip when the module cache is
+// cold; authoritative DB/S3 gates fail closed with an actionable diagnosis.
 package e2e_test
 
 import (
@@ -29,12 +28,19 @@ import (
 	"time"
 )
 
+func requireE2E() bool {
+	return os.Getenv("WOWAPI_REQUIRE_DB") != "" || os.Getenv("WOWAPI_REQUIRE_S3") != ""
+}
+
 // TestE2EScaffoldedRepoBuild is the headline Phase 12 acceptance proof.
 // It scaffolds a fresh product repo, replaces the framework dependency with
 // the local tree, and verifies the repo builds and vets cleanly.
 // With DATABASE_URL set it also runs migrate + polls api /healthz.
 func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
+		if requireE2E() {
+			t.Fatalf("authoritative E2E gate requires the Go toolchain on PATH: %v", err)
+		}
 		t.Skip("e2e: go toolchain not found on PATH")
 	}
 
@@ -45,12 +51,18 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	wowapiBin := filepath.Join(tmpDir, "wowapi")
 	if err := runCmd(t, repoRoot, nil, "go", "build", "-o", wowapiBin, "./cmd/wowapi"); err != nil {
 		if isOfflineErr(err.Error()) {
+			if requireE2E() {
+				t.Fatalf("authoritative E2E gate cannot build the CLI because dependencies are unavailable — warm the module cache or restore network access: %v", err)
+			}
 			t.Skipf("e2e: CLI build needs network (cold module cache): %v", err)
 		}
 		t.Fatalf("e2e: build wowapi CLI: %v", err)
 	}
 
-	// Step 2: scaffold a product repo.
+	// Step 2: scaffold a product repo. --local-framework points the scaffolded
+	// go.mod at the local tree via a replace directive (the CLI here is built
+	// from a working tree, so no exact released framework version is derivable
+	// — flag-less init fails closed by design; see internal/cli/init_version.go).
 	productDir := filepath.Join(tmpDir, "product")
 	if err := os.MkdirAll(productDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -59,15 +71,9 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 		"--module", "e2e.example/app",
 		"--name", "app",
 		"--dir", productDir,
+		"--local-framework", repoRoot,
 	); err != nil {
 		t.Fatalf("e2e: wowapi init: %v", err)
-	}
-
-	// Step 3: point the product's wowapi dependency at the local tree.
-	if err := runCmd(t, productDir, nil, "go", "mod", "edit",
-		"-replace", "github.com/qatoolist/wowapi="+repoRoot,
-	); err != nil {
-		t.Fatalf("e2e: go mod edit -replace: %v", err)
 	}
 
 	// Base env for all subsequent go commands in the product dir.
@@ -83,6 +89,9 @@ func TestE2EScaffoldedRepoBuild(t *testing.T) {
 	// Step 4: go mod tidy — skip on cold module cache.
 	if err := runCmd(t, productDir, env, "go", "mod", "tidy"); err != nil {
 		if isOfflineErr(err.Error()) {
+			if requireE2E() {
+				t.Fatalf("authoritative E2E gate cannot resolve scaffold dependencies — warm the module cache or restore network access: %v", err)
+			}
 			t.Skipf("e2e: go mod tidy needs network (cold module cache): %v", err)
 		}
 		t.Fatalf("e2e: go mod tidy: %v", err)

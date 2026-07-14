@@ -1,0 +1,4 @@
+=== RUN   TestIntegrationUploadSessionDurability
+--- PASS: TestIntegrationUploadSessionDurability (0.26s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/document	0.513s

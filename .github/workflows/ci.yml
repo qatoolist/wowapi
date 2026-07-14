@@ -14,8 +14,9 @@ name: ci
 #                   required-env posture as `make ci-container`
 #                   (WOWAPI_REQUIRE_DB=1 + WOWAPI_REQUIRE_S3=1 — DB/S3 tests MUST
 #                   run, never skip):
-#                     test  — test-unit (DB+S3) + fuzz seed corpus
-#                     race  — full-tree -race (DB+S3; unscoped, per PR)
+#                     test  — fail-closed fixture + DB/S3 tests + fuzz seeds
+#                     race  — DB/S3 integration packages under -race, preceded
+#                             by a seeded detector-negative fixture
 #                   Wall-clock = slowest leg instead of the sum. Go build/module
 #                   caches are persisted across runs via actions/cache mounted
 #                   into the toolbox (the named compose volumes start empty on
@@ -65,6 +66,16 @@ env:
   ACTIONLINT_VERSION: "v1.7.12"
 
 jobs:
+  required-gates:
+    name: required gates (manifest, exact SHA)
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/required-gates.yml
+    with:
+      source_sha: ${{ github.sha }}
+
   changes:
     name: classify diff (docs-only? bench-relevant?)
     runs-on: ubuntu-latest
@@ -174,8 +185,14 @@ jobs:
         run: make lint
       - name: go.mod tidy check
         run: make tidy-check
+      - name: go mod verify (supply-chain integrity — module cache vs go.sum)
+        run: go mod verify
       - name: boundaries
         run: make lint-boundaries
+      - name: documentation contracts (examples, generated references, future-state labels)
+        run: make docs-check
+      - name: test skip manifest (owner + rationale; negative fixture)
+        run: make check-test-skips
       - name: unit tests (no database — pure unit path must pass standalone)
         run: make test-unit
       - name: build
@@ -233,6 +250,67 @@ jobs:
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
 
+  fuzz-pr:
+    name: coverage-guided fuzz (short PR profile)
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: restore retained Go fuzz corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .fuzzcache
+          key: fuzz-pr-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-pr-${{ hashFiles('go.sum') }}-
+      - name: run real coverage-guided fuzzing (10s per target)
+        run: make test-fuzz-pr FUZZTIME=10s FUZZ_OUTPUT=fuzz-report-pr
+      - name: upload fuzz proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-proof-pr
+          path: fuzz-report-pr/
+          if-no-files-found: error
+          retention-days: 14
+
+  fuzz-scheduled:
+    name: coverage-guided fuzz (long retained-corpus profile)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: restore retained Go fuzz corpus
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .fuzzcache
+          # A unique save key plus a stable restore prefix lets each nightly
+          # publish its enriched GOCACHE/fuzz corpus for the following run.
+          key: fuzz-scheduled-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-scheduled-${{ hashFiles('go.sum') }}-
+      - name: run real coverage-guided fuzzing (1m per target)
+        run: make test-fuzz-scheduled FUZZTIME=1m FUZZ_OUTPUT=fuzz-report-scheduled
+      - name: upload fuzz proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-proof-scheduled
+          path: fuzz-report-scheduled/
+          if-no-files-found: error
+          retention-days: 30
+
   gate-bench:
     # Separate from the gate matrix so it can carry its own condition: on PRs
     # it runs ONLY when the diff can affect a budgeted benchmark (see the
@@ -275,6 +353,32 @@ jobs:
       - name: fix cache ownership for the post-job cache save
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" .cicache 2>/dev/null || true
+      - name: tear down
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v
+
+  tenantfk-gate:
+    name: DATA-01 tenant-FK catalog gate
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: start postgres
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres
+      - name: apply kernel migrations
+        env:
+          DATABASE_URL: "postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable"
+        run: go run ./internal/tools/migrate up
+      - name: tenant-FK catalog gate
+        env:
+          DATABASE_URL: "postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable"
+        run: make tenantfk-gate
       - name: tear down
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
@@ -350,3 +454,33 @@ jobs:
       - name: tear down
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
+
+  golden-consumer:
+    name: golden consumer (installed CLI, N-1/N replay)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: start golden-consumer services
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit jaeger
+      - name: installed CLI and upgrade replay
+        env:
+          DATABASE_URL: postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
+          WOWAPI_REQUIRE_DB: "1"
+          WOWAPI_REQUIRE_S3: "1"
+        run: make golden-consumer
+      - name: tear down golden-consumer services
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v
+
+  compatibility-gates:
+    name: compatibility gates (OpenAPI, Go API, config, migration)
+    uses: ./.github/workflows/compatibility-gates.yml
+    with:
+      baseline_ref: v1.0.0

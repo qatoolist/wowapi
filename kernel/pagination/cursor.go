@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -199,6 +200,12 @@ func normalize(v any) (any, error) {
 	case int64:
 		return x, nil
 	case uint:
+		// uint→int64 can wrap on 64-bit platforms; no earlier validation bounds
+		// application-supplied cursor key values, so fail closed (W01-E01-S002
+		// gosec G115 triage) instead of silently corrupting cursor ordering.
+		if uint64(x) > math.MaxInt64 {
+			return nil, fmt.Errorf("cursor value %d overflows int64", x)
+		}
 		return int64(x), nil
 	case uint8:
 		return int64(x), nil
@@ -207,6 +214,10 @@ func normalize(v any) (any, error) {
 	case uint32:
 		return int64(x), nil
 	case uint64:
+		// Same fail-closed bound as uint above (gosec G115 triage).
+		if x > math.MaxInt64 {
+			return nil, fmt.Errorf("cursor value %d overflows int64", x)
+		}
 		return int64(x), nil
 	case float32:
 		return float64(x), nil

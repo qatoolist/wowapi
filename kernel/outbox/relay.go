@@ -12,6 +12,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/lease"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
@@ -29,12 +30,23 @@ import (
 // exactly-once DB EFFECT via the inbox (dedup + effect share the tenant tx);
 // external side effects in a handler are still at-least-once. A poison event
 // dead-letters ('dead') after max_attempts rather than retrying forever.
+const defaultRelayLeaseTTL = 30 * time.Second
+
+var (
+	outboxRelayMetricLabels = map[string]string{"worker": "outbox_relay"}
+	// ErrLeaseMismatch means a stale relay attempted to finalize an event after
+	// another worker reclaimed its expired W04 DATA-02 lease epoch.
+	ErrLeaseMismatch = kerr.E(kerr.KindConflict, "lease_mismatch", "stale outbox finalize rejected")
+)
+
 type Relay struct {
-	pool     *pgxpool.Pool      // app_platform pool for cross-tenant claim
-	txm      database.TxManager // tenant tx manager for handler dispatch
+	pool     *pgxpool.Pool      // app_platform pool for cross-tenant claim/finalize
+	txm      database.TxManager // tenant tx manager for one event's handlers
 	registry *HandlerRegistry
 	batch    int
+	leaseTTL time.Duration
 	tracer   observability.Tracer
+	metrics  observability.Metrics
 }
 
 // RelayOption customizes the relay.
@@ -51,13 +63,36 @@ func WithRelayTracer(tr observability.Tracer) RelayOption {
 	}
 }
 
+// WithRelayLeaseTTL changes the W04 shared-primitive lease lifetime. It is
+// primarily useful for deterministic crash/reclaim tests.
+func WithRelayLeaseTTL(ttl time.Duration) RelayOption {
+	return func(r *Relay) {
+		if ttl > 0 {
+			r.leaseTTL = ttl
+		}
+	}
+}
+
+// WithRelayMetrics wires bounded-cardinality queue lag and batch duration
+// gauges. A nil sink leaves the safe NoOp default.
+func WithRelayMetrics(metrics observability.Metrics) RelayOption {
+	return func(r *Relay) {
+		if metrics != nil {
+			r.metrics = metrics
+		}
+	}
+}
+
 // NewRelay builds the relay. pool must authenticate as the relay role
 // (app_platform); txm runs handler transactions per tenant.
 func NewRelay(pool *pgxpool.Pool, txm database.TxManager, registry *HandlerRegistry, batchSize int, opts ...RelayOption) *Relay {
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	r := &Relay{pool: pool, txm: txm, registry: registry, batch: batchSize, tracer: observability.NoOpTracer}
+	r := &Relay{
+		pool: pool, txm: txm, registry: registry, batch: batchSize,
+		leaseTTL: defaultRelayLeaseTTL, tracer: observability.NoOpTracer, metrics: observability.NoOp,
+	}
 	for _, o := range opts {
 		o(r)
 	}
@@ -66,16 +101,18 @@ func NewRelay(pool *pgxpool.Pool, txm database.TxManager, registry *HandlerRegis
 
 // row is a claimed outbox event.
 type row struct {
-	id       uuid.UUID
-	tenant   uuid.UUID
-	evType   string
-	schemaV  int
-	resType  *string
-	resID    *uuid.UUID
-	actor    []byte
-	payload  []byte
-	attempts int
-	trace    *string // W3C traceparent captured at write time (CA-9); nil when absent
+	id         uuid.UUID
+	tenant     uuid.UUID
+	evType     string
+	schemaV    int
+	resType    *string
+	resID      *uuid.UUID
+	actor      []byte
+	payload    []byte
+	attempts   int
+	occurredAt time.Time
+	trace      *string // W3C traceparent captured at write time (CA-9); nil when absent
+	lease      lease.Lease
 }
 
 // DispatchOnce claims up to batch pending events (FOR UPDATE SKIP LOCKED, so
@@ -83,81 +120,164 @@ type row struct {
 // marks it dispatched (or failed, to retry later). It returns the number of
 // events processed. A relay loop calls this until it returns 0, then sleeps.
 func (r *Relay) DispatchOnce(ctx context.Context) (int, error) {
+	started := time.Now()
+	maxLag := time.Duration(0)
+	defer func() {
+		r.metrics.SetGauge("worker_queue_lag_seconds", maxLag.Seconds(), outboxRelayMetricLabels)
+		r.metrics.ObserveHistogram("worker_batch_duration_seconds", time.Since(started).Seconds(), outboxRelayMetricLabels)
+	}()
+
+	// Stage 1 — claim and commit. The W04 DATA-02 Lease value is persisted as
+	// token+generation+expiry. No transaction from this stage survives into a
+	// tenant handler or other remote/consumer work.
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "begin claim tx")
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-
-	// Per-aggregate ordering (blueprint 07 §7): only claim an event if it is the
-	// EARLIEST still-undispatched event for its aggregate — a later event for the
-	// same (tenant, resource) is never dispatched while an earlier one is pending
-	// or failed, so a transient failure on the older event cannot let the newer
-	// one overtake it. Events with no resource (aggregate-less) are unordered.
-	// FOR UPDATE SKIP LOCKED keeps concurrent relays from double-claiming; the
-	// dispatch tx additionally takes a per-aggregate advisory lock so two relays
-	// never process the same aggregate concurrently.
 	rows, err := tx.Query(ctx,
-		`SELECT e.id, e.tenant_id, e.event_type, e.schema_version, e.resource_type, e.resource_id, e.actor, e.payload, e.attempts, e.trace_context
-           FROM events_outbox e
-          WHERE e.dispatch_status = 'pending'
-            AND NOT EXISTS (
-                SELECT 1 FROM events_outbox p
-                 WHERE p.tenant_id = e.tenant_id
-                   AND p.resource_type IS NOT DISTINCT FROM e.resource_type
-                   AND p.resource_id IS NOT DISTINCT FROM e.resource_id
-                   AND e.resource_id IS NOT NULL
-                   AND p.dispatch_status IN ('pending','failed')
-                   AND (p.occurred_at, p.id) < (e.occurred_at, e.id))
-          ORDER BY e.occurred_at, e.id
-          FOR UPDATE SKIP LOCKED
-          LIMIT $1`, r.batch)
+		`SELECT e.id, e.tenant_id, e.event_type, e.schema_version,
+		        e.resource_type, e.resource_id, e.actor, e.payload, e.attempts,
+		        e.occurred_at, e.trace_context, e.lease_generation
+		   FROM events_outbox e
+		  WHERE e.dispatch_status = 'pending'
+		    AND (e.lease_token IS NULL OR e.lease_expires_at <= now())
+		    AND NOT EXISTS (
+		        SELECT 1 FROM events_outbox p
+		         WHERE p.tenant_id = e.tenant_id
+		           AND p.resource_type IS NOT DISTINCT FROM e.resource_type
+		           AND p.resource_id IS NOT DISTINCT FROM e.resource_id
+		           AND e.resource_id IS NOT NULL
+		           AND p.dispatch_status IN ('pending','failed')
+		           AND (p.occurred_at, p.id) < (e.occurred_at, e.id))
+		  ORDER BY e.occurred_at, e.id
+		  FOR UPDATE SKIP LOCKED
+		  LIMIT $1`, r.batch)
 	if err != nil {
-		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "claim events")
+		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "select claimable events")
 	}
-	var claimed []row
+	claimed := make([]row, 0, r.batch)
 	for rows.Next() {
 		var rw row
-		if err := rows.Scan(&rw.id, &rw.tenant, &rw.evType, &rw.schemaV, &rw.resType, &rw.resID, &rw.actor, &rw.payload, &rw.attempts, &rw.trace); err != nil {
+		var generation int64
+		if err := rows.Scan(
+			&rw.id, &rw.tenant, &rw.evType, &rw.schemaV, &rw.resType, &rw.resID,
+			&rw.actor, &rw.payload, &rw.attempts, &rw.occurredAt, &rw.trace, &generation,
+		); err != nil {
 			rows.Close()
-			return 0, kerr.Wrapf(err, "relay.DispatchOnce", "scan event")
+			return 0, kerr.Wrapf(err, "relay.DispatchOnce", "scan claimable event")
+		}
+		if generation == 0 {
+			rw.lease = lease.New(r.leaseTTL)
+		} else {
+			// NextEpoch is the accepted W04 primitive's reclaim operation: a
+			// fresh opaque token and strictly increasing generation.
+			rw.lease = (lease.Lease{Generation: generation}).NextEpoch(r.leaseTTL)
+		}
+		if lag := started.Sub(rw.occurredAt); lag > maxLag {
+			maxLag = lag
 		}
 		claimed = append(claimed, rw)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "iterate events")
+		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "iterate claimable events")
+	}
+	if len(claimed) == 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, kerr.Wrapf(err, "relay.DispatchOnce", "commit empty claim")
+		}
+		return 0, nil
+	}
+	ids := make([]uuid.UUID, len(claimed))
+	tokens := make([]string, len(claimed))
+	generations := make([]int64, len(claimed))
+	expiries := make([]time.Time, len(claimed))
+	for i := range claimed {
+		ids[i] = claimed[i].id
+		tokens[i] = claimed[i].lease.Token
+		generations[i] = claimed[i].lease.Generation
+		expiries[i] = claimed[i].lease.ExpiresAt
+	}
+	tag, err := tx.Exec(ctx, `UPDATE events_outbox AS event
+		SET lease_token = claimed.token,
+		    lease_generation = claimed.generation,
+		    lease_expires_at = claimed.expires_at
+		FROM unnest($1::uuid[], $2::text[], $3::bigint[], $4::timestamptz[])
+		     AS claimed(id, token, generation, expires_at)
+		WHERE event.id = claimed.id
+		  AND event.dispatch_status = 'pending'
+		  AND (event.lease_token IS NULL OR event.lease_expires_at <= now())`,
+		ids, tokens, generations, expiries)
+	if err != nil {
+		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "persist leases")
+	}
+	if tag.RowsAffected() != int64(len(claimed)) {
+		return 0, kerr.E(kerr.KindConflict, "outbox_claim_changed", "outbox claim changed while locked")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "commit claims")
 	}
 
+	// Stage 2 — tenant handler transaction(s), with no claim transaction open.
+	// Stage 3 — a short fenced platform finalize. A crash between stages leaves
+	// a reclaimable expired lease; processed_events dedups a repeated handler.
 	for _, rw := range claimed {
-		if derr := r.dispatch(ctx, rw); derr != nil {
-			// Fail with attempt increment. On reaching max_attempts the event
-			// is dead-lettered ('dead') instead of retrying forever (poison
-			// ceiling, review finding ARCH-54); failed_at drives the cooldown
-			// (ARCH-55). last_error is a bounded, non-secret message.
-			if _, mErr := tx.Exec(ctx,
-				`UPDATE events_outbox
-                    SET attempts = attempts + 1,
-                        failed_at = now(),
-                        last_error = left($2, 500),
-                        dispatch_status = CASE WHEN attempts + 1 >= max_attempts THEN 'dead' ELSE 'failed' END
-                  WHERE id = $1`,
-				rw.id, derr.Error()); mErr != nil {
-				return 0, kerr.Wrapf(mErr, "relay.DispatchOnce", "mark failed")
+		if dispatchErr := r.dispatch(ctx, rw); dispatchErr != nil {
+			if err := r.finalizeFailure(ctx, rw, dispatchErr); err != nil {
+				return len(claimed), err
 			}
 			continue
 		}
-		if _, err := tx.Exec(ctx,
-			`UPDATE events_outbox SET dispatch_status = 'dispatched', dispatched_at = now() WHERE id = $1`,
-			rw.id); err != nil {
-			return 0, kerr.Wrapf(err, "relay.DispatchOnce", "mark dispatched")
+		if err := r.finalizeSuccess(ctx, rw); err != nil {
+			return len(claimed), err
 		}
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, kerr.Wrapf(err, "relay.DispatchOnce", "commit")
-	}
 	return len(claimed), nil
+}
+
+func (r *Relay) finalizeSuccess(ctx context.Context, rw row) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE events_outbox
+		SET dispatch_status = 'dispatched',
+		    dispatched_at = now(),
+		    lease_token = NULL,
+		    lease_expires_at = NULL
+		WHERE id = $1
+		  AND dispatch_status = 'pending'
+		  AND lease_token = $2
+		  AND lease_generation = $3
+		  AND lease_expires_at > now()`,
+		rw.id, rw.lease.Token, rw.lease.Generation)
+	if err != nil {
+		return kerr.Wrapf(err, "relay.DispatchOnce", "finalize dispatched")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseMismatch
+	}
+	return nil
+}
+
+func (r *Relay) finalizeFailure(ctx context.Context, rw row, dispatchErr error) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE events_outbox
+		SET attempts = attempts + 1,
+		    failed_at = now(),
+		    last_error = left($2, 500),
+		    dispatch_status = CASE WHEN attempts + 1 >= max_attempts THEN 'dead' ELSE 'failed' END,
+		    lease_token = NULL,
+		    lease_expires_at = NULL
+		WHERE id = $1
+		  AND dispatch_status = 'pending'
+		  AND lease_token = $3
+		  AND lease_generation = $4
+		  AND lease_expires_at > now()`,
+		rw.id, dispatchErr.Error(), rw.lease.Token, rw.lease.Generation)
+	if err != nil {
+		return kerr.Wrapf(err, "relay.DispatchOnce", "finalize failed")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseMismatch
+	}
+	return nil
 }
 
 // dispatch runs every handler for an event within a tenant transaction bound to

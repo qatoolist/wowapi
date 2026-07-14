@@ -1,0 +1,29 @@
+{
+  "story": "W07-E01-S001",
+  "code_revision": "working tree based on entry SHA 1626b11",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T21:51:00Z",
+  "reviewer": "W05ReviewGateFinal",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S001-004",
+  "evidence_type": "cost attribution report",
+  "task": "W07-E01-S001-T004",
+  "acceptance_criteria_proven": [
+    "AC-W07-E01-S001-04"
+  ],
+  "execution_command": "docker network + pinned postgres:16.9 and golang:1.26.5 Linux/amd64 containers; go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests$' -benchtime=1x -count=1 -benchmem",
+  "execution_environment": {
+    "environment": "Linux/amd64 Go container + pinned PostgreSQL container",
+    "tools": [
+      "pgx query tracer",
+      "OpenTelemetry SDK 1.44.0",
+      "go1.26.5"
+    ]
+  },
+  "result": "PASS: every cell reports pool_wait, tx_setup, authz_query, handler_query, serialization, middleware plus SQL/bytes/tx/lock/plan metrics",
+  "file_or_uri": "perf/results/request-reference-v1.json",
+  "checksum_sha256": "3d6a6f3f4bef88e46ce91ed61515370746c740112e9a397262fd837e2e49e560",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS after 2 gate iterations: executor found and fixed the 10-resources-per-tenant seed mismatch; independent re-review found no open issues"
+}

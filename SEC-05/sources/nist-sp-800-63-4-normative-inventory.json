@@ -1,0 +1,295 @@
+{
+  "standard": "NIST SP 800-63-4",
+  "version": "final-2025-07",
+  "doi": "10.6028/NIST.SP.800-63-4",
+  "canonical_uri": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-63-4.pdf",
+  "pdf_sha256": "2f5b107de218a0fc3fe7f7e91b2ece5babb001eda5745b7c568a3cc876002f2d",
+  "extraction_method": "One inventory unit per HTML paragraph or list item containing SHALL or MUST in the official final main publication; technical companion volumes 63A/B/C are not silently relabeled as SP 800-63-4.",
+  "controls": [
+    {
+      "id": "NIST-SP800-63-4-NORM-001",
+      "section_heading": "Introduction",
+      "title": "The rapid proliferation of online services over the past few years has heightened the need for reliable, secure, and privacy-protective digital identity solutions. A digital identity is always unique in the context of an online service. However, a person could have multiple digital identities and, while a digital identity could relay a unique and specific meaning within the context of an online service, the real-life identity of the individual behind the digital identity might not be known. When confidence in a person’s real-life identity is not required to provide access to an online service, organizations can use anonymous or pseudonymous accounts. In all other use cases, a digital identity is intended to establish trust between the holder of the digital identity and the person, organization, or system interacting with the online service. However, this process can present challenges. There are multiple opportunities for mistakes, miscommunication, and attacks that fraudulently claim another person’s identity. Additionally, given the broad range of individual needs, constraints, capacities, and preferences, online services must be designed with flexibility and customer experience in mind to support broad and enduring participation and access to online services."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-002",
+      "section_heading": "Customer Experience",
+      "title": "It is essential that these guidelines provide organizations with the ability to create modern, streamlined, and responsive customer experiences. To do this, the guidelines allow organizations to factor in the capabilities and expectations of users when making decisions and trade-offs in the risk management process. Organizations that implement these guidelines must understand their user populations, capabilities, and limitations as part of setting an effective digital identity risk management strategy."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-003",
+      "section_heading": "Digital Identity Risk Management",
+      "title": "For relying parties, the intent of this process is to determine the assurance levels and any tailoring required to protect online services and the applications, transactions, and systems that comprise or are impacted by those services. This directly contributes to the selection, development, and procurement of CSP services. Federal RPs SHALL implement the DIRM process for all online services."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-004",
+      "section_heading": "Digital Identity Risk Management",
+      "title": "For credential service providers and identity providers, the intent of this process is to design service offerings that meet the requirements of the defined assurance levels, continuously guard against compromises to the identity system, and meet the needs of RPs. Whenever a service offering deviates from normative guidance, those deviations SHALL be clearly communicated to the RPs that utilize the service."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-005",
+      "section_heading": "Digital Identity Risk Management",
+      "title": "Organizations SHOULD adapt and modify this overall approach to meet organizational processes, governance, and enterprise risk management practices. At a minimum, organizations SHALL execute and document each step and complete and document the normative mandates and outcomes of each step, regardless of any organization-specific processes or tools used in the overall DIRM process. Additionally, organizations SHOULD consult with a representative sample of the online service’s user population to inform the design and performance evaluation of the identity management system."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-006",
+      "section_heading": "Define the Online Service",
+      "title": "RPs SHALL develop a description of the online service that includes, at minimum:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-007",
+      "section_heading": "Define the Online Service",
+      "title": "Accordingly, the scope of impact assessments SHALL include individuals who use the online application as well as the organization itself. Additionally, organizations SHALL identify other entities (e.g., mission partners, communities, and those identified in [SP800-30]) that need to be specifically included based on mission and business needs. At a minimum, organizations SHALL document all impacted entities (both internal and external to the organization) when conducting their impact assessments."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-008",
+      "section_heading": "Conduct Initial Impact Assessment",
+      "title": "The purpose of the initial impact assessment is to identify the potential adverse impacts of failures in identity proofing, authentication, and federation that are specific to an online service, yielding an initial set of assurance levels. RPs SHOULD consider historical data and results from user focus groups when performing this step. The impact assessment SHALL include:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-009",
+      "section_heading": "Conduct Initial Impact Assessment",
+      "title": "The level of impact for each user group identified in Sec. 3.1 SHALL be considered separately based on the transactions available to that user group. This gives organizations maximum flexibility in selecting and implementing assurance levels that are appropriate for each user group. While impacts to user groups, the organization, and other entities are primary considerations for impact assessments, organizations SHOULD also consider scale (e.g., number of persons impacted by transactions)."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-010",
+      "section_heading": "Identify Impact Categories and Potential Harms",
+      "title": "In this step, organizations identify the categories of impact that are applicable to the impacted entities for a given online service. At a minimum, organizations SHALL include the following impact categories in their impact assessments:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-011",
+      "section_heading": "Identify Impact Categories and Potential Harms",
+      "title": "Organizations SHOULD include additional impact categories, as appropriate, based on their mission and business objectives. Each impact category SHALL be documented and consistently applied when implementing the DIRM process across different online services offered by the organization."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-012",
+      "section_heading": "Identify Impact Categories and Potential Harms",
+      "title": "Harms refer to any adverse effects that would be experienced by an impacted entity. They provide a means to effectively understand the impact categories and how they may apply to specific entities impacted by the online service. For each impact category, organizations SHALL consider potential harms for each of the impacted entities identified in Sec. 3.1."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-013",
+      "section_heading": "Identify Potential Impact Levels",
+      "title": "Each user group can have a distinct set of privileges and functionalities through the online service. Hence, it is necessary to consider the adverse consequences for each set of impacted entities in each of the impact categories, as a result of an intruder obtaining unauthorized access as a member of a particular user group. To provide a more objective basis for impact level assignments, organizations SHOULD develop thresholds and examples for the impact levels for each impact category. Where this is done, particularly with specifically defined quantifiable values, these thresholds SHALL be documented and used consistently in the DIRM assessments across an organization to allow for a common understanding of risks."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-014",
+      "section_heading": "Impact Analysis",
+      "title": "The impact analysis SHALL consider the level of impact for each impact category for each type of impacted entity if an intruder obtains unauthorized access as a member of each user group. Because different sets of transactions are available to each user group, it is important to consider each user group separately for this analysis."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-015",
+      "section_heading": "Impact Analysis",
+      "title": "The impact analysis SHALL be performed for each user group that has access to the online service. For each impact category, the impact level is estimated for each impacted entity as a result of a compromise of the online service caused by failures in the identity management functions."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-016",
+      "section_heading": "Impact Analysis",
+      "title": "The output of this impact analysis is a set of impact levels for each user group that SHALL be documented in a suitable format for further analysis in accordance with Sec. 3.4."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-017",
+      "section_heading": "Determine the Combined Impact Level for Each User Group",
+      "title": "Organizations SHALL document the approach they use to combine their impact assessment into an overall impact level for each of their defined user groups and SHALL apply it consistently across all of its online services. At the conclusion of the combinatorial analysis, organizations SHALL document the impact for each user group."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-018",
+      "section_heading": "Assurance Levels",
+      "title": "Depending on the functionality and deployed architecture of the online service, the support of one or more of the identity management functions (i.e., identity proofing, authentication, and federation) may be required. The strength of these functions is described in terms of assurance levels. The RP SHALL identify the types of assurance levels that apply to their online service from the following:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-019",
+      "section_heading": "Initial Assurance Level Selection",
+      "title": "Organizations SHALL develop and document a process and governance model for selecting initial assurance levels and controls based on the potential impacts of failures in the digital identity system. The following subsections provide guidance on the major elements to consider in the process for selecting initial assurance levels."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-020",
+      "section_heading": "Selecting Initial IAL",
+      "title": "Before selecting an initial assurance level, RPs must determine whether identity proofing is needed for the users of their online services. Identity proofing is not required if the online service does not need any personal information to execute digital transactions. If personal information is needed, the RP must determine whether validated attributes are required or if self-asserted attributes are acceptable. The system may also be able to operate without identity proofing if the potential harms from accepting self-asserted attributes are insignificant. In such cases, the identity proofing processes described in [SP800-63A] are not applicable to the system."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-021",
+      "section_heading": "Selecting Initial IAL",
+      "title": "The organization SHALL document whether identity proofing is required for their application and, if it is, SHALL select an initial IAL for each user group based on the effective impact level determination from Sec. 3.2.4."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-022",
+      "section_heading": "Selecting Initial AAL",
+      "title": "The organization SHALL document whether authentication is needed for their online service and, if it is, SHALL select an initial AAL for each user group based on the effective impact level determination from Sec. 3.2.4."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-023",
+      "section_heading": "Selecting Initial FAL",
+      "title": "The organization SHALL document whether federation will be used for their online service and, if it is, SHALL select an initial FAL for each user group based on the effective impact level determination from Sec. 3.2.4."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-024",
+      "section_heading": "Selecting Initial FAL",
+      "title": "For online services that are assessed to be high impact, organizations SHALL conduct a further assessment to evaluate the risk of a compromised IdP to determine whether FAL2 or FAL3 is more appropriate for their use case. Considerations SHOULD include the type of data being accessed, the location of the IdP (e.g., whether the IdP is internal or external to their enterprise boundary), and the availability of bound authenticators or holder-of-key capabilities."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-025",
+      "section_heading": "Identify Baseline Controls",
+      "title": "Using the initial xALs selected in Sec. 3.3.3, the organization SHALL identify the applicable baseline controls for each user group as follows:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-026",
+      "section_heading": "Identify Baseline Controls",
+      "title": "While online service providers must assess and determine the xALs that are appropriate for protecting their applications, the selection of these assurance levels does not mean that the online service provider must implement the related technical and process controls independently. Based on the identity model that the online service provider implements, some or all of the assurance levels and related controls may be implemented by an external entity, such as a third-party CSP or IdP."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-027",
+      "section_heading": "Tailor and Document Assurance Levels",
+      "title": "Within the tailoring step, organizations SHALL focus on impacts to mission delivery due to the implementation of identity management controls, including the possibility of legitimate users who are unable to access desired online services or experience sufficient friction or frustration with the identity system (and technology selection) that they abandon attempts to access the online service."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-028",
+      "section_heading": "Tailor and Document Assurance Levels",
+      "title": "As a part of the tailoring process, organizations SHALL review the Digital Identity Acceptance Statements and practice statements1 from CSPs and IdPs that they use or intend to use. However, organizations SHALL also conduct their own analysis to ensure that the organization’s specific mission and the communities being served by the online service are given due consideration for tailoring purposes. As a result, the organization MAY require their chosen CSP to strengthen or provide optionality in the implementation of certain controls to address risks and unintended impacts to the organization’s mission and the communities served."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-029",
+      "section_heading": "Tailor and Document Assurance Levels",
+      "title": "Organizations SHALL establish and document their xAL tailoring process. At a minimum, this process:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-030",
+      "section_heading": "Assess Privacy, Customer Experience, and Threat Resistance",
+      "title": "When selecting and tailoring assurance levels for specific online services, considerations extend beyond the initial impact assessment in Sec. 3.2. When progressing from the initial assurance level selection in Sec. 3.3.4 to the final xAL selection and implementation, organizations SHALL conduct detailed assessments of the controls defined for the initially selected xALs to identify potential impacts in the operational environment."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-031",
+      "section_heading": "Assess Privacy, Customer Experience, and Threat Resistance",
+      "title": "At a minimum, organizations SHALL assess the impacts and potential unintended consequences related to the following areas:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-032",
+      "section_heading": "Assess Privacy, Customer Experience, and Threat Resistance",
+      "title": "Customer Experience – Determine whether implementation of the initial assurance levels may create substantial or unacceptable barriers to individuals seeking to access services. Customer experience assessments SHALL consider impacts that result from the identity management controls to ensure that they do not cause undue burdens, frustrations, or frictions for individuals and that there are pathways to provide service to users of all capabilities, resources, technology access, and economic statuses."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-033",
+      "section_heading": "Assess Privacy, Customer Experience, and Threat Resistance",
+      "title": "Threat Resistance – Determine whether the defined assurance level and related controls will address specific threats to the online service based on the operational environment, its threat actors, and known tactics, techniques, and procedures (TTPs). Threat assessments SHALL consider specific known and potential threats, threat actors, and TTPs within the implementation environment for the identity management functions. For example, certain benefits programs may be more subject to familial threats or collusion. Based on their assessments, organizations MAY implement supplemental controls specific to the communities served by their online service. Conversely, organizations MAY tailor their assessed xAL down or modify their baseline controls if their threat assessment indicates that a reduced threat posture is appropriate based on their environment."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-034",
+      "section_heading": "Assess Privacy, Customer Experience, and Threat Resistance",
+      "title": "Organizations SHOULD also conduct additional business-specific assessments as appropriate to fully represent mission- and domain-specific considerations that have not been captured here. All assessments applied during the tailoring phase SHALL be extended to any compensating or supplemental controls, as defined in Sec. 3.4.2 and Sec. 3.4.3. While identity system costs are not specifically included as an input for DIRM processes or as a metric for continuous evaluation, the costs and cost effectiveness of implementation and long-term operation are inherent considerations for responsible program and risk management. Based on their available funding and resources, organizations will likely need to make trade-offs that can be more effectively informed by the DIRM process and its outputs. Any cost-based decisions that result in modifications to assessed xALs or baseline controls SHALL be documented in the Digital Identity Acceptance Statement (see Sec. 3.4.4)."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-035",
+      "section_heading": "Identify Compensating Controls",
+      "title": "A compensating control is a management, operational, or technical control employed by an organization in lieu of a normative control (i.e., SHALL statements) in the defined xALs. To the greatest degree practicable, a compensating control is intended to address the same risks as the baseline control it is replacing. Organizations MAY choose to implement a compensating control if they are unable to implement a baseline control or when a risk assessment indicates that a compensating control sufficiently mitigates risk in alignment with organizational risk tolerance. This control MAY be a modification to the normative statements defined in these guidelines or MAY be applied elsewhere in an online service, digital transaction, or service life cycle. For example:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-036",
+      "section_heading": "Identify Compensating Controls",
+      "title": "Where compensating controls are implemented, organizations SHALL document the compensating control, the rationale for the deviation, comparability of the chosen alternative, and any resulting residual risks. CSPs and IdPs that implement compensating controls SHALL communicate this information to all potential RPs prior to integration to allow the RP to assess and determine the acceptability of the compensating controls for their use cases."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-037",
+      "section_heading": "Identify Supplemental Controls",
+      "title": "Any supplemental controls SHALL be assessed for impacts based on the same factors used to tailor the organization’s assurance level and SHALL be documented."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-038",
+      "section_heading": "Digital Identity Acceptance Statement",
+      "title": "Organizations SHALL develop a Digital Identity Acceptance Statement (DIAS) to document the results of the DIRM process for (i) each online service managed by the organization, and (ii) each external online service used to support the mission of the organization, including software-as-a-service offerings (e.g., social media platforms, email services, online marketing services). RPs who intend to use a particular CSP/IdP SHALL review the latter’s DIAS and incorporate relevant information into the organization’s DIAS for each online service."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-039",
+      "section_heading": "Digital Identity Acceptance Statement",
+      "title": "Organizations SHALL prepare a DIAS for their online service that includes, at a minimum:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-040",
+      "section_heading": "Digital Identity Acceptance Statement",
+      "title": "CSPs/IdPs SHALL implement the DIRM process and develop a DIAS for the services they offer if they deviate from the normative guidance in these guidelines, including when supplemental or compensating controls are added. To complete a DIRM of their offered assurance levels and controls, CSPs/IdPs MAY base their assessment on anticipated or representative digital identity services that they wish to support. In creating this risk assessment, they SHOULD seek input from real-world RPs on their user populations and anticipated context. The DIAS prepared by a CSP SHALL include, at a minimum:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-041",
+      "section_heading": "Digital Identity Acceptance Statement",
+      "title": "The DIRM process for external online services used by the organization SHALL consider relevant inputs from the provider of the service and document the results in a DIAS. The DIAS prepared by the organization for external online services SHALL include, at a minimum:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-042",
+      "section_heading": "Continuously Evaluate and Improve",
+      "title": "To address the shifting environment in which they operate and more rapidly address service capability gaps, organizations SHALL implement a continuous evaluation and improvement program that leverages input from end users who have interacted with the identity management system as well as performance metrics for the online service. This program SHALL be documented, including the metrics that are collected, the sources of data required to enable performance evaluation, and the processes in place for taking timely actions based on the continuous improvement process. This program and its effectiveness SHOULD be assessed on a regular basis to ensure that outcomes are being achieved and that programs are addressing issues in a timely manner."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-043",
+      "section_heading": "Continuously Evaluate and Improve",
+      "title": "Additionally, organizations SHALL monitor the evolving threat landscape to stay informed of the latest threats and fraud tactics. Organizations SHALL regularly assess the effectiveness of current security measures and fraud detection capabilities against the latest threats and fraud tactics."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-044",
+      "section_heading": "Evaluation Inputs",
+      "title": "To fully understand the performance of their identity system, organizations will need to identify critical inputs to their continuous evaluation process. At a minimum, these inputs SHALL include:"
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-045",
+      "section_heading": "Evaluation Inputs",
+      "title": "RPs SHALL document their metrics, reporting requirements, and data inputs for any CSP, IdP, or other integrated identity service to ensure that expectations are appropriately communicated to partners and vendors."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-046",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL enable individuals to convey grievances and seek redress through an issue handling process that is documented, accessible, trackable, and usable by all individuals and whose instructions are easy to find on a public-facing website."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-047",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL institute a governance model for implementing this issue handling process, including documented roles and responsibilities."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-048",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL make human support personnel available to intervene and override issue adjudication outputs generated by algorithmic support mechanisms."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-049",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL educate support personnel on issue handling procedures for the digital identity management system, the avenues for redress, and the alternatives available to gain access to services."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-050",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL implement a process for personnel and technologies that provides support functions to report and address major barriers that end users face and grievances they may have."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-051",
+      "section_heading": "Redress",
+      "title": "RPs and CSPs SHALL incorporate findings derived from the issue handling process into continuous evaluation and improvement activities."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-052",
+      "section_heading": "Redress",
+      "title": "Organizations are encouraged to consider these and other emerging redress practices. Prior to adopting any new redress practice, including supporting technology, organizations SHOULD test the practice with users to avoid the introduction of unintended consequences, particularly those that may counteract or contradict the goals associated with redress. In addition, organizations SHALL assess the integrity and performance of their redress mechanisms and implement controls to prevent, detect, and remediate attempted identity fraud involving those mechanisms."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-053",
+      "section_heading": "Cybersecurity, Fraud, and Identity Program Integrity",
+      "title": "The close coordination of identity functions with teams that are responsible for cybersecurity, privacy, threat intelligence, fraud detection, and program integrity enables a more complete protection of business capabilities and constant improvement. For example, payment fraud data collected by program integrity teams could provide indicators of compromised subscriber accounts and potential weaknesses in identity proofing implementations. Similarly, threat intelligence teams may learn of new TTPs that could impact identity proofing, authentication, and federation processes. Organizations SHALL establish consistent mechanisms for the exchange of information between stakeholers that are responsible for critical internal security and fraud prevention. Organizations SHOULD do the same for external stakeholders and identity services that comprise their online services."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-054",
+      "section_heading": "Cybersecurity, Fraud, and Identity Program Integrity",
+      "title": "When organizations are supported by external identity providers (e.g., CSPs), the exchange of data related to security, fraud, and other RP functions may be complicated by regulations or policy. However, establishing the necessary mechanisms and guidelines to enable effective information sharing SHOULD be considered in contractual and legal mechanisms. All data collected, transmitted, or shared by the identity service provider SHALL be subject to a detailed privacy and legal assessment by either the entity generating the data (e.g., a CSP) or the related RP for whom the service is provided."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-055",
+      "section_heading": "Artificial Intelligence and Machine Learning in Identity Systems",
+      "title": "All uses of AI/ML SHALL be documented and communicated to organizations that rely on these systems. The use of integrated technologies that leverage AI/ML by CSPs, IdPs, or verifiers SHALL be disclosed to all RPs that make access decisions based on information from these systems."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-056",
+      "section_heading": "Artificial Intelligence and Machine Learning in Identity Systems",
+      "title": "All organizations that use AI/ML SHALL provide information to any entities that use their technology on the methods and techniques used for training their models, a description of the data sets used in training, information on the frequency of model updates, and the results of all testing completed on their algorithms."
+    },
+    {
+      "id": "NIST-SP800-63-4-NORM-057",
+      "section_heading": "Artificial Intelligence and Machine Learning in Identity Systems",
+      "title": "All organizations that use AI/ML systems or rely on services that use these systems SHALL perform and document privacy risk assessments for personal information and data processed by such systems."
+    }
+  ]
+}

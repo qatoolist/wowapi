@@ -1,0 +1,4 @@
+=== RUN   TestIntegrationConfirmUploadCAS
+--- PASS: TestIntegrationConfirmUploadCAS (0.19s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/document	0.438s

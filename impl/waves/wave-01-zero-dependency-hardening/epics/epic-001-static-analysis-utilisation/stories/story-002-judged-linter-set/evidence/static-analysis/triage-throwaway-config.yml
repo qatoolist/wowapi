@@ -1,0 +1,103 @@
+# THROWAWAY CONFIG — W00-E02-S001-T002 baseline capture only. NOT the committed
+# lint configuration. Do not commit. Permanent enablement is FBL-05/FBL-07
+# (W01-E01-S001..S003) scope.
+#
+# Derivation: exact copy of the committed .golangci.yml at commit
+# 0a31186cada5c275a588c74081cf977adf346e61, with the analyzers named verbatim in
+# MATRIX CS-23 (docs/implementation/fable5-closure-depth-matrix-2026-07-11.md
+# §CS-23) appended to linters.enable. The committed `settings` and `exclusions`
+# blocks are preserved verbatim (notably the _test.go errcheck/unparam
+# exclusion) so hit counts are apples-to-apples with the MATRIX-time run.
+#
+# NOTE (flagged per T002 step 6): CS-23 says "All 25 queried analyzers ship
+# unenabled" but names only 18 analyzers verbatim: sqlclosecheck, rowserrcheck,
+# bodyclose, wastedassign, makezero, musttag, testifylint, noctx, copyloopvar,
+# gocritic, nilerr, exhaustive, errorlint, gosec, forcetypeassert,
+# usestdlibvars, wrapcheck, revive. The remaining 7 names are not recorded in
+# the MATRIX document and are NOT invented here.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    # committed set (unchanged)
+    - depguard
+    - misspell
+    - unconvert
+    - unparam
+    # MATRIX CS-23 set (temporary, baseline capture only) — zero-hit set
+    - sqlclosecheck
+    - rowserrcheck
+    - bodyclose
+    - wastedassign
+    - makezero
+    - musttag
+    - testifylint
+    # near-zero set
+    - noctx
+    - copyloopvar
+    - gocritic
+    # adjudicated set
+    - nilerr
+    - exhaustive
+    - errorlint
+    # security
+    - gosec
+    # FBL-07 judged set
+    - forcetypeassert
+    - usestdlibvars
+    # rejected-by-MATRIX set (still queried by CS-23, so still measured)
+    - wrapcheck
+    - revive
+  settings:
+    # Encode the blueprint 04 §1 import law as a machine check, complementing
+    # scripts/lint_boundaries.sh (which does path-level + vocabulary checks).
+    # kernel/* is the base: it must never import the upward layers.
+    depguard:
+      rules:
+        kernel:
+          list-mode: lax
+          files:
+            - "**/kernel/**/*.go"
+            # Test files legitimately import testkit (and may cross layers for
+            # test setup); the import law governs PRODUCTION code only.
+            - "!**/kernel/**/*_test.go"
+          deny:
+            - pkg: github.com/qatoolist/wowapi/module
+              desc: "kernel must not import module (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/app
+              desc: "kernel must not import app (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/adapters
+              desc: "kernel must not import adapters (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/testkit
+              desc: "production code must not import testkit"
+  exclusions:
+    # Tests commonly ignore errors (t.Fatal paths, best-effort cleanup) and use
+    # fixed-value helpers, so errcheck/unparam there are noise, not defects.
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+      # CLI commands write user-facing output to stdout/stderr (the io.Writer args
+      # are os.Stdout/os.Stderr in production, bytes.Buffer in tests). A failed
+      # terminal write has no meaningful recovery, so errcheck on fmt.Fprint* in the
+      # CLI is noise, not a defect — this mirrors the stdlib's own fmt.Print*
+      # exclusion. Scoped to internal/cli AND to fmt.Fprint* only, so genuine
+      # errcheck issues in that package (pool/file/exec errors) are still caught.
+      # See docs/working/lint-backlog.md (B-1).
+      - path: internal/cli/
+        linters:
+          - errcheck
+        source: 'fmt\.Fprint(f|ln)?\('
+
+# golangci-lint v2 bundles the formatters, so `golangci-lint fmt` = gofumpt +
+# goimports (no separate binaries to install). `run` also reports format drift.
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

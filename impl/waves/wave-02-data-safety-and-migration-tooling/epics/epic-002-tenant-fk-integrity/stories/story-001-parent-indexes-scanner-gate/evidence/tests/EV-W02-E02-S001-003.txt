@@ -1,0 +1,2 @@
+DATABASE_URL="${DATABASE_URL:-postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable}" go run ./internal/tools/tenantfk gate --since=36 --migrations=migrations
+tenantfk gate: no migration files to check

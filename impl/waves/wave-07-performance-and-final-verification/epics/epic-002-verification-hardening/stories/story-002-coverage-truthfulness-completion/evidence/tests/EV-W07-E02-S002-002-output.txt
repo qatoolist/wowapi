@@ -1,0 +1,14 @@
+Command: make check-test-skips
+Exit: 0
+
+Repository manifest:
+- test-skip manifest validated: 38 approved site(s)
+
+Unapproved negative fixture:
+- validator exit: 1 (expected)
+- diagnosis: unapproved t.Skip at fixture_test.go:6 in TestUnapproved: "fixture intentionally has no approval"
+- wrapper result: PASS: unapproved t.Skip fixture was rejected
+
+Approved positive fixture:
+- test-skip manifest validated: 1 approved site(s)
+- wrapper result: PASS: approved t.Skip fixture with owner and rationale was accepted

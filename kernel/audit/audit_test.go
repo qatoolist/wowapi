@@ -2,8 +2,12 @@ package audit_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -453,5 +457,240 @@ func TestIntegrationAuditTenantIsolation(t *testing.T) {
 	})
 	if len(logs) != 0 {
 		t.Fatalf("tenant 2 saw %d of tenant 1's audit rows (RLS breach)", len(logs))
+	}
+}
+
+// v1Hash reproduces the historical hash_version=1 scheme for the version-branch
+// test. It is intentionally duplicated here (external to the audit package) so
+// the test does not create an import cycle with testkit.
+func v1Hash(prev string, seq int64, id uuid.UUID, occurredAt time.Time, fields ...string) string {
+	h := sha256.New()
+	lpHash(h, prev)
+	var seqb [8]byte
+	binary.BigEndian.PutUint64(seqb[:], uint64(seq))
+	h.Write(seqb[:])
+	lpHash(h, id.String())
+	lpHash(h, occurredAt.UTC().Format(time.RFC3339Nano))
+	for _, f := range fields {
+		lpHash(h, f)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func lpHash(h interface{ Write([]byte) (int, error) }, s string) {
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], uint32(len(s)))
+	_, _ = h.Write(b[:])
+	_, _ = h.Write([]byte(s))
+}
+
+// TestIntegrationAuditHashVersionBranching proves D-04: historical rows written
+// under hash_version=1 (the original 15-field scheme) still verify correctly,
+// and new rows written under hash_version=2 (widened scheme with metadata + tx_id)
+// also verify correctly in the same chain.
+func TestIntegrationAuditHashVersionBranching(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	actor := uuid.New()
+	ctx := auditCtx(tenant, actor, "req-version")
+
+	occurredAt := time.Now().UTC().Truncate(time.Microsecond)
+	id1 := uuid.New()
+	const (
+		actorKind1  = "user"
+		requestID1  = "req-v1"
+		action1     = "action.v1"
+		entityType1 = "widget"
+		field1      = "name"
+		oldValue1   = "old"
+		newValue1   = "new"
+		reason1     = "v1"
+	)
+	metadata1 := map[string]any{"v": 1}
+	txID1 := "tx-v1"
+
+	// Manually insert one hash_version=1 row (simulates a pre-widening row) and
+	// advance the chain head so the next Record uses seq=2.
+	hash1 := v1Hash("", 1, id1, occurredAt,
+		actor.String(), actorKind1, "", requestID1, action1, entityType1, "", field1, oldValue1, newValue1, reason1)
+	if _, err := h.Admin.Exec(context.Background(),
+		`INSERT INTO audit_logs
+		    (id, tenant_id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
+		     action, entity_type, entity_id, field, old_value, new_value, reason, metadata,
+		     seq, row_hash, prev_hash, tx_id, hash_version)
+		 VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, NULL, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		id1, tenant, occurredAt, actor, actorKind1, requestID1, action1, entityType1, field1, oldValue1, newValue1, reason1,
+		metadata1, int64(1), hash1, "", txID1, int16(1)); err != nil {
+		t.Fatalf("insert v1 row: %v", err)
+	}
+	if _, err := h.Admin.Exec(context.Background(),
+		`INSERT INTO audit_chain (tenant_id, next_seq, head_hash) VALUES ($1, $2, $3)
+		 ON CONFLICT (tenant_id) DO UPDATE SET next_seq = $2, head_hash = $3`,
+		tenant, int64(2), hash1); err != nil {
+		t.Fatalf("advance chain head for v1 row: %v", err)
+	}
+
+	// Record a second row normally; Record writes hash_version=2.
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return w.Record(ctx, db, audit.Entry{
+			Action:     "action.v2",
+			EntityType: "widget",
+			Metadata:   map[string]any{"v": 2},
+		})
+	}); err != nil {
+		t.Fatalf("record v2 row: %v", err)
+	}
+
+	var res audit.VerifyResult
+	_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		res, e = w.Verify(ctx, db)
+		return e
+	})
+	if !res.OK {
+		t.Fatalf("Verify failed across v1 + v2 rows: broken at seq %d (%s)", res.BrokenSeq, res.Reason)
+	}
+	if res.Count != 2 || res.HeadSeq != 2 {
+		t.Fatalf("Verify = %+v, want OK/Count2/HeadSeq2", res)
+	}
+}
+
+// TestIntegrationAuditUnknownHashVersionFailsClosed proves a row with an
+// unrecognized hash_version breaks verification rather than falling through.
+func TestIntegrationAuditUnknownHashVersionFailsClosed(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	ctx := auditCtx(tenant, uuid.New(), "req-unknown")
+
+	occurredAt := time.Now().UTC().Truncate(time.Microsecond)
+	id := uuid.New()
+	if _, err := h.Admin.Exec(context.Background(),
+		`INSERT INTO audit_logs
+		    (id, tenant_id, occurred_at, actor_id, action, metadata,
+		     seq, row_hash, prev_hash, hash_version)
+		 VALUES ($1, $2, $3, NULL, 'x', '{}', $4, $5, '', $6)`,
+		id, tenant, occurredAt, int64(1), "forged", int16(99)); err != nil {
+		t.Fatalf("insert unknown-version row: %v", err)
+	}
+
+	var res audit.VerifyResult
+	_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		res, e = w.Verify(ctx, db)
+		return e
+	})
+	if res.OK {
+		t.Fatal("Verify passed for unknown hash_version — must fail closed")
+	}
+	if res.BrokenSeq != 1 {
+		t.Fatalf("broken at seq %d, want 1", res.BrokenSeq)
+	}
+}
+
+// TestIntegrationAuditChainDetectsPerFieldTampering is the DATA-08 W6-T1
+// acceptance test: mutating any persisted field — including the previously
+// excluded metadata and tx_id — independently breaks verification.
+func TestIntegrationAuditChainDetectsPerFieldTampering(t *testing.T) {
+	h := testkit.NewDB(t)
+	w := audit.New(model.UUIDv7(), nil)
+	tenant := uuid.New()
+	actor := uuid.New()
+	impersonator := uuid.New()
+	entity := uuid.New()
+	ctx := auditCtx(tenant, actor, "req-tamper")
+
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return w.Record(ctx, db, audit.Entry{
+			Action:         "receipt.update",
+			EntityType:     "receipt",
+			EntityID:       entity,
+			Field:          "amount",
+			OldValue:       "100",
+			NewValue:       "150",
+			ActorKind:      "user",
+			ImpersonatorID: impersonator,
+			Reason:         "correction",
+			Metadata:       map[string]any{"source": "pos", "terminal": 7},
+		})
+	}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		set  string
+		arg  any
+	}{
+		{"id", "id = $2", uuid.New()},
+		{"occurred_at", "occurred_at = occurred_at + interval '1 microsecond'", nil},
+		{"actor_id", "actor_id = $2", uuid.New()},
+		{"actor_kind", "actor_kind = $2", "tampered"},
+		{"impersonator_id", "impersonator_id = $2", uuid.New()},
+		{"request_id", "request_id = $2", "tampered"},
+		{"action", "action = $2", "tampered"},
+		{"entity_type", "entity_type = $2", "tampered"},
+		{"entity_id", "entity_id = $2", uuid.New()},
+		{"field", "field = $2", "tampered"},
+		{"old_value", "old_value = $2", "tampered"},
+		{"new_value", "new_value = $2", "tampered"},
+		{"reason", "reason = $2", "tampered"},
+		{"metadata", "metadata = $2", map[string]any{"tampered": true}},
+		{"tx_id", "tx_id = $2", "tampered"},
+		{"seq", "seq = $2", int64(99)},
+		{"prev_hash", "prev_hash = $2", "tampered"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Roll back any previous mutation from this subtest by reverting the
+			// row to the freshly-recorded state via admin pool.
+			if _, err := h.Admin.Exec(context.Background(),
+				`UPDATE audit_logs SET id = (SELECT id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    occurred_at = (SELECT occurred_at FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    actor_id = (SELECT actor_id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    actor_kind = (SELECT actor_kind FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    impersonator_id = (SELECT impersonator_id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    request_id = (SELECT request_id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    action = (SELECT action FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    entity_type = (SELECT entity_type FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    entity_id = (SELECT entity_id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    field = (SELECT field FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    old_value = (SELECT old_value FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    new_value = (SELECT new_value FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    reason = (SELECT reason FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    metadata = (SELECT metadata FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    tx_id = (SELECT tx_id FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    seq = (SELECT seq FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    prev_hash = (SELECT prev_hash FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1),
+				    row_hash = (SELECT row_hash FROM audit_logs WHERE tenant_id = $1 ORDER BY seq LIMIT 1)
+			  WHERE tenant_id = $1`, tenant); err != nil {
+				t.Fatalf("reset row: %v", err)
+			}
+
+			// Apply the single-field mutation for this subtest.
+			var err error
+			if tc.arg == nil {
+				_, err = h.Admin.Exec(context.Background(),
+					`UPDATE audit_logs SET `+tc.set+` WHERE tenant_id = $1`, tenant)
+			} else {
+				_, err = h.Admin.Exec(context.Background(),
+					`UPDATE audit_logs SET `+tc.set+` WHERE tenant_id = $1`, tenant, tc.arg)
+			}
+			if err != nil {
+				t.Fatalf("mutate %s: %v", tc.name, err)
+			}
+
+			var res audit.VerifyResult
+			_ = h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+				var e error
+				res, e = w.Verify(ctx, db)
+				return e
+			})
+			if res.OK {
+				t.Fatalf("Verify passed after mutating %s — tamper-evidence failed", tc.name)
+			}
+		})
 	}
 }

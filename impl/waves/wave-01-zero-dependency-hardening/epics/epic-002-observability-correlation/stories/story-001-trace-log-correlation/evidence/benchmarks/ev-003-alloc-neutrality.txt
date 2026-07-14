@@ -1,0 +1,16 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/qatoolist/wowapi/kernel/observability
+cpu: Apple M3 Max
+BenchmarkPlainHandlerNoSpan-16          	 2910054	       373.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPlainHandlerNoSpan-16          	 3286239	       367.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPlainHandlerNoSpan-16          	 2899419	       383.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPlainHandlerNoSpan-16          	 2988924	       412.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkPlainHandlerNoSpan-16          	 3376678	       427.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCorrelatingHandlerNoSpan-16    	 2829612	       403.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCorrelatingHandlerNoSpan-16    	 3297872	       367.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCorrelatingHandlerNoSpan-16    	 3192912	       372.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCorrelatingHandlerNoSpan-16    	 2990451	       427.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkCorrelatingHandlerNoSpan-16    	 3154039	       387.3 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/observability	12.701s

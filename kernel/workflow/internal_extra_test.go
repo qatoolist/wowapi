@@ -210,7 +210,7 @@ func TestNewRuntimePanicsOnNilDeps(t *testing.T) {
 			t.Fatal("NewRuntime with nil deps must panic")
 		}
 	}()
-	NewRuntime(nil, nil, nil, nil, nil)
+	NewRuntime(nil, nil, nil, nil, nil, nil)
 }
 
 func TestStatusForOutcomeMapping(t *testing.T) {

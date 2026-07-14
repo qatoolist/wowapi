@@ -1,0 +1,34 @@
+PERF-04 focused verification, 2026-07-13T22:35:38Z
+Environment: darwin/arm64 host; real PostgreSQL 16.9 Docker service; WOWAPI_REQUIRE_DB=1.
+Absolute performance SLOs were not assessed; DEC-Q9 remains open.
+
+PASS — go test ./kernel/workflow -count=1
+  Includes bounded query/memory tiers 10/1,000/100,000, safe re-invocation,
+  concurrent no-double-remind, real EXPLAIN index scan, and workflow metrics.
+
+PASS — go test ./foundation/webhook -count=1
+  Includes RetryOutbound 10 deliveries / 3 endpoints query-count contract:
+  exactly one batch endpoint query and zero per-delivery endpoint queries;
+  webhook retry queue-lag and batch-duration metrics emitted.
+
+PASS — go test ./kernel/outbox -count=1
+  Includes claim-transaction-committed-before-handler, lease-expiry duplicate
+  worker fencing, per-aggregate ordering, inbox idempotency, and relay metrics.
+
+PASS — go test -race ./kernel/outbox -run '^TestIntegrationOutboxLeaseExpiryFencesDuplicateWorker$' -count=10
+  Duplicate-worker lease-expiry contract remained stable under the race detector.
+
+PASS — go test ./kernel/jobs/chaos -run '^TestDuplicateWorkerLeaseExpiry$' -count=1 -v
+  Inherited W04 DATA-02 crash/duplicate-worker chaos contract.
+
+PASS — go test ./migrations -count=1
+  Migration manifest, reversibility, and fresh-migration contracts include
+  00047_perf04_sweeper_outbox_leases.sql.
+
+PASS — go test ./kernel ./app -run 'Test(New|Worker|Build|Kernel)' -count=1
+  Production workflow/outbox metric wiring compiles and passes focused tests.
+
+PASS — go test ./kernel/workflow -run '^$' -bench '^BenchmarkSweepSLABatch$' -benchmem -benchtime=1x -count=1 | go run ./internal/tools/benchbudget /tmp/perf04-budgets.txt
+  due_10: 135,926,667 ns/op, 4,206 allocs/op (budget 200,000,000 / 50,000)
+  due_1,000: 107,030,167 ns/op, 9,816 allocs/op (budget 500,000,000 / 50,000)
+  due_100,000: 2,341,632,250 ns/op, 9,791 allocs/op (budget 30,000,000,000 / 50,000)

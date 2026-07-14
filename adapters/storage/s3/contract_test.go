@@ -141,9 +141,10 @@ func TestContract_S3(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			key := "contract/" + uuid.NewString()
 			put := func(key string, body []byte) {
-				presigned, err := a.PresignPut(ctx, key, time.Minute)
+				sum := sha256.Sum256(body)
+				presigned, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(sum[:]), time.Minute)
 				if err != nil {
-					t.Fatalf("PresignPut: %v", err)
+					t.Fatalf("PresignPutChecksum: %v", err)
 				}
 				httpPut(t, presigned, body)
 			}

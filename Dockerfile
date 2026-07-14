@@ -14,9 +14,15 @@ COPY . .
 # Toolbox used by deployments/compose.yaml `tools` service:
 #   docker compose -f deployments/compose.yaml run --rm tools make ci
 FROM base AS dev
-# `go test -race` needs cgo, and alpine ships no C toolchain by default —
-# without these the containerized CI gate cannot run the race suite.
-RUN apk add --no-cache gcc musl-dev
+ARG ALLURE_CLI_VERSION=2.43.0
+# `go test -race` needs cgo, and Allure Report 2 needs Java plus the
+# `allure-commandline` npm distribution. golurectl converts `go test -json`
+# into Allure result files; its version is pinned by go.mod's tool directive.
+RUN apk add --no-cache gcc musl-dev nodejs npm openjdk21-jre-headless \
+    && npm install --global --omit=dev "allure-commandline@${ALLURE_CLI_VERSION}" \
+    && go build -o /usr/local/bin/golurectl github.com/robotomize/go-allure/cmd/golurectl \
+    && allure --version \
+    && golurectl version
 # The repo is bind-mounted at /src owned by the host/runner uid, while this
 # container runs as root — git would refuse it as "dubious ownership", making
 # `go` VCS stamping fail ("error obtaining VCS status: exit status 128") and

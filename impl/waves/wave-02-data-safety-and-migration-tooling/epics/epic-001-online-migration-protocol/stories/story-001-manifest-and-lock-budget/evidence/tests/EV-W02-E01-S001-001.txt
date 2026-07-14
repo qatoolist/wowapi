@@ -1,0 +1,34 @@
+=== RUN   TestParseManifestComplete
+--- PASS: TestParseManifestComplete (0.00s)
+=== RUN   TestValidateMissingFields
+=== RUN   TestValidateMissingFields/missing_classification
+=== RUN   TestValidateMissingFields/missing_lock_timeout_ms
+=== RUN   TestValidateMissingFields/missing_backfill_owner
+=== RUN   TestValidateMissingFields/missing_validation_query
+=== RUN   TestValidateMissingFields/missing_rollback_plan
+--- PASS: TestValidateMissingFields (0.00s)
+    --- PASS: TestValidateMissingFields/missing_classification (0.00s)
+    --- PASS: TestValidateMissingFields/missing_lock_timeout_ms (0.00s)
+    --- PASS: TestValidateMissingFields/missing_backfill_owner (0.00s)
+    --- PASS: TestValidateMissingFields/missing_validation_query (0.00s)
+    --- PASS: TestValidateMissingFields/missing_rollback_plan (0.00s)
+=== RUN   TestValidateOnlineLockBudget
+--- PASS: TestValidateOnlineLockBudget (0.00s)
+=== RUN   TestValidateStatementTimeoutOrdering
+--- PASS: TestValidateStatementTimeoutOrdering (0.00s)
+=== RUN   TestParseManifestUnknownKey
+--- PASS: TestParseManifestUnknownKey (0.00s)
+=== RUN   TestParseManifestDuplicateKey
+--- PASS: TestParseManifestDuplicateKey (0.00s)
+=== RUN   TestParseManifestIgnoresLinesOutsideBlock
+--- PASS: TestParseManifestIgnoresLinesOutsideBlock (0.00s)
+=== RUN   TestMigrationVersion
+--- PASS: TestMigrationVersion (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.533s
+=== RUN   TestKernelMigrationsHaveManifests
+=== PAUSE TestKernelMigrationsHaveManifests
+=== CONT  TestKernelMigrationsHaveManifests
+--- PASS: TestKernelMigrationsHaveManifests (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/migrations	0.253s

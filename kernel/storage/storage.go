@@ -12,11 +12,12 @@ import (
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
-// PresignedURL is a time-boxed URL the client uses directly against the object
-// store. Method is "PUT" (upload) or "GET" (download).
+// PresignedURL is a time-boxed request the client sends directly to storage.
+// Headers are part of the signature and must be copied verbatim by the client.
 type PresignedURL struct {
 	URL       string
 	Method    string
+	Headers   map[string]string
 	ExpiresAt time.Time
 }
 
@@ -27,13 +28,33 @@ type ObjectInfo struct {
 	Checksum string
 }
 
+// RepairOptions bounds the exceptional full-body checksum repair path.
+// Label is required so repair work is explicit and attributable.
+type RepairOptions struct {
+	Label    string
+	MaxBytes int64
+	Timeout  time.Duration
+}
+
+// ChecksumRepairer is an optional storage capability for legacy objects.
+// It is deliberately separate from Adapter so normal Stat cannot fall back to
+// body hashing and existing storage adapters remain source-compatible.
+type ChecksumRepairer interface {
+	RepairChecksum(ctx context.Context, key string, opts RepairOptions) (ObjectInfo, error)
+}
+
+// ChecksumUploader is the checksum-enforcing upload capability used by the
+// document framework. It is optional on Adapter to preserve third-party
+// adapter compatibility; framework upload initiation fails closed without it.
+type ChecksumUploader interface {
+	PresignPutChecksum(ctx context.Context, key, checksumSHA256 string, ttl time.Duration) (PresignedURL, error)
+}
+
 // Adapter is the object-storage port.
 //
 // A tenant-prefixed Key ("<tenant>/<document>/<version>") is minted by the
-// document service; the adapter treats keys as opaque. PresignPut/PresignGet
-// return URLs valid for ttl. Stat and Peek support confirm-time verification
-// (size + SHA-256 + a MIME-sniff prefix); a real adapter implements Stat via a
-// HEAD and Peek via a ranged GET. Delete backs retention voiding.
+// document service; the adapter treats keys as opaque. PresignPut is retained
+// for adapter compatibility; framework uploads require ChecksumUploader.
 type Adapter interface {
 	PresignPut(ctx context.Context, key string, ttl time.Duration) (PresignedURL, error)
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (PresignedURL, error)

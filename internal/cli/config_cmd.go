@@ -44,15 +44,17 @@ Shared flags (validate, print, doctor):
   --base        explicit base file path; absent default skips the layer, not an error
   --env         environment name; overlay <dir>/<env>.yaml must exist when set
   --env-prefix  environment variable prefix (default "WOWAPI__")
+  --project     product module root directory (defaults to "go env GOMOD")
 `)
 }
 
 // cfgFlags holds the parsed shared config flags for a subcommand.
 type cfgFlags struct {
-	dir    string
-	base   string
-	env    string
-	prefix string
+	dir     string
+	base    string
+	env     string
+	prefix  string
+	project string
 }
 
 // newCfgFlagSet returns a flag.FlagSet with shared config flags pre-registered.
@@ -65,6 +67,7 @@ func newCfgFlagSet(subcmd string, stderr io.Writer) (*flag.FlagSet, *cfgFlags) {
 	fs.StringVar(&f.base, "base", "", "explicit base file path")
 	fs.StringVar(&f.env, "env", "", "environment name; overlay <dir>/<env>.yaml")
 	fs.StringVar(&f.prefix, "env-prefix", "WOWAPI__", "env var prefix")
+	fs.StringVar(&f.project, "project", "", "product module root directory (defaults to `go env GOMOD`)")
 	return fs, f
 }
 

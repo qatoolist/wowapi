@@ -1,0 +1,8 @@
+=== RUN   TestIntegrationTenantFKMismatchAuditZero
+    tenant_fk_mismatch_audit_test.go:47: DATA-01 mismatch audit: 8 edges checked, 0 mismatches
+--- PASS: TestIntegrationTenantFKMismatchAuditZero (0.36s)
+PASS
+ok  	github.com/qatoolist/wowapi/testkit	0.637s
+testing: warning: no tests to run
+PASS
+ok  	github.com/qatoolist/wowapi/testkit/fakes	0.447s [no tests to run]

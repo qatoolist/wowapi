@@ -11,10 +11,10 @@ import (
 	"testing/fstest"
 
 	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/foundation/document"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/jobs"
 	"github.com/qatoolist/wowapi/kernel/resource"
@@ -375,7 +375,7 @@ func TestBootAccumulatesRegistryErrors(t *testing.T) {
 		mc.Resources().Register("widgets", resource.TypeSpec{Key: "not_valid_key"})                              // resources.Err
 		mc.Routes().Handle(http.MethodGet, "/x", httpx.RouteMeta{}, func(http.ResponseWriter, *http.Request) {}) // router.Err (neither Permission nor Public)
 		mc.Events().Subscribe("", "", nil)                                                                       // events.Err
-		mc.Jobs().RegisterKind("", nil, jobs.DefaultRetry())                                                     // jobs.Err
+		mc.Jobs().RegisterKind("", nil, jobs.Idempotency{}, jobs.DefaultRetry())                                 // jobs.Err
 		return nil
 	}})
 	_, err := a.Boot(context.Background(), k, nil)

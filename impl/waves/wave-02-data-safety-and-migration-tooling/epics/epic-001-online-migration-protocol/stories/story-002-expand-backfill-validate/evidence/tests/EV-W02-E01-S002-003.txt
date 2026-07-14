@@ -1,0 +1,4 @@
+=== RUN   TestValidationArtifactSchema
+--- PASS: TestValidationArtifactSchema (0.24s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.615s

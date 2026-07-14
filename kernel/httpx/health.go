@@ -17,23 +17,38 @@ import (
 // HealthCheck reports readiness for one subsystem; a non-nil error = not ready.
 type HealthCheck func(context.Context) error
 
+// DetailProvider supplies an optional (key, value) pair for the readiness
+// payload's details map. Providers are called after all checks complete; an
+// empty key or a nil value means "omit this detail".
+type DetailProvider func(context.Context) (string, any)
+
 // Health aggregates readiness checks and serves the two health endpoints.
 type Health struct {
 	fingerprint  string
 	checkTimeout time.Duration
 	checks       map[string]HealthCheck
+	details      []DetailProvider
 }
 
 // NewHealth builds a health aggregator. fingerprint is the redacted config
 // fingerprint (a hash — safe to expose) reported by /readyz.
 func NewHealth(fingerprint string) *Health {
-	return &Health{fingerprint: fingerprint, checkTimeout: 3 * time.Second, checks: map[string]HealthCheck{}}
+	return &Health{fingerprint: fingerprint, checkTimeout: 3 * time.Second, checks: map[string]HealthCheck{}, details: nil}
 }
 
 // Register adds a named readiness check (chainable). A nil check is ignored.
 func (h *Health) Register(name string, c HealthCheck) *Health {
 	if c != nil {
 		h.checks[name] = c
+	}
+	return h
+}
+
+// Detail registers a dynamic detail provider (chainable). Providers are called
+// on every readiness request after checks finish.
+func (h *Health) Detail(fn DetailProvider) *Health {
+	if fn != nil {
+		h.details = append(h.details, fn)
 	}
 	return h
 }
@@ -70,12 +85,34 @@ func (h *Health) Readiness() http.HandlerFunc {
 			status = http.StatusServiceUnavailable
 			state = "not_ready"
 		}
-		WriteJSON(w, status, map[string]any{
+		payload := map[string]any{
 			"status":             state,
 			"config_fingerprint": h.fingerprint,
 			"checks":             results,
-		})
+		}
+		details := h.collectDetails(r.Context())
+		if len(details) > 0 {
+			payload["details"] = details
+		}
+		WriteJSON(w, status, payload)
 	}
+}
+
+func (h *Health) collectDetails(ctx context.Context) map[string]any {
+	if len(h.details) == 0 {
+		return nil
+	}
+	out := make(map[string]any)
+	for _, fn := range h.details {
+		key, value := fn(ctx)
+		if key != "" && value != nil {
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func sortedNames(m map[string]HealthCheck) []string {

@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -34,7 +35,7 @@ func TestEnsureCSRFCookieSkipsOnTokenGenFailure(t *testing.T) {
 	defer func() { csrfRandReader = old }()
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	ensureCSRFCookie(rec, req, CSRFPolicy{CookieName: "csrf_token"})
 
 	if got := rec.Result().Cookies(); len(got) != 0 {

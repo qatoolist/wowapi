@@ -10,12 +10,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/foundation/notify"
+	"github.com/qatoolist/wowapi/foundation/webhook"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/secrets"
-	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/testkit"
 )
 

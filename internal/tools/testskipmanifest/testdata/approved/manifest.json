@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skips": [
+    {
+      "id": "FIXTURE-SKIP-001",
+      "path": "fixture_test.go",
+      "function": "TestApproved",
+      "method": "Skip",
+      "message": "fixture approved for an environment-specific branch",
+      "ordinal": 1,
+      "owner": "verification-maintainers",
+      "classification": "optional",
+      "rationale": "This positive fixture proves a complete owner and rationale entry is accepted."
+    }
+  ]
+}

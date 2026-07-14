@@ -1,0 +1,8 @@
+?   	github.com/qatoolist/wowapi/kernel/tracing	[no test files]
+ok  	github.com/qatoolist/wowapi/kernel/observability	2.567s
+ok  	github.com/qatoolist/wowapi/kernel/logging	1.689s
+ok  	github.com/qatoolist/wowapi/kernel/database	5.114s
+ok  	github.com/qatoolist/wowapi/adapters/tracing/otel	3.144s
+ok  	github.com/qatoolist/wowapi/kernel/outbox	9.850s
+ok  	github.com/qatoolist/wowapi/kernel/jobs	10.965s
+ok  	github.com/qatoolist/wowapi/kernel/notify	10.002s

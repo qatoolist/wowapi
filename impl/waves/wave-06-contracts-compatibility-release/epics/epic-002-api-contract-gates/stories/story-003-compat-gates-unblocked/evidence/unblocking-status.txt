@@ -1,0 +1,18 @@
+Evidence ID: EV-W06-E02-S003-001
+Evidence type: entry-criterion and blocked-leg execution record
+Story and tasks: W06-E02-S003 / W06-E02-S003-T001,T002,T003
+Acceptance criteria addressed: AC-W06-E02-S003-01, AC-W06-E02-S003-02, AC-W06-E02-S003-03
+Execution command: repository status inspection of the exact depends_on story records on 2026-07-13
+Code revision: working tree based on 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Branch or tag: main working tree
+Environment: Darwin arm64
+Execution date: 2026-07-13
+Result: BLOCKED (contract-compliant; no entry criterion bypassed)
+
+T001 OpenAPI semantic diff:
+  Mechanism and seeded fixtures are implemented by W06-E02-S001 and pass locally, but T001 requires W06-E02-S001 status accepted. That story is implemented/verified with independent review still pending, so T001 remains blocked until accepted.
+T002 event/schema compatibility:
+  W06-E01-S001 status is verified, not accepted; W05-E03 (AR-03 remainder) status is planned. Both must be accepted. Compatibility-mode typed event/schema surface therefore does not yet exist and no assumed implementation was created.
+T003 generated-consumer upgrade:
+  W06-E01-S002 status is blocked. Its golden consumer and upgrade replay are not available, so this leg cannot be run or duplicated.
+Reviewer: pending independent review once any leg becomes entry-eligible

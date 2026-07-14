@@ -54,7 +54,21 @@ type CSRFPolicy struct {
 	FieldName  string // form field fallback, e.g. "csrf_token"
 	SameSite   string // "strict"|"lax"|"none" (case-insensitive)
 	Secure     bool
+	// MaxFormBytes bounds the request-body read performed by the form-field
+	// fallback (gosec G120 / FBL-09). CSRF's chain position is app-controlled:
+	// ordered outside BodyLimit, r.FormValue would otherwise buffer an
+	// unbounded body before the token check, so the middleware is defensively
+	// self-bounding regardless of ordering. Zero means the default
+	// csrfDefaultMaxFormBytes (1 MiB, matching http.max_body_bytes' default).
+	MaxFormBytes int64
 }
+
+// csrfDefaultMaxFormBytes is the form-fallback body bound applied when
+// CSRFPolicy.MaxFormBytes is unset — 1 MiB, the same value as the framework's
+// default http.max_body_bytes guardrail, so with default config the inner
+// bound is exactly as permissive as the outer BodyLimit middleware and
+// changes no in-bound request's behavior.
+const csrfDefaultMaxFormBytes = 1 << 20
 
 // sameSiteOf maps a policy's SameSite string to the net/http enum, defaulting
 // to Lax for any unrecognized value (Validate() rejects unrecognized values
@@ -115,6 +129,14 @@ func CSRFProtect(p CSRFPolicy) Middleware {
 			if supplied == "" && p.FieldName != "" {
 				// FormValue parses the body for form-encoded/multipart requests only;
 				// it never consumes a JSON body, so JSON callers must use the header.
+				// The read is defensively capped (MaxFormBytes): an oversized body
+				// fails the form parse, leaving supplied empty → 403 below, instead
+				// of being fully buffered (gosec G120).
+				limit := p.MaxFormBytes
+				if limit <= 0 {
+					limit = csrfDefaultMaxFormBytes
+				}
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
 				supplied = r.FormValue(p.FieldName)
 			}
 			if supplied == "" {

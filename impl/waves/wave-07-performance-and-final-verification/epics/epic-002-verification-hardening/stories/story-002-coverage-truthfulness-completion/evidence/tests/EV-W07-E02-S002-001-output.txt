@@ -1,0 +1,12 @@
+Command: make check-required-test-prerequisites
+Exit: 0
+
+DB negative fixture:
+- inner go test exited 1
+- diagnosis: WOWAPI_REQUIRE_DB is set but neither DATABASE_URL nor WOWAPI_TEST_DSN is available
+- wrapper result: PASS: db exited 1 with actionable fail-closed diagnosis
+
+S3 negative fixture:
+- inner go test exited 1
+- diagnosis: WOWAPI_REQUIRE_S3=1 but S3/minio unreachable at 127.0.0.1:1: dial tcp 127.0.0.1:1: connect: connection refused
+- wrapper result: PASS: s3 exited 1 with actionable fail-closed diagnosis

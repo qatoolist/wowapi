@@ -29,6 +29,10 @@ type Metrics interface {
 	// delivery failures (blueprint 07 §9).
 	IncCounter(name string, value float64, labels map[string]string)
 
+	// ObserveHistogram records a sampled distribution such as operation bytes
+	// or duration. Labels must remain low-cardinality.
+	ObserveHistogram(name string, value float64, labels map[string]string)
+
 	// SetGauge sets a named gauge to value. Intended for: outbox_pending,
 	// job queue depth, workflow open tasks, pool stats,
 	// outbox_dispatch_lag_seconds (blueprint 07 §9).
@@ -44,3 +48,4 @@ type noOp struct{}
 func (noOp) ObserveRequest(_, _ string, _ int, _ time.Duration, _ int) {}
 func (noOp) IncCounter(_ string, _ float64, _ map[string]string)       {}
 func (noOp) SetGauge(_ string, _ float64, _ map[string]string)         {}
+func (noOp) ObserveHistogram(_ string, _ float64, _ map[string]string) {}

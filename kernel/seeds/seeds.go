@@ -8,6 +8,9 @@ package seeds
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -21,6 +24,10 @@ import (
 
 // Bundle is the parsed, merged seed catalog for one or more modules.
 type Bundle struct {
+	// Version is an operator-facing label for the manifest. It is recorded in
+	// the sync audit log but is NOT part of the content hash: a label bump
+	// with unchanged content must be a no-op.
+	Version           string                 `yaml:"version,omitempty"`
 	Permissions       []PermissionSeed       `yaml:"permissions"`
 	Roles             []RoleSeed             `yaml:"roles"`
 	ResourceTypes     []ResourceTypeSeed     `yaml:"resource_types"`
@@ -102,7 +109,9 @@ func Load(src fs.FS, module string) (Bundle, error) {
 		if derr := dec.Decode(&one); derr != nil && derr.Error() != "EOF" {
 			return kerr.E(kerr.KindInternal, "invalid_seed", fmt.Sprintf("seed %s: %v", p, derr))
 		}
-		b.merge(one)
+		if err := b.merge(one); err != nil {
+			return kerr.E(kerr.KindInternal, "invalid_seed", fmt.Sprintf("seed %s: %v", p, err))
+		}
 		return nil
 	})
 	if err != nil {
@@ -114,11 +123,18 @@ func Load(src fs.FS, module string) (Bundle, error) {
 	return b, nil
 }
 
-func (b *Bundle) merge(o Bundle) {
+func (b *Bundle) merge(o Bundle) error {
 	b.Permissions = append(b.Permissions, o.Permissions...)
 	b.Roles = append(b.Roles, o.Roles...)
 	b.ResourceTypes = append(b.ResourceTypes, o.ResourceTypes...)
 	b.RelationshipTypes = append(b.RelationshipTypes, o.RelationshipTypes...)
+	if o.Version != "" {
+		if b.Version != "" && b.Version != o.Version {
+			return fmt.Errorf("seed version conflict: already have %q, got %q", b.Version, o.Version)
+		}
+		b.Version = o.Version
+	}
+	return nil
 }
 
 // validate enforces the module-prefix ownership rule and rejects empties. A
@@ -181,6 +197,117 @@ func (b Bundle) validate(module string) error {
 			"seed ownership violations: "+strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// Hash returns a canonical SHA-256 hex digest of the parsed, normalized bundle.
+// The digest excludes the operator-facing Version label and is stable across
+// whitespace, comment, and file-order differences in the source YAML.
+func Hash(b Bundle) string {
+	// Build a deterministic, sorted view of the parsed content.
+	permKeys := make([]string, 0, len(b.Permissions))
+	permMap := make(map[string]PermissionSeed, len(b.Permissions))
+	for _, p := range b.Permissions {
+		permKeys = append(permKeys, p.Key)
+		permMap[p.Key] = p
+	}
+	sort.Strings(permKeys)
+
+	roleKeys := make([]string, 0, len(b.Roles))
+	roleMap := make(map[string]RoleSeed, len(b.Roles))
+	for _, r := range b.Roles {
+		roleKeys = append(roleKeys, r.Key)
+		roleMap[r.Key] = r
+	}
+	sort.Strings(roleKeys)
+
+	rtKeys := make([]string, 0, len(b.ResourceTypes))
+	rtMap := make(map[string]ResourceTypeSeed, len(b.ResourceTypes))
+	for _, rt := range b.ResourceTypes {
+		rtKeys = append(rtKeys, rt.Key)
+		rtMap[rt.Key] = rt
+	}
+	sort.Strings(rtKeys)
+
+	relKeys := make([]string, 0, len(b.RelationshipTypes))
+	relMap := make(map[string]RelationshipTypeSeed, len(b.RelationshipTypes))
+	for _, rt := range b.RelationshipTypes {
+		relKeys = append(relKeys, rt.Key)
+		relMap[rt.Key] = rt
+	}
+	sort.Strings(relKeys)
+
+	type canonicalPermission struct {
+		Key         string   `json:"key"`
+		Description string   `json:"description"`
+		Sensitive   bool     `json:"sensitive"`
+		GrantedVia  string   `json:"granted_via"`
+		StepUp      bool     `json:"step_up"`
+		StepUpAMR   []string `json:"step_up_amr"`
+		Challenge   string   `json:"step_up_challenge"`
+	}
+	type canonicalRole struct {
+		Key         string   `json:"key"`
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
+	}
+	type canonicalResourceType struct {
+		Key         string `json:"key"`
+		Description string `json:"description"`
+	}
+	type canonicalRelationshipType struct {
+		Key         string `json:"key"`
+		SubjectKind string `json:"subject_kind"`
+		ObjectKind  string `json:"object_kind"`
+		Cardinality string `json:"cardinality"`
+		Description string `json:"description"`
+	}
+	type canonicalBundle struct {
+		Permissions       []canonicalPermission       `json:"permissions"`
+		Roles             []canonicalRole             `json:"roles"`
+		ResourceTypes     []canonicalResourceType     `json:"resource_types"`
+		RelationshipTypes []canonicalRelationshipType `json:"relationship_types"`
+	}
+
+	cb := canonicalBundle{}
+	for _, k := range permKeys {
+		p := permMap[k]
+		amr := append([]string(nil), p.StepUpAMR...)
+		sort.Strings(amr)
+		cb.Permissions = append(cb.Permissions, canonicalPermission{
+			Key: p.Key, Description: p.Description, Sensitive: p.Sensitive,
+			GrantedVia: p.GrantedVia, StepUp: p.StepUp, StepUpAMR: amr,
+			Challenge: p.StepUpChallenge,
+		})
+	}
+	for _, k := range roleKeys {
+		r := roleMap[k]
+		grants := append([]string(nil), r.Permissions...)
+		sort.Strings(grants)
+		cb.Roles = append(cb.Roles, canonicalRole{Key: r.Key, Name: r.Name, Permissions: grants})
+	}
+	for _, k := range rtKeys {
+		rt := rtMap[k]
+		cb.ResourceTypes = append(cb.ResourceTypes, canonicalResourceType(rt))
+	}
+	for _, k := range relKeys {
+		rt := relMap[k]
+		card := rt.Cardinality
+		if card == "" {
+			card = "many"
+		}
+		cb.RelationshipTypes = append(cb.RelationshipTypes, canonicalRelationshipType{
+			Key: rt.Key, SubjectKind: rt.SubjectKind, ObjectKind: rt.ObjectKind,
+			Cardinality: card, Description: rt.Description,
+		})
+	}
+
+	data, err := json.Marshal(cb)
+	if err != nil {
+		// canonicalBundle is composed of simple types; marshaling cannot fail.
+		panic(fmt.Sprintf("seed bundle hash marshal: %v", err))
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // SpineInvalidator drops an in-process authorization cache after a seed

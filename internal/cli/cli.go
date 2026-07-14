@@ -101,7 +101,7 @@ Available commands:
   config       validate|print|schema|doctor  (run `+"`wowapi config`"+` for details)
   init         scaffold a product repository
   new-module   scaffold a product module
-  gen          run code generators (crud)
+  gen          run code generators (crud + module subsystem declarations)
   migrate      create the next-numbered migration file
   seed         validate a module's seed bundle
   i18n         validate a product's locale catalogs (coverage, ownership, placeholders)

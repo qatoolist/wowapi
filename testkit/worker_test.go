@@ -60,7 +60,7 @@ func TestIntegrationWorkerEndToEnd(t *testing.T) {
 		mc.Jobs().RegisterKind("test.ping", func(ctx context.Context, db database.TenantDB, payload []byte) error {
 			jobRan.Add(1)
 			return nil
-		}, jobs.DefaultRetry())
+		}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 		return nil
 	}})
 	booted, err := a.Boot(context.Background(), k, nil)

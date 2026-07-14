@@ -1,0 +1,20 @@
+{
+  "story": "W07-E01-S003",
+  "code_revision": "working tree based on entry SHA 733ef3e",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T22:35:38Z",
+  "reviewer": "W07-Scoping-Dispatch.W07E01S003ReviewR",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S003-002",
+  "evidence_type": "query-count and idempotency report",
+  "task": "W07-E01-S003-T002",
+  "acceptance_criteria_proven": ["AC-W07-E01-S003-02"],
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres-16.9> go test ./kernel/workflow -run 'TestIntegrationSweepSLA(BoundedQueriesAtDueCardinalities|SafeReinvocationAndNoDoubleReminder|ConcurrentWorkersDoNotDoubleRemind)$' -count=1 -v",
+  "execution_environment": {"database": "PostgreSQL 16.9 Docker service with tenant RLS", "go": "go1.26.5"},
+  "result": "PASS: two atomic UPDATE...FROM guarded claims per invocation; one ANY(uuid[]) instance load and one definition load per nonempty phase; concurrent workers emitted exactly one reminder per task.",
+  "file_or_uri": "perf/results/perf-04-focused-verification.txt",
+  "checksum_sha256": "ca4e5ba9feee0e555f12ff3844c94c016c77d4c8f32da285feff86132bbb3867",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS: independent review found no open issues"
+}

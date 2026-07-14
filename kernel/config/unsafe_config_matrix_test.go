@@ -83,6 +83,26 @@ var prodUnsafeKnobs = []unsafeKnob{
 		mutate:  func(f *Framework) { f.Webhook.Outbound.SSRFProtectionDisabled = true },
 		wantErr: "webhook.outbound.ssrf_protection_disabled",
 	},
+	// ── Production-only connection-timeout gates (FBL-09 / MATRIX CS-09) ─────
+	// The three connection-level http.Server timeouts mean "no timeout" at
+	// zero. Non-prod tolerates an explicit zero (a deliberate local/dev
+	// convenience, proven by TestConnectionTimeoutZeroToleratedOutsideProd);
+	// prod refuses it — an unbounded connection is a Slowloris-class surface.
+	{
+		name:    "http.read_timeout=0 rejected in prod",
+		mutate:  func(f *Framework) { f.HTTP.ReadTimeout = 0 },
+		wantErr: "http.read_timeout",
+	},
+	{
+		name:    "http.write_timeout=0 rejected in prod",
+		mutate:  func(f *Framework) { f.HTTP.WriteTimeout = 0 },
+		wantErr: "http.write_timeout",
+	},
+	{
+		name:    "http.idle_timeout=0 rejected in prod",
+		mutate:  func(f *Framework) { f.HTTP.IdleTimeout = 0 },
+		wantErr: "http.idle_timeout",
+	},
 	// ── Always-invalid knobs: rejected regardless of environment ──────────────
 	// These are included so the matrix covers every Validate() error path;
 	// if a later change makes them prod-only, move them to the prod section.
@@ -142,6 +162,26 @@ var prodUnsafeKnobs = []unsafeKnob{
 		wantErr: "db.query_timeout",
 	},
 	{
+		name:    "db.max_conn_lifetime=30s (below floor 1m) rejected everywhere",
+		mutate:  func(f *Framework) { f.DB.MaxConnLifetime = 30 * time.Second },
+		wantErr: "db.max_conn_lifetime",
+	},
+	{
+		name:    "db.max_conn_lifetime=25h (above ceiling 24h) rejected everywhere",
+		mutate:  func(f *Framework) { f.DB.MaxConnLifetime = 25 * time.Hour },
+		wantErr: "db.max_conn_lifetime",
+	},
+	{
+		name:    "db.max_conn_idle_time=10s (below floor 30s) rejected everywhere",
+		mutate:  func(f *Framework) { f.DB.MaxConnIdleTime = 10 * time.Second },
+		wantErr: "db.max_conn_idle_time",
+	},
+	{
+		name:    "db.max_conn_idle_time=25h (above ceiling 24h) rejected everywhere",
+		mutate:  func(f *Framework) { f.DB.MaxConnIdleTime = 25 * time.Hour },
+		wantErr: "db.max_conn_idle_time",
+	},
+	{
 		name:    "schema_version=0 rejected everywhere",
 		mutate:  func(f *Framework) { f.SchemaVersion = 0 },
 		wantErr: "schema_version",
@@ -165,7 +205,6 @@ func TestProdUnsafeConfigKnobMatrix(t *testing.T) {
 	}
 
 	for _, tc := range prodUnsafeKnobs {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			f := Defaults()
 			f.Environment = EnvProd
@@ -178,6 +217,47 @@ func TestProdUnsafeConfigKnobMatrix(t *testing.T) {
 				t.Errorf("error does not mention %q:\n%v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+// TestHTTPTimeoutDefaultsMatchCS09 pins the four connection-level timeout
+// defaults to MATRIX CS-09's specified safe values (header 10s / read 30s /
+// write 60s / idle 120s) — AC-W01-E03-S001-01. An unset config falls through
+// to these, which is why the prod zero-rejection can never fire on a config
+// that simply doesn't mention the keys (RISK-W01-003 mitigation).
+func TestHTTPTimeoutDefaultsMatchCS09(t *testing.T) {
+	h := Defaults().HTTP
+	for _, tc := range []struct {
+		key  string
+		got  time.Duration
+		want time.Duration
+	}{
+		{"read_header_timeout", h.ReadHeaderTimeout, 10 * time.Second},
+		{"read_timeout", h.ReadTimeout, 30 * time.Second},
+		{"write_timeout", h.WriteTimeout, 60 * time.Second},
+		{"idle_timeout", h.IdleTimeout, 120 * time.Second},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("Defaults().HTTP.%s = %v, want %v (MATRIX CS-09)", tc.key, tc.got, tc.want)
+		}
+	}
+}
+
+// TestConnectionTimeoutZeroToleratedOutsideProd disambiguates the resolved
+// validation policy (story plan.md unresolved question 1): the three NEW
+// connection-level keys follow the prod-gated SSRF-disable precedent, NOT the
+// unconditional pattern the three pre-existing HTTP keys use — an explicit
+// zero (unlimited) stays a legal local/dev convenience.
+func TestConnectionTimeoutZeroToleratedOutsideProd(t *testing.T) {
+	for _, env := range []Env{EnvLocal, EnvDev, EnvStage} {
+		f := Defaults()
+		f.Environment = env
+		f.HTTP.ReadTimeout = 0
+		f.HTTP.WriteTimeout = 0
+		f.HTTP.IdleTimeout = 0
+		if err := f.Validate(); err != nil {
+			t.Errorf("env=%s: explicit zero connection timeouts must validate outside prod, got: %v", env, err)
+		}
 	}
 }
 

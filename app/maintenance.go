@@ -19,7 +19,7 @@ import (
 // per-tenant workflow SLA sweep. Both are idempotent, so the scheduler's
 // leader-safe at-most-once-per-interval guarantee is sufficient — N worker
 // replicas will not double-fire.
-func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery, notifyEvery, webhookEvery time.Duration) {
+func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery, notifyEvery, webhookEvery, uploadSessionEvery time.Duration) {
 	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
 	// k.Platform pool already connects AS app_platform, so Platform() runs with
 	// the cross-tenant sweep policy (migration 00012).
@@ -136,6 +136,26 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 			return nil
 		})
 	}
+
+	// Upload session GC: fan out per active tenant, expiring pending sessions that
+	// never reached ConfirmUpload and deleting their orphaned blobs. Guarded on
+	// Documents being wired (nil in api-only postures without storage).
+	if k.Documents != nil {
+		sched.Register("kernel.document.upload_session_sweep", uploadSessionEvery, func(ctx context.Context) error {
+			tenants, err := activeTenants(ctx, k)
+			if err != nil {
+				return err
+			}
+			for _, tid := range tenants {
+				if n, serr := k.Documents.SweepUploadSessions(ctx, platTxM, tid, time.Now()); serr != nil {
+					k.Log.WarnContext(ctx, "scheduler: upload session sweep failed for tenant", "tenant", tid, "err", serr)
+				} else if n > 0 {
+					k.Log.InfoContext(ctx, "scheduler: expired upload sessions swept", "tenant", tid, "count", n)
+				}
+			}
+			return nil
+		})
+	}
 }
 
 // registerModuleRecurring wires each module-registered recurring job onto the
@@ -145,7 +165,6 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 // the others.
 func registerModuleRecurring(sched *jobs.Scheduler, k *kernel.Kernel, recurring []RecurringJob) {
 	for _, rj := range recurring {
-		rj := rj
 		sched.Register(rj.Name, rj.Every, func(ctx context.Context) error {
 			tenants, err := activeTenants(ctx, k)
 			if err != nil {

@@ -1,0 +1,39 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {"title": "Compatibility Fixture", "version": "1.1.0"},
+  "paths": {
+    "/pets": {
+      "get": {
+        "security": [{"Bearer": []}],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Pet"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {"responses": {"200": {"description": "healthy"}}}
+    }
+  },
+  "components": {
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "nickname": {"type": "string"}
+        }
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {"type": "http", "scheme": "bearer"}
+    }
+  }
+}

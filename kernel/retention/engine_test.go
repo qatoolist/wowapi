@@ -77,7 +77,8 @@ func newEngine(t *testing.T) (*retention.Engine, *retention.DSR) {
 		t.Fatal(err)
 	}
 	dsr := retention.NewDSR(model.UUIDv7())
-	return retention.NewEngine(reg, dsr), dsr
+	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
+	return retention.NewEngine(reg, dsr, nil, artifacts, nil), dsr
 }
 
 func peopleCount(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID) int {
@@ -99,20 +100,24 @@ func TestIntegrationEngineExport(t *testing.T) {
 	seedPerson(t, h, tenant, "alice", "a1", nil)
 	seedPerson(t, h, tenant, "alice", "a2", nil)
 
-	var out map[string]any
+	var manifest *retention.ArtifactManifest
 	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		reqID, e := dsr.Open(ctx, db, "alice", retention.KindExport)
 		if e != nil {
 			return e
 		}
-		out, e = eng.RunExport(ctx, db, reqID)
+		manifest, e = eng.RunExport(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run export: %v", err)
 	}
-	recs, _ := out["people"].(map[string]any)["records"].([]string)
+	peopleResult, ok := manifest.PerClassResults["people"]
+	if !ok || peopleResult.Status != retention.ClassStatusExported {
+		t.Fatalf("people status = %q, want exported", peopleResult.Status)
+	}
+	recs, _ := peopleResult.Data["records"].([]string)
 	if len(recs) != 2 {
-		t.Fatalf("export people.records = %v, want 2 entries", out["people"])
+		t.Fatalf("export people.records = %v, want 2 entries", peopleResult.Data)
 	}
 }
 
@@ -126,19 +131,22 @@ func TestIntegrationEngineErasure(t *testing.T) {
 	seedPerson(t, h, tenant, "bob", "b2", nil)
 	seedPerson(t, h, tenant, "carol", "c1", nil)
 
-	var erased int
+	var result *retention.ErasureResult
 	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		reqID, e := dsr.Open(ctx, db, "bob", retention.KindErasure)
 		if e != nil {
 			return e
 		}
-		erased, e = eng.RunErasure(ctx, db, reqID)
+		result, e = eng.RunErasure(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run erasure: %v", err)
 	}
-	if erased != 2 {
-		t.Fatalf("erased = %d, want 2", erased)
+	if result.Total != 2 {
+		t.Fatalf("erased = %d, want 2", result.Total)
+	}
+	if result.Statuses["people"] != retention.ClassStatusErased {
+		t.Fatalf("people erasure status = %q, want erased", result.Statuses["people"])
 	}
 	if got := peopleCount(t, h, tenant); got != 1 {
 		t.Fatalf("remaining people = %d, want 1 (only carol)", got)

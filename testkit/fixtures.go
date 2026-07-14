@@ -22,7 +22,7 @@ type TenantHandle struct {
 }
 
 // CreateTenant inserts a tenant and returns its handle.
-func CreateTenant(t *testing.T, h *DBHandle) TenantHandle {
+func CreateTenant(t testing.TB, h *DBHandle) TenantHandle {
 	t.Helper()
 	id := uuid.New()
 	execAdmin(t, h, `INSERT INTO tenants (id, slug, display_name, created_by) VALUES ($1,$2,$3,$4)`,
@@ -138,7 +138,7 @@ func TenantCtx(tenant uuid.UUID) context.Context {
 	return database.WithTenantID(context.Background(), tenant)
 }
 
-func execAdmin(t *testing.T, h *DBHandle, sql string, args ...any) {
+func execAdmin(t testing.TB, h *DBHandle, sql string, args ...any) {
 	t.Helper()
 	if _, err := h.Admin.Exec(context.Background(), sql, args...); err != nil {
 		t.Fatalf("fixture exec: %v\n%s", err, sql)

@@ -1,0 +1,4 @@
+=== RUN   TestContractGateAndForwardRecovery
+--- PASS: TestContractGateAndForwardRecovery (0.18s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.395s

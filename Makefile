@@ -17,6 +17,8 @@ GOLANGCI_VERSION ?= v2.11.4
 # actionlint is pinned for the same reason (lockstep with ci.yml ACTIONLINT_VERSION):
 # the workflow lint must not fail non-deterministically on a new actionlint release.
 ACTIONLINT_VERSION ?= v1.7.12
+ALLURE_RESULTS_DIR ?= allure-results
+ALLURE_REPORT_DIR  ?= allure-report
 
 .DEFAULT_GOAL := help
 
@@ -31,11 +33,12 @@ setup: tools hooks ## One-time developer setup (tools + git hooks + go mod downl
 	$(GO) mod download
 
 .PHONY: tools
-tools: ## Install host dev tools (pinned golangci-lint $(GOLANGCI_VERSION))
+tools: ## Install host dev tools (pinned golangci-lint $(GOLANGCI_VERSION) + golurectl from go.mod)
 	@if ! golangci-lint version 2>/dev/null | grep -q "$(patsubst v%,%,$(GOLANGCI_VERSION))"; then \
 		echo "installing golangci-lint $(GOLANGCI_VERSION)"; \
 		$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION); \
 	fi
+	@$(GO) tool golurectl version >/dev/null
 
 ##@ Local infrastructure (containers)
 
@@ -129,13 +132,25 @@ lint: ## Full golangci-lint across the whole tree (backlog B-1 closed 2026-07-05
 lint-new: ## ENFORCED gate: golangci-lint on CHANGED code only (new since LINT_BASE=$(LINT_BASE))
 	golangci-lint run --new-from-merge-base=$(LINT_BASE) ./...
 
+.PHONY: lint-constructors
+lint-constructors: ## Reject infrastructure constructors outside composition packages (AR-06)
+	$(GO) run ./internal/tools/constructorlint/cmd/constructorlint ./...
+
 .PHONY: lint-boundaries
-lint-boundaries: ## Import-law + vocabulary + Reveal() boundary lint
+lint-boundaries: lint-constructors ## Import, constructor, vocabulary, and Reveal() boundary lint
 	sh scripts/lint_boundaries.sh
+
+.PHONY: tenantfk-gate
+tenantfk-gate: ## DATA-01: fail if any post-cleanup migration adds a non-composite tenant FK
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) run ./internal/tools/tenantfk gate --since=36 --migrations=migrations
 
 .PHONY: lint-lifecycle
 lint-lifecycle: ## Static provider/lifecycle manifest lint (backlog B9; kernel/lifecycle)
 	$(GO) run ./cmd/wowapi lint lifecycle
+
+.PHONY: docs-check
+docs-check: ## Compile normative doc examples and verify generated references/future-state labels (AR-05)
+	$(GO) run ./internal/tools/docexamples -root .
 
 .PHONY: tidy
 tidy: ## go mod tidy
@@ -157,11 +172,57 @@ hooks: ## Install the versioned git hooks (pre-commit + pre-push)
 
 ##@ Tests
 
+.PHONY: ensure-infra
+ensure-infra: ## Ensure infra is healthy
+	@$(COMPOSE) ps --format '{{.Name}} {{.Status}}' | grep -q "Up.*(healthy)" || $(COMPOSE) up -d --wait
+
 .PHONY: test
 test: test-unit ## All currently available test suites
 
+.PHONY: test-full
+test-full: ensure-infra test-unit test-integration test-contract golden-consumer test-security ## Run all test suites: unit, integration, contract, golden-consumer, security
+
+.PHONY: test-full-html
+test-full-html: ensure-infra test-unit test-integration test-contract golden-consumer test-security ## Run all test suites and generate HTML report
+	@$(GO) test -json -count=1 ./... | python3 scripts/test_to_html.py > full_test_report.html
+	@echo "Running full test suite..."
+	@DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 \
+		$(GO) test ./... -json -count=1 | python3 scripts/test_to_html.py > full_test_report.html
+	@echo "Report generated at full_test_report.html"
+
+.PHONY: test-allure
+test-allure: ensure-infra ## Run the full suite and generate Allure results + HTML via the tools container
+	@set -o pipefail; \
+		status=0; \
+		DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" \
+		WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 S3_TEST_ENDPOINT=localhost:9000 \
+		$(GO) test ./... -json -count=1 \
+			| $(COMPOSE) run --rm -T \
+				-e ALLURE_RESULTS_DIR="$(ALLURE_RESULTS_DIR)" \
+				-e ALLURE_REPORT_DIR="$(ALLURE_REPORT_DIR)" \
+				tools sh -c '\
+					for dir in "$$ALLURE_RESULTS_DIR" "$$ALLURE_REPORT_DIR"; do \
+						case "$$dir" in ""|"/"|"."|"..") echo "refusing unsafe Allure artifact path: $$dir" >&2; exit 2;; esac; \
+					done; \
+					rm -rf -- "$$ALLURE_RESULTS_DIR" "$$ALLURE_REPORT_DIR"; \
+					golurectl -l -e -s -a -o "$$ALLURE_RESULTS_DIR"' \
+			|| status=$$?; \
+		$(COMPOSE) run --rm -T \
+			-e TEST_STATUS="$$status" \
+			-e ALLURE_RESULTS_DIR="$(ALLURE_RESULTS_DIR)" \
+			-e ALLURE_REPORT_DIR="$(ALLURE_REPORT_DIR)" \
+			tools sh -c '\
+				if [ "$$TEST_STATUS" -ne 0 ]; then \
+					printf "{\"uuid\":\"00000000-0000-4000-8000-000000000001\",\"name\":\"go test ./...\",\"fullName\":\"wowapi test suite\",\"status\":\"broken\",\"stage\":\"finished\",\"statusDetails\":{\"message\":\"go test exited with status %s\"},\"labels\":[{\"name\":\"suite\",\"value\":\"wowapi\"}]}\n" \
+						"$$TEST_STATUS" > "$$ALLURE_RESULTS_DIR/wowapi-suite-result.json"; \
+				fi; \
+				allure generate --clean -o "$$ALLURE_REPORT_DIR" "$$ALLURE_RESULTS_DIR"' || exit $$?; \
+		printf "Allure results: %s\nAllure HTML report: %s/index.html\n" \
+			"$(ALLURE_RESULTS_DIR)" "$(ALLURE_REPORT_DIR)"; \
+		exit $$status
+
 .PHONY: test-unit
-test-unit: ## Unit tests (no external services)
+test-unit: ensure-infra ## Unit tests (no external services)
 	$(GO) test $(PKGS)
 
 .PHONY: test-race
@@ -169,12 +230,19 @@ test-race: ## Unit tests with the race detector
 	$(GO) test -race $(PKGS)
 
 .PHONY: test-integration
-test-integration: ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
+test-integration: ensure-infra ## Integration tests against real Postgres (needs `make up` or DATABASE_URL)
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 $(GO) test -run 'Integration' -count=1 $(PKGS)
 
 .PHONY: test-contract
-test-contract: ## Module contract + scratch external-consumer suite (needs DB)
+test-contract: ensure-infra ## Module contract + scratch external-consumer suite (needs DB)
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Contract|ScratchConsumer' -count=1 ./testkit/...
+
+.PHONY: golden-consumer
+golden-consumer: ensure-infra ## Installed-CLI eight-subsystem consumer + real infra + N-1/N replay + RLS census
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 \
+		$(GO) test ./internal/cli ./testkit \
+		-run '^(TestGoldenConsumerInstalledBinaryTwoModules|TestGoldenConsumerRealInfrastructure|TestGoldenConsumerUpgradeReplay|TestGoldenConsumerFailingFixture|TestIntegrationRLSCensusComplete)$$' \
+		-count=1 -v
 
 # Security-critical test suite (criterion #18, #26).
 # Covers:
@@ -189,18 +257,24 @@ test-contract: ## Module contract + scratch external-consumer suite (needs DB)
 SECURITY_TESTS := Authz|Deny|DSN|Escalat|EnvMismatch|Isolation|NoSelf|OverGrant|Privilege|Prod|RLS|Redact|Secret|Security|Sensitive|Unsafe
 
 .PHONY: test-security
-test-security: ## Security-critical tests: authz, RLS, secrets, redaction, unsafe-config
+test-security: ensure-infra ## Security-critical tests: authz, RLS, secrets, redaction, unsafe-config
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" \
 		$(GO) test -run '$(SECURITY_TESTS)' -count=1 $(PKGS)
 
-# Adversarial fuzzing drill (roadmap S8). CI runs the seed corpus as ordinary
-# tests; this target drives the go native fuzzer against the two highest-value
-# untrusted-input parsers. FUZZTIME is overridable (e.g. FUZZTIME=5m for nightly).
-FUZZTIME ?= 30s
-test-fuzz: ## Fuzz the filter DSL parser and cursor decoder (FUZZTIME=30s default)
-	$(GO) test ./kernel/filtering/ -run '^$$' -fuzz=FuzzFilterParse  -fuzztime=$(FUZZTIME)
-	$(GO) test ./kernel/filtering/ -run '^$$' -fuzz=FuzzParseSort     -fuzztime=$(FUZZTIME)
-	$(GO) test ./kernel/pagination/ -run '^$$' -fuzz=FuzzDecodeCursor -fuzztime=$(FUZZTIME)
+# Coverage-guided fuzzing. Both profiles use a persistent GOCACHE so Go's
+# generated corpus ($$GOCACHE/fuzz) can be restored by CI on the next run.
+FUZZTIME ?= 10s
+FUZZ_CACHE ?= .fuzzcache/go-build
+FUZZ_OUTPUT ?= fuzz-report
+
+.PHONY: test-fuzz test-fuzz-pr test-fuzz-scheduled
+test-fuzz: test-fuzz-pr ## Run the short PR coverage-guided fuzz profile
+
+test-fuzz-pr: ## PR fuzz profile (FUZZTIME=10s per target)
+	$(GO) run ./internal/tools/fuzzproof -profile pr -fuzztime $(FUZZTIME) -cache $(FUZZ_CACHE) -output $(FUZZ_OUTPUT)
+
+test-fuzz-scheduled: ## Longer scheduled fuzz profile (FUZZTIME=1m per target)
+	$(GO) run ./internal/tools/fuzzproof -profile scheduled -fuzztime $(FUZZTIME) -cache $(FUZZ_CACHE) -output $(FUZZ_OUTPUT)
 
 # Hot-path benchmarks (criterion #17).
 # bench:        run all package benchmarks; outputs raw go test -bench lines.
@@ -213,7 +287,14 @@ BENCH_PKGS := \
 	./kernel/filtering/... \
 	./kernel/pagination/... \
 	./kernel/audit/... \
-	./kernel/sequence/...
+	./kernel/sequence/... \
+	./kernel/database/... \
+	./kernel/jobs/... \
+	./kernel/outbox/... \
+	./kernel/workflow/... \
+	./kernel/auth/... \
+	./kernel/mfa/... \
+	./kernel/httpclient/...
 
 .PHONY: bench
 bench: ## Run hot-path benchmarks with allocation counts (DB-backed benches need `make up` or DATABASE_URL)
@@ -269,6 +350,8 @@ NEO4J_PASSWORD ?= wowapi-local-only
 NEO4J_DATABASE ?= neo4j
 GRAPHIFY_CYPHER_PATH ?= graphify-out/cypher.txt
 
+GRAPHIFY_VIZ_NODE_LIMIT = 40000
+
 .PHONY: graph-check
 graph-check: ## Graphify freshness check
 	sh scripts/graphify_refresh.sh check
@@ -320,13 +403,37 @@ ci-container: ## Run `make ci` inside the toolbox container (authoritative gate:
 # CI_TOOLS_ENV lets the workflow inject cacheable GOCACHE/GOMODCACHE paths.
 CI_TOOLS_ENV ?=
 
-.PHONY: ci-container-test ci-container-race ci-container-bench
-ci-container-test: ## Parallel gate leg 1: unit+integration tests (DB+S3 required) + fuzz seed corpus
-	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
-		sh -c 'make test-unit && go test ./kernel/filtering/ ./kernel/pagination/ -run "^Fuzz" -count=1'
+INTEGRATION_RACE_PKGS := \
+	./adapters/storage/s3 \
+	./internal/e2e \
+	./internal/tools/tenantfk \
+	./kernel/database \
+	./kernel/migration \
+	./kernel/outbox \
+	./testkit
 
-ci-container-race: ## Parallel gate leg 2: full-tree race detector (DB+S3 required)
-	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools make test-race
+.PHONY: check-test-skips check-required-test-prerequisites check-race-fixture test-race-integration
+check-test-skips: ## Reject unapproved t.Skip sites and exercise negative/positive fixtures
+	miscellaneous/check_test_skips.sh
+	miscellaneous/check_test_skip_fixtures.sh
+
+check-required-test-prerequisites: ## Prove required DB/S3 dependencies fail closed
+	miscellaneous/check_required_test_prerequisites.sh
+
+check-race-fixture: ## Prove the Go race detector catches the seeded negative fixture
+	miscellaneous/check_race_detector.sh
+
+test-race-integration: ## Race detector over DB/S3-backed integration packages
+	$(GO) test -race -count=1 $(INTEGRATION_RACE_PKGS)
+
+.PHONY: ci-container-test ci-container-race ci-container-bench
+ci-container-test: ## Parallel gate leg 1: fail-closed prerequisites + DB/S3 tests + fuzz seed corpus
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
+		sh -c 'make check-required-test-prerequisites && make test-unit && go test ./kernel/filtering/ ./kernel/pagination/ -run "^Fuzz" -count=1'
+
+ci-container-race: ## Parallel gate leg 2: DB/S3 integration race detector + seeded negative fixture
+	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
+		sh -c 'make check-race-fixture && make test-race-integration'
 
 ci-container-bench: ## Parallel gate leg 3: performance budgets + lifecycle lint (DB required)
 	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \

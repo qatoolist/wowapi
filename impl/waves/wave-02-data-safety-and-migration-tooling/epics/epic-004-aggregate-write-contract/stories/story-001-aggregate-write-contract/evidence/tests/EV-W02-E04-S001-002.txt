@@ -1,0 +1,10 @@
+=== RUN   TestIntegrationAggregateWriteUserWithoutActorFailsFast
+--- PASS: TestIntegrationAggregateWriteUserWithoutActorFailsFast (0.21s)
+=== RUN   TestIntegrationAggregateWriteSystemActorPathsSucceed
+=== RUN   TestIntegrationAggregateWriteSystemActorPathsSucceed/background-no-principal
+=== RUN   TestIntegrationAggregateWriteSystemActorPathsSucceed/named-system-principal
+--- PASS: TestIntegrationAggregateWriteSystemActorPathsSucceed (0.28s)
+    --- PASS: TestIntegrationAggregateWriteSystemActorPathsSucceed/background-no-principal (0.02s)
+    --- PASS: TestIntegrationAggregateWriteSystemActorPathsSucceed/named-system-principal (0.01s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/resource/aggregate	0.738s

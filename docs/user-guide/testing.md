@@ -86,7 +86,9 @@ tok := ti.Issue(subjectID, tenantID, capacityID,
     testkit.WithAudience("myapp"), testkit.WithExpiry(time.Hour))
 req.Header.Set("Authorization", "Bearer "+tok)
 ```
-Options: `WithIssuer`, `WithAudience`, `WithExpiry`, `WithImpersonator`, `WithBreakGlass`.
+Options: `WithIssuer`, `WithAudience`, `WithExpiry`, `WithGrantID`, `WithAMR`.
+`WithImpersonator`/`WithBreakGlass` are retained for backwards compatibility but no longer drive
+`authz.Actor` fields unless a matching `grant_id` is resolved server-side.
 
 ### The module contract suite
 

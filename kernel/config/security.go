@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // security.go — SecurityProfile config (backlog B7; benchmark "Security:
@@ -72,6 +73,22 @@ type Security struct {
 	// Profile is browser — the API profile keeps httpx.SecureHeaders'
 	// existing "frame-ancestors 'none'" default untouched.
 	CSP string `conf:"csp" json:"csp" doc:"Content-Security-Policy value for the browser profile; empty uses the built-in HTML-safe default"`
+	// EnforceRouteContracts turns on boot-time request-contract enforcement
+	// (FBL-08 / MATRIX CS-08): when true, app.Boot puts the router into
+	// RequireRequestContracts mode, so every POST/PUT/PATCH route must declare
+	// a RouteMeta.Request contract or the NoRequestBody waiver, else boot
+	// fails. OFF by default for at least one version (compat: profile-flag
+	// first, RISK-W01-002) — a product flips it on only after auditing its
+	// own mutating routes. Applies in every environment once set; unlike an
+	// `unsafe` knob this is the hardening direction, so no prod gate exists.
+	EnforceRouteContracts bool `conf:"enforce_route_contracts" json:"enforce_route_contracts" doc:"fail boot when a POST/PUT/PATCH route declares no RouteMeta.Request contract and no NoRequestBody waiver (default false; enable after auditing mutating routes)"`
+	// TrustedIssuers is the declared, fingerprinted allowlist of trusted OIDC
+	// issuer URLs/hostnames for custom JWKS HTTP-client injection (D-07 /
+	// SEC-06 T4). In prod profile, a custom *http.Client supplied to
+	// auth.NewJWKSKeySource is rejected unless this list is non-empty. The
+	// list itself is NOT a runtime trust decision: it is a governance surface
+	// that makes the JWKS-client escape hatch observable and auditable.
+	TrustedIssuers []string `conf:"trusted_issuers" json:"trusted_issuers" doc:"declared trusted OIDC issuer URLs/hostnames; required in prod when injecting a custom JWKS HTTP client"`
 }
 
 // CSRF names the cookie/header/form-field pair used by the double-submit-
@@ -128,6 +145,13 @@ func (s Security) Validate() error {
 	if !profile.Valid() {
 		add("security.profile: %q is not one of api|browser", string(s.Profile))
 		return errors.Join(errs...)
+	}
+
+	for _, iss := range s.TrustedIssuers {
+		if strings.TrimSpace(iss) == "" {
+			add("security.trusted_issuers: entries must not be blank")
+			break
+		}
 	}
 
 	if profile != SecurityProfileBrowser {

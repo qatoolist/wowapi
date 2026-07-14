@@ -1,0 +1,7 @@
+=== RUN   TestIntegrationRequestsModuleContract
+--- PASS: TestIntegrationRequestsModuleContract (0.27s)
+PASS
+ok  	github.com/qatoolist/wowapi/testkit	0.553s
+testing: warning: no tests to run
+PASS
+ok  	github.com/qatoolist/wowapi/testkit/fakes	0.447s [no tests to run]

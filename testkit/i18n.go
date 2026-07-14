@@ -1,6 +1,7 @@
 package testkit
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -30,7 +31,7 @@ func AssertNegotiatedLocale(t *testing.T, cat *i18n.Catalog, acceptLang, wantLoc
 // middleware chain — WriteError and validation inside the handler will localize
 // against cat.
 func NewLocaleRequest(method, target, locale string, cat *i18n.Catalog) *http.Request {
-	r := httptest.NewRequest(method, target, nil)
+	r := httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	return r.WithContext(httpx.WithLocale(r.Context(), locale, cat))
 }
 

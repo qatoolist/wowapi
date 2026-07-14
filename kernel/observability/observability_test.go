@@ -30,8 +30,9 @@ type recorder struct {
 func (r *recorder) ObserveRequest(route, method string, status int, dur time.Duration, respBytes int) {
 	r.reqs = append(r.reqs, requestObs{route, method, status, dur, respBytes})
 }
-func (r *recorder) IncCounter(_ string, _ float64, _ map[string]string) {}
-func (r *recorder) SetGauge(_ string, _ float64, _ map[string]string)   {}
+func (r *recorder) IncCounter(_ string, _ float64, _ map[string]string)       {}
+func (r *recorder) ObserveHistogram(_ string, _ float64, _ map[string]string) {}
+func (r *recorder) SetGauge(_ string, _ float64, _ map[string]string)         {}
 
 // ---------- NoOp ----------
 

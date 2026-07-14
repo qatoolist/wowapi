@@ -4,10 +4,12 @@ import (
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
-// entry is a registered kind: the worker that executes it and its retry policy.
+// entry is a registered kind: the worker that executes it, its idempotency
+// declaration, and its retry policy.
 type entry struct {
-	worker Worker
-	retry  RetryPolicy
+	worker      Worker
+	idempotency Idempotency
+	retry       RetryPolicy
 }
 
 // Registry collects the (kind → worker + retry policy) bindings during module
@@ -25,11 +27,12 @@ func NewRegistry() *Registry {
 	return &Registry{kinds: map[string]entry{}}
 }
 
-// RegisterKind binds a worker and retry policy to a job kind. Registering the
-// same kind twice, an empty kind, or a nil worker records an error surfaced by
-// Err(). A zero-value RetryPolicy is filled from DefaultRetry so a caller can
-// register with just a worker.
-func (r *Registry) RegisterKind(kind string, w Worker, rp RetryPolicy) {
+// RegisterKind binds a worker, idempotency declaration, and retry policy to a
+// job kind. Registering the same kind twice, an empty kind, a nil worker, or a
+// worker without exactly one declared duplicate-safety mechanism records an
+// error surfaced by Err(). A zero-value RetryPolicy is filled from DefaultRetry
+// so a caller can register with just a worker and idempotency.
+func (r *Registry) RegisterKind(kind string, w Worker, idem Idempotency, rp RetryPolicy) {
 	if kind == "" {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_kind",
 			"RegisterKind requires a non-empty kind"))
@@ -38,6 +41,11 @@ func (r *Registry) RegisterKind(kind string, w Worker, rp RetryPolicy) {
 	if w == nil {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_worker",
 			"RegisterKind: worker for kind "+kind+" is nil"))
+		return
+	}
+	if err := idem.Validate(); err != nil {
+		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_idempotency",
+			"RegisterKind: kind "+kind+": "+err.Error()))
 		return
 	}
 	if _, dup := r.kinds[kind]; dup {
@@ -51,7 +59,7 @@ func (r *Registry) RegisterKind(kind string, w Worker, rp RetryPolicy) {
 	if rp.Backoff == nil {
 		rp.Backoff = ExpJitterBackoff
 	}
-	r.kinds[kind] = entry{worker: w, retry: rp}
+	r.kinds[kind] = entry{worker: w, idempotency: idem, retry: rp}
 }
 
 // lookup returns the entry for a kind.

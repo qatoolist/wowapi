@@ -101,6 +101,7 @@ public package holds the types/interfaces/constructors and the guts live in `int
 
 ## 3. Base model primitives (`kernel/model`) — composition, no god BaseModel
 
+<!-- doc-example: illustrative -->
 ```go
 // BaseFields: identity only. Embed in every persisted entity.
 type BaseFields struct {
@@ -167,6 +168,7 @@ type ExternalRef struct { System, ID string }              // pointer into an ex
 
 ## 4. DTO & API response primitives (`kernel/httpx` + `kernel/pagination`)
 
+<!-- doc-example: illustrative -->
 ```go
 // Success envelope. Data is the resource DTO; Meta optional.
 type APIResponse[T any] struct {
@@ -260,6 +262,7 @@ internal fields, decouples DB shape from wire shape).
 | `KindExternal` | `upstream_error` | 502 | provider failures (circuit breaker) |
 | `KindInternal` | `internal` | 500 | panic recovery included; detail NEVER exposed |
 
+<!-- doc-example: illustrative -->
 ```go
 type Error struct {
     Kind    Kind

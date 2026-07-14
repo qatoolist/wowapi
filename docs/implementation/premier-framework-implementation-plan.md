@@ -763,7 +763,7 @@ Every finding maps to a detailed task table in §5 (full acceptance criteria, te
 | DX-02 | PF-DX | 10 (5 Wave-0 + 5 Wave-4) | `PF-DX/DX-02/` | PLANNED |
 | DX-03 | PF-DX | 5 | `PF-DX/DX-03/` | PLANNED — design-only until Wave 4 |
 | DX-04 | PF-DX | 5 | `PF-DX/DX-04/` | PLANNED — blocked on DX-01/DX-05 |
-| DX-05 | PF-DX | 6 | `PF-DX/DX-05/` | PLANNED |
+| DX-05 | PF-DX | 6 | `PF-DX/DX-05/` | **[EXECUTED — T1+T2 only, see §9; T3–T5 PLANNED]** |
 | DX-06 | PF-DX | 3 | `PF-DX/DX-06/` | PLANNED — overlaps AR-03 T2, assign one owner |
 | DX-07 | PF-DX | 5 | `PF-DX/DX-07/` | PLANNED |
 | REL-01 | PF-REL | 10 | `PF-REL/REL-01/` | PLANNED — T7/T9 human-blocked |
@@ -771,7 +771,7 @@ Every finding maps to a detailed task table in §5 (full acceptance criteria, te
 | REL-03 | PF-REL | 9 | `PF-REL/REL-03/` | PLANNED — split REL-03a/REL-03b recommended |
 | REL-04 | PF-REL | 8 | `PF-REL/REL-04/` | **[EXECUTED — T1-T4 only, see §9]** |
 
-**38/38 findings have a task breakdown. 8 findings (SEC-02, PERF-01, PERF-06, DATA-08, AR-04, AR-05, AR-06, REL-04) have a real, independently-reviewed partial closure landed in this pass** — each is a minimal-scope slice of a larger finding, not the finding's full closure per §13.2's bar. The other 30 remain PLANNED only. See §8 (Wave-0 batch) and §9 (second batch) for exact evidence.
+**38/38 findings have a task breakdown. 9 findings (SEC-02, PERF-01, PERF-06, DATA-08, AR-04, AR-05, AR-06, REL-04, DX-05) have a real, independently-reviewed partial closure landed in this pass** — each is a minimal-scope slice of a larger finding, not the finding's full closure per §13.2's bar. The other 29 remain PLANNED only. See §8 (Wave-0 batch) and §9 (second batch) for exact evidence.
 
 ## 7. Cross-cutting risks, assumptions, and unresolved questions
 

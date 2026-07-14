@@ -7,13 +7,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/filtering"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/pagination"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/module"
 )
+
+func init() {
+	registerGenerated(func(mc module.Context) error {
+		Register{{.ResourceTitle}}Routes(mc)
+		return nil
+	})
+}
 
 // {{.ResourceTitle}}DTO is the wire representation of a {{.Resource}}.
 type {{.ResourceTitle}}DTO struct {
@@ -25,7 +35,9 @@ type {{.ResourceTitle}}DTO struct {
 
 // {{.ResourceTitle}}Handlers holds the collaborators every {{.Resource}} route needs.
 type {{.ResourceTitle}}Handlers struct {
-	tx database.TxManager
+	tx     database.TxManager
+	idgen  model.IDGen
+	outbox outbox.Writer
 }
 
 // list{{.ResourceTitle}}Sort is the fixed (created_at, id) keyset order. Building it
@@ -43,25 +55,100 @@ var list{{.ResourceTitle}}Sort = func() filtering.Sort {
 	return s
 }()
 
+// Create{{.ResourceTitle}}Request is the request contract for POST /{{.Resource}}.
+// It is declared on the route's RouteMeta AND bound by httpx.ValidatedHandler,
+// so struct-tag validation always runs before create executes — declaring the
+// contract and wiring validation are the same act (there is no path to a
+// handler that "forgot" to validate). Adjust the `validate:` tags to your
+// domain rules; `required` is only the scaffold's safe starting point.
+type Create{{.ResourceTitle}}Request struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.Name}}" validate:"required"`
+{{- end}}
+}
+
+// Update{{.ResourceTitle}}Request is the request contract for PUT /{{.Resource}}/{id}.
+type Update{{.ResourceTitle}}Request struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} `json:"{{.Name}}" validate:"required"`
+{{- end}}
+}
+
 // Register{{.ResourceTitle}}Routes wires {{.Resource}} CRUD routes into mc.
+// Mutating routes declare their request contract on RouteMeta.Request and run
+// through httpx.ValidatedHandler; with security.enforce_route_contracts
+// enabled, a mutating route missing both Request and NoRequestBody fails boot.
 func Register{{.ResourceTitle}}Routes(mc module.Context) {
-	h := &{{.ResourceTitle}}Handlers{tx: mc.Tx()}
+	h := &{{.ResourceTitle}}Handlers{tx: mc.Tx(), idgen: mc.IDGen(), outbox: mc.Outbox()}
 	r := mc.Routes()
-	r.Handle("POST", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.create"}, h.create)
+	v := mc.Validator()
+	// 1<<20 (1 MiB) mirrors the default http.max_body_bytes edge guardrail;
+	// keep the two in sync if your product raises the config value.
+	r.Handle("POST", "/{{.Resource}}", httpx.RouteMeta{
+		Permission: "{{.PermPrefix}}.create",
+		Request:    Create{{.ResourceTitle}}Request{},
+	}, httpx.ValidatedHandler(v, 1<<20, h.create))
 	r.Handle("GET", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.read"}, h.get)
 	r.Handle("GET", "/{{.Resource}}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.list"}, h.list)
-	r.Handle("PUT", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.update"}, h.update)
-	r.Handle("DELETE", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.delete"}, h.delete)
+	r.Handle("PUT", "/{{.Resource}}/{id}", httpx.RouteMeta{
+		Permission: "{{.PermPrefix}}.update",
+		Request:    Update{{.ResourceTitle}}Request{},
+	}, httpx.ValidatedHandler(v, 1<<20, h.update))
+	r.Handle("DELETE", "/{{.Resource}}/{id}", httpx.RouteMeta{Permission: "{{.PermPrefix}}.deactivate"}, h.delete)
 }
 
-func (h *{{.ResourceTitle}}Handlers) create(w http.ResponseWriter, _ *http.Request) {
-	// TODO: decode+validate the request, INSERT inside h.tx.WithTenant, return the DTO.
-	httpx.WriteJSON(w, http.StatusCreated, httpx.OK({{.ResourceTitle}}DTO{}))
+func (h *{{.ResourceTitle}}Handlers) create(w http.ResponseWriter, r *http.Request, in Create{{.ResourceTitle}}Request) {
+	ctx := r.Context()
+	actor, ok := database.ActorIDFrom(ctx)
+	if !ok {
+		http.Error(w, "authenticated actor missing", http.StatusInternalServerError)
+		return
+	}
+	id := h.idgen.New()
+	dto := {{.ResourceTitle}}DTO{ID: id.String(){{range .Fields}}, {{.GoName}}: in.{{.GoName}}{{end}}}
+	err := h.tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		if _, err := db.Exec(ctx, `INSERT INTO {{.Table}}
+			(id, tenant_id{{range .Fields}}, {{.Name}}{{end}}, created_by)
+			VALUES (@id, app_tenant_id(){{range .Fields}}, @{{.Name}}{{end}}, @actor)`,
+			pgx.NamedArgs{
+				"id": id, "actor": actor,
+				{{- range .Fields}}
+				"{{.Name}}": in.{{.GoName}},
+				{{- end}}
+			}); err != nil {
+			return err
+		}
+		return h.outbox.Write(ctx, db, outbox.Event{
+			Type: "{{.ModuleName}}.{{.Resource}}_created",
+			Payload: map[string]any{"id": id},
+		})
+	})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, httpx.OK(dto))
 }
 
-func (h *{{.ResourceTitle}}Handlers) get(w http.ResponseWriter, _ *http.Request) {
-	// TODO: read one {{.Resource}} by id inside h.tx.WithTenantRO.
-	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
+func (h *{{.ResourceTitle}}Handlers) get(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid resource id", http.StatusBadRequest)
+		return
+	}
+	var dto {{.ResourceTitle}}DTO
+	err = h.tx.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(ctx, `SELECT id{{range .Fields}}, {{.Name}}{{end}}
+			FROM {{.Table}} WHERE id = $1 AND status = 'active'`, id).
+			Scan(&id{{range .Fields}}, &dto.{{.GoName}}{{end}})
+	})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
+	dto.ID = id.String()
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK(dto))
 }
 
 // list is a working keyset-paginated read: it is the canonical signed-cursor
@@ -89,9 +176,9 @@ func (h *{{.ResourceTitle}}Handlers) list(w http.ResponseWriter, r *http.Request
 		if cerr != nil {
 			return cerr
 		}
-		where := ""
+		where := " WHERE status = 'active'"
 		if clause != "" {
-			where = " WHERE " + clause
+			where += " AND " + clause
 			args = append(args, cargs...)
 		}
 		rows, qerr := db.Query(ctx,
@@ -137,12 +224,61 @@ func (h *{{.ResourceTitle}}Handlers) list(w http.ResponseWriter, r *http.Request
 	httpx.WriteJSON(w, http.StatusOK, httpx.OK(page))
 }
 
-func (h *{{.ResourceTitle}}Handlers) update(w http.ResponseWriter, _ *http.Request) {
-	// TODO: optimistic-concurrency UPDATE inside h.tx.WithTenant.
-	httpx.WriteJSON(w, http.StatusOK, httpx.OK({{.ResourceTitle}}DTO{}))
+func (h *{{.ResourceTitle}}Handlers) update(w http.ResponseWriter, r *http.Request, in Update{{.ResourceTitle}}Request) {
+	ctx := r.Context()
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid resource id", http.StatusBadRequest)
+		return
+	}
+	actor, ok := database.ActorIDFrom(ctx)
+	if !ok {
+		http.Error(w, "authenticated actor missing", http.StatusInternalServerError)
+		return
+	}
+	dto := {{.ResourceTitle}}DTO{ID: id.String(){{range .Fields}}, {{.GoName}}: in.{{.GoName}}{{end}}}
+	err = h.tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, err := db.Exec(ctx, `UPDATE {{.Table}}
+			SET {{range .Fields}}{{.Name}} = @{{.Name}}, {{end}}version = version + 1,
+				updated_at = now(), updated_by = @actor
+			WHERE id = @id AND status = 'active'`,
+			pgx.NamedArgs{
+				"id": id, "actor": actor,
+				{{- range .Fields}}
+				"{{.Name}}": in.{{.GoName}},
+				{{- end}}
+			})
+		return err
+	})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, httpx.OK(dto))
 }
 
-func (h *{{.ResourceTitle}}Handlers) delete(w http.ResponseWriter, _ *http.Request) {
-	// TODO: soft-delete/status transition inside h.tx.WithTenant.
+func (h *{{.ResourceTitle}}Handlers) delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid resource id", http.StatusBadRequest)
+		return
+	}
+	actor, ok := database.ActorIDFrom(ctx)
+	if !ok {
+		http.Error(w, "authenticated actor missing", http.StatusInternalServerError)
+		return
+	}
+	err = h.tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, err := db.Exec(ctx, `UPDATE {{.Table}}
+			SET status = 'inactive', version = version + 1,
+				updated_at = now(), updated_by = $2
+			WHERE id = $1 AND status = 'active'`, id, actor)
+		return err
+	})
+	if err != nil {
+		httpx.WriteError(ctx, w, err)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

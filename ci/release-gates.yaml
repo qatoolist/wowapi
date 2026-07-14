@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "completed_wave": 6,
+  "gates": [
+    {
+      "id": "workflow-lint",
+      "job_ref": ".github/workflows/ci.yml#workflow-lint",
+      "command": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color",
+      "owner": "developer-experience",
+      "required_from_wave": 0,
+      "timeout_minutes": 10,
+      "evidence_artifact": "gate-evidence/workflow-lint.json",
+      "security_results": ["workflow"]
+    },
+    {
+      "id": "unit",
+      "job_ref": ".github/workflows/ci.yml#unit",
+      "command": "make fmt-check vet lint tidy-check lint-boundaries test-unit build",
+      "owner": "framework",
+      "required_from_wave": 0,
+      "timeout_minutes": 20,
+      "evidence_artifact": "gate-evidence/unit.json"
+    },
+    {
+      "id": "gate-test",
+      "job_ref": ".github/workflows/ci.yml#gate[test]",
+      "command": "make ci-container-test",
+      "owner": "framework",
+      "required_from_wave": 0,
+      "timeout_minutes": 30,
+      "evidence_artifact": "gate-evidence/gate-test.json",
+      "requires_services": true
+    },
+    {
+      "id": "gate-race",
+      "job_ref": ".github/workflows/ci.yml#gate[race]",
+      "command": "make ci-container-race",
+      "owner": "framework",
+      "required_from_wave": 0,
+      "timeout_minutes": 30,
+      "evidence_artifact": "gate-evidence/gate-race.json",
+      "requires_services": true
+    },
+    {
+      "id": "gate-bench",
+      "job_ref": ".github/workflows/ci.yml#gate-bench",
+      "command": "make ci-container-bench",
+      "owner": "performance",
+      "required_from_wave": 0,
+      "timeout_minutes": 30,
+      "evidence_artifact": "gate-evidence/gate-bench.json",
+      "requires_services": true
+    },
+    {
+      "id": "tenantfk-gate",
+      "job_ref": ".github/workflows/ci.yml#tenantfk-gate",
+      "command": "DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable go run ./internal/tools/migrate up && DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable make tenantfk-gate",
+      "owner": "data-integrity",
+      "required_from_wave": 2,
+      "timeout_minutes": 10,
+      "evidence_artifact": "gate-evidence/tenantfk-gate.json",
+      "requires_services": true
+    },
+    {
+      "id": "coverage",
+      "job_ref": ".github/workflows/ci.yml#coverage",
+      "command": "make coverage-check",
+      "owner": "framework",
+      "required_from_wave": 0,
+      "timeout_minutes": 30,
+      "evidence_artifact": "gate-evidence/coverage.json",
+      "requires_services": true
+    },
+    {
+      "id": "reference-smoke",
+      "job_ref": ".github/workflows/ci.yml#reference-smoke",
+      "command": "make smoke-reference",
+      "owner": "runtime",
+      "required_from_wave": 0,
+      "timeout_minutes": 20,
+      "evidence_artifact": "gate-evidence/reference-smoke.json",
+      "requires_services": true
+    },
+    {
+      "id": "golden-consumer",
+      "job_ref": ".github/workflows/ci.yml#golden-consumer",
+      "command": "make golden-consumer",
+      "owner": "developer-experience",
+      "required_from_wave": 4,
+      "timeout_minutes": 20,
+      "evidence_artifact": "gate-evidence/golden-consumer.json",
+      "requires_services": true
+    },
+    {
+      "id": "govulncheck",
+      "job_ref": ".github/workflows/vuln.yml#govulncheck",
+      "command": "go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...",
+      "owner": "release-security",
+      "required_from_wave": 0,
+      "timeout_minutes": 15,
+      "evidence_artifact": "gate-evidence/govulncheck.json",
+      "security_results": ["reachable-vulnerability", "dependency"]
+    },
+    {
+      "id": "trivy-blocking",
+      "job_ref": ".github/workflows/security-scan.yml#trivy",
+      "command": "trivy fs --scanners vuln,secret,misconfig,license --format table --severity CRITICAL,HIGH --ignorefile .trivyignore.yaml --exit-code 1 .",
+      "owner": "release-security",
+      "required_from_wave": 6,
+      "timeout_minutes": 15,
+      "evidence_artifact": "gate-evidence/trivy-blocking.json",
+      "security_results": ["secret", "disallowed-license", "critical-high-config"]
+    },
+    {
+      "id": "security-waivers",
+      "job_ref": ".github/workflows/security-scan.yml#waivers",
+      "command": "python3 scripts/validation/security_contract.py validate-waivers --waivers ci/security-waivers.yaml --schema ci/security-waivers.schema.json",
+      "owner": "release-security",
+      "required_from_wave": 6,
+      "timeout_minutes": 5,
+      "evidence_artifact": "gate-evidence/security-waivers.json"
+    },
+    {
+      "id": "hosted-scanner-meta",
+      "job_ref": ".github/workflows/security-scan.yml#hosted-scanner-meta",
+      "command": "python3 scripts/validation/security_contract.py workflow-policy --visibility auto --source-sha $WOWAPI_GATE_SOURCE_SHA",
+      "owner": "release-security",
+      "required_from_wave": 6,
+      "timeout_minutes": 15,
+      "evidence_artifact": "gate-evidence/hosted-scanner-meta.json"
+    },
+    {
+      "id": "private-scanner-fallback",
+      "job_ref": ".github/workflows/security-scan.yml#private-fallback",
+      "command": "python3 scripts/validation/security_contract.py private-fallback --path .",
+      "owner": "release-security",
+      "required_from_wave": 6,
+      "timeout_minutes": 30,
+      "evidence_artifact": "gate-evidence/private-scanner-fallback.json"
+    }
+  ]
+}

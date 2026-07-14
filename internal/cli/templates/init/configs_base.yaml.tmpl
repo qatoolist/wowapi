@@ -7,7 +7,14 @@ schema_version: 1
 
 http:
   addr: ":8080"
-  read_header_timeout: 5s
+  # Connection-level server timeouts (safe defaults; 0 = unlimited and is
+  # refused in prod). read_header/read/write bound a single request's header,
+  # full-request, and response phases; idle bounds keep-alive gaps between
+  # requests. request_timeout is the per-request HANDLER budget on top.
+  read_header_timeout: 10s
+  read_timeout: 30s
+  write_timeout: 60s
+  idle_timeout: 120s
   request_timeout: 30s
   max_body_bytes: 1048576
 
@@ -22,18 +29,23 @@ db:
   max_conns: 16
   query_timeout: 5s
 
-# i18n — localization catalog loading (GAP-001B). The framework's English
-# defaults are always embedded; these settings add product translations on top.
-# locales/ (YAML + JSON) is loaded as a sanctioned framework-override source, so
-# a locales/<locale>/kernel.yaml key overrides the embedded framework default;
-# internal/i18n/catalogs holds optional compiled Go bundles. cmd/api, cmd/worker,
-# AND cmd/migrate load these same sources before boot completes. Validate with
-# `wowapi i18n validate`.
-i18n:
-  default_locale: en
-  supported_locales: [en, mr]
-  locales_dir: locales
-  go_bundles: true
+# i18n — localization catalog loading (GAP-001B). PRODUCT-owned section
+# (appcfg.Config.I18n), like auth/storage/security below: the prebuilt wowapi
+# binary's framework-only `config validate` fallback does not know these keys,
+# so they ship commented; the values shown are the compiled-in defaults (the
+# zero value is fully valid — locales/ still loads with no config section).
+# The framework's English defaults are always embedded; these settings add
+# product translations on top. locales/ (YAML + JSON) is loaded as a sanctioned
+# framework-override source, so a locales/<locale>/kernel.yaml key overrides
+# the embedded framework default; internal/i18n/catalogs holds optional
+# compiled Go bundles. cmd/api, cmd/worker, AND cmd/migrate load these same
+# sources before boot completes. Validate catalogs with `wowapi i18n validate
+# --supported en,mr`.
+# i18n:
+#   default_locale: en
+#   supported_locales: [en, mr]
+#   locales_dir: locales
+#   go_bundles: true
 
 # auth.oidc — user (OIDC/JWT bearer) authentication. Leave unset to keep the
 # user leg deny-by-default (only API keys authenticate); set issuer + audience

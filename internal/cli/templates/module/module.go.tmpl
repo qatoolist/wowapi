@@ -20,6 +20,14 @@ var openapiFragment []byte
 var migrationsFS = mustSub(migrationsEmbed, "migrations")
 var seedsFS = mustSub(seedsEmbed, "seeds")
 
+type generatedRegistration func(module.Context) error
+
+var generatedRegistrations []generatedRegistration
+
+func registerGenerated(fn generatedRegistration) {
+	generatedRegistrations = append(generatedRegistrations, fn)
+}
+
 func mustSub(f embed.FS, dir string) fs.FS {
 	sub, err := fs.Sub(f, dir)
 	if err != nil {
@@ -44,6 +52,11 @@ func (m *Module) Register(mc module.Context) error {
 	mc.Migrations(migrationsFS)
 	mc.Seeds(seedsFS)
 	mc.OpenAPI(openapiFragment)
+	for _, register := range generatedRegistrations {
+		if err := register(mc); err != nil {
+			return err
+		}
+	}
 
 	// TODO: register routes, permissions, health checks, and ports here.
 	// Example:

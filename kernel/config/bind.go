@@ -147,7 +147,14 @@ func (b *binder) bindField(fv reflect.Value, f reflect.StructField, tree map[str
 			return
 		}
 		fv.Set(reflect.ValueOf(sec))
-		b.secrets = append(b.secrets, secretSlot{path: path, ptr: fv.Addr().Interface().(*Secret)})
+		ptr, ok := fv.Addr().Interface().(*Secret)
+		if !ok {
+			// Unreachable: this case arm is entered only when fv.Type() is
+			// exactly config.Secret; fail closed with a binder error anyway.
+			b.errf("%s: internal: secret field does not address as *config.Secret", path)
+			return
+		}
+		b.secrets = append(b.secrets, secretSlot{path: path, ptr: ptr})
 		return
 
 	case fv.Kind() == reflect.Struct && fv.Type() != durationType:
@@ -323,6 +330,10 @@ func convertValue(v reflect.Value, raw any) error {
 		return nil
 	}
 
+	// Fail-closed by construction: any Kind without an arm falls through to the
+	// "unsupported config field type" error below — enumerating every
+	// reflect.Kind here would add arms that must never bind anyway.
+	//exhaustive:ignore
 	switch v.Kind() {
 	case reflect.String:
 		if s, ok := raw.(string); ok {

@@ -1,0 +1,43 @@
+{
+  "evidence_id": "EV-W01-E04-S001-002",
+  "evidence_type": "functional-test report (harness end-to-end run log, both CLI paths)",
+  "story": "W01-E04-S001",
+  "task": "W01-E04-S001-T002",
+  "acceptance_criteria_proven": ["AC-W01-E04-S001-02"],
+  "execution_command": "go test ./internal/cli/ -run 'TestE2EScaffold' -count=1 -v",
+  "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
+  "revision_note": "HEAD at execution; the harness is an UNCOMMITTED working-tree addition on top of this SHA (the wave conductor owns commits). Working-tree delta for this task: internal/cli/e2e_scaffold_harness_test.go (new).",
+  "branch": "main (local working tree)",
+  "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation; isolated t.TempDir() product dirs; fully offline (file:// module proxies, GOSUMDB=off, GOPRIVATE/GONOPROXY neutralized)",
+  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "datetime_utc": "2026-07-13T08:05:30Z",
+  "result": "PASS — all five pipeline steps (init, go mod tidy, go mod download, go build ./..., boot smoke test) succeeded end to end for BOTH CLI paths",
+  "harness_design": "scaffoldPipeline(t, cli, modulePath, initArgs, goEnv) drives a REAL wowapi binary (subprocess, not in-process) through init -> go mod tidy -> go mod download -> go build ./... -> a written-in boot-and-validate smoke test (kernel.New -> app.Register(wire.Modules()) -> app.Boot, no DB via a no-op TxManager). Every step failure reports its step name plus FULL command output (task-002 detailed-work step 5). The two CLI paths are two binaries built from this checkout: `go build -buildvcs=false` (source/devel) and the same plus `-ldflags -X ...buildinfo.version=v0.1.0` (released stand-in — the release pipeline's own stamping mechanism). The released path resolves github.com/qatoolist/wowapi@v0.1.0 from a local file:// GOPROXY packaged from this checkout (list/.info/.mod/.zip), chained with the local module cache's download dir for dependencies — hermetic, yet exercising the same proxy-resolution path a published release does. DX-02's T004 already consumes the same underlying scaffold primitive (buildRenderedProduct, itself now built on `init --local-framework`); a future DX-04 story calls scaffoldPipeline with different generator args/assertions.",
+  "runs": [
+    {
+      "phase": "fail-first (pipeline against pre-T001 init)",
+      "status": "resolved",
+      "outcome": "Pre-fix, the pipeline's `go mod download` step failed on a pristine devel-CLI scaffold ('unknown revision v0.0.0') while init itself reported success — captured in t1-t4-prefix-failfirst.log (shared with EV-001; the same defect is what breaks the pipeline). Post-fix, TestE2EScaffoldSourceBuiltCLI permanently asserts this failure mode is impossible: a flag-less devel init fails closed pre-write (exit != 0, zero files, remediation present) before the pipeline would even start.",
+      "log": "t1-t4-prefix-failfirst.log",
+      "sha256": "1ec30381c9a9700a74cf213e6cbe5f6c7178c27249b3ebbdceee99dd6b157f1e"
+    },
+    {
+      "phase": "harness proving run (both CLI paths)",
+      "status": "passed",
+      "outcome": "TestE2EScaffoldSourceBuiltCLI: devel binary, fail-closed guard PASS, then init --local-framework -> full pipeline PASS (5.39s). TestE2EScaffoldReleasedCLI: v0.1.0-stamped binary, flag-less init pins v0.1.0 (no replace directive), framework fetched from the file proxy -> full pipeline PASS (6.60s). Each of the five steps individually logged ok in both runs.",
+      "log": "t5-e2e-both-paths.log",
+      "sha256": "960ca341c90bb4767326556b68b5c973cd71e6720be17e10359c166dd73b967f"
+    },
+    {
+      "phase": "full touched-package regression",
+      "status": "passed",
+      "outcome": "go test ./internal/cli/ -count=1 -> ok (24.4s), including every pre-existing scaffold/gen/i18n/config test now flowing through the new resolution paths; go test ./internal/buildinfo/ -> ok.",
+      "log": "pkg-internal-cli-full-3.log",
+      "sha256": "9422f55e0b1125777ec1077723a94d2e89b4be768939fe3d43d66873cd5ac92c"
+    }
+  ],
+  "flakiness_mitigation": "No network is touched on any step: both proxies are file:// URLs (the packaged-checkout proxy and the local module cache), GOSUMDB=off, GOWORK=off, and developer-machine GOPRIVATE/GONOPROXY overrides are explicitly neutralized in the harness env — removing the go-mod-download flakiness risk task-002's risk section flags.",
+  "file_or_uri": "evidence/DX-01/t5-e2e-temp-dir.json",
+  "reviewer": "pending — wave-level review gate (conductor)",
+  "superseded_evidence": null
+}

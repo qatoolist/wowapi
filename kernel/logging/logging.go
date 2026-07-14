@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // sensitiveKeySuffixes is the heuristic list of key suffixes (case-insensitive)
@@ -100,7 +101,11 @@ func New(w io.Writer, cfg config.Log) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("logging: format %q is not one of json|text", cfg.Format)
 	}
-	return slog.New(h), nil
+	// Trace/log correlation (FBL-06 T2): records emitted inside an active span
+	// carry trace_id/span_id; without one the wrapper is a pure pass-through.
+	// Wrapping OUTSIDE the format handler keeps redactAttr untouched — the
+	// injected attrs flow through the same ReplaceAttr pipeline as any other.
+	return slog.New(observability.NewCorrelatingHandler(h)), nil
 }
 
 // LogStartup emits a single Info record "starting" with the process name,

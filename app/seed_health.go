@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 )
@@ -25,6 +27,13 @@ import (
 // A product that declares no seeds at all (b is the zero Bundle) has nothing
 // to sync, so an empty catalog is expected and not an error.
 func CatalogsSeeded(ctx context.Context, db database.DBTX, b seeds.Bundle) error {
+	_, err := catalogsSeededState(ctx, db, b)
+	return err
+}
+
+// catalogsSeededState returns the populated-catalog check result and, when the
+// database already records a successful sync run, the latest manifest hash.
+func catalogsSeededState(ctx context.Context, db database.DBTX, b seeds.Bundle) (string, error) {
 	checks := []struct {
 		declared bool
 		table    string
@@ -39,18 +48,33 @@ func CatalogsSeeded(ctx context.Context, db database.DBTX, b seeds.Bundle) error
 			continue
 		}
 		var n int
-		if err := db.QueryRow(ctx, "SELECT count(*) FROM "+c.table).Scan(&n); err != nil {
-			return fmt.Errorf("seed catalog check: query %s: %w", c.table, err)
+		if err := db.QueryRow(ctx, "SELECT count(*) FROM "+pgx.Identifier{c.table}.Sanitize()).Scan(&n); err != nil {
+			return "", fmt.Errorf("seed catalog check: query %s: %w", c.table, err)
 		}
 		if n == 0 {
-			return fmt.Errorf(
+			return "", fmt.Errorf(
 				"seed catalog %q is empty but modules declare %d %s seed(s): "+
 					"the database migration ran without a seed sync — run `wowapi seed sync` "+
 					"(or your generated `cmd/migrate`, which now runs it automatically) before serving traffic",
 				c.table, seedCount(b, c.table), c.table)
 		}
 	}
-	return nil
+	return latestSeedHash(ctx, db)
+}
+
+// latestSeedHash returns the most recent successful sync manifest hash, or an
+// empty string if no run has been recorded (e.g. a pre-FBL-02 database that was
+// populated by seeds.Sync before the audit table existed).
+func latestSeedHash(ctx context.Context, db database.DBTX) (string, error) {
+	var hash string
+	err := db.QueryRow(ctx,
+		`SELECT manifest_hash FROM seed_sync_runs
+		  WHERE outcome IN ('applied','noop')
+		  ORDER BY created_at DESC LIMIT 1`).Scan(&hash)
+	if err != nil {
+		return "", nil // no row = no hash to report
+	}
+	return hash, nil
 }
 
 // seedCount reports how many entries the bundle declares for the named table,

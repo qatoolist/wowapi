@@ -1,0 +1,9 @@
+# PERF-04 reminder query EXPLAIN
+# Command: WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<redacted-local-postgres-dsn> go test ./kernel/workflow -run '^TestIntegrationSweepSLARemindAfterIndexPlan$' -count=1 -v
+# Environment: PostgreSQL 16.9, migrated real test database, tenant RLS transaction.
+
+Limit
+  ->  Index Scan using wft_remind_after on workflow_tasks
+        Index Cond: ((tenant_id = (current_setting('app.tenant_id'::text))::uuid) AND (remind_after <= '2026-07-13 22:20:48.134985+00'::timestamp with time zone))
+
+PASS: planner selected wft_remind_after; no enable_seqscan override was used.

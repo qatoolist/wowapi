@@ -2,9 +2,21 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func scanInt(t *testing.T, pool *pgxpool.Pool, query string) int {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(context.Background(), query).Scan(&n); err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	return n
+}
 
 // TestSeedSyncDB is the GAP-003 core proof: `wowapi seed sync` connects to a
 // real (migrated) database via DATABASE_URL and upserts a module's seed
@@ -83,6 +95,29 @@ func TestSeedSyncDBIdempotent(t *testing.T) {
 	assertCount(`SELECT count(*) FROM relationship_types WHERE key = 'widgets.owner_of'`, 1)
 	assertCount(`SELECT count(*) FROM roles WHERE key = 'widgets.editor'`, 1)
 	assertCount(`SELECT count(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.key = 'widgets.editor'`, 1)
+}
+
+// TestSeedSyncDBDryRun proves the FBL-02 dry-run path: it reports a change
+// plan and writes nothing to the database.
+func TestSeedSyncDBDryRun(t *testing.T) {
+	dsn := requireDSN(t)
+	pool := adminPool(t, dsn)
+
+	dir := t.TempDir()
+	writeFile(t, dir, "seeds.yaml",
+		"version: v1\npermissions:\n  - key: widgets.widget.create\n    description: create a widget\n")
+
+	var out, errb bytes.Buffer
+	code := runSeed([]string{"sync", "--dry-run", "--module", "widgets=" + dir}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("seed sync --dry-run exit %d: %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "dry-run:") {
+		t.Fatalf("expected dry-run plan output, got %q", out.String())
+	}
+	if got := scanInt(t, pool, `SELECT count(*) FROM permissions`); got != 0 {
+		t.Fatalf("dry-run wrote %d permissions, want 0", got)
+	}
 }
 
 // TestSeedSyncDBMultiModule proves the merged-bundle path: two modules' seed

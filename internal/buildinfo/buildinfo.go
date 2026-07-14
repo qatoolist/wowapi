@@ -67,7 +67,7 @@ func FindGoMod(dir string) (GoMod, bool) {
 }
 
 func parseGoMod(path string) (GoMod, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- build-time diagnostic tooling: opens the go.mod found by walking up from the tool's own working directory
 	if err != nil {
 		return GoMod{}, err
 	}

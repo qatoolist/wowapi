@@ -1,0 +1,20 @@
+Date: 2026-07-13
+Baseline: 733ef3e + W05 working-tree changes
+
+Command: go test -v ./internal/tools/constructorlint
+
+=== RUN   TestAnalyzerRejectsAdHocInfrastructureConstructor
+=== PAUSE TestAnalyzerRejectsAdHocInfrastructureConstructor
+=== CONT  TestAnalyzerRejectsAdHocInfrastructureConstructor
+--- PASS: TestAnalyzerRejectsAdHocInfrastructureConstructor (0.19s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/constructorlint	0.377s
+
+Command: go test -race ./internal/tools/constructorlint
+Result: PASS
+
+Command: make lint-constructors
+Result: PASS (`go run ./internal/tools/constructorlint/cmd/constructorlint ./...`)
+
+Command: make lint-boundaries
+Result: PASS (`lint-constructors`; `scripts/lint_boundaries.sh`; `boundary lint: OK`)

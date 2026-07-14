@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -40,7 +42,8 @@ func TestIntegrationRelateAsPlatformThenHas(t *testing.T) {
 
 	// Create the edge via Relate on a tenant-bound app_platform tx (the only role
 	// permitted to INSERT relationships).
-	if err := h.PlatformTxM.WithTenant(database.WithTenantID(ctx, tenant),
+	actorID := uuid.New()
+	if err := h.PlatformTxM.WithTenant(database.WithActorID(database.WithTenantID(ctx, tenant), actorID),
 		func(ctx context.Context, db database.TenantDB) error {
 			return relationship.Relate(ctx, db, gen, relType, "capacity", cap1, "resource", obj.ID)
 		}); err != nil {
@@ -77,7 +80,8 @@ func TestIntegrationRelateAsAppRtDenied(t *testing.T) {
 	obj := seedResource(t, h, ctx, tenant, "requests.request")
 	gen := model.UUIDv7()
 
-	err := h.TxM.WithTenant(database.WithTenantID(ctx, tenant),
+	actorID := uuid.New()
+	err := h.TxM.WithTenant(database.WithActorID(database.WithTenantID(ctx, tenant), actorID),
 		func(ctx context.Context, db database.TenantDB) error {
 			return relationship.Relate(ctx, db, gen, relType, "capacity", cap1, "resource", obj.ID)
 		})
@@ -102,7 +106,8 @@ func TestIntegrationRelateTenantIsolation(t *testing.T) {
 	objA := seedResource(t, h, ctx, tenantA, "requests.request")
 	gen := model.UUIDv7()
 
-	if err := h.PlatformTxM.WithTenant(database.WithTenantID(ctx, tenantA),
+	actorID := uuid.New()
+	if err := h.PlatformTxM.WithTenant(database.WithActorID(database.WithTenantID(ctx, tenantA), actorID),
 		func(ctx context.Context, db database.TenantDB) error {
 			return relationship.Relate(ctx, db, gen, relType, "capacity", capA, "resource", objA.ID)
 		}); err != nil {
@@ -123,5 +128,107 @@ func TestIntegrationRelateTenantIsolation(t *testing.T) {
 	}
 	if has {
 		t.Fatal("tenant B must not see tenant A's relationship edge")
+	}
+}
+
+// TestIntegrationRelateRequiresActor proves DATA-07 T4: Relate fails closed
+// when no actor is bound in ctx.
+func TestIntegrationRelateRequiresActor(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := testkit.CreateTenant(t, h).ID
+	relType := "core.owner_of"
+	seedResourceType(t, h, ctx, "requests.request")
+	seedRelType(t, h, ctx, relType)
+	cap1 := seedCapacity(t, h, ctx, tenant)
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+
+	err := h.PlatformTxM.WithTenant(database.WithTenantID(ctx, tenant),
+		func(ctx context.Context, db database.TenantDB) error {
+			return relationship.Relate(ctx, db, gen, relType, "capacity", cap1, "resource", obj.ID)
+		})
+	if err == nil {
+		t.Fatal("Relate without actor must fail")
+	}
+	if kerr.KindOf(err) != kerr.KindForbidden {
+		t.Fatalf("want KindForbidden, got %v", err)
+	}
+}
+
+// TestIntegrationRelateAttributesAndVersions proves DATA-07 T4: created_by
+// reflects the bound actor and re-relating the same active edge bumps version.
+func TestIntegrationRelateAttributesAndVersions(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := testkit.CreateTenant(t, h).ID
+	relType := "core.owner_of"
+	seedResourceType(t, h, ctx, "requests.request")
+	seedRelType(t, h, ctx, relType)
+	cap1 := seedCapacity(t, h, ctx, tenant)
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+	actorID := uuid.New()
+
+	relate := func() error {
+		return h.PlatformTxM.WithTenant(database.WithActorID(database.WithTenantID(ctx, tenant), actorID),
+			func(ctx context.Context, db database.TenantDB) error {
+				return relationship.Relate(ctx, db, gen, relType, "capacity", cap1, "resource", obj.ID)
+			})
+	}
+	if err := relate(); err != nil {
+		t.Fatalf("first Relate: %v", err)
+	}
+	if err := relate(); err != nil {
+		t.Fatalf("second Relate: %v", err)
+	}
+
+	var createdBy, updatedBy uuid.UUID
+	var version int
+	if err := h.Admin.QueryRow(ctx,
+		`SELECT created_by, updated_by, version FROM relationships WHERE tenant_id = $1 AND subject_id = $2 AND object_id = $3`,
+		tenant, cap1, obj.ID).Scan(&createdBy, &updatedBy, &version); err != nil {
+		t.Fatalf("query edge: %v", err)
+	}
+	if createdBy != actorID {
+		t.Fatalf("created_by = %v; want %v", createdBy, actorID)
+	}
+	if updatedBy != actorID {
+		t.Fatalf("updated_by = %v; want %v", updatedBy, actorID)
+	}
+	if version != 2 {
+		t.Fatalf("version = %d; want 2", version)
+	}
+}
+
+// TestIntegrationRelateWritesAudit proves DATA-07 T4: Relate writes a durable
+// audit row inside the same transaction.
+func TestIntegrationRelateWritesAudit(t *testing.T) {
+	h := testkit.NewDB(t)
+	ctx := context.Background()
+	tenant := testkit.CreateTenant(t, h).ID
+	relType := "core.owner_of"
+	seedResourceType(t, h, ctx, "requests.request")
+	seedRelType(t, h, ctx, relType)
+	cap1 := seedCapacity(t, h, ctx, tenant)
+	obj := seedResource(t, h, ctx, tenant, "requests.request")
+	gen := model.UUIDv7()
+	actorID := uuid.New()
+
+	if err := h.PlatformTxM.WithTenant(database.WithActorID(database.WithTenantID(ctx, tenant), actorID),
+		func(ctx context.Context, db database.TenantDB) error {
+			return relationship.Relate(ctx, db, gen, relType, "capacity", cap1, "resource", obj.ID)
+		}); err != nil {
+		t.Fatalf("Relate: %v", err)
+	}
+
+	var n int
+	if err := h.Admin.QueryRow(ctx,
+		`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'relationship.relate'`,
+		tenant).Scan(&n); err != nil {
+		t.Fatalf("count audit rows: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 audit row, got %d", n)
 	}
 }

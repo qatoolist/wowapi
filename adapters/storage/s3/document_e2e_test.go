@@ -29,10 +29,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/foundation/document"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/kernel/storage"
 	"github.com/qatoolist/wowapi/module"
@@ -135,6 +135,9 @@ func presignedPut(t *testing.T, sess document.UploadSession, body []byte) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	for name, value := range sess.Upload.Headers {
+		req.Header.Set(name, value)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT to presigned URL: %v", err)
@@ -165,7 +168,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID)
+		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}
@@ -177,7 +180,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		}
 		presignedPut(t, sess, body) // the client's REAL PUT to minio
 		verID, err = e.k.Documents.ConfirmUpload(ctx, db, document.ConfirmInput{
-			DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
+			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
 			DeclaredSize: int64(len(body)), DeclaredChecksum: hex.EncodeToString(sum[:]),
 			DeclaredMIME: "text/plain; charset=utf-8",
 		})
@@ -199,13 +202,13 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID)
+		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}
 		presignedPut(t, sess, body)
 		_, err = e.k.Documents.ConfirmUpload(ctx, db, document.ConfirmInput{
-			DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
+			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
 			DeclaredSize:     int64(len(body)),
 			DeclaredChecksum: hex.EncodeToString(make([]byte, sha256.Size)), // wrong
 			DeclaredMIME:     "text/plain; charset=utf-8",

@@ -11,7 +11,7 @@
 // the SAME tenant transaction as the state change.
 //
 // Import boundary (depguard): stdlib + kernel/{database,authz,resource,outbox,
-// errors,model,pagination} + pgx + uuid + yaml. NEVER module/app/adapters/
+// audit,errors,model,pagination} + pgx + uuid + yaml. NEVER module/app/adapters/
 // testkit in production. Domain-neutral vocabulary only.
 package workflow
 
@@ -73,6 +73,11 @@ type Definition struct {
 	AppliesTo   string          `yaml:"applies_to"`
 	InitialStep string          `yaml:"initial_step"`
 	Steps       map[string]Step `yaml:"steps"`
+	// RatifyBy is the role required to ratify a privileged override. It is
+	// parsed but explicitly rejected at validation time as an interim,
+	// Wave-0-compatible posture until the ratification state machine is
+	// implemented (SEC-02 T4, W03-E05-S001).
+	RatifyBy string `yaml:"ratify_by,omitempty"`
 }
 
 // Step is one node in the definition graph. Which fields are meaningful depends
@@ -105,6 +110,12 @@ type Step struct {
 
 	// terminal step.
 	Outcome string `yaml:"outcome,omitempty"`
+
+	// RatifyBy is the role required to ratify a privileged override on this
+	// step. It is parsed but explicitly rejected at validation time as an
+	// interim, Wave-0-compatible posture until the ratification state machine
+	// is implemented (SEC-02 T4, W03-E05-S001).
+	RatifyBy string `yaml:"ratify_by,omitempty"`
 }
 
 // AssigneeSpec describes one source of assignees for a step.
@@ -211,6 +222,9 @@ func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
 	if d.Version <= 0 {
 		add("version must be a positive integer")
 	}
+	if d.RatifyBy != "" {
+		add("ratify_by is not yet supported; declare it only when the ratification state machine is implemented (interim Wave-0-compatible rejection)")
+	}
 	if len(d.Steps) == 0 {
 		add("definition has no steps")
 		return joinProblems(d.Key, probs)
@@ -255,6 +269,9 @@ func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
 		//   - self_approval:false (the submitter-exclusion is not enforced).
 		if step.Type == StepVote {
 			add("step %q: vote steps are not yet tallied by the runtime and are rejected until implemented (fail-closed)", name)
+		}
+		if step.RatifyBy != "" {
+			add("step %q: ratify_by is not yet supported; declare it only when the ratification state machine is implemented (interim Wave-0-compatible rejection)", name)
 		}
 		if step.Type == StepApproval {
 			if step.Policy != nil && step.Policy.MinApprovals > 1 {
@@ -310,6 +327,11 @@ func (s Step) outgoing() []string {
 			out = append(out, tgt)
 		}
 	}
+	// Fail-closed by design (adjudicated, MATRIX CS-23): StepTerminal — and any
+	// future unknown step type — has no outgoing transitions, so falling out of
+	// this switch with an empty slice is the correct terminal behavior, not a
+	// missed case. Do not convert to an exhaustive enumeration.
+	//exhaustive:ignore
 	switch s.Type {
 	case StepApproval, StepVote:
 		push(s.OnApprove)

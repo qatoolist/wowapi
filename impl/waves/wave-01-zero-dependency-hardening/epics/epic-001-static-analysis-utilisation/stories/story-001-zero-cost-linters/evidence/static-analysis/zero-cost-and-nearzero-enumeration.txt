@@ -1,0 +1,173 @@
+# W01Lint fresh triage enumeration — captured 2026-07-13
+# HEAD: 0a31186cada5c275a588c74081cf977adf346e61 (no tracked modifications at run time;
+# `git status --porcelain` showed only untracked impl/ + mandate file)
+# Tool: golangci-lint v2.11.4 (pinned); config: W00 throwaway matrix-CS-23 config
+# Command: golangci-lint run -c /tmp/w01lint-throwaway.yml --output.json.path=... ./...
+# Raw outputs: triage-fresh-run-raw.{json,txt} (story-002 evidence/static-analysis/)
+
+# STORY-001 SETS
+
+## sqlclosecheck: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## rowserrcheck: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## bodyclose: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## wastedassign: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## makezero: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## musttag: 0 hits (zero-cost claim CONFIRMED at HEAD)
+## testifylint: 0 hits (zero-cost claim CONFIRMED at HEAD)
+
+## noctx: 146 total, 1 non-test
+  adapters/metrics/prometheus/prometheus_test.go:56:48 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  adapters/metrics/prometheus/prometheus_test.go:77:31 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  adapters/storage/s3/document_e2e_test.go:133:29 net/http.NewRequest must not be called. use net/http.NewRequestWithContext
+  adapters/storage/s3/s3_test.go:170:23 net/http.Get must not be called. use net/http.NewRequestWithContext and (*net/http.Client).Do(*http.Request)
+  adapters/storage/s3/s3_test.go:323:30 net.DialTimeout must not be called. use (*net.Dialer).DialContext with (*net.Dialer).Timeout
+  adapters/storage/s3/s3_test.go:363:30 net.DialTimeout must not be called. use (*net.Dialer).DialContext with (*net.Dialer).Timeout
+  adapters/storage/s3/s3_test.go:446:32 net/http.NewRequest must not be called. use net/http.NewRequestWithContext
+  adapters/storage/s3/s3_test.go:71:30 net.DialTimeout must not be called. use (*net.Dialer).DialContext with (*net.Dialer).Timeout
+  adapters/storage/s3/s3_test.go:98:29 net/http.NewRequest must not be called. use net/http.NewRequestWithContext
+  app/health_test.go:29:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  internal/cli/scaffold_i18n_test.go:181:21 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:544:23 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:600:22 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:621:23 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:639:20 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:693:20 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/cli/scaffold_test.go:773:21 os/exec.Command must not be called. use os/exec.CommandContext
+  internal/e2e/e2e_test.go:329:22 net.Listen must not be called. use (*net.ListenConfig).Listen
+  internal/e2e/e2e_test.go:346:27 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/apikey/apikey_test.go:219:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/apikey/apikey_test.go:231:31 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/apikey/coverage_test.go:357:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/apikey/coverage_test.go:370:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/auth/jwks_test.go:316:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/auth/jwks_test.go:333:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/auth/jwks_test.go:339:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpclient/client_test.go:266:25 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/httpclient/client_test.go:289:25 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/httpclient/client_test.go:369:25 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/httpclient/client_test.go:400:25 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/httpclient/client_test.go:455:25 (*net/http.Client).Get must not be called. use (*net/http.Client).Do(*http.Request)
+  kernel/httpx/authz_gate_test.go:152:41 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/authz_gate_test.go:48:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/authz_gate_test.go:90:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:123:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:128:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:169:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:174:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:215:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:220:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:242:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:247:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:25:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:261:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:57:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:64:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/backpressure_test.go:99:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:177:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:259:23 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:260:23 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:261:23 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:385:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:455:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:472:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/bench_test.go:487:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/composite_auth_test.go:24:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_internal_test.go:37:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:112:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:134:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:156:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:179:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:201:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:221:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:248:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:282:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:310:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:333:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:34:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:355:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:389:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:71:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/csrf_test.go:90:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:22:87 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:30:94 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:39:76 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:58:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:72:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_extra_test.go:93:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:121:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:144:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:160:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:179:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:191:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:21:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:40:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:56:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:76:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/edge_test.go:96:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/gate_unit_test.go:44:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/gate_unit_test.go:69:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/health_test.go:19:39 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/health_test.go:30:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/health_test.go:55:40 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:229:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:236:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:244:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:252:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:27:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:36:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:45:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:50:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:59:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:64:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:74:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:81:32 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:86:34 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/helpers_extra_test.go:95:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:157:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:210:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:219:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:234:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:258:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:277:57 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/httpx_test.go:286:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/idempotency_extra_test.go:21:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/idempotency_extra_test.go:31:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/idempotency_extra_test.go:32:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/idempotency_extra_test.go:33:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/locale_test.go:152:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/locale_test.go:206:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/locale_test.go:39:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/locale_test.go:58:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/locale_test.go:81:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/middleware_extra_test.go:27:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_extra_test.go:37:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:117:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:127:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:135:30 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:152:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:186:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:34:57 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:40:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/ratelimit_test.go:99:38 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/stepup_e2e_test.go:164:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/httpx/stepup_e2e_test.go:267:29 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/observability_test.go:115:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/observability_test.go:135:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/observability_test.go:174:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/observability_test.go:61:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/observability_test.go:91:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  kernel/observability/tracing_test.go:48:28 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  testkit/consumer_test.go:55:22 os/exec.Command must not be called. use os/exec.CommandContext
+  testkit/consumer_test.go:65:21 os/exec.Command must not be called. use os/exec.CommandContext
+  testkit/i18n.go:33:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  testkit/withidempotency_test.go:34:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+  testkit/withidempotency_test.go:68:27 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+
+## copyloopvar: 7 total, 1 non-test
+  app/maintenance.go:148:3 The copy of the 'for' variable "rj" can be deleted (Go 1.22+)
+  kernel/config/unsafe_config_matrix_test.go:168:3 The copy of the 'for' variable "tc" can be deleted (Go 1.22+)
+  kernel/jobs/rls_test.go:66:3 The copy of the 'for' variable "table" can be deleted (Go 1.22+)
+  kernel/outbox/outbox_test.go:241:3 The copy of the 'for' variable "i" can be deleted (Go 1.22+)
+  kernel/retention/coverage_test.go:418:3 The copy of the 'for' variable "op" can be deleted (Go 1.22+)
+  migrations/migrations_test.go:89:3 The copy of the 'for' variable "name" can be deleted (Go 1.22+)
+  testkit/rls_isolation_all_test.go:221:3 The copy of the 'for' variable "tbl" can be deleted (Go 1.22+)

@@ -106,7 +106,7 @@ http:
 	if f.Log.Level != "warn" {
 		t.Errorf("base value lost: log.level = %q", f.Log.Level)
 	}
-	if f.HTTP.ReadHeaderTimeout != 5*time.Second {
+	if f.HTTP.ReadHeaderTimeout != 10*time.Second {
 		t.Errorf("default lost: read_header_timeout = %v", f.HTTP.ReadHeaderTimeout)
 	}
 	if f.Environment != config.EnvDev {

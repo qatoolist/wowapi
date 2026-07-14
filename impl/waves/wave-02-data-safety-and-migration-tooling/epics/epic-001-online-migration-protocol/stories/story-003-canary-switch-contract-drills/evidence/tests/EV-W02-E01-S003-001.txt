@@ -1,0 +1,6 @@
+=== RUN   TestCanaryNAndNMinusOne
+--- PASS: TestCanaryNAndNMinusOne (0.53s)
+=== RUN   TestPartialFleetRollout
+--- PASS: TestPartialFleetRollout (0.33s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	1.108s

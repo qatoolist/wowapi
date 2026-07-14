@@ -1,0 +1,5 @@
+# Final .golangci.yml enable list (proof for AC-W01-E01-S002-07)
+['depguard', 'misspell', 'unconvert', 'unparam', 'sqlclosecheck', 'rowserrcheck', 'bodyclose', 'wastedassign', 'makezero', 'musttag', 'testifylint', 'noctx', 'copyloopvar', 'gosec', 'errorlint', 'exhaustive', 'forcetypeassert', 'usestdlibvars', 'gofumpt', 'goimports']
+wrapcheck: NOT enabled (REJECTED, ~464 hits at fresh triage)
+revive: NOT enabled (REJECTED, ~231 hits at fresh triage)
+nilerr: NOT enabled (annotation-only per S002 scope; policy.go fail-closed comment + nolint marker in place)

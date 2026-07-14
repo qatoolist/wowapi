@@ -10,8 +10,6 @@ import (
 )
 
 // expectedFiles lists the kernel SQL migrations in ascending goose order.
-// Phase 2 shipped 00001–00002 (D-0025); Phase 3 pulls idempotency_keys forward
-// into 00003 (D-0031).
 var expectedFiles = []string{
 	"00001_bootstrap.sql",
 	"00002_core_identity.sql",
@@ -43,6 +41,24 @@ var expectedFiles = []string{
 	"00028_jobs_rls.sql",
 	"00029_permissions_step_up.sql",
 	"00030_privileged_services.sql",
+	"00031_seed_sync_runs.sql",
+	"00032_version_counters_and_upload_sessions.sql",
+	"00033_document_upload_session_document_id_index.sql",
+	"00034_tenant_fk_parent_indexes.sql",
+	"00035_tenant_fk_composite_not_valid.sql",
+	"00036_tenant_fk_validate_and_cleanup.sql",
+	"00037_audit_hash_version.sql",
+	"00038_jobs_lease_columns.sql",
+	"00039_identity_grant.sql",
+	"00040_notify_webhook_lease_columns.sql",
+	"00041_bulk_operation_processor_lock.sql",
+	"00042_backfill_checkpoint_lease_columns.sql",
+	"00043_webhook_failed_signature_audit.sql",
+	"00044_bulk_items_lease_and_lifecycle.sql",
+	"00045_goose_version_platform_select.sql",
+	"00046_authz_epoch.sql",
+	"00047_perf04_sweeper_outbox_leases.sql",
+	"00048_rule_versions_resolution_indexes.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the
@@ -86,7 +102,6 @@ func TestGooseMarkersPresent(t *testing.T) {
 
 	fsys := migrations.Kernel()
 	for _, name := range expectedFiles {
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			data := mustReadFile(t, fsys, name)
@@ -135,6 +150,37 @@ func TestCoreIdentityNoRLSNoPassword(t *testing.T) {
 	passwordRe := regexp.MustCompile(`(?i)\bPASSWORD\b`)
 	if passwordRe.MatchString(data) {
 		t.Error("00002_core_identity.sql: contains PASSWORD keyword — no credentials in migrations")
+	}
+}
+
+// TestIdentityGrantMigrationHasRLSAndPartialUniqueIndex verifies that the
+// identity_grant migration creates a FORCE-RLS tenant-scoped table with the
+// expected partial unique index and app_platform-only write grants.
+func TestIdentityGrantMigrationHasRLSAndPartialUniqueIndex(t *testing.T) {
+	t.Parallel()
+
+	fsys := migrations.Kernel()
+	data := mustReadFile(t, fsys, "00039_identity_grant.sql")
+
+	if !strings.Contains(data, "CREATE TABLE identity_grant") {
+		t.Error("00039_identity_grant.sql: missing CREATE TABLE identity_grant")
+	}
+	if !strings.Contains(data, "FORCE ROW LEVEL SECURITY") {
+		t.Error("00039_identity_grant.sql: missing FORCE ROW LEVEL SECURITY")
+	}
+	if !strings.Contains(data, "CREATE UNIQUE INDEX identity_grant_one_active_per_actor") {
+		t.Error("00039_identity_grant.sql: missing one-active-grant-per-actor partial unique index")
+	}
+	if !strings.Contains(data, "WHERE status = 'active'") {
+		t.Error("00039_identity_grant.sql: partial unique index predicate must be status = 'active'")
+	}
+	if !strings.Contains(data, "GRANT SELECT, INSERT, UPDATE ON identity_grant TO app_platform") {
+		t.Error("00039_identity_grant.sql: missing app_platform grants")
+	}
+
+	// No DELETE grant: lifecycle-only.
+	if strings.Contains(data, "DELETE ON identity_grant") {
+		t.Error("00039_identity_grant.sql: must not grant DELETE on identity_grant")
 	}
 }
 

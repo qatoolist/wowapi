@@ -137,3 +137,24 @@ BenchmarkAuditRecord             17000000  700
 # ── kernel/sequence ───────────────────────────────────────────────────────────
 # DB-backed: gap-free Allocate inside a tenant tx (counter bump + ledger insert).
 BenchmarkSequenceAllocate        18000000  300
+# ── kernel/database ───────────────────────────────────────────────────────────
+# DB-backed: tenant transaction BEGIN, tenant binding, and COMMIT.
+BenchmarkTenantTransactionOpenCommit 5000000 100
+# ── kernel/jobs ───────────────────────────────────────────────────────────────
+# DB-backed: claim, tenant worker transaction, and fenced success finalize.
+BenchmarkJobClaimFinalize          20000000 500
+# ── kernel/outbox ─────────────────────────────────────────────────────────────
+# DB-backed: ten-event leased relay claim, inbox dedup, handlers, and finalize.
+BenchmarkRelayDispatchBatch       100000000 4000
+# ── kernel/workflow ───────────────────────────────────────────────────────────
+BenchmarkDefinitionValidate           50000 50
+# DB-backed SLA sweep: fixed 100-row materialization ceiling at 10/1k/100k due rows.
+BenchmarkSweepSLABatch/due_10       200000000 50000
+BenchmarkSweepSLABatch/due_1000     500000000 50000
+BenchmarkSweepSLABatch/due_100000 30000000000 50000
+# ── kernel/auth ───────────────────────────────────────────────────────────────
+BenchmarkTokenVerify                 200000 200
+# ── kernel/mfa ────────────────────────────────────────────────────────────────
+BenchmarkTOTPDerive                   10000 30
+# ── kernel/httpclient ─────────────────────────────────────────────────────────
+BenchmarkGuardedDial                  10000 20

@@ -1,0 +1,42 @@
+{
+  "evidence_id": "EV-W01-E04-S001-005",
+  "evidence_type": "functional-test report (fail-before/pass-after pair)",
+  "story": "W01-E04-S001",
+  "task": "W01-E04-S001-T005 (scope addition, conductor-approved 2026-07-13)",
+  "acceptance_criteria_proven": ["AC-W01-E04-S001-05 (added with the scope addition: a pristine scaffold's configs pass `wowapi config validate --env local` under the framework-only path)"],
+  "execution_command": "go test ./internal/cli/ -run TestInitScaffoldConfigValidates -count=1 -v",
+  "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
+  "revision_note": "HEAD at execution; fix uncommitted on top (conductor commits). Working-tree delta for this task: internal/cli/templates/init/configs_base.yaml.tmpl (i18n block converted to a commented example; the file's combined diff also carries sibling W01-E03-S002's http timeout keys — disjoint hunks) + the new test in internal/cli/gen_crud_boots_test.go.",
+  "branch": "main (local working tree)",
+  "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation; test cwd internal/cli (no tools/configcheck) exercises exactly the framework-only fallback",
+  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "datetime_utc": "2026-07-13T07:45:00Z",
+  "result": "PASS (post-fix); fail-first FAIL captured pre-fix with the exact i18n unknown-key rejections",
+  "runs": [
+    {
+      "phase": "fail-first (pre-fix, active i18n block in configs_base.yaml.tmpl)",
+      "status": "failed",
+      "outcome": "FAIL. Verbatim: \"config: invalid configuration: i18n.default_locale: unknown key / i18n.go_bundles: unknown key / i18n.locales_dir: unknown key / i18n.supported_locales: unknown key\" — reproducing W01-E04-S002 DEV-03(a) in-process.",
+      "log": "t005-scaffold-config-validate-prefix-failfirst.log",
+      "sha256": "3262a0882d0294e8ba96d72c741d1aafb607c7a8ba6f82efa5bc53d86313bf9b"
+    },
+    {
+      "phase": "post-fix",
+      "status": "resolved",
+      "outcome": "PASS: `config validate --env local` on a pristine scaffold prints `config OK` + fingerprint. Fix: the scaffold's ACTIVE i18n block became a commented example, matching the file's own convention for product-owned sections (auth/security/storage/privileged/concurrency); the values shown were all compiled-in defaults except supported_locales, which nothing at runtime reads (appcfg I18nConfig zero value is documented valid; catalogs load from locales/ regardless; `wowapi i18n validate` takes --supported as a flag). Product behavior unchanged — TestInitI18nAcceptanceEndToEnd and every TestInitI18n*/TestInitConfigsBase* test still passes.",
+      "log": "t005-scaffold-config-validate-postfix.log",
+      "sha256": "e5d99542ff90c6da7a9a7f6cb0ad32d21b20a67b11b23ae70f81dfab1c75d36b"
+    },
+    {
+      "phase": "full touched-package regression",
+      "status": "passed",
+      "outcome": "go test ./internal/cli/ -count=1 -> ok (13.0s) including TestGenCRUDOutputBoots, all i18n scaffold tests, and sibling stories' in-flight tests.",
+      "log": "pkg-internal-cli-full-2.log",
+      "sha256": "baf71aefc39c0617185a9d3b2f009e97a204a07d1d85bedaf86e0ac6e01f2dd8"
+    }
+  ],
+  "root_cause_note": "True source of drift judged to be the scaffold template, not the schema: the i18n keys are product-owned (appcfg.Config.I18n; config.Framework cannot gain a duplicate `conf:\"i18n\"` section without colliding with every existing product's embedded-Framework composition), and the scaffold's own convention already ships every other product-owned/optional section commented. The DX-01 go.mod defect (which breaks the tools/configcheck delegation leg of `config validate` inside a scaffold) is a SEPARATE open defect, out of this task's scope — tracked by W01-E04-S001-T001.",
+  "file_or_uri": "evidence/DX-02/scaffold-config-validate-fix.json",
+  "reviewer": "pending — wave-level review gate (conductor)",
+  "superseded_evidence": null
+}

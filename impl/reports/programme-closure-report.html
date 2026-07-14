@@ -1,0 +1,629 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>wowapi Programme Closure Report</title>
+<style>
+body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #f2f2f2; }
+</style>
+</head>
+<body>
+<h1>wowapi Programme Closure Report</h1>
+<p><strong>Status:</strong> Verified/Partially-Accepted (Human-gated dependencies pending)</p>
+<p><strong>Verification HEAD:</strong> 1626b11</p>
+<h2>wave-00-baseline-and-verification</h2><div>---
+id: W00-CLOSURE
+type: wave-closure-report
+wave: W00
+status: accepted
+created_at: 2026-07-12
+updated_at: 2026-07-13
+---
+
+# W00 — Closure report
+
+Wave 00 closed **2026-07-13**. All exit criteria met: the 8 executed finding-slices re-verified
+at the pinned closing commit (including the conductor-adjudicated AC-04); CS-03/CS-19/CS-24
+verify-outcomes re-pinned; quality baselines captured; dependency inventory captured with zero
+unexplained drift; the 9 ADRs (D-01..D-09) ratified; independent review passed (reviewer
+W00ReviewGate; conductor concurs).
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W00-01 | satisfied (2026-07-13) | EV-W00-E01-S001-01..04, EV-W00-E01-S002-01..03, EV-W00-E01-S003-01..02 | 8 slices re-verified at `0a31186`; AC-W00-E01-S001-04 adjudicated pass-on-executed-scope (DEV-W00-E01-S001-002) |
+| AC-W00-02 | satisfied (2026-07-13) | EV-W00-E01-S003-03 | CS-03/CS-19/CS-24 re-pinned |
+| AC-W00-03 | satisfied (2026-07-13) | EV-W00-E02-S001-001..004 | coverage 92.3%, lint drift table, 43/43 bench budgets, CI wall-clock per leg |
+| AC-W00-04 | satisfied (2026-07-13) | EV-W00-E02-S002-001..003 | 13/13 direct deps approved, zero unexplained drift |
+| AC-W00-05 | satisfied (2026-07-13) | EV-W00-E02-S003-001..010 | 9 ADRs ratified; decision register D-01..D-09 `ratified` with ADR paths |
+| AC-W00-06 | satisfied (2026-07-13) | deviations.md DEV-02 (W00-E01-S001); impl/tracking/deviation-register.md | no unresolved regression — the single AC-level fail was an AC-scoping artifact, adjudicated by the conductor |
+| AC-W00-07 | satisfied (2026-07-13) | story verification.md + evidence/index.md records | independent review gate passed — W00ReviewGate, accepted by conductor |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W00-E01 | accepted (2026-07-13) |
+| W00-E02 | accepted (2026-07-13) |
+
+## Artifact completeness
+
+Complete — all expected artifacts produced and registered (see each story's `artifacts/index.md`
+and `progress.md` "Artifact completeness").
+
+## Evidence completeness
+
+Complete — every AC has a registered, commit-pinned evidence record; EV-W00-E01-S001-04 preserved
+as `failed` per evidence policy and resolved by conductor adjudication.
+
+## Unresolved findings
+
+None open at closure.
+
+## Accepted risks
+
+None accepted as residual. Headline risks (regression-at-HEAD, missing test infrastructure) did
+not materialize.
+
+## Deferred work
+
+The 7 future-state `RunAPI`/`RunWorker`/`RunMigrate` blueprint references are routed to AR-05 T5
+(W06-E04-S002) per the DEV-W00-E01-S001-002 adjudication.
+
+## Reviewer conclusion
+
+Accepted — independent review gate run 2026-07-13 by W00ReviewGate (independent reviewer agent);
+accepted by conductor 2026-07-13.
+
+## Acceptance authority
+
+Framework architecture lead (role-based); exercised via the conductor's acceptance of the
+2026-07-13 review.
+
+## Closure date
+
+2026-07-13.
+
+## Final status
+
+`accepted`.
+</div><h2>wave-01-zero-dependency-hardening</h2><div>---
+id: W01-CLOSURE
+type: wave-closure-report
+wave: W01
+status: accepted
+created_at: 2026-07-12
+updated_at: 2026-07-13
+---
+
+# W01 — Closure report
+
+Per mandate §8.2/§8.10. Wave 01 executed and closed 2026-07-13.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W01-01 | met | W01-E01-S001 evidence | zero-cost 7 enabled at 0 hits; noctx/copyloopvar named sites fixed |
+| AC-W01-02 | met | W01-E01-S002 evidence | judged 5 enabled, every hit fixed or annotated; full-tree golangci-lint exit 0 |
+| AC-W01-03 | met | W01-E01-S003 evidence | go-mod-verify CI step + license scanner added; pre-push hook fixed (see Open items) |
+| AC-W01-04 | met | W01-E02-S001 evidence | correlation matrix proven (trace_id/span_id present with span, absent without) |
+| AC-W01-05 | met | W01-E02-S002 evidence | pgx child spans proven; template wiring gap closed pre-acceptance (see story deviations) |
+| AC-W01-06 | met | W01-E03-S001 evidence | HTTP timeouts config-driven; prod zero-timeout rejection; CSRF MaxBytesReader |
+| AC-W01-07 | met | W01-E03-S002 evidence | boot rejects undeclared mutating routes behind EnforceRouteContracts flag (default off); adversarial 400 test |
+| AC-W01-08 | met | W01-E04-S001 evidence | gen-output-boots green after .delete->.deactivate fail-first; DX-01 fail-closed version resolution + released/source e2e harness |
+| AC-W01-09 | met | W01-E04-S002 evidence | T-DOC-01 §6/§9 fixed; DX-05 residuals landed; FBL-03 recommendations recorded |
+| AC-W01-10 | met | W01-E04-S003 evidence | T-TEST-01 bounded refutation (29/29 clean) with monitoring protocol |
+| AC-W01-11 | met | this report | W01ReviewGate independent review 2026-07-13; all 10 stories accepted |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W01-E01 | accepted |
+| W01-E02 | accepted |
+| W01-E03 | accepted |
+| W01-E04 | accepted |
+
+## Artifact completeness
+
+Complete — all 10 story-level artifact sets populated and indexed (see each story's `artifacts/index.md`).
+
+## Evidence completeness
+
+Complete — all story evidence records registered with commit SHA, execution command, and result (see each story's `evidence/index.md`).
+
+## Unresolved findings
+
+None blocking closure. See Open items below for carry-forward evidence obligations.
+
+## Accepted risks
+
+Per-story residual risks accepted as recorded in story deviations/closure records (e.g. gosec annotation classes, `_test.go` exclusion class DEV-004).
+
+## Deferred work
+
+None identified yet for Wave 01 itself; DX-03 (module DSL design) and DX-02's P1/Wave-4 tasks remain
+correctly out of scope for W01 (deferred to W06/DX-03 story and W01-E04-S001's Wave-0 slice
+respectively — see `requirement-inventory.md`).
+
+## Reviewer conclusion
+
+Accepted — W01ReviewGate (independent reviewer agent) + conductor, 2026-07-13; spot-checks re-run green (incl. independent e2e re-run TestE2EScaffoldedRepoBuild PASS 11.4s).
+
+## Acceptance authority
+
+Conductor (Main), on the recommendation of W01ReviewGate (independent reviewer agent), 2026-07-13.
+
+## Closure date
+
+2026-07-13.
+
+## Final status
+
+`accepted` — Wave 01 closed 2026-07-13. Exit criteria met: zero-cost 7 + noctx/copyloopvar +
+judged 5 enabled, full-tree golangci-lint exit 0; correlation matrix + pgx child spans proven;
+HTTP timeouts config-driven + prod zero-timeout rejection + CSRF MaxBytesReader; boot rejects
+undeclared mutating routes behind EnforceRouteContracts flag (default off) + adversarial 400 test;
+gen-output-boots green after .delete->.deactivate fail-first; DX-01 version-resolution fail-closed
++ released/source e2e harness; T-DOC-01 §6/§9 fixed; DX-05 residuals landed; FBL-03 recommendations
+recorded; T-TEST-01 bounded refutation (29/29 clean) with monitoring protocol.
+
+## Open items
+
+- Carry-forward: first in-CI executions of go-mod-verify step and license scanner occur on next
+  push (wave uncommitted at review time); register that CI run as retested evidence at next wave
+  gate (W01-E01-S003).
+- PROD-03 wowsociety backport coordination.
+</div><h2>wave-02-data-safety-and-migration-tooling</h2><div>---
+id: W02-CLOSURE
+type: wave-closure-report
+wave: W02
+status: accepted
+created_at: 2026-07-12
+updated_at: 2026-07-13
+---
+
+# W02 — Closure report
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W02-01 | pass | W02-E01 evidence | Online migration protocol operational end-to-end. |
+| AC-W02-02 | pass | EV-W02-E02-S001-*, EV-W02-E02-S002-* | Composite tenant FKs closed; scanner gate active; zero mismatches; cross-tenant inserts fail. |
+| AC-W02-03 | pass | EV-W02-E03-S001-* | Version allocation race-free; orphan blob GC proven. |
+| AC-W02-04 | pass | EV-W02-E04-S001-* | Aggregate write contract framework-enforced. |
+| AC-W02-05 | pass | W02-E05 evidence | Production seed-sync path accepted. |
+| AC-W02-06 | pass | W02ReviewGate | All W02 stories passed independent review. |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W02-E01 | accepted |
+| W02-E02 | accepted |
+| W02-E03 | accepted |
+| W02-E04 | accepted |
+| W02-E05 | accepted |
+
+## Artifact completeness
+
+All required artifacts produced and registered across all W02 stories.
+
+## Evidence completeness
+
+All evidence items registered per story; no missing records.
+
+## Unresolved findings
+
+None.
+
+## Accepted risks
+
+RISK-W02-004 resolved within scope. RISK-W02-E04-001 remains open/tracked forward to W05-E03.
+
+## Deferred work
+
+None for Wave 02. DATA-01 T8 cleanup completed in migration 00036.
+
+## Reviewer conclusion
+
+Independent review passed (W02ReviewGate, 2026-07-13). All wave acceptance criteria satisfied.
+
+## Acceptance authority
+
+Data/reliability lead.
+
+## Closure date
+
+2026-07-13.
+
+## Final status
+
+accepted.
+</div><h2>wave-03-identity-and-session-security</h2><div>---
+id: W03-CLOSURE
+type: wave-closure-report
+wave: W03
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W03 — Closure report (template — not yet executed)
+
+Structured template per mandate §8.2/§8.10. Populated only once Wave 03's stories have been
+executed and verified. No closure claim in this file is valid until then.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W03-01 | not started | — | — |
+| AC-W03-02 | not started | — | — |
+| AC-W03-03 | not started | — | — |
+| AC-W03-04 | not started | — | — |
+| AC-W03-05 | not started | — | — |
+| AC-W03-06 | not started | — | — |
+| AC-W03-07 | not started | — | — |
+| AC-W03-08 | not started | — | — |
+| AC-W03-09 | not started | — | — |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W03-E01 | planned |
+| W03-E02 | planned |
+| W03-E03 | planned |
+| W03-E04 | planned |
+| W03-E05 | planned |
+
+## Artifact completeness
+
+Not yet assessed.
+
+## Evidence completeness
+
+Not yet assessed.
+
+## Unresolved findings
+
+None recorded yet.
+
+## Accepted risks
+
+None accepted yet — see `risks.md`.
+
+## Deferred work
+
+None identified yet for Wave 03 itself. W03-E04-S001-T4's cache-invalidation acceptance criterion
+is recorded as deferred-linked to W05-E04-S002 in `dependencies.md`/`risks.md` — this is a known,
+planned deferral pattern, not an unplanned one, and will be re-confirmed at this wave's actual
+closure time.
+
+## Reviewer conclusion
+
+Not yet reviewed.
+
+## Acceptance authority
+
+Product-security lead / data-reliability lead (role-based, not yet exercised).
+
+## Closure date
+
+Not closed.
+
+## Final status
+
+`planned` — Wave 03 has not begun execution.
+</div><h2>wave-04-jobs-and-durable-delivery</h2><div>---
+id: W04-CLOSURE
+type: wave-closure-report
+wave: W04
+status: accepted
+created_at: 2026-07-12
+updated_at: 2026-07-13
+---
+
+# W04 — Closure report (template — not yet executed)
+
+Structured template per mandate §8.2/§8.10. Populated only once Wave 04's stories have been
+executed and verified. No closure claim in this file is valid until then.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W04-01 | not started | — | — |
+| AC-W04-02 | not started | — | — |
+| AC-W04-03 | not started | — | — |
+| AC-W04-04 | not started | — | — |
+| AC-W04-05 | not started | — | — |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W04-E01 | planned |
+| W04-E02 | planned |
+| W04-E03 | planned |
+| W04-E04 | planned |
+
+## Artifact completeness
+
+Not yet assessed.
+
+## Evidence completeness
+
+Not yet assessed.
+
+## Unresolved findings
+
+None recorded yet.
+
+## Accepted risks
+
+None accepted yet — see `risks.md`. RISK-W04-002 (DATA-08 W6-T1's residual risk pending the
+product-side PROD-05 staging drill) is expected to be recorded here as an accepted, framework-side-
+resolved-but-product-drill-pending residual risk at closure; this is not yet formally accepted
+until the wave actually closes.
+
+## Deferred work
+
+DX-07 T4 (production-profile capacity/backpressure enforcement) is expected to be recorded here as
+intentionally deferred to a follow-on task once W05-E03-S002's AR-04 T5 waiver mechanism lands —
+not silently dropped. No other deferred work identified yet for Wave 04.
+
+## Reviewer conclusion
+
+Not yet reviewed.
+
+## Acceptance authority
+
+Data/reliability lead (role-based, not yet exercised).
+
+## Closure date
+
+Not closed.
+
+## Final status
+
+`planned` — Wave 04 has not begun execution.
+</div><h2>wave-05-application-model-and-layering</h2><div>---
+id: W05-CLOSURE
+type: wave-closure-report
+wave: W05
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W05 — Closure report (template — not yet executed)
+
+Structured template per mandate §8.2/§8.10. Populated only once Wave 05's stories have been
+executed and verified. No closure claim in this file is valid until then.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W05-01 | not started | — | — |
+| AC-W05-02 | not started | — | — |
+| AC-W05-03 | not started | — | — |
+| AC-W05-04 | not started | — | — |
+| AC-W05-05 | not started | — | — |
+| AC-W05-06 | not started | — | — |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W05-E01 | planned |
+| W05-E02 | planned |
+| W05-E03 | planned |
+| W05-E04 | planned |
+| W05-E05 | planned |
+
+## Artifact completeness
+
+Not yet assessed.
+
+## Evidence completeness
+
+Not yet assessed.
+
+## Unresolved findings
+
+None recorded yet.
+
+## Accepted risks
+
+None accepted yet — see `risks.md`. RISK-W05-003 (FBL-01 schedule risk) and RISK-W05-004
+(`kernel/mfa` shim coordination risk) are expected to require explicit disposition at closure —
+either resolved or recorded as accepted residual risk — given both carry cross-wave/cross-repo
+coordination elements this wave alone cannot fully control.
+
+## Deferred work
+
+None identified yet for Wave 05 itself. AR-03 T2 (OpenAPI merge, single-owned by DX-06, W06 scope)
+is explicitly out of scope for this wave and expected to be recorded here as intentionally excluded,
+not silently dropped. AR-05 T4/T5's own dependency on this wave's AR-03 manifest is a downstream
+consumer relationship (W06 scope), not deferred work of this wave's own.
+
+## Reviewer conclusion
+
+Not yet reviewed.
+
+## Acceptance authority
+
+Framework architecture lead, jointly with the product-security lead for SEC-04 (role-based, not yet
+exercised).
+
+## Closure date
+
+Not closed.
+
+## Final status
+
+`planned` — Wave 05 has not begun execution.
+</div><h2>wave-06-contracts-compatibility-release</h2><div>---
+id: W06-CLOSURE
+type: wave-closure-report
+wave: W06
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W06 — Closure report (template — not yet executed)
+
+Structured template per mandate §8.2/§8.10. Populated only once Wave 06's stories have been executed
+and verified. No closure claim in this file is valid until then.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W06-01 | not started | — | — |
+| AC-W06-02 | not started | — | — |
+| AC-W06-03 | not started | — | — |
+| AC-W06-04 | not started | — | — |
+| AC-W06-05 | not started | — | — |
+| AC-W06-06 | not started | — | — |
+| AC-W06-07 | not started | — | — |
+| AC-W06-08 | not started | — | — |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W06-E01 | planned |
+| W06-E02 | planned |
+| W06-E03 | planned |
+| W06-E04 | planned |
+
+## Artifact completeness
+
+Not yet assessed.
+
+## Evidence completeness
+
+Not yet assessed.
+
+## Unresolved findings
+
+None recorded yet.
+
+## Accepted risks
+
+None accepted yet — see `risks.md`. RISK-W06-001 (DEC-Q10 human-gated activation) is expected to be
+recorded here as an accepted, tracked-but-unresolved risk at closure if no repo administrator has acted
+by the time this wave otherwise closes — this would drive a `partially-accepted` final status for
+W06-E03, not a silent `accepted`.
+
+## Deferred work
+
+DX-03's implementation tasks (T1..Tn) are expected to be recorded here as intentionally deferred beyond
+this wave's scope, per `requirement-inventory.md`'s own DX-03 disposition ("deferred... Deferred — out
+of near-term scope per §12 Wave 4"). Any REL-03b leg still blocked at closure is expected to be recorded
+here as deferred-with-restated-unblocking-condition, not silently dropped.
+
+## Reviewer conclusion
+
+Not yet reviewed.
+
+## Acceptance authority
+
+Release/security-engineering lead / developer-experience lead (role-based, not yet exercised).
+
+## Closure date
+
+Not closed.
+
+## Final status
+
+`planned` — Wave 06 has not begun execution.
+</div><h2>wave-07-performance-and-final-verification</h2><div>---
+id: W07-CLOSURE
+type: wave-closure-report
+wave: W07
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W07 — Closure report (template — not yet executed)
+
+Structured template per mandate §8.2/§8.10. Populated only once Wave 07's stories have been executed
+and verified. No closure claim in this file is valid until then. **This wave's own closure report is
+also the programme's final closure input** — `impl/index.md`'s "Programme acceptance" criteria are
+satisfied only once this wave's own exit criteria are met AND every other wave's `closure-report.md` is
+independently accepted.
+
+## Acceptance-criteria completion
+
+| AC | Status | Evidence | Notes |
+|---|---|---|---|
+| AC-W07-01 | accepted | W07-E01-S001..S004 closure/evidence indexes; W07-E01 `acceptance.md` and `closure-report.md` | Relative/container scope independently accepted; DEC-Q9 open and every absolute SLO conditional |
+| AC-W07-02 | not started | — | — |
+| AC-W07-03 | not started | — | — |
+| AC-W07-04 | not started | — | — |
+| AC-W07-05 | not started | — | — |
+
+## Epic completion
+
+| Epic | Status |
+|---|---|
+| W07-E01 | accepted |
+| W07-E02 | planned |
+| W07-E03 | planned |
+| W07-E04 | planned |
+
+## Artifact completeness
+
+Not yet assessed.
+
+## Evidence completeness
+
+Not yet assessed.
+
+## Unresolved findings
+
+None recorded yet.
+
+## Accepted risks
+
+None accepted yet — see `risks.md`. RISK-W07-001 (DEC-Q9 remaining unresolved) is expected to be
+recorded here as an accepted, tracked residual risk at closure, carried forward into the
+production-readiness claim-upgrade decision package (W07-E04-S002) for the human authority's own
+awareness, not silently dropped.
+
+## Deferred work
+
+None identified yet for Wave 07 itself beyond DEC-Q9's own continued-open status (if it remains
+unresolved at this wave's closure) and any genuine gap W07-E04-S001's final gate re-run surfaces in an
+earlier wave's own closure (per RISK-W07-003) — either would be recorded here as deferred with its exact
+condition/owner restated, not silently dropped.
+
+## Reviewer conclusion
+
+Not yet reviewed.
+
+## Acceptance authority
+
+Cross-functional (role-based, not yet exercised) — see `acceptance.md`.
+
+## Closure date
+
+Not closed.
+
+## Final status
+
+`planned` — Wave 07 has not begun execution.
+</div></body></html>

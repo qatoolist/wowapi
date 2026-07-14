@@ -82,6 +82,8 @@ services:
       context: ..
       dockerfile: Dockerfile
       target: dev
+      args:
+        ALLURE_CLI_VERSION: "2.43.0"
     working_dir: /src
     volumes:
       - ..:/src

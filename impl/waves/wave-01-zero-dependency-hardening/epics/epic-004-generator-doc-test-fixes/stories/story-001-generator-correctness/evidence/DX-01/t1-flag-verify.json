@@ -1,0 +1,44 @@
+{
+  "evidence_id": "EV-W01-E04-S001-001",
+  "evidence_type": "functional-test report (fail-first pairs, all resolution paths)",
+  "story": "W01-E04-S001",
+  "task": "W01-E04-S001-T001",
+  "acceptance_criteria_proven": ["AC-W01-E04-S001-01"],
+  "execution_command": "go test ./internal/cli/ -run 'TestInitDevel|TestInitFramework|TestInitLocalFramework|TestInitBoth|TestInitStamped|TestGoResolveModuleVersion' -count=1 -v",
+  "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
+  "revision_note": "HEAD at execution; the T001 fix is an UNCOMMITTED working-tree change on top of this SHA (the wave conductor owns commits). Working-tree delta for this task: internal/cli/init_version.go (new), internal/cli/init_cmd.go (flags + pre-write resolution, v0.0.0 fallback deleted), internal/cli/templates/init/go.mod.tmpl (conditional replace directive), internal/cli/init_version_test.go (new), internal/cli/scaffold_test.go (callInit pins --local-framework for non-resolution tests; buildRenderedProduct simplified onto the new flag).",
+  "branch": "main (local working tree)",
+  "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation",
+  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "datetime_utc": "2026-07-13T08:05:30Z",
+  "result": "PASS (post-fix, 15 tests / 17 assertions incl. subtests); fail-first baselines captured pre-fix",
+  "defect_shape_note": "The story's problem statement cites the `devel` -> `v0.0.0` fallback (reproduced: `go run` CLI wrote `v0.0.0`, next `go mod download` failed with 'unknown revision v0.0.0'). Execution additionally captured the modern Go 1.24+ shape of the SAME defect (SF-7, W01-E04-S002 DEV-03): a locally `go build`-built CLI is stamped with a VCS pseudo-version, so buildinfo.Version() != 'devel' and init wrote `v1.0.1-0.20260713072141-05dce5c8a548+dirty` — equally unresolvable — with exit 0. The fix classifies the stamped version by shape: tagged release used as-is; +dirty fails closed; clean pseudo-version verified via `go list -m` pre-write; unstamped devel derives from vcs.revision, verified, else fails closed.",
+  "runs": [
+    {
+      "phase": "fail-first baseline (pre-fix)",
+      "status": "resolved",
+      "outcome": "Flag-less devel init SUCCEEDED silently and wrote unresolvable versions (`v0.0.0` from go run; `v1.0.1-...+dirty` from a dirty-tree go build); the failure only surfaced at the NEXT command (`go mod download`: 'unknown revision'). Captured verbatim, both shapes.",
+      "log": "t1-t4-prefix-failfirst.log",
+      "sha256": "1ec30381c9a9700a74cf213e6cbe5f6c7178c27249b3ebbdceee99dd6b157f1e"
+    },
+    {
+      "phase": "post-fix CLI demos",
+      "status": "passed",
+      "outcome": "Unstamped devel (go run) and +dirty-stamped (go build) flag-less init both FAIL CLOSED pre-write (exit 1, zero files, remediation naming both flags and the go list -m -versions discovery command); --local-framework at this checkout succeeds with an explicit replace directive + visible dev-mode warning; grep confirms the bare `v0.0.0` fallback no longer exists in init_cmd.go.",
+      "log": "t1-t4-postfix.log",
+      "sha256": "ac13661c7fcd3e7ece762599ff7fead3f1d9dd322c931e6eb22737bf349926a5"
+    },
+    {
+      "phase": "post-fix test suite",
+      "status": "passed",
+      "outcome": "All resolution paths proven: explicit-version success (verified value written) and failure (fail-closed pre-write with exact `go list -m -versions` remediation, driven through the REAL go list subprocess under GOPROXY=off); local-framework success (replace + placeholder + warning) and failures (relative path, nonexistent path, non-framework dir); VCS-default success (canonical version from stamped revision) and failures (no VCS stamp, dirty tree, unreachable commit); stamped-release pass-through; stamped-pseudo-version verified-or-fail-closed; +dirty fail-closed (SF-7 regression test); both-flags mutual exclusion; real resolver round-trip against the local module cache.",
+      "log": "t1-t4-tests-postfix.log",
+      "sha256": "5eff79028da2e3afb945c638089bf587a300fb48f609806181857b4678b57732"
+    }
+  ],
+  "companion_files_note": "story.md's evidence naming anticipated per-sub-task files t1..t4; all four sub-tasks (T1 flag verify, T2 local framework, T3 VCS default, T4 fallback removal) are covered by this single report because they share one test suite and one fail-first capture — recorded as consolidation, not omission.",
+  "no_placeholder_note": "The only remaining `v0.0.0-` literal is localReplaceVersion (`v0.0.0-00010101000000-000000000000`), Go's canonical inert placeholder, written EXCLUSIVELY together with the --local-framework replace directive that satisfies it. The unconditional bare-`v0.0.0` fallback is deleted.",
+  "file_or_uri": "evidence/DX-01/t1-flag-verify.json",
+  "reviewer": "pending — wave-level review gate (conductor)",
+  "superseded_evidence": null
+}

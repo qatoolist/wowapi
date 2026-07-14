@@ -1,0 +1,33 @@
+Evidence ID: EV-W06-E02-S002-001
+Evidence type: compatibility gate fixture and integration test report
+Story and tasks: W06-E02-S002 / W06-E02-S002-T001,T002,T003,T004
+Acceptance criteria proven in the initial run: AC-W06-E02-S002-01, AC-W06-E02-S002-03, AC-W06-E02-S002-04; AC-W06-E02-S002-02 is proven by the remainder runs below.
+Execution commands:
+  go test ./internal/cli ./internal/compat ./internal/compatcli -run '^(TestOpenAPI|TestCheckConfigSchemaCompatibility|TestGoAPIDiffGateFixtures|TestCandidateArchitectureSmoke|TestRunConfig)' -count=1
+  DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 go test ./migrations -run '^TestIntegrationMigrationsReversible$' -count=1 -v
+  actionlint -color=false .github/workflows/compatibility-gates.yml .github/workflows/ci.yml
+Code revision: working tree based on 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Branch or tag: main working tree
+Environment: Darwin arm64; Go 1.26.5; local PostgreSQL
+Relevant tool versions: golang.org/x/exp/cmd/apidiff pseudo-version 2026-07-09; actionlint installed runner version
+Execution date: 2026-07-13
+Results: PASS
+Raw outputs:
+  go test: 3 packages ok (11.53 seconds)
+  go test: 1 packages ok (3.69 seconds)
+  actionlint: no output, exit 0 (0.20 seconds)
+Reviewer: W06-E01-E04-Execution independent review; one suspected required-direction issue and one task-record issue reported
+Review disposition:
+  Required-direction finding was not reproducible: compareRequired already compares current required fields against the baseline and therefore rejects only optional-to-required. Added TestCheckConfigSchemaCompatibilityRequiredDirection to lock both directions.
+  Command: go test ./internal/compat -run '^TestCheckConfigSchemaCompatibility' -count=1
+  Raw output: go test: 1 packages ok (1.03 seconds)
+  Task-record finding fixed: T001/T003/T004 implementation and verification sections now contain observed results and evidence IDs; no completed task retains “Not yet implemented/executed”.
+
+Remainder execution:
+  EV-W06-E02-S002-002: GOTOOLCHAIN=go1.26.0 and go1.26.5 compile-only runs each PASS (68 packages, 8 no-test packages).
+  EV-W06-E02-S002-005: real OCI archive digest sha256:bc5a6bc43418d523947d0145491d14f2ffefb683421699907c693f9c668f480c copied without rebuild; amd64 and arm64 each returned wowapi verify-733ef3e and PASS.
+  EV-W06-E02-S002-006: 12/12 release-contract tests PASS, including real-bundle-schema cosign handoff, fail-closed cosign rejection, missing/tampered provenance, missing SBOM, stripped signature, wrong platform/SHA, and tampered manifest; actionlint PASS.
+  Focused OCI orchestration tests: go test ./internal/compat -run '^TestCandidate(Architecture|OCI)Smoke' -count=1 -v — PASS.
+  Workflow validation: actionlint .github/workflows/release.yml .github/workflows/compatibility-gates.yml — PASS.
+  Environment: DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable; WOWAPI_REQUIRE_DB=1; WOWAPI_REQUIRE_S3=1; Darwin arm64; Docker 29.4.0; ORAS 1.2.3.
+  Execution date: 2026-07-14. Executor: W06-E02-S002-Rerun-2. Independent verifier: W06-E02-S002-Rerun — PASS, no production findings.

@@ -43,6 +43,8 @@ type fakeSpan struct{}
 func (fakeSpan) End()                {}
 func (fakeSpan) SetAttr(_, _ string) {}
 func (fakeSpan) RecordError(error)   {}
+func (fakeSpan) TraceID() string     { return "" }
+func (fakeSpan) SpanID() string      { return "" }
 
 // TestIntegrationOutboxTracePropagation is the O1/CA-9 regression: an event
 // captures the writer's trace context, and the relay extracts it when it
@@ -238,7 +240,6 @@ func TestIntegrationOutboxHotAggregateThroughput(t *testing.T) {
 		})
 
 	for i := 0; i < total; i++ {
-		i := i
 		if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 			return w.Write(ctx, db, outbox.Event{Type: "requests.request.changed", Resource: res, Payload: map[string]any{"i": i}})
 		}); err != nil {

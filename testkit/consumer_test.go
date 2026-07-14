@@ -27,6 +27,9 @@ func TestIntegrationScratchConsumer(t *testing.T) {
 		t.Skip("scratch-consumer test needs a database DSN (run `make up` and export DATABASE_URL)")
 	}
 	if _, err := exec.LookPath("go"); err != nil {
+		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+			t.Fatalf("WOWAPI_REQUIRE_DB is set but the Go toolchain is unavailable — the scratch-consumer proof must run: %v", err)
+		}
 		t.Skip("go toolchain not found")
 	}
 
@@ -58,6 +61,9 @@ replace github.com/qatoolist/wowapi => `+repoRoot+"\n")
 	if out, err := tidy.CombinedOutput(); err != nil {
 		if strings.Contains(string(out), "dial tcp") || strings.Contains(string(out), "lookup") ||
 			strings.Contains(string(out), "proxy") || strings.Contains(string(out), "cannot find module") {
+			if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+				t.Fatalf("WOWAPI_REQUIRE_DB is set but scratch-consumer dependencies cannot be resolved — warm the module cache or restore network access:\n%s", out)
+			}
 			t.Skipf("scratch consumer: module resolution needs network (cold cache); skipping:\n%s", out)
 		}
 		t.Fatalf("scratch consumer: go mod tidy: %v\n%s", err, out)

@@ -1,9 +1,10 @@
 -- Bulk-operation framework (roadmap E6). Chunked processing of large item sets
 -- with progress reporting, a partial-failure ledger, and resumability. A bulk
--- operation owns N item rows; a processor claims pending items in chunks
--- (FOR UPDATE SKIP LOCKED — safe across replicas), runs each, and records
--- done/failed per item so a crash resumes from the remaining pending items and
--- one bad item never fails the whole run. Tenant-scoped under RLS.
+-- operation owns N item rows; a processor claims pending items one at a time
+-- (single processor per operation; multi-worker fan-out is added later by the
+-- DATA-04 leased-claim migration). Each item is run and its done/failed status
+-- recorded so a crash resumes from the remaining pending items and one bad item
+-- never fails the whole run. Tenant-scoped under RLS.
 
 -- +goose Up
 

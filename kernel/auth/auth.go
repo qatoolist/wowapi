@@ -55,12 +55,28 @@ type Config struct {
 // Claims carries the wowapi-specific token payload alongside the standard
 // registered claims. Subject (sub) maps to a user's idp_subject; TenantID and
 // the optional CapacityID/ImpersonatorUserID/BreakGlass drive the authz.Actor.
+//
+// T5 (SEC-01): ImpersonatorUserID and BreakGlass are no longer trusted from
+// these claim fields. When GrantID is present, Verifier.Actor resolves the
+// verified grant row and populates those Actor fields from that row only.
+// The claim fields are retained for claim-shape compatibility during cutover.
 type Claims struct {
 	jwt.RegisteredClaims
 	TenantID           uuid.UUID `json:"tenant_id"`
 	CapacityID         uuid.UUID `json:"capacity_id,omitempty"`
+	GrantID            uuid.UUID `json:"grant_id,omitempty"`
 	ImpersonatorUserID uuid.UUID `json:"impersonator_user_id,omitempty"`
 	BreakGlass         bool      `json:"break_glass,omitempty"`
+	// AuthTime is the standard auth_time claim (OIDC Core §2, ISO8601 numeric
+	// date). It records when the user authenticated at the IdP and drives
+	// step-up freshness enforcement (SEC-01 T6). Absent or malformed auth_time
+	// is treated as an unset claim by the verifier; freshness enforcement
+	// interprets an unset AuthTime as failing freshness.
+	AuthTime *jwt.NumericDate `json:"auth_time,omitempty"`
+	// ACR is the standard authentication-context-class-reference claim (OIDC
+	// Core §2). It is propagated to authz.Actor.ACR so policies can reason
+	// about the assurance class, but it does not by itself gate step-up.
+	ACR string `json:"acr,omitempty"`
 	// AMR is the standard authentication-methods-references claim (RFC 8176,
 	// e.g. ["pwd","mfa"]) surfaced by the IdP. Verifier.Actor propagates it to
 	// authz.Actor.AMR, which drives step-up (MFA) enforcement (roadmap S3). A
@@ -163,21 +179,100 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 	return *claims, nil
 }
 
+// ResolvedGrant carries the verified privileged-session state returned by a
+// PrincipalStore grant lookup. It is the only source of truth for populating
+// authz.Actor.ImpersonatorUserID and authz.Actor.BreakGlass (SEC-01 T5).
+type ResolvedGrant struct {
+	ImpersonatorUserID uuid.UUID
+	BreakGlass         bool
+}
+
+// GrantRejection names why a privileged-session grant was rejected by the
+// resolver. Each value maps to one of the adversarial conditions in SEC-01 T5.
+type GrantRejection string
+
+const (
+	// GrantRejectionExpired is returned when the grant's expires_at has passed
+	// or its status is 'expired'.
+	GrantRejectionExpired GrantRejection = "grant_expired"
+	// GrantRejectionRevoked is returned when the grant's status is 'revoked' or
+	// revoked_at is set.
+	GrantRejectionRevoked GrantRejection = "grant_revoked"
+	// GrantRejectionWrongTenant is returned when the grant row's tenant_id does
+	// not match the actor's tenant. (The lookup itself is tenant-scoped, so this
+	// condition also covers a forged grant ID from another tenant.)
+	GrantRejectionWrongTenant GrantRejection = "grant_wrong_tenant"
+	// GrantRejectionWrongActor is returned when the grant does not authorize
+	// this actor (e.g. an impersonation grant for a different user, or a
+	// break-glass grant issued to a different actor).
+	GrantRejectionWrongActor GrantRejection = "grant_wrong_actor"
+	// GrantRejectionNotFound is returned when the grant ID does not identify any
+	// grant row (forged/unknown ID).
+	GrantRejectionNotFound GrantRejection = "grant_not_found"
+	// GrantRejectionUnauthorizedApprover is returned when the grant's approver
+	// is missing or is not entitled to approve privileged sessions.
+	GrantRejectionUnauthorizedApprover GrantRejection = "grant_unauthorized_approver"
+)
+
+// IsGrantRejection reports whether err is a privileged-session rejection with
+// reason r. It walks the error chain and inspects each structured error's code;
+// a nil error is false.
+func IsGrantRejection(err error, r GrantRejection) bool {
+	for err != nil {
+		if e, ok := errors.As(err); ok {
+			if e.Code == string(r) {
+				return true
+			}
+			// Descend past this *Error's wrapped cause to catch rejections
+			// re-wrapped by Verifier.Actor.
+			err = e.Err
+			continue
+		}
+		break
+	}
+	return false
+}
+
 // PrincipalStore resolves the framework user id from the IdP subject and
 // confirms the capacity belongs to that user in the tenant. Implemented in the
 // app/adapters DB layer (kernel/auth may not import a database).
 type PrincipalStore interface {
 	// UserIDBySubject returns the framework user id for an IdP subject.
 	UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error)
+	// ActiveTenantAccess returns a non-nil error if userID does not have a live
+	// (status='active', valid_to IS NULL) membership row in tenantID.
+	ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error
+	// ActiveCapacityCount returns the number of active acting capacities userID
+	// holds in tenantID. It is used by Verifier.Actor to enforce explicit
+	// capacity selection when an actor has more than one active capacity.
+	ActiveCapacityCount(ctx context.Context, userID, tenantID uuid.UUID) (int, error)
 	// ValidateCapacity returns a non-nil error if capacityID is not an active
 	// capacity of userID in tenantID.
 	ValidateCapacity(ctx context.Context, userID, tenantID, capacityID uuid.UUID) error
+	// ResolveGrant looks up a privileged-session grant by opaque grant ID and
+	// validates it belongs to userID in tenantID. On success it returns the
+	// verified grant state; on failure it returns one of the rejection reasons
+	// named by GrantRejection (detectable with IsGrantRejection).
+	ResolveGrant(ctx context.Context, userID, tenantID, grantID uuid.UUID) (*ResolvedGrant, error)
 }
 
 // Actor maps validated Claims onto an authz.Actor. It resolves the framework
-// user id from the subject via ps (an unknown subject → KindUnauthenticated) and,
-// when a capacity is present, confirms it belongs to that user in the tenant
-// (a mismatch → KindForbidden). Impersonation and break-glass carry through.
+// user id from the subject via ps (an unknown subject → KindUnauthenticated) and
+// verifies the user's live tenant membership unconditionally whenever the token
+// carries a TenantID. A zero tenant claim is rejected before any tenant-bound
+// database work.
+//
+// T4 (capacity selection): when the token does not carry an explicit CapacityID,
+// Actor counts the user's active capacities in the tenant. If the count is
+// greater than one, the request is rejected with KindValidation — the actor must
+// present an explicit, server-side-validated capacity choice. When CapacityID is
+// present, it is validated in the tenant (a mismatch → KindForbidden).
+//
+// T5 (privileged-session resolver): ImpersonatorUserID and BreakGlass are
+// populated only from a verified identity_grant row looked up by claims.GrantID.
+// Direct claim-copy of those fields is never used. A forged or adversarial grant
+// (expired, revoked, wrong-tenant, wrong-actor, unknown, unauthorized-approver)
+// is rejected with KindForbidden and a GrantRejection code.
 func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) (authz.Actor, error) {
 	subject := claims.Subject()
 	if subject == "" {
@@ -189,22 +284,58 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 		return authz.Actor{}, unauth("unknown subject", err)
 	}
 
+	if claims.TenantID != uuid.Nil {
+		if err := ps.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"tenant access not permitted", err, errors.Op("auth.Actor"))
+		}
+	} else {
+		return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",
+			"tenant claim required", errors.Op("auth.Actor"))
+	}
+
 	if claims.CapacityID != uuid.Nil {
 		if err := ps.ValidateCapacity(ctx, userID, claims.TenantID, claims.CapacityID); err != nil {
 			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
 				"capacity not permitted", err, errors.Op("auth.Actor"))
 		}
+	} else {
+		count, err := ps.ActiveCapacityCount(ctx, userID, claims.TenantID)
+		if err != nil {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"capacity count unavailable", err, errors.Op("auth.Actor"))
+		}
+		if count > 1 {
+			return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",
+				"explicit capacity selection required", errors.Op("auth.Actor"))
+		}
 	}
 
-	return authz.Actor{
-		Kind:               authz.ActorUser,
-		UserID:             userID,
-		CapacityID:         claims.CapacityID,
-		TenantID:           claims.TenantID,
-		ImpersonatorUserID: claims.ImpersonatorUserID,
-		BreakGlass:         claims.BreakGlass,
-		AMR:                claims.AMR,
-	}, nil
+	actor := authz.Actor{
+		Kind:             authz.ActorUser,
+		UserID:           userID,
+		CapacityID:       claims.CapacityID,
+		TenantID:         claims.TenantID,
+		CredentialScheme: authz.CredentialUser,
+		AMR:              claims.AMR,
+		ACR:              claims.ACR,
+	}
+	if claims.AuthTime != nil {
+		actor.AuthTime = claims.AuthTime.Time
+	}
+
+	if claims.GrantID != uuid.Nil {
+		grant, err := ps.ResolveGrant(ctx, userID, claims.TenantID, claims.GrantID)
+		if err != nil {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"privileged session not permitted", err, errors.Op("auth.Actor"))
+		}
+		actor.GrantID = claims.GrantID
+		actor.ImpersonatorUserID = grant.ImpersonatorUserID
+		actor.BreakGlass = grant.BreakGlass
+	}
+
+	return actor, nil
 }
 
 // Authenticator adapts a Verifier to the framework's structural

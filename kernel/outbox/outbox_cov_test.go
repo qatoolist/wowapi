@@ -28,6 +28,9 @@ func closedPool(t *testing.T) *pgxpool.Pool {
 		dsn = os.Getenv("DATABASE_URL")
 	}
 	if dsn == "" {
+		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+			t.Fatal("WOWAPI_REQUIRE_DB is set but neither WOWAPI_TEST_DSN nor DATABASE_URL is available for closed-pool integration coverage")
+		}
 		t.Skip("no DSN for closed-pool error injection")
 	}
 	pool, err := pgxpool.New(context.Background(), dsn)

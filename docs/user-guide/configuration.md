@@ -35,7 +35,10 @@ schema_version: 1                 # config file format version (default 1)
 
 http:
   addr: ":8080"                   # listen address (default ":8080")
-  read_header_timeout: "5s"       # max time to read request headers
+  read_header_timeout: "10s"      # max time to read request headers
+  read_timeout: "30s"             # max time to read the whole request incl. body (0 = unlimited; refused in prod)
+  write_timeout: "60s"            # max time for response writes (0 = unlimited; refused in prod)
+  idle_timeout: "120s"            # max keep-alive idle time between requests (0 = unlimited; refused in prod)
   request_timeout: "30s"          # per-request handler timeout
   max_body_bytes: 1048576         # max request body size (1 MiB)
   cors_allowed_origins: []        # exact-match CORS allowlist (empty = none)
@@ -47,6 +50,8 @@ log:
 db:
   max_conns: 16                   # pool size (range 2–200)
   query_timeout: "5s"             # per-query deadline (range 100ms–60s)
+  max_conn_lifetime: "1h"         # max total age of a pooled connection (pgx default; 0 = pgx default)
+  max_conn_idle_time: "30m"       # max idle age of a pooled connection (pgx default; 0 = pgx default)
 
 webhook:
   outbound:
@@ -70,7 +75,10 @@ db:
 | `environment` | enum | **none** | `local`/`dev`/`stage`/`prod`. No default by design — an unset env fails closed. |
 | `schema_version` | int | `1` | Config format version. |
 | `http.addr` | string | `:8080` | Listen address. |
-| `http.read_header_timeout` | duration | `5s` | Slow-header (Slowloris) guard. |
+| `http.read_header_timeout` | duration | `10s` | Slow-header (Slowloris) guard. |
+| `http.read_timeout` | duration | `30s` | Connection-level whole-request read timeout; `0` = unlimited, refused in prod. |
+| `http.write_timeout` | duration | `60s` | Connection-level response-write timeout; `0` = unlimited, refused in prod. |
+| `http.idle_timeout` | duration | `120s` | Keep-alive idle timeout; `0` = unlimited, refused in prod. |
 | `http.request_timeout` | duration | `30s` | Per-request handler timeout. |
 | `http.max_body_bytes` | int64 | `1048576` | Request body cap (1 MiB). |
 | `http.cors_allowed_origins` | []string | `[]` | Exact-match origins; empty = no cross-origin. |
@@ -81,6 +89,8 @@ db:
 | `db.platform_dsn` | secret | — | Cross-tenant DSN (`app_platform`); **required** — api/worker fail closed without it. |
 | `db.max_conns` | int | `16` | Pool size, clamped to 2–200. |
 | `db.query_timeout` | duration | `5s` | Server-side statement ceiling, clamped 100ms–60s. |
+| `db.max_conn_lifetime` | duration | `1h` | Max total age of a pooled connection before it is closed and replaced (pgx v5's own default). Bounds how long rotated credentials or drained LB backends linger on live connections. `0` = pgx default; non-zero values validated 1m–24h. |
+| `db.max_conn_idle_time` | duration | `30m` | Max idle age of a pooled connection before it is closed (pgx v5's own default). `0` = pgx default; non-zero values validated 30s–24h. |
 | `webhook.outbound.ssrf_protection_disabled` | bool | `false` | Disables outbound webhook SSRF protection entirely. `unsafe:"true"` — **refused in prod, warned in stage.** See [Webhooks](webhooks.md#outbound-ssrf-protection). |
 | `webhook.outbound.allowed_hosts` | []string | `[]` | Exact-match hostname allowlist bypassing the address-class check for outbound webhook delivery. |
 | `webhook.outbound.allowed_cidrs` | []string | `[]` | CIDR allowlist for RESOLVED outbound webhook delivery addresses (e.g. `10.20.0.0/16`). |
@@ -89,6 +99,7 @@ db:
 | `security.csrf.header_name` | string | `X-CSRF-Token` | Only consulted under `security.profile: browser`. |
 | `security.cookie.same_site` | enum | `lax` | `strict`/`lax`/`none`; only consulted under `security.profile: browser`. |
 | `security.cookie.secure` | bool | `true` | Required `true` when `same_site: none`. |
+| `security.enforce_route_contracts` | bool | `false` | Fail boot when a POST/PUT/PATCH route declares no `RouteMeta.Request` contract and no `NoRequestBody` waiver. Enable after auditing your mutating routes. |
 
 > Modules read their own config namespace via `mc.Config().Decode(&cfg)` inside `Register` — see
 > [Modules](modules.md). Unknown keys are **rejected**, so a typo'd module config key fails the boot.
@@ -270,7 +281,7 @@ log and `/readyz`, so you can confirm two processes booted the *same* configurat
 | Symptom | Cause | Fix |
 |---|---|---|
 | `environment must be set` | overlay missing `environment:` | Add `environment: <env>` to `configs/<env>.yaml`. |
-| `config: invalid configuration: …` (a list) | one or more invalid/out-of-range values | Read the joined list; fix each. Ranges: `db.max_conns` 2–200, `db.query_timeout` 100ms–60s. |
+| `config: invalid configuration: …` (a list) | one or more invalid/out-of-range values | Read the joined list; fix each. Ranges: `db.max_conns` 2–200, `db.query_timeout` 100ms–60s, `db.max_conn_lifetime` 1m–24h (or 0), `db.max_conn_idle_time` 30s–24h (or 0). |
 | `secretref resolution failed` | referenced env var not set | Export the var named after `secretref://env/<VAR>`. |
 | Secret printed as `REDACTED` | working as designed | Use `wowapi config doctor` for provenance; values are intentionally never shown. |
 | Flags rejected at boot | `--flag` overrides used with `environment: prod` | Remove local flag overrides in prod; use env vars/overlays. |

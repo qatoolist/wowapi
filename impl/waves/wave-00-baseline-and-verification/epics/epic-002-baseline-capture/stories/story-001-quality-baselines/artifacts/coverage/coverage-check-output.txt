@@ -1,0 +1,57 @@
+DATABASE_URL="${DATABASE_URL:-postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable}" WOWAPI_REQUIRE_DB=1 \
+		go test -coverprofile=coverage.out github.com/qatoolist/wowapi/adapters/auth/pgprincipal github.com/qatoolist/wowapi/adapters/metrics/prometheus github.com/qatoolist/wowapi/adapters/secrets/envprovider github.com/qatoolist/wowapi/adapters/storage/s3 github.com/qatoolist/wowapi/adapters/tracing/otel github.com/qatoolist/wowapi/app github.com/qatoolist/wowapi/internal/buildinfo github.com/qatoolist/wowapi/internal/cli github.com/qatoolist/wowapi/internal/e2e github.com/qatoolist/wowapi/internal/tools/benchbudget github.com/qatoolist/wowapi/kernel github.com/qatoolist/wowapi/kernel/apikey github.com/qatoolist/wowapi/kernel/artifact github.com/qatoolist/wowapi/kernel/attachment github.com/qatoolist/wowapi/kernel/audit github.com/qatoolist/wowapi/kernel/auth github.com/qatoolist/wowapi/kernel/authz github.com/qatoolist/wowapi/kernel/bulk github.com/qatoolist/wowapi/kernel/comment github.com/qatoolist/wowapi/kernel/config github.com/qatoolist/wowapi/kernel/database github.com/qatoolist/wowapi/kernel/document github.com/qatoolist/wowapi/kernel/errors github.com/qatoolist/wowapi/kernel/filtering github.com/qatoolist/wowapi/kernel/httpclient github.com/qatoolist/wowapi/kernel/httpx github.com/qatoolist/wowapi/kernel/i18n github.com/qatoolist/wowapi/kernel/integration github.com/qatoolist/wowapi/kernel/jobs github.com/qatoolist/wowapi/kernel/lifecycle github.com/qatoolist/wowapi/kernel/logging github.com/qatoolist/wowapi/kernel/mfa github.com/qatoolist/wowapi/kernel/model github.com/qatoolist/wowapi/kernel/notify github.com/qatoolist/wowapi/kernel/observability github.com/qatoolist/wowapi/kernel/outbox github.com/qatoolist/wowapi/kernel/pagination github.com/qatoolist/wowapi/kernel/policy github.com/qatoolist/wowapi/kernel/privileged github.com/qatoolist/wowapi/kernel/relationship github.com/qatoolist/wowapi/kernel/resource github.com/qatoolist/wowapi/kernel/retention github.com/qatoolist/wowapi/kernel/rules github.com/qatoolist/wowapi/kernel/secrets github.com/qatoolist/wowapi/kernel/seeds github.com/qatoolist/wowapi/kernel/sequence github.com/qatoolist/wowapi/kernel/storage github.com/qatoolist/wowapi/kernel/validation github.com/qatoolist/wowapi/kernel/webhook github.com/qatoolist/wowapi/kernel/workflow github.com/qatoolist/wowapi/migrations github.com/qatoolist/wowapi/testkit github.com/qatoolist/wowapi/testkit/fakes && go tool cover -func=coverage.out | tail -1
+ok  	github.com/qatoolist/wowapi/adapters/auth/pgprincipal	2.350s	coverage: 88.9% of statements
+ok  	github.com/qatoolist/wowapi/adapters/metrics/prometheus	0.595s	coverage: 97.1% of statements
+ok  	github.com/qatoolist/wowapi/adapters/secrets/envprovider	0.990s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/adapters/storage/s3	1.856s	coverage: 91.6% of statements
+ok  	github.com/qatoolist/wowapi/adapters/tracing/otel	2.047s	coverage: 88.9% of statements
+ok  	github.com/qatoolist/wowapi/app	11.472s	coverage: 91.4% of statements
+ok  	github.com/qatoolist/wowapi/internal/buildinfo	3.025s	coverage: 94.9% of statements
+ok  	github.com/qatoolist/wowapi/internal/cli	44.906s	coverage: 91.8% of statements
+ok  	github.com/qatoolist/wowapi/internal/e2e	35.680s	coverage: [no statements]
+ok  	github.com/qatoolist/wowapi/internal/tools/benchbudget	4.633s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel	6.252s	coverage: 95.9% of statements
+ok  	github.com/qatoolist/wowapi/kernel/apikey	14.021s	coverage: 90.7% of statements
+ok  	github.com/qatoolist/wowapi/kernel/artifact	10.294s	coverage: 97.7% of statements
+ok  	github.com/qatoolist/wowapi/kernel/attachment	13.980s	coverage: 94.2% of statements
+ok  	github.com/qatoolist/wowapi/kernel/audit	11.301s	coverage: 86.1% of statements
+ok  	github.com/qatoolist/wowapi/kernel/auth	9.488s	coverage: 85.6% of statements
+ok  	github.com/qatoolist/wowapi/kernel/authz	17.404s	coverage: 92.9% of statements
+ok  	github.com/qatoolist/wowapi/kernel/bulk	21.904s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/comment	28.050s	coverage: 92.9% of statements
+ok  	github.com/qatoolist/wowapi/kernel/config	8.234s	coverage: 97.5% of statements
+ok  	github.com/qatoolist/wowapi/kernel/database	18.321s	coverage: 88.4% of statements
+ok  	github.com/qatoolist/wowapi/kernel/document	46.310s	coverage: 90.2% of statements
+ok  	github.com/qatoolist/wowapi/kernel/errors	6.894s	coverage: 89.2% of statements
+ok  	github.com/qatoolist/wowapi/kernel/filtering	6.849s	coverage: 93.3% of statements
+ok  	github.com/qatoolist/wowapi/kernel/httpclient	3.844s	coverage: 97.7% of statements
+ok  	github.com/qatoolist/wowapi/kernel/httpx	5.898s	coverage: 97.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/i18n	2.759s	coverage: 94.4% of statements
+ok  	github.com/qatoolist/wowapi/kernel/integration	16.437s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/jobs	34.060s	coverage: 90.6% of statements
+ok  	github.com/qatoolist/wowapi/kernel/lifecycle	3.675s	coverage: 99.3% of statements
+ok  	github.com/qatoolist/wowapi/kernel/logging	4.127s	coverage: 88.5% of statements
+ok  	github.com/qatoolist/wowapi/kernel/mfa	4.057s	coverage: 97.8% of statements
+ok  	github.com/qatoolist/wowapi/kernel/model	4.175s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/notify	30.425s	coverage: 92.3% of statements
+ok  	github.com/qatoolist/wowapi/kernel/observability	3.626s	coverage: 84.8% of statements
+ok  	github.com/qatoolist/wowapi/kernel/outbox	26.100s	coverage: 87.8% of statements
+ok  	github.com/qatoolist/wowapi/kernel/pagination	2.027s	coverage: 86.8% of statements
+ok  	github.com/qatoolist/wowapi/kernel/policy	2.432s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/privileged	27.393s	coverage: 89.3% of statements
+ok  	github.com/qatoolist/wowapi/kernel/relationship	6.355s	coverage: 91.7% of statements
+ok  	github.com/qatoolist/wowapi/kernel/resource	3.209s	coverage: 97.1% of statements
+ok  	github.com/qatoolist/wowapi/kernel/retention	20.869s	coverage: 92.7% of statements
+ok  	github.com/qatoolist/wowapi/kernel/rules	24.261s	coverage: 93.4% of statements
+ok  	github.com/qatoolist/wowapi/kernel/secrets	3.014s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/seeds	16.221s	coverage: 92.9% of statements
+ok  	github.com/qatoolist/wowapi/kernel/sequence	19.525s	coverage: 97.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/storage	2.752s	coverage: 92.3% of statements
+ok  	github.com/qatoolist/wowapi/kernel/validation	2.485s	coverage: 93.0% of statements
+ok  	github.com/qatoolist/wowapi/kernel/webhook	23.306s	coverage: 92.4% of statements
+ok  	github.com/qatoolist/wowapi/kernel/workflow	23.339s	coverage: 90.6% of statements
+ok  	github.com/qatoolist/wowapi/migrations	3.451s	coverage: 100.0% of statements
+ok  	github.com/qatoolist/wowapi/testkit	20.319s	coverage: 81.2% of statements
+ok  	github.com/qatoolist/wowapi/testkit/fakes	1.180s	coverage: 100.0% of statements
+total:										(statements)			92.3%
+total coverage: 92.3% (floor 90.0%)

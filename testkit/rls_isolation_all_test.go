@@ -54,6 +54,7 @@ var rlsExcluded = []string{
 	// driven by privileged job workers and covered by their own tests.
 	"jobs_queue",
 	"job_runs",
+	"identity_grant",
 }
 
 // tenantScopedRLSProbeTables is the authoritative Group-A census: every simple
@@ -94,6 +95,10 @@ func tenantScopedRLSProbeTables() []rlsProbeTable {
 			// PK is tenant_id alone; next_seq/head_hash have defaults.
 			return map[string]any{}
 		}},
+		{name: "authz_epoch", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
+			// PK is tenant_id alone; epoch has a default.
+			return map[string]any{}
+		}},
 		{name: "audit_logs", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
 			return map[string]any{"id": uuid.New(), "action": "test.action", "seq": randInt63(), "row_hash": randHex(16)}
 		}},
@@ -114,6 +119,13 @@ func tenantScopedRLSProbeTables() []rlsProbeTable {
 				"id": uuid.New(), "document_id": seedDocument(t, h, tenant), "version_no": 1,
 				"storage_key": "s/" + randHex(8), "mime_type": "text/plain", "size_bytes": int64(1),
 				"checksum_sha256": randHex(16), "uploaded_by": uuid.Nil,
+			}
+		}},
+		{name: "document_upload_sessions", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
+			return map[string]any{
+				"id": uuid.New(), "document_id": seedDocument(t, h, tenant), "version_no": 1,
+				"storage_key": "s/" + randHex(8), "status": "pending",
+				"expires_at": time.Now().Add(time.Hour),
 			}
 		}},
 		{name: "documents", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
@@ -182,6 +194,15 @@ func tenantScopedRLSProbeTables() []rlsProbeTable {
 		{name: "sequences", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
 			return map[string]any{"series_key": "seq-" + randHex(8)}
 		}},
+		{name: "version_counters", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
+			return map[string]any{"scope": "test-" + randHex(8), "value": 1}
+		}},
+		{name: "webhook_failed_signature_audit", row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
+			return map[string]any{
+				"id": uuid.New(), "endpoint_id": seedWebhookEndpoint(t, h, tenant),
+				"event_type": "test.event", "failure_reason": "invalid signature",
+			}
+		}},
 		{name: "webhook_endpoints", platformWritten: true, row: func(t *testing.T, h *DBHandle, tenant uuid.UUID) map[string]any {
 			return map[string]any{"id": uuid.New(), "direction": "inbound", "secret_ref": "ref-" + randHex(8), "created_by": uuid.Nil}
 		}},
@@ -218,7 +239,6 @@ func TestIntegrationRLSIsolationAllTenantTables(t *testing.T) {
 	tables := tenantScopedRLSProbeTables()
 
 	for _, tbl := range tables {
-		tbl := tbl
 		t.Run(tbl.name, func(t *testing.T) {
 			// FORCE RLS is invisible to a probe run as app_rt/app_platform (both are
 			// non-owners, always subject to RLS). Assert it structurally so a table

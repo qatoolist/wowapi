@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -51,7 +52,9 @@ func Recover(logger *slog.Logger) Middleware {
 				}
 				// http.ErrAbortHandler is the stdlib convention for aborting a
 				// response silently — must propagate, not become a 500.
-				if rec == http.ErrAbortHandler {
+				// errors.Is (not ==) so a wrapped abort sentinel still
+				// propagates; non-error panic values fall through to logging.
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rec)
 				}
 				if logger != nil {

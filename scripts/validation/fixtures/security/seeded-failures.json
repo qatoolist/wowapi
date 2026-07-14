@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "results": [
+    {"class": "secret", "scanner": "gitleaks", "finding_id": "SEED-SECRET", "scope": "fixture/secret", "status": "failed"},
+    {"class": "reachable-vulnerability", "scanner": "govulncheck", "finding_id": "GO-SEED-0001", "scope": "fixture/module", "status": "failed"},
+    {"class": "disallowed-license", "scanner": "trivy", "finding_id": "LICENSE-GPL-3.0", "scope": "fixture/dependency", "status": "failed"},
+    {"class": "dependency", "scanner": "dependency-review", "finding_id": "DEP-SEED-0001", "scope": "fixture/lockfile", "status": "failed"},
+    {"class": "workflow", "scanner": "actionlint", "finding_id": "WF-SEED-0001", "scope": "fixture/workflow", "status": "failed"},
+    {"class": "critical-high-config", "scanner": "trivy", "finding_id": "AVD-SEED-0001", "scope": "fixture/Dockerfile", "status": "failed"}
+  ]
+}

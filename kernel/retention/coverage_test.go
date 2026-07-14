@@ -23,7 +23,8 @@ func engineWith(t *testing.T, c retention.RecordClass) (*retention.Engine, *rete
 		t.Fatalf("register %q: %v", c.Key, err)
 	}
 	dsr := retention.NewDSR(nil) // nil idgen → default UUIDv7 generator
-	return retention.NewEngine(reg, dsr), dsr
+	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
+	return retention.NewEngine(reg, dsr, nil, artifacts, nil), dsr
 }
 
 // TestIntegrationHoldsList exercises Holds.List (formerly uncovered) and the
@@ -415,7 +416,6 @@ func TestIntegrationReadOnlyTxSurfacesWriteErrors(t *testing.T) {
 		"complete": func(ctx context.Context, db database.TenantDB) error { return dsr.Complete(ctx, db, dsrID) },
 	}
 	for name, op := range writes {
-		op := op
 		err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
 			return op(ctx, db)
 		})

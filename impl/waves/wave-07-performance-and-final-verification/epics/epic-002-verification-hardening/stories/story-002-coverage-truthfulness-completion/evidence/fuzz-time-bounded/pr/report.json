@@ -1,0 +1,51 @@
+{
+  "profile": "pr",
+  "fuzz_time": "10s",
+  "started_at": "2026-07-13T21:19:33.768281Z",
+  "finished_at": "2026-07-13T21:20:18.977675Z",
+  "wall_elapsed_seconds": 45.209394,
+  "corpus_before": {
+    "files": 0,
+    "latest_mod_time": "0001-01-01T00:00:00Z"
+  },
+  "corpus_after": {
+    "files": 520,
+    "latest_mod_time": "2026-07-13T21:20:17.501010257Z"
+  },
+  "retained_from_prior_run": false,
+  "targets": [
+    {
+      "target": {
+        "package": "./kernel/filtering",
+        "name": "FuzzFilterParse"
+      },
+      "progress": {
+        "elapsed_seconds": 11,
+        "executions": 1967002
+      },
+      "log": "impl/waves/wave-07-performance-and-final-verification/epics/epic-002-verification-hardening/stories/story-002-coverage-truthfulness-completion/evidence/fuzz-time-bounded/pr/FuzzFilterParse.txt"
+    },
+    {
+      "target": {
+        "package": "./kernel/filtering",
+        "name": "FuzzParseSort"
+      },
+      "progress": {
+        "elapsed_seconds": 11,
+        "executions": 2247498
+      },
+      "log": "impl/waves/wave-07-performance-and-final-verification/epics/epic-002-verification-hardening/stories/story-002-coverage-truthfulness-completion/evidence/fuzz-time-bounded/pr/FuzzParseSort.txt"
+    },
+    {
+      "target": {
+        "package": "./kernel/pagination",
+        "name": "FuzzDecodeCursor"
+      },
+      "progress": {
+        "elapsed_seconds": 11,
+        "executions": 1011683
+      },
+      "log": "impl/waves/wave-07-performance-and-final-verification/epics/epic-002-verification-hardening/stories/story-002-coverage-truthfulness-completion/evidence/fuzz-time-bounded/pr/FuzzDecodeCursor.txt"
+    }
+  ]
+}

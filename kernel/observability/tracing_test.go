@@ -18,6 +18,8 @@ type fakeSpan struct {
 func (s *fakeSpan) End()                  { s.ended = true }
 func (s *fakeSpan) SetAttr(k, v string)   { s.attrs[k] = v }
 func (s *fakeSpan) RecordError(err error) { s.attrs["error"] = err.Error() }
+func (s *fakeSpan) TraceID() string       { return "" }
+func (s *fakeSpan) SpanID() string        { return "" }
 
 type fakeTracer struct {
 	spans     []*fakeSpan

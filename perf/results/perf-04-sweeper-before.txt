@@ -1,0 +1,20 @@
+# PERF-04 pre-change SweepSLA benchmark
+# Source: isolated copy of the current working tree with kernel/workflow/sweeper.go restored to entry SHA 733ef3e.
+# Command: WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<redacted-local-postgres-dsn> go test ./kernel/workflow -run '^$' -bench '^BenchmarkSweepSLABatch$' -benchmem -benchtime=1x -count=3
+# Environment: darwin/arm64, Apple M3 Max, Go 1.26.5, PostgreSQL 16.9 Docker service on localhost.
+# Note: this is a local relative comparison, not the unresolved DEC-Q9 absolute reference environment.
+
+goos: darwin
+goarch: arm64
+pkg: github.com/qatoolist/wowapi/kernel/workflow
+cpu: Apple M3 Max
+BenchmarkSweepSLABatch/due_10-16          1  114291916 ns/op     953448 B/op      5163 allocs/op
+BenchmarkSweepSLABatch/due_10-16          1  101463958 ns/op     951712 B/op      5144 allocs/op
+BenchmarkSweepSLABatch/due_10-16          1   85430458 ns/op     547976 B/op      4089 allocs/op
+BenchmarkSweepSLABatch/due_1000-16        1  697429125 ns/op    7116608 B/op    180431 allocs/op
+BenchmarkSweepSLABatch/due_1000-16        1  864581708 ns/op    7116120 B/op    180427 allocs/op
+BenchmarkSweepSLABatch/due_1000-16        1  746348208 ns/op    7115256 B/op    180352 allocs/op
+BenchmarkSweepSLABatch/due_100000-16      1 54372161250 ns/op 678443592 B/op  17804208 allocs/op
+BenchmarkSweepSLABatch/due_100000-16      1 57395144167 ns/op 678434216 B/op  17804259 allocs/op
+BenchmarkSweepSLABatch/due_100000-16      1 52986968750 ns/op 678448048 B/op  17804434 allocs/op
+PASS

@@ -1,0 +1,30 @@
+{
+  "story": "W07-E01-S001",
+  "code_revision": "working tree based on entry SHA 1626b11",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T21:51:00Z",
+  "reviewer": "W05ReviewGateFinal",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S001-001",
+  "evidence_type": "artifact inspection report",
+  "task": "W07-E01-S001-T001",
+  "acceptance_criteria_proven": [
+    "AC-W07-E01-S001-01"
+  ],
+  "execution_command": "DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 go test ./perf/requestbench -run '^(TestReferenceV1FullFieldContract|TestWorkloadFixtureDefinesCompleteMatrix|TestPublicationRequiresCompleteMatrixAndAttribution|TestPublicationPathIsRepositoryRelative|TestReferenceWarmupDurationConfiguration|TestEachProfileHasARepresentativeQueryPlanHash|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestMatrixContractHasSixVariantsPerProfile|TestRealPostgresRequestProfileMatrix)$' -count=1 -v",
+  "execution_environment": {
+    "environment": "darwin/arm64 verification of host-independent policy plus actionlint",
+    "tools": [
+      "go1.26.5",
+      "actionlint 1.7.9"
+    ]
+  },
+  "result": "PASS: 78 required reference fields; Linux/amd64, pinned Go/PostgreSQL, dataset/procedure/ceilings/publication complete",
+  "file_or_uri": "perf/reference-v1.json",
+  "checksum_sha256": "ff77a888a9fcd8e0b20e8b51d8709e3c5c4d651651bf14cc9de32379bf17fbe1",
+  "known_skips": [
+    "Absolute numeric SLOs intentionally not assessed; DEC-Q9 remains open."
+  ],
+  "findings_or_waivers": [],
+  "review_result": "PASS after 2 gate iterations: executor found and fixed the 10-resources-per-tenant seed mismatch; independent re-review found no open issues"
+}

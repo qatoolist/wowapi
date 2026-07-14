@@ -1,0 +1,18 @@
+Commands:
+1. make check-race-fixture
+2. DATABASE_URL='postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable' WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 make test-race-integration
+
+Seeded negative fixture:
+- inner `go test -race -tags=wowapi_race_fixture` exited 1 (expected)
+- race detector emitted `WARNING: DATA RACE` and `race detected during execution of test`
+- wrapper exited 0: seeded data-race fixture was detected
+
+Real DB/S3 integration race suite:
+- exit: 0
+- adapters/storage/s3: PASS (2.303s)
+- internal/e2e: PASS (16.996s)
+- internal/tools/tenantfk: PASS (2.634s)
+- kernel/database: PASS (9.102s)
+- kernel/migration: PASS (7.418s)
+- kernel/outbox: PASS (11.323s)
+- testkit: PASS (15.097s)

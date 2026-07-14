@@ -1,0 +1,4 @@
+=== RUN   TestScannerEnumerateFixture
+--- PASS: TestScannerEnumerateFixture (0.35s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/tenantfk	0.866s

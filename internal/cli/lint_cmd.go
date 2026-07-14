@@ -12,6 +12,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -126,7 +127,9 @@ func runLintBoundaries(args []string, stdout, stderr io.Writer) int {
 
 // listImports runs `go list` and returns package → production import paths.
 func listImports(pattern string) (map[string][]string, error) {
-	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}}: {{join .Imports \" \"}}", pattern)
+	// Deliberate subprocess: boundary lint shells out to the local go toolchain
+	// by design (W01-E01 gosec triage). Context-bound so it is cancellable.
+	cmd := exec.CommandContext(context.Background(), "go", "list", "-f", "{{.ImportPath}}: {{join .Imports \" \"}}", pattern) // #nosec G204 -- fixed `go list` argv; only the package pattern varies, supplied by the CLI caller
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	out, err := cmd.Output()

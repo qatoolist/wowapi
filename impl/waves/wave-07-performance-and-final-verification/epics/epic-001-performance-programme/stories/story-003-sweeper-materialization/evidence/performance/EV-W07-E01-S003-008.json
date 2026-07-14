@@ -1,0 +1,21 @@
+{
+  "story": "W07-E01-S003",
+  "code_revision": "working tree based on entry SHA 733ef3e",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T22:35:38Z",
+  "reviewer": "W07-Scoping-Dispatch.W07E01S003ReviewR",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S003-008",
+  "evidence_type": "published same-host before/after comparison",
+  "task": "W07-E01-S003-T008",
+  "acceptance_criteria_proven": ["AC-W07-E01-S003-07"],
+  "execution_command": "inspect perf/results/perf-04-comparison-v1.json against perf/reference-v1.json",
+  "execution_environment": {"comparison": "darwin/arm64 same-host", "reference_policy": "Linux/amd64 provisional-advisory"},
+  "result": "PASS: median time improves 34.93%/86.75%/95.45% and median allocations improve 38.84%/94.57%/99.94% at 10/1,000/100,000 due rows. Absolute SLO result is explicitly not assessed pending DEC-Q9.",
+  "file_or_uri": "perf/results/perf-04-comparison-v1.json",
+  "checksum_sha256": "0530b4567f7349475abe2e8319e3d198370930d879806de40e202a54bf07b94f",
+  "additional_artifacts": [{"path": "perf/reference-v1.json", "checksum_sha256": "ff77a888a9fcd8e0b20e8b51d8709e3c5c4d651651bf14cc9de32379bf17fbe1"}],
+  "known_skips": ["Absolute numeric SLOs intentionally not assessed; DEC-Q9 remains open."],
+  "findings_or_waivers": [],
+  "review_result": "PASS: independent review found no open issues"
+}

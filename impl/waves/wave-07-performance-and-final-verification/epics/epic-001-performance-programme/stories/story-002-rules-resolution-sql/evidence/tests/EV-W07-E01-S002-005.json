@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EV-W07-E01-S002-005",
+  "task": "W07-E01-S002-T005",
+  "acceptance_criteria": ["AC-W07-E01-S002-05"],
+  "executed_at": "2026-07-14",
+  "base_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "working_tree_measurement": true,
+  "environment": "real PostgreSQL 16.14 container; pgx QueryTracer counted every SQL statement; WOWAPI_REQUIRE_DB=1",
+  "command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -run TestIntegrationResolverQueryCountConstantWithDepth -count=1 -v",
+  "result": "pass",
+  "legacy_statement_counts": {"3": 11, "10": 18, "50": 58},
+  "set_based_statement_counts": {"3": 8, "10": 8, "50": 8},
+  "rules_resolution_statement_count": 1,
+  "statement_count_scope": "Total counts include read-only transaction setup and the single PostgreSQL ancestry query; only the legacy rules lookup count grows with depth.",
+  "skipped": false
+}

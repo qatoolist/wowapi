@@ -309,7 +309,7 @@ func TestAuthenticator_Accepts(t *testing.T) {
 	f := newJWKSFixture(t)
 	userID := uuid.New()
 	tenant := uuid.New()
-	ps := fakePrincipalStore{userID: userID, subject: "idp|human"}
+	ps := fakePrincipalStore{userID: userID, subject: "idp|human", okTenant: tenant}
 	a := auth.NewAuthenticator(f.verif, ps)
 
 	tok := signES(t, f.ec, ecKID, stdClaims("idp|human", jwksIssuer, jwksAudience, tenant, time.Hour))

@@ -163,7 +163,13 @@ func withinWindow(actual any, present bool, raw json.RawMessage) (bool, error) {
 	}
 	at, err := time.Parse(time.RFC3339, fmt.Sprint(actual))
 	if err != nil {
-		return false, nil
+		// Deliberate fail-closed non-finding (nilerr; adjudicated in MATRIX
+		// CS-23 / W01-E01-S002): an unparseable RUNTIME value makes this
+		// condition evaluate false (deny) — it is not an internal error, unlike
+		// a malformed POLICY, which line 161 above rejects loudly. Returning
+		// the parse error here would turn every odd runtime attribute into a
+		// policy-engine failure instead of a denied condition.
+		return false, nil //nolint:nilerr // fail-closed by design: bad runtime value → condition false, not error
 	}
 	from, err1 := time.Parse(time.RFC3339, fmt.Sprint(bounds[0]))
 	to, err2 := time.Parse(time.RFC3339, fmt.Sprint(bounds[1]))

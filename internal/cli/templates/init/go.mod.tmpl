@@ -5,3 +5,9 @@ go 1.26
 require (
 	{{.FrameworkModule}} {{.FrameworkVersion}}
 )
+{{- if .LocalFramework}}
+
+// Dev-mode override written by `wowapi init --local-framework` — remove this
+// replace (and pin a released {{.FrameworkModule}} version) before publishing.
+replace {{.FrameworkModule}} => {{.LocalFramework}}
+{{- end}}

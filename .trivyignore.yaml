@@ -1,0 +1,11 @@
+misconfigurations:
+  - id: AVD-DS-0002
+    paths:
+      - Dockerfile
+    expired_at: 2026-08-13
+    statement: "Owner release-security; dev/toolbox stage only; published CLI stages use USER 65532. See ci/security-waivers.yaml."
+  - id: AVD-DS-0002
+    paths:
+      - .docker/github/Dockerfile
+    expired_at: 2026-08-13
+    statement: "Owner release-security; build-only GitHub dev container. See ci/security-waivers.yaml."

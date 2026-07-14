@@ -1,0 +1,76 @@
+# Phase-2 fail-before enumeration (enablement commit state, committed config) — W01Lint Phase 2, 2026-07-13
+# Base commit: 0a31186cada5c275a588c74081cf977adf346e61 + W01 wave working diff ( 152 files changed, 3426 insertions(+), 2986 deletions(-))
+# Tool: golangci-lint v2.11.4; committed .golangci.yml (all sets enabled)
+# Command per linter: golangci-lint run --enable-only=<linter> ./...
+# NOTE: --enable-only still honors the committed exclusions block (the
+# documented _test.go rules), so these runs prove the ENFORCED config state.
+# Fail-before state per linter: see the triage enumerations
+# (zero-cost-and-nearzero-enumeration.txt / judged-set-enumeration.txt at HEAD,
+# and triage-fresh-run-phase2-before below for the enablement-commit state).
+
+== copyloopvar: 7
+   app/maintenance.go:148:3 The copy of the 'for' variable "rj" can be deleted (Go 1.22+)
+   kernel/config/unsafe_config_matrix_test.go:188:3 The copy of the 'for' variable "tc" can be deleted (Go 1.22+)
+   kernel/jobs/rls_test.go:66:3 The copy of the 'for' variable "table" can be deleted (Go 1.22+)
+   kernel/outbox/outbox_test.go:243:3 The copy of the 'for' variable "i" can be deleted (Go 1.22+)
+   kernel/retention/coverage_test.go:418:3 The copy of the 'for' variable "op" can be deleted (Go 1.22+)
+   migrations/migrations_test.go:89:3 The copy of the 'for' variable "name" can be deleted (Go 1.22+)
+   testkit/rls_isolation_all_test.go:221:3 The copy of the 'for' variable "tbl" can be deleted (Go 1.22+)
+== errorlint: 4
+   internal/cli/init_version.go:162:26 non-wrapping format verb for fmt.Errorf. Use `%w` to format errors
+   internal/tools/benchbudget/main.go:114:79 non-wrapping format verb for fmt.Errorf. Use `%w` to format errors
+   internal/tools/benchbudget/main.go:118:83 non-wrapping format verb for fmt.Errorf. Use `%w` to format errors
+   kernel/httpx/middleware.go:54:8 comparing with == will fail on wrapped errors. Use errors.Is to check for a specific error
+== exhaustive: 4
+   kernel/config/bind.go:326:2 missing cases in switch of type reflect.Kind: reflect.Invalid, reflect.Uintptr, reflect.Complex64, reflect.Complex128, r
+   kernel/config/schema.go:95:2 missing cases in switch of type reflect.Kind: reflect.Invalid, reflect.Uintptr, reflect.Complex64, reflect.Complex128, r
+   kernel/workflow/definition.go:313:2 missing cases in switch of type workflow.StepType: workflow.StepTerminal
+   kernel/workflow/runtime.go:170:3 missing cases in switch of type workflow.DecisionType: workflow.DecisionAbstain
+== forcetypeassert: 3
+   kernel/auth/jwks.go:112:2 right hand must be only type assertion
+   kernel/config/bind.go:150:3 right hand must be only type assertion
+   kernel/httpclient/client.go:71:2 right hand must be only type assertion
+== gosec: 27
+   internal/buildinfo/buildinfo.go:70:12 G304: Potential file inclusion via variable
+   internal/cli/config_delegate.go:34:9 G204: Subprocess launched with variable
+   internal/cli/deploy_cmd.go:95:12 G306: Expect WriteFile permissions to be 0600 or less
+   internal/cli/init_version.go:100:9 G204: Subprocess launched with a potential tainted input or cmd arguments
+   internal/cli/init_version.go:97:12 G306: Expect WriteFile permissions to be 0600 or less
+   internal/cli/lint_cmd.go:129:9 G204: Subprocess launched with variable
+   internal/cli/migrate_cmd.go:72:12 G301: Expect directory permissions to be 0750 or less
+   internal/cli/migrate_cmd.go:83:12 G306: Expect WriteFile permissions to be 0600 or less
+   internal/cli/openapi_cmd.go:101:12 G306: Expect WriteFile permissions to be 0600 or less
+   internal/cli/openapi_cmd.go:128:14 G304: Potential file inclusion via variable
+   internal/cli/scaffold.go:47:12 G301: Expect directory permissions to be 0750 or less
+   internal/cli/scaffold.go:64:9 G306: Expect WriteFile permissions to be 0600 or less
+   internal/cli/scaffold.go:75:12 G301: Expect directory permissions to be 0750 or less
+   internal/cli/scaffold.go:78:9 G306: Expect WriteFile permissions to be 0600 or less
+   internal/tools/benchbudget/main.go:92:12 G304: Potential file inclusion via variable
+   kernel/audit/audit.go:164:44 G115: integer overflow conversion int64 -> uint64
+   kernel/audit/audit.go:176:41 G115: integer overflow conversion int -> uint32
+   kernel/auth/jwks.go:204:40 G704: SSRF via taint analysis
+   kernel/auth/jwks.go:210:26 G704: SSRF via taint analysis
+   kernel/config/tree.go:19:15 G304: Potential file inclusion via variable
+   kernel/database/database.go:135:21 G115: integer overflow conversion int -> int32
+   kernel/jobs/jobs.go:105:21 G115: integer overflow conversion uint64 -> int64
+   kernel/mfa/totp.go:116:19 G115: integer overflow conversion int64 -> uint64
+   kernel/pagination/cursor.go:202:15 G115: integer overflow conversion uint -> int64
+   kernel/pagination/cursor.go:210:15 G115: integer overflow conversion uint64 -> int64
+   testkit/db.go:376:2 G101: Potential hardcoded credentials
+   testkit/db.go:381:2 G101: Potential hardcoded credentials
+== musttag: 1
+   internal/cli/init_version.go:112:32 the given struct should be annotated with the `json` tag
+== noctx: 1
+   testkit/i18n.go:33:26 net/http/httptest.NewRequest must not be called. use net/http/httptest.NewRequestWithContext
+== usestdlibvars: 9
+   kernel/document/service_test.go:100:23 "GET" can be replaced by http.MethodGet
+   kernel/document/service_test.go:302:24 "GET" can be replaced by http.MethodGet
+   kernel/httpx/composite_auth_test.go:24:29 "GET" can be replaced by http.MethodGet
+   kernel/httpx/csrf_internal_test.go:37:29 "GET" can be replaced by http.MethodGet
+   kernel/httpx/ratelimit_test.go:31:88 "200" can be replaced by http.StatusOK
+   kernel/httpx/ratelimit_test.go:34:58 "GET" can be replaced by http.MethodGet
+   kernel/httpx/ratelimit_test.go:40:39 "GET" can be replaced by http.MethodGet
+   kernel/httpx/ratelimit_test.go:97:81 "200" can be replaced by http.StatusOK
+   kernel/storage/memory_test.go:52:33 "PUT" can be replaced by http.MethodPut
+
+== NOTE: gosec G120 (kernel/httpx/csrf.go:118, FBL-09) does NOT appear — fixed by W01Http (W01-E03) before this run; this is the definitive gosec re-run W01Http routed to S002.

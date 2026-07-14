@@ -8,12 +8,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/httpx"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/resource/aggregate"
 	"github.com/qatoolist/wowapi/kernel/validation"
 )
 
@@ -26,10 +29,11 @@ import (
 // checks a handler makes against a concrete target (e.g. "read THIS request");
 // this neutral fixture module has none, so it is unused here.
 type Handlers struct {
-	tx    database.TxManager
-	authz authz.Evaluator //nolint:unused // for resource-scoped checks; unused in this fixture
-	val   *validation.Validator
-	idgen model.IDGen
+	tx     database.TxManager
+	writer *aggregate.Writer
+	authz  authz.Evaluator //nolint:unused // for resource-scoped checks; unused in this fixture
+	val    *validation.Validator
+	idgen  model.IDGen
 }
 
 // Create handles POST /requests.
@@ -41,21 +45,24 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := h.idgen.New()
-	var dto RequestDTO
-	if err := h.tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
-		if _, err := db.Exec(ctx,
-			`INSERT INTO requests_request (id, tenant_id, title, status, version, created_at, created_by)
-             VALUES ($1, app_tenant_id(), $2, 'open', 1, now(), $3)`,
-			id, req.Title, uuid.Nil); err != nil { // TODO(phase-5): created_by from actor ctx
+	if err := h.writer.Write(ctx, aggregate.Write{
+		Resource: resource.Ref{Type: "requests.request", ID: id},
+		Label:    req.Title,
+		Status:   "open",
+		Audit:    audit.Entry{Action: "requests.request.create"},
+		Event:    outbox.Event{Type: "requests.request.created"},
+		Apply: func(ctx context.Context, db database.TenantDB, actorID uuid.UUID) error {
+			_, err := db.Exec(ctx,
+				`INSERT INTO requests_request (id, tenant_id, title, status, version, created_at, created_by)
+			     VALUES ($1, app_tenant_id(), $2, 'open', 1, now(), $3)`,
+				id, req.Title, actorID)
 			return err
-		}
-		return resource.NewRegistrar().Bind(db).Upsert(ctx,
-			resource.Ref{Type: "requests.request", ID: id}, nil, req.Title, "open")
+		},
 	}); err != nil {
 		httpx.WriteError(ctx, w, err)
 		return
 	}
-	dto = RequestDTO{ID: id, Title: req.Title, Status: "open"}
+	dto := RequestDTO{ID: id, Title: req.Title, Status: "open"}
 	httpx.WriteJSON(w, http.StatusCreated, httpx.OK(dto))
 }
 

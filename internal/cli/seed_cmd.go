@@ -48,6 +48,7 @@ Flags (validate):
 Flags (sync):
   --module   name=dir pair identifying a module's seed directory; repeatable,
              e.g. --module widgets=modules/widgets/seeds (at least one required)
+  --dry-run  compute and print a change plan without writing to the database
 
 THE PRODUCTION PATH IS THE GENERATED "cmd/migrate": it loads the composed
 product config via appcfg.Load() (configs/base.yaml + configs/<env>.yaml +
@@ -142,7 +143,9 @@ func runSeedSync(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("wowapi seed sync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var modules moduleFlagList
+	var dryRun bool
 	fs.Func("module", "name=dir pair identifying a module's seed directory (repeatable)", modules.set)
+	fs.BoolVar(&dryRun, "dry-run", false, "compute and print a change plan without writing to the database")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -192,13 +195,13 @@ func runSeedSync(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 
 	// Same connection convention as `wowapi dlq` (kernel/database.NewPool +
-	// WithSetRole("app_platform") + WithConnRLSGuard): seeds.Sync writes the
+	// WithSetRole("app_platform") + WithConnRLSGuard): seeds.Apply writes the
 	// global catalog tables (permissions, roles, role_permissions,
 	// resource_types, relationship_types), which are app_platform-writable and
 	// app_rt-read-only by design (SEC-13/D-0026) — never a superuser/BYPASSRLS
 	// DSN. This CLI invocation is a one-shot process with no long-lived authz
 	// cache to invalidate (unlike a running api/worker with AuthzCacheTTL set),
-	// so no SpineInvalidator is passed; Sync behaves exactly as it does with
+	// so no SpineInvalidator is passed; Apply behaves exactly as it does with
 	// caching off.
 	pool, err := database.NewPool(ctx, dsn, config.Defaults().DB,
 		database.WithSetRole("app_platform"), database.WithConnRLSGuard())
@@ -208,11 +211,24 @@ func runSeedSync(args []string, stdout, stderr io.Writer) int {
 	}
 	defer pool.Close()
 
-	if err := seeds.Sync(ctx, pool, bundle); err != nil {
+	report, err := seeds.Apply(ctx, pool, bundle, seeds.ApplyOptions{
+		DryRun: dryRun,
+		Actor:  "wowapi-cli",
+		Out:    stdout,
+	})
+	if err != nil {
 		fmt.Fprintf(stderr, "wowapi seed sync: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "OK: synced %d permissions, %d roles, %d resource types, %d relationship types across %d module(s)\n",
-		len(bundle.Permissions), len(bundle.Roles), len(bundle.ResourceTypes), len(bundle.RelationshipTypes), len(modules.entries))
+
+	switch report.Outcome {
+	case "dry_run":
+		fmt.Fprintf(stdout, "OK: dry-run complete (manifest hash %s)\n", report.Hash)
+	case "noop":
+		fmt.Fprintf(stdout, "OK: seed catalogs already up to date (hash %s)\n", report.Hash)
+	default:
+		fmt.Fprintf(stdout, "OK: synced %d permissions, %d roles, %d resource types, %d relationship types across %d module(s) (hash %s)\n",
+			len(bundle.Permissions), len(bundle.Roles), len(bundle.ResourceTypes), len(bundle.RelationshipTypes), len(modules.entries), report.Hash)
+	}
 	return 0
 }

@@ -4,8 +4,13 @@ package cli
 import (
 	"flag"
 	"fmt"
+	goformat "go/format"
 	"io"
+	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/qatoolist/wowapi/internal/buildinfo"
 )
 
 func newModuleUsage(w io.Writer) {
@@ -71,5 +76,58 @@ func runNewModule(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, spec.dest)
 	}
 
+	if err := wireGeneratedModule(modDir, *name); err != nil {
+		fmt.Fprintf(stderr, "wowapi new-module: wire module: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+func wireGeneratedModule(modDir, name string) error {
+	absModDir, err := filepath.Abs(modDir)
+	if err != nil {
+		return err
+	}
+	gomod, ok := buildinfo.FindGoMod(absModDir)
+	if !ok {
+		return nil // standalone module scaffolds have no product wire registry
+	}
+	rel, err := filepath.Rel(gomod.Dir, absModDir)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return nil
+	}
+	wirePath := filepath.Join(gomod.Dir, "internal", "wire", "modules.go")
+	src, err := os.ReadFile(wirePath) // #nosec G304 -- generator intentionally reads the selected wire registry
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	importMarker := "\t// wowapi:module-imports"
+	valueMarker := "\t\t// wowapi:module-values"
+	source := string(src)
+	if !strings.Contains(source, importMarker) || !strings.Contains(source, valueMarker) {
+		const legacyImport = `import "github.com/qatoolist/wowapi/module"`
+		const legacyValue = "\t\t// e.g. mymodule.New()"
+		if !strings.Contains(source, legacyImport) || !strings.Contains(source, legacyValue) {
+			return fmt.Errorf("%s is missing wowapi module markers", wirePath)
+		}
+		source = strings.Replace(source, legacyImport,
+			"import (\n\t\"github.com/qatoolist/wowapi/module\"\n"+importMarker+"\n)", 1)
+		source = strings.Replace(source, legacyValue, valueMarker, 1)
+	}
+	importPath := gomod.ModulePath + "/" + filepath.ToSlash(rel)
+	importLine := fmt.Sprintf("\t%s %q", name, importPath)
+	valueLine := fmt.Sprintf("\t\t&%s.Module{},", name)
+	if strings.Contains(source, importLine) && strings.Contains(source, valueLine) {
+		return nil
+	}
+	updated := strings.Replace(source, importMarker, importLine+"\n"+importMarker, 1)
+	updated = strings.Replace(updated, valueMarker, valueLine+"\n"+valueMarker, 1)
+	formatted, err := goformat.Source([]byte(updated))
+	if err != nil {
+		return fmt.Errorf("format %s: %w", wirePath, err)
+	}
+	return os.WriteFile(wirePath, formatted, 0o600) // #nosec G703 -- generator intentionally updates the selected wire registry
 }

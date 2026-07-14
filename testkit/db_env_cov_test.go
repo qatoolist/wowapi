@@ -10,6 +10,9 @@ import (
 // WOWAPI_TEST_DSN is unset but DATABASE_URL is present, the latter is returned.
 func TestAdminDSNFallbackToDatabaseURL(t *testing.T) {
 	if os.Getenv("DATABASE_URL") == "" {
+		if RequireDB() {
+			t.Fatal("WOWAPI_REQUIRE_DB is set but DATABASE_URL is empty; the fallback branch must run in this gate")
+		}
 		t.Skip("no DATABASE_URL to exercise the fallback branch")
 	}
 	// Clear the primary var for this test only (restored automatically). The

@@ -1,0 +1,4 @@
+=== RUN   TestGeneratedReferenceByteMatchesAuthoritativeExport
+--- PASS: TestGeneratedReferenceByteMatchesAuthoritativeExport (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/docexamples	0.167s

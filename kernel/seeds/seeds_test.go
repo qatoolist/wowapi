@@ -1,6 +1,7 @@
 package seeds_test
 
 import (
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -231,5 +232,33 @@ func TestLoadEmptyIsEmpty(t *testing.T) {
 	}
 	if len(b.Permissions) != 0 {
 		t.Errorf("empty fs should yield empty bundle: %+v", b)
+	}
+}
+
+// FBL-02: the optional top-level version field is parsed and propagated.
+func TestLoadParsesVersion(t *testing.T) {
+	b, err := seeds.Load(fsys(map[string]string{
+		"seed.yaml": "version: v1.2.3\npermissions:\n  - key: requests.request.read\n",
+	}), "requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Version != "v1.2.3" {
+		t.Fatalf("version = %q, want v1.2.3", b.Version)
+	}
+}
+
+// FBL-02: two files (or two modules) declaring different non-empty versions
+// is a load-time error — the version label is not mergeable.
+func TestLoadRejectsConflictingVersion(t *testing.T) {
+	_, err := seeds.Load(fsys(map[string]string{
+		"a.yaml": "version: v1\npermissions:\n  - key: requests.request.read\n",
+		"b.yaml": "version: v2\npermissions:\n  - key: requests.request.write\n",
+	}), "requests")
+	if err == nil {
+		t.Fatal("conflicting versions must fail load")
+	}
+	if !strings.Contains(err.Error(), "version conflict") {
+		t.Fatalf("error should mention version conflict: %v", err)
 	}
 }

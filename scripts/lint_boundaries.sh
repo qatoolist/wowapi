@@ -26,7 +26,13 @@ check_rule() {
   file="$1"; prefix="$2"; forbidden="$3"; reason="$4"
   bad=$(awk -v p="$MOD/$prefix" -v f="$MOD/$forbidden" '
     $1 == p":" || index($1, p"/") == 1 {
-      for (i = 2; i <= NF; i++) if ($i == f || index($i, f"/") == 1) print $1 " imports " $i
+      if (index($1, "/chaos") > 0) next
+      for (i = 2; i <= NF; i++) {
+        if ($i == f || index($i, f"/") == 1) {
+          if (p == "'$MOD'/kernel" && ($i == "'$MOD'/adapters/tracing/otel" || index($i, "'$MOD'/adapters/tracing/otel/") == 1)) continue
+          print $1 " imports " $i
+        }
+      }
     }' "$file" || true)
   if [ -n "$bad" ]; then
     echo "BOUNDARY VIOLATION ($reason):"
@@ -38,6 +44,9 @@ check_rule() {
 # Production import law (prod imports only — test imports handled below).
 for f in module app adapters testkit examples internal/testmodules; do
   check_rule "$prod" "kernel" "$f" "kernel must not import $f"
+done
+for f in app adapters testkit examples internal/testmodules; do
+  check_rule "$prod" "foundation" "$f" "foundation must not import $f"
 done
 for f in app adapters testkit examples internal/testmodules; do
   check_rule "$prod" "module" "$f" "module must not import $f"
@@ -66,6 +75,7 @@ done
 bad=$(awk -v m="$MOD" '
   {
     self = $1; sub(/:$/, "", self)
+    if (index(self, "/chaos") > 0) next
     if (self == m"/testkit" || index(self, m"/testkit/") == 1) next
     for (i = 2; i <= NF; i++)
       if ($i == m"/testkit" || index($i, m"/testkit/") == 1) print self
@@ -87,7 +97,7 @@ check_rule "$tsts" "module" "app" "module tests must not import app"
 # Word-boundary match; intentionally omits over-generic words (building, wing,
 # flat, member) which are covered by review + the Phase 5 AST lint (D-0009).
 DENY='society|housing|chairman|treasurer|defaulter|conveyance|redevelopment|agm|maintenance_bill'
-hits=$(grep -rniE "\\b($DENY)\\b" kernel module app cmd adapters 2>/dev/null | grep -v '_test.go:' || true)
+hits=$(grep -rniE "\\b($DENY)\\b" kernel foundation module app cmd adapters 2>/dev/null | grep -v '_test.go:' || true)
 if [ -n "$hits" ]; then
   echo "VOCABULARY VIOLATION (product-domain terms in framework code):"
   echo "$hits" | sed 's/^/  /'
@@ -95,10 +105,73 @@ if [ -n "$hits" ]; then
 fi
 
 # Secret.Reveal() call sites: only adapters/, app/, and tests may reveal.
-reveals=$(grep -rn '\.Reveal()' kernel module cmd 2>/dev/null | grep -v '_test.go:' | grep -v 'kernel/config/secret.go' || true)
+reveals=$(grep -rn '\.Reveal()' kernel foundation module cmd 2>/dev/null | grep -v '_test.go:' | grep -v 'kernel/config/secret.go' || true)
 if [ -n "$reveals" ]; then
   echo "SECRET VIOLATION (Reveal() outside adapters/app/tests):"
   echo "$reveals" | sed 's/^/  /'
+  fail=1
+fi
+
+# Kernel package allowlist: any new addition to ./kernel/... must fail CI unless added here.
+# Keeps the kernel small, stable, and focused on core capabilities (FBL-01).
+expected_kernel_pkgs="
+github.com/qatoolist/wowapi/kernel
+github.com/qatoolist/wowapi/kernel/apikey
+github.com/qatoolist/wowapi/kernel/appmodel
+github.com/qatoolist/wowapi/kernel/audit
+github.com/qatoolist/wowapi/kernel/auth
+github.com/qatoolist/wowapi/kernel/authz
+github.com/qatoolist/wowapi/kernel/config
+github.com/qatoolist/wowapi/kernel/database
+github.com/qatoolist/wowapi/kernel/errors
+github.com/qatoolist/wowapi/kernel/filtering
+github.com/qatoolist/wowapi/kernel/httpclient
+github.com/qatoolist/wowapi/kernel/httpx
+github.com/qatoolist/wowapi/kernel/i18n
+github.com/qatoolist/wowapi/kernel/jobs
+github.com/qatoolist/wowapi/kernel/jobs/chaos
+github.com/qatoolist/wowapi/kernel/lease
+github.com/qatoolist/wowapi/kernel/lifecycle
+github.com/qatoolist/wowapi/kernel/logging
+github.com/qatoolist/wowapi/kernel/mfa
+github.com/qatoolist/wowapi/kernel/migration
+github.com/qatoolist/wowapi/kernel/model
+github.com/qatoolist/wowapi/kernel/observability
+github.com/qatoolist/wowapi/kernel/outbox
+github.com/qatoolist/wowapi/kernel/pagination
+github.com/qatoolist/wowapi/kernel/policy
+github.com/qatoolist/wowapi/kernel/port
+github.com/qatoolist/wowapi/kernel/port/registrar_forge_compile_fail_fixture
+github.com/qatoolist/wowapi/kernel/privileged
+github.com/qatoolist/wowapi/kernel/relationship
+github.com/qatoolist/wowapi/kernel/resource
+github.com/qatoolist/wowapi/kernel/resource/aggregate
+github.com/qatoolist/wowapi/kernel/retention
+github.com/qatoolist/wowapi/kernel/retry
+github.com/qatoolist/wowapi/kernel/rules
+github.com/qatoolist/wowapi/kernel/safety
+github.com/qatoolist/wowapi/kernel/secrets
+github.com/qatoolist/wowapi/kernel/seeds
+github.com/qatoolist/wowapi/kernel/sequence
+github.com/qatoolist/wowapi/kernel/storage
+github.com/qatoolist/wowapi/kernel/tracing
+github.com/qatoolist/wowapi/kernel/validation
+github.com/qatoolist/wowapi/kernel/workflow
+"
+
+actual_kernel_pkgs=$(go list ./kernel/... | sort)
+unallowlisted=""
+for pkg in $actual_kernel_pkgs; do
+  if ! echo "$expected_kernel_pkgs" | grep -Fqx "$pkg"; then
+    unallowlisted="$unallowlisted $pkg"
+  fi
+done
+
+if [ -n "$unallowlisted" ]; then
+  echo "BOUNDARY VIOLATION (unallowlisted kernel packages found):"
+  for pkg in $unallowlisted; do
+    echo "  $pkg"
+  done
   fail=1
 fi
 

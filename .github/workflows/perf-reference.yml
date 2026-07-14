@@ -1,0 +1,142 @@
+name: Performance reference
+
+on:
+  pull_request:
+    paths:
+      - "perf/**"
+      - "kernel/httpx/**"
+      - "kernel/authz/**"
+      - "kernel/database/**"
+      - ".github/workflows/perf-reference.yml"
+  workflow_dispatch:
+    inputs:
+      full_reference:
+        description: "Run the 5m warmup / 15m measurement / 3-repeat reference capture"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_IMAGE: docker.io/library/golang:1.26.5-bookworm@sha256:5ab8e9af080c5f58dab00dd8055ea9309ec54c47722681b5ee8d0a3602f85316
+  POSTGRES_IMAGE: docker.io/library/postgres:16.9-bookworm@sha256:ef463f9f754e6d381d27513b032ace3607532c752427423d344e9fbfd852257a
+  PERF_DSN: postgres://wowapi:wowapi-local-only@perf-postgres:5432/wowapi?sslmode=disable
+
+jobs:
+  reference-contract:
+    name: Reference contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate full-field reference and publication contracts
+        run: >-
+          go test ./perf/requestbench
+          -run '^(TestReferenceV1FullFieldContract|TestWorkloadFixtureDefinesCompleteMatrix|TestPublicationRequiresCompleteMatrixAndAttribution|TestReferenceWarmupDurationConfiguration)$'
+          -count=1
+
+  request-reference-smoke:
+    name: Linux amd64 request reference smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture runner identity
+        run: |
+          mkdir -p perf/results/runner
+          uname -a | tee perf/results/runner/uname.txt
+          cat /proc/cpuinfo > perf/results/runner/cpuinfo.txt
+          printf 'ImageOS=%s\nImageVersion=%s\n' "$ImageOS" "$ImageVersion" | tee perf/results/runner/github-image.txt
+      - name: Start pinned PostgreSQL
+        run: |
+          docker network create perf-reference
+          docker run --detach --name perf-postgres --network perf-reference \
+            --env POSTGRES_USER=wowapi --env POSTGRES_PASSWORD=wowapi-local-only --env POSTGRES_DB=wowapi \
+            "$POSTGRES_IMAGE" \
+            -c shared_buffers=128MB -c max_connections=200 -c fsync=on \
+            -c synchronous_commit=on -c full_page_writes=on -c jit=off -c track_io_timing=on
+          for _ in {1..60}; do
+            if docker exec perf-postgres pg_isready -U wowapi -d wowapi; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run real-PostgreSQL contract and complete 36-cell smoke matrix
+        run: |
+          docker run --rm --network perf-reference \
+            --volume "$PWD:/src" --workdir /src \
+            --env DATABASE_URL="$PERF_DSN" --env WOWAPI_REQUIRE_DB=1 --env WOWAPI_REQUIRE_S3=1 \
+            --env PERF_REPORT=perf/results/request-reference-v1.json \
+            --env PERF_SOURCE_SHA="${GITHUB_SHA}" --env PERF_CONTAINER_IMAGE="$GO_IMAGE" \
+            --env PERF_POSTGRES_IMAGE="$POSTGRES_IMAGE" --env PERF_POSTGRES_VERSION=16.9 \
+            --env PERF_POSTGRES_CONFIG="shared_buffers=128MB,max_connections=200,fsync=on,synchronous_commit=on,full_page_writes=on,jit=off,track_io_timing=on" \
+            --env PERF_NETWORK="GitHub Actions Docker service bridge; no artificial shaping" \
+            --env GOCACHE=/tmp/go-build --env GOMODCACHE=/tmp/go-mod \
+            "$GO_IMAGE" \
+            bash -euc "go test ./perf/requestbench -run '^(TestRealPostgresRequestProfileMatrix|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestEachProfileHasARepresentativeQueryPlanHash)$' -count=1 -v && go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests$' -benchtime=1x -count=1 -benchmem | tee perf/results/request-reference-v1.txt"
+      - name: Publish source-addressed reference evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-request-reference-${{ github.sha }}
+          path: |
+            perf/reference-v1.json
+            perf/fixtures/request-workloads-v1.json
+            perf/results/request-reference-v1.json
+            perf/results/request-reference-v1.txt
+            perf/results/runner/
+          if-no-files-found: error
+          retention-days: 30
+
+  full-reference-profile:
+    name: Full reference / ${{ matrix.profile }}
+    if: github.event_name == 'workflow_dispatch' && inputs.full_reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - public
+          - authenticated-read
+          - authenticated-write
+          - resource-authz
+          - idempotent-write
+          - async-enqueue
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start pinned PostgreSQL
+        run: |
+          docker network create perf-reference
+          docker run --detach --name perf-postgres --network perf-reference \
+            --env POSTGRES_USER=wowapi --env POSTGRES_PASSWORD=wowapi-local-only --env POSTGRES_DB=wowapi \
+            "$POSTGRES_IMAGE" \
+            -c shared_buffers=128MB -c max_connections=200 -c fsync=on \
+            -c synchronous_commit=on -c full_page_writes=on -c jit=off -c track_io_timing=on
+          for _ in {1..60}; do
+            if docker exec perf-postgres pg_isready -U wowapi -d wowapi; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run mandated full-duration profile
+        run: |
+          mkdir -p perf/results/full-reference
+          docker run --rm --network perf-reference \
+            --volume "$PWD:/src" --workdir /src \
+            --env DATABASE_URL="$PERF_DSN" --env WOWAPI_REQUIRE_DB=1 --env WOWAPI_REQUIRE_S3=1 \
+            --env PERF_WARMUP_DURATION=5m --env GOCACHE=/tmp/go-build --env GOMODCACHE=/tmp/go-mod \
+            "$GO_IMAGE" \
+            bash -euc "go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests/${{ matrix.profile }}$' -benchtime=15m -count=3 -benchmem | tee perf/results/full-reference/${{ matrix.profile }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-request-full-${{ matrix.profile }}-${{ github.sha }}
+          path: perf/results/full-reference/${{ matrix.profile }}.txt
+          if-no-files-found: error
+          retention-days: 30

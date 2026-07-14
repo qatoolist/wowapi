@@ -1,0 +1,110 @@
+# DRAFT — W01-E01-S001 + W01-E01-S002 target .golangci.yml (prepared Phase 1,
+# 2026-07-13, at HEAD 0a31186cada5c275a588c74081cf977adf346e61). Applied to the
+# committed .golangci.yml in Phase 2 (conductor green-light) TOGETHER with the
+# fix/annotation passes — enabling earlier would break `make lint` for in-flight
+# sibling work on the shared tree.
+#
+# Enablement derivation (re-derived from MATRIX CS-23 text, per W01 brief):
+#   S001 zero-cost set (FBL-05): sqlclosecheck rowserrcheck bodyclose
+#     wastedassign makezero musttag testifylint  — 0 hits at HEAD (fresh triage)
+#   S001 near-zero: noctx copyloopvar            — hits fixed in Phase 2
+#   S002 judged set (FBL-07): gosec errorlint exhaustive forcetypeassert
+#     usestdlibvars                              — every hit fixed or annotated
+#   NOT enabled, recorded: gocritic (MATRIX near-zero set; not named by either
+#     story's enablement scope), nilerr (annotation-only per S002 scope; the
+#     story's "already-enabled" claim is drift — it was never enabled at HEAD),
+#     wrapcheck + revive (REJECTED per S002 scope: fresh counts 464 / 231 hits,
+#     noise-dominant; MATRIX's "≈50 each" is drift, direction unchanged).
+#   MATRIX CS-23 claims "25 queried analyzers" but names only 18; the 7 unnamed
+#     ones are not invented here (same stance as the W00 throwaway config).
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - depguard
+    - misspell
+    - unconvert
+    - unparam
+    # W01-E01-S001 (FBL-05): zero-cost leak/correctness set — zero hits at
+    # enablement (see story evidence); CI now pins these defect classes shut.
+    - sqlclosecheck
+    - rowserrcheck
+    - bodyclose
+    - wastedassign
+    - makezero
+    - musttag
+    - testifylint
+    # W01-E01-S001 (FBL-05): near-zero set — production hits fixed in-story.
+    - noctx
+    - copyloopvar
+    # W01-E01-S002 (FBL-07): judged set — every hit fixed or annotated with an
+    # inline justification (see story-002 triage record).
+    - gosec
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - usestdlibvars
+  settings:
+    # Encode the blueprint 04 §1 import law as a machine check, complementing
+    # scripts/lint_boundaries.sh (which does path-level + vocabulary checks).
+    # kernel/* is the base: it must never import the upward layers.
+    depguard:
+      rules:
+        kernel:
+          list-mode: lax
+          files:
+            - "**/kernel/**/*.go"
+            # Test files legitimately import testkit (and may cross layers for
+            # test setup); the import law governs PRODUCTION code only.
+            - "!**/kernel/**/*_test.go"
+          deny:
+            - pkg: github.com/qatoolist/wowapi/module
+              desc: "kernel must not import module (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/app
+              desc: "kernel must not import app (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/adapters
+              desc: "kernel must not import adapters (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/testkit
+              desc: "production code must not import testkit"
+  exclusions:
+    # Tests commonly ignore errors (t.Fatal paths, best-effort cleanup) and use
+    # fixed-value helpers, so errcheck/unparam there are noise, not defects.
+    # W01-E01-S001/S002 extend the same house rule to test-idiom classes:
+    #   noctx           — httptest/context-less requests in tests (145 hits, all
+    #                     test-shaped; request cancellation is meaningless there)
+    #   gosec           — test fixtures trip G404/G301/G306-style rules by
+    #                     design (weak RNG, fixture perms); prod files stay hot
+    #   forcetypeassert — a panicking assertion in a test IS the failure signal
+    #   errorlint       — tests legitimately assert exact sentinel/type identity
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+          - noctx
+          - gosec
+          - forcetypeassert
+          - errorlint
+      # CLI commands write user-facing output to stdout/stderr (the io.Writer args
+      # are os.Stdout/os.Stderr in production, bytes.Buffer in tests). A failed
+      # terminal write has no meaningful recovery, so errcheck on fmt.Fprint* in the
+      # CLI is noise, not a defect — this mirrors the stdlib's own fmt.Print*
+      # exclusion. Scoped to internal/cli AND to fmt.Fprint* only, so genuine
+      # errcheck issues in that package (pool/file/exec errors) are still caught.
+      # See docs/working/lint-backlog.md (B-1).
+      - path: internal/cli/
+        linters:
+          - errcheck
+        source: 'fmt\.Fprint(f|ln)?\('
+
+# golangci-lint v2 bundles the formatters, so `golangci-lint fmt` = gofumpt +
+# goimports (no separate binaries to install). `run` also reports format drift.
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

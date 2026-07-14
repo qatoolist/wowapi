@@ -42,6 +42,8 @@ type fakeSpan struct{}
 func (fakeSpan) End()                {}
 func (fakeSpan) SetAttr(_, _ string) {}
 func (fakeSpan) RecordError(error)   {}
+func (fakeSpan) TraceID() string     { return "" }
+func (fakeSpan) SpanID() string      { return "" }
 
 // TestIntegrationJobsTracePropagation is the O1/CA-9 regression for the job
 // runner: an enqueued job captures the enqueuer's trace context, and the runner
@@ -58,7 +60,7 @@ func TestIntegrationJobsTracePropagation(t *testing.T) {
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -128,7 +130,7 @@ func TestIntegrationJobsNoTracerNoContext(t *testing.T) {
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}

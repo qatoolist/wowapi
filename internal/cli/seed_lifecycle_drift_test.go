@@ -32,7 +32,7 @@ func TestGeneratedMigrateTemplateRunsFullLifecycle(t *testing.T) {
 
 	mustContain := []string{
 		"appcfg.Load()",          // product config + secretref resolution (not bare DATABASE_URL)
-		"seeds.Sync(",            // GAP-003 seed catalog sync
+		"seeds.Apply(",           // GAP-003/FBL-02 recorded seed catalog sync
 		"rules.SyncDefinitions(", // GAP-007 rule definition sync
 	}
 	for _, want := range mustContain {
@@ -57,7 +57,7 @@ func TestGeneratedMigrateTemplateRunsFullLifecycle(t *testing.T) {
 	runBody := src[runStart:runEnd]
 
 	loadIdx := strings.Index(runBody, "loadConfig()")
-	seedIdx := strings.Index(runBody, "seeds.Sync(")
+	seedIdx := strings.Index(runBody, "seeds.Apply(")
 	rulesIdx := strings.Index(runBody, "rules.SyncDefinitions(")
 	if loadIdx < 0 || seedIdx < 0 || rulesIdx < 0 {
 		t.Fatalf("expected loadConfig()/seeds.Sync()/rules.SyncDefinitions() all within func run(...), got indices %d,%d,%d",

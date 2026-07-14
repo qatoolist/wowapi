@@ -172,7 +172,7 @@ func TestIntegrationLongErrorTruncated(t *testing.T) {
 	reg := jobs.NewRegistry()
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New(strings.Repeat("x", 5000))
-	}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 30 * time.Second }})
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestIntegrationRunnerOptionsAndDeadHook(t *testing.T) {
 	reg := jobs.NewRegistry()
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("always fails")
-	}, jobs.RetryPolicy{MaxAttempts: 2, Backoff: func(int) time.Duration { return 0 }})
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 2, Backoff: func(int) time.Duration { return 0 }})
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestIntegrationRecordSuccessConflictLogged(t *testing.T) {
 	reg := jobs.NewRegistry()
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil // both jobs succeed
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestIntegrationRecordFailureConflictLogged(t *testing.T) {
 	reg := jobs.NewRegistry()
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("boom")
-	}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestIntegrationRunnerRunReclaimsStalled(t *testing.T) {
 	reg := jobs.NewRegistry()
 	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestIntegrationRunnerRunGracefulDrain(t *testing.T) {
 		once.Do(func() { close(started) })
 		time.Sleep(200 * time.Millisecond) // in-flight when cancel arrives
 		return nil
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}

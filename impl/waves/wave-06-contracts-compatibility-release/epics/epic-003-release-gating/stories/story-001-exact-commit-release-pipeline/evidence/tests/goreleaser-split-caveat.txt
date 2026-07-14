@@ -1,0 +1,17 @@
+UTC: 2026-07-13T17:16:15.420640+00:00
+Revision: 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Command: go run github.com/goreleaser/goreleaser/v2@v2.17.0 --help
+Exit: 0
+
+Relevant stdout (complete command list):
+  COMMANDS  
+    build [--flags]                        Builds the current project
+    check [configuration files] [--flags]  Checks if configuration is valid
+    completion [command]                   Generate the autocompletion script for the specified shell
+    healthcheck [--flags]                  Checks if needed tools are installed
+    help [command]                         Help about any command
+    init [--flags]                         Generates a .goreleaser.yaml file
+    jsonschema [--flags]                   Outputs goreleaser's JSON schema
+    release [--flags]                      Releases the current project
+
+Finding: GoReleaser OSS v2.17.0 exposes no publish command. Official Split & Merge is documented as GoReleaser Pro-only and its split build pushes Docker images. Main authorized gh/ORAS exact-byte publication as the implementation deviation.

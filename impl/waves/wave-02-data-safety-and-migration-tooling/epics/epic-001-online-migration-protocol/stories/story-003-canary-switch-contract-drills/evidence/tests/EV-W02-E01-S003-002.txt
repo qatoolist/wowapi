@@ -1,0 +1,4 @@
+=== RUN   TestSwitchRollbackAfterSwitch
+--- PASS: TestSwitchRollbackAfterSwitch (0.33s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.585s

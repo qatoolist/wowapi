@@ -1,0 +1,21 @@
+Evidence ID: EV-W06-E02-S001-001
+Evidence type: fixture-driven and structural-validation test report
+Story and task: W06-E02-S001 / W06-E02-S001-T001,T002,T003
+Acceptance criteria proven: AC-W06-E02-S001-01, AC-W06-E02-S001-02, AC-W06-E02-S001-03
+Execution command: go test ./internal/cli -run 'OpenAPI' -count=1
+Code revision: working tree based on 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Branch or tag: main working tree
+Environment: Darwin arm64; Go 1.26.5
+Relevant tool versions: github.com/pb33f/libopenapi v0.38.6; github.com/pb33f/libopenapi-validator v0.14.0
+Execution date: 2026-07-13
+Result: PASS
+Raw output:
+go test: 1 packages ok
+Wall time: 3.60 seconds
+
+Retest command: go test ./internal/cli ./internal/compat ./internal/compatcli -run '^(TestOpenAPI|TestCheckConfigSchemaCompatibility|TestGoAPIDiffGateFixtures|TestCandidateArchitectureSmoke|TestRunConfig)' -count=1
+Retest result: PASS
+Retest raw output:
+go test: 3 packages ok
+Wall time: 11.53 seconds
+Reviewer: pending independent review

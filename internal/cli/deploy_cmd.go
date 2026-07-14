@@ -92,7 +92,8 @@ func runDeploy(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	if err := os.WriteFile(*out, []byte(sb.String()), 0o644); err != nil {
+	// Rendered manifest contains no secrets (env values are secretref:// names).
+	if err := os.WriteFile(*out, []byte(sb.String()), 0o644); err != nil { // #nosec G306 -- generated deploy manifest is project source, world-readable by design
 		fmt.Fprintf(stderr, "wowapi deploy render: %v\n", err)
 		return 1
 	}

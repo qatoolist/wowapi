@@ -1,0 +1,18 @@
+---
+id: W01-RISKS
+type: wave-risks
+wave: W01
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W01 — Risks
+
+| Risk ID | Description | Likelihood | Impact | Severity | Affected items | Mitigation | Contingency | Owner | Status | Residual risk |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-W01-001 | Judged-linter enablement (gosec/errorlint/exhaustive/forcetypeassert) surfaces more hits at W01's actual start commit than MATRIX CS-23's snapshot recorded, because the codebase has moved since the matrix pass | Medium | Medium — increases story scope beyond the planned triage list | Medium | W01-E01-S002 | Re-run the full analyzer set fresh at story start rather than trusting the matrix's cached counts; treat any new hit as an in-scope triage item, not a surprise that blocks the story | If the new-hit volume is large enough to threaten story boundedness (mandate §12), split into a follow-up task rather than silently expanding scope | unassigned | open | Low-medium |
+| RISK-W01-002 | FBL-08's boot-time rejection of undeclared-mutating-routes breaks an existing route that currently works only because validation was silently skipped | Medium | Medium — could break an existing deployment path if the profile-flag compat strategy isn't honored | Medium | W01-E03-S002 | Ship behind a profile flag first (explicit in FBL-08's plan note: "compat: profile-flag first"); audit all existing mutating routes for a declared contract before flipping the flag to enforced-by-default | Revert to advisory-only (log, don't reject) if an undeclared route is found in a code path this wave didn't anticipate | unassigned | open | Low once the flag strategy is honored |
+| RISK-W01-003 | FBL-09's prod-profile zero-timeout rejection breaks an existing deployment (wowapi-internal reference stack or a hypothetical early product deployment) that relies on the current infinite-default timeouts | Low | Medium | Low-medium | W01-E03-S001 | Default timeout values are explicitly "safe defaults" per MATRIX CS-09 (read 30s / write 60s / idle 120s / header 10s), not zero — the rejection only fires on an explicit zero-value config, not on unset config falling through to the new defaults | Document the new defaults prominently in the story's implementation record so a downstream deployment isn't surprised | unassigned | open | Low |
+| RISK-W01-004 | T-TEST-01's reproduction step fails to reproduce the intermittent `internal/e2e` failure at all, leaving the diagnosis inconclusive | Medium | Low — this is an investigation story; an inconclusive result is itself a valid, honestly-recorded outcome, not a story failure | Low | W01-E04-S003 | The story's completion criteria explicitly allow "reproduce, then diagnose what the reproduction shows" rather than pre-committing to a mechanism (MATRIX CS-13's own re-scoping) | If unreproducible after a reasonable `-count`+parallel budget, record that finding and downgrade to a monitoring item rather than open-ended investigation | unassigned | open | Low — accepted as a legitimate story outcome, not a residual project risk |
+| RISK-W01-005 | Generator fix (DX-02 `.delete`→`.deactivate`) needs to also fix the generator's own test that currently asserts the buggy verb as correct (`TestGenCRUDPermissionKeys`) — missing this sub-fix would leave the test suite red or, worse, silently reverted | Low | Medium — a missed fix here means the bug is test-locked again immediately | Low-medium | W01-E04-S001 | Explicitly named in the task breakdown (T-row derived from MATRIX CS-14's own citation of the test-locking issue) | Independent review specifically checks this test was updated, not just the template | unassigned | open | Low |

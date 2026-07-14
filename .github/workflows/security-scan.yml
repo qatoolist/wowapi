@@ -1,18 +1,16 @@
 name: security-scan
 
-# Secret scanning (gitleaks), filesystem/config vulnerability + misconfig scan
-# (Trivy), and PR dependency review.
-#
-# gitleaks and Trivy work on a private repo (they gate via job status / logs).
-# dependency-review needs the dependency-graph API, which requires a PUBLIC repo
-# or GitHub Advanced Security — so the `guard` job skips it until the repo is
-# public or GHAS is enabled.
+# Blocking secret, vulnerability, dependency, license, workflow, and configuration gates.
+# Public repositories must prove the hosted dependency-review/CodeQL/Scorecard checks ran
+# successfully for the exact SHA. Non-public repositories automatically run local fail-closed
+# substitutes; local SAST/posture are useful defenses but do not claim CodeQL query parity.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   schedule:
-    - cron: "41 5 * * 1" # Mondays 05:41 UTC
+    - cron: "41 5 * * 1"
 
 concurrency:
   group: security-scan-${{ github.ref }}
@@ -34,60 +32,159 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           vis=$(gh api "repos/$REPO" --jq '.visibility')
           echo "repo visibility: $vis"
-          if [ "$vis" = "public" ]; then echo "public=true" >> "$GITHUB_OUTPUT"; else echo "public=false" >> "$GITHUB_OUTPUT"; fi
+          if [ "$vis" = public ]; then echo "public=true" >> "$GITHUB_OUTPUT"; else echo "public=false" >> "$GITHUB_OUTPUT"; fi
+
+  waivers:
+    name: expiring scoped security waivers
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: schema, expiry, and Trivy scope validation
+        run: |
+          set -euo pipefail
+          python3 scripts/validation/security_contract.py validate-waivers \
+            --waivers ci/security-waivers.yaml --schema ci/security-waivers.schema.json
+          python3 scripts/validation/security_contract.py validate-trivy-ignore \
+            --waivers ci/security-waivers.yaml --ignore .trivyignore.yaml
+      - name: adversarial security contract fixtures
+        run: python3 -m unittest scripts.validation.tests.test_security_contracts
 
   gitleaks:
-    name: secret scan (gitleaks)
+    name: secret scan (gitleaks, blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: read # gitleaks lists the PR's commits to scan the diff (403 without it)
+      pull-requests: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0 # full history so the scheduled run scans all commits
+          fetch-depth: 0
+          persist-credentials: false
       - name: gitleaks
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   trivy:
-    name: filesystem scan (trivy)
+    name: vulnerability, secret, config, and license scan (Trivy, blocking)
+    needs: waivers
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: trivy filesystem + config scan
-        # Table output to the job log (no SARIF upload, which would need GHAS on a
-        # private repo). Informational: exit-code 0 so it never blocks; Go vulns
-        # are gated by govulncheck and secrets by gitleaks. Flip exit-code to 1
-        # (and/or switch to SARIF upload) once the repo is public.
+        with:
+          persist-credentials: false
+      - name: fail on Critical/High findings not in the reviewed scoped allowlist
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
-          scanners: vuln,secret,misconfig
+          scanners: vuln,secret,misconfig,license
           format: table
           severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "0"
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+          exit-code: "1"
 
   dependency-review:
-    name: dependency review (PR)
+    name: dependency and license review (PR, blocking)
     needs: guard
     if: github.event_name == 'pull_request' && needs.guard.outputs.public == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: write # post the summary comment
+      pull-requests: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: dependency review
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
           license-check: true
+
+  hosted-scanner-meta:
+    name: public exact-SHA hosted scanner meta-check
+    needs: [guard, dependency-review]
+    if: always() && needs.guard.result == 'success' && needs.guard.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: require hosted scanner success for this exact SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+        run: |
+          set -euo pipefail
+          dep=success
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$DEPENDENCY_REVIEW_RESULT" = success
+          fi
+          for pair in "codeql:codeql.yml" "scorecard:scorecard.yml"; do
+            name=${pair%%:*}
+            workflow=${pair#*:}
+            conclusion=missing
+            for _ in $(seq 1 20); do
+              if gh run list --workflow "$workflow" --commit "$SOURCE_SHA" --limit 20 \
+                --json conclusion --jq 'any(.[]; .conclusion == "success")' | grep -qx true; then
+                conclusion=success
+                break
+              fi
+              sleep 30
+            done
+            printf '%s=%s\n' "$name" "$conclusion"
+            eval "$name=$conclusion"
+          done
+          jq -n --arg dep "$dep" --arg codeql "$codeql" --arg scorecard "$scorecard" \
+            '{"dependency-review":$dep,codeql:$codeql,scorecard:$scorecard}' > hosted-results.json
+          python3 scripts/validation/security_contract.py visibility-guard \
+            --visibility public --hosted-results hosted-results.json
+
+  private-fallback:
+    name: non-public local SAST and scorecard-equivalent fallback
+    needs: guard
+    if: needs.guard.outputs.public == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: local SAST substitute and scorecard-equivalent posture
+        run: |
+          set -euo pipefail
+          python3 scripts/validation/security_contract.py local-sast --path .
+          python3 scripts/validation/security_contract.py repository-posture --path .
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
+          go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: local blocking vulnerability/secret/config/license replacement
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig,license
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+          exit-code: "1"
