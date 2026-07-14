@@ -221,7 +221,7 @@ func TestProdUnsafeConfigKnobMatrix(t *testing.T) {
 }
 
 // TestHTTPTimeoutDefaultsMatchCS09 pins the four connection-level timeout
-// defaults to MATRIX CS-09's specified safe values (header 10s / read 30s /
+// defaults to the v1-compatible safe values (header 5s / read 30s /
 // write 60s / idle 120s) — AC-W01-E03-S001-01. An unset config falls through
 // to these, which is why the prod zero-rejection can never fire on a config
 // that simply doesn't mention the keys (RISK-W01-003 mitigation).
@@ -232,7 +232,7 @@ func TestHTTPTimeoutDefaultsMatchCS09(t *testing.T) {
 		got  time.Duration
 		want time.Duration
 	}{
-		{"read_header_timeout", h.ReadHeaderTimeout, 10 * time.Second},
+		{"read_header_timeout", h.ReadHeaderTimeout, 5 * time.Second},
 		{"read_timeout", h.ReadTimeout, 30 * time.Second},
 		{"write_timeout", h.WriteTimeout, 60 * time.Second},
 		{"idle_timeout", h.IdleTimeout, 120 * time.Second},

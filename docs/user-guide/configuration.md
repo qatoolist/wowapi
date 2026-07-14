@@ -35,7 +35,7 @@ schema_version: 1                 # config file format version (default 1)
 
 http:
   addr: ":8080"                   # listen address (default ":8080")
-  read_header_timeout: "10s"      # max time to read request headers
+  read_header_timeout: "5s"       # max time to read request headers
   read_timeout: "30s"             # max time to read the whole request incl. body (0 = unlimited; refused in prod)
   write_timeout: "60s"            # max time for response writes (0 = unlimited; refused in prod)
   idle_timeout: "120s"            # max keep-alive idle time between requests (0 = unlimited; refused in prod)
@@ -75,7 +75,7 @@ db:
 | `environment` | enum | **none** | `local`/`dev`/`stage`/`prod`. No default by design — an unset env fails closed. |
 | `schema_version` | int | `1` | Config format version. |
 | `http.addr` | string | `:8080` | Listen address. |
-| `http.read_header_timeout` | duration | `10s` | Slow-header (Slowloris) guard. |
+| `http.read_header_timeout` | duration | `5s` | Slow-header (Slowloris) guard. |
 | `http.read_timeout` | duration | `30s` | Connection-level whole-request read timeout; `0` = unlimited, refused in prod. |
 | `http.write_timeout` | duration | `60s` | Connection-level response-write timeout; `0` = unlimited, refused in prod. |
 | `http.idle_timeout` | duration | `120s` | Keep-alive idle timeout; `0` = unlimited, refused in prod. |

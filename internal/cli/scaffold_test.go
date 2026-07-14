@@ -564,7 +564,7 @@ func TestInitAPIMainConfiguresAllServerTimeouts(t *testing.T) {
 
 // TestInitConfigsBaseDocumentsServerTimeouts: the generated configs/base.yaml
 // must enumerate the four connection-level timeout keys with the MATRIX CS-09
-// safe defaults (header 10s / read 30s / write 60s / idle 120s), matching how
+// safe defaults (header 5s / read 30s / write 60s / idle 120s), matching how
 // it already documents read_header_timeout/request_timeout/max_body_bytes.
 func TestInitConfigsBaseDocumentsServerTimeouts(t *testing.T) {
 	dir := t.TempDir()
@@ -574,7 +574,7 @@ func TestInitConfigsBaseDocumentsServerTimeouts(t *testing.T) {
 	}
 	basePath := filepath.Join(dir, "configs", "base.yaml")
 	for _, want := range []string{
-		"read_header_timeout: 10s",
+		"read_header_timeout: 5s",
 		"read_timeout: 30s",
 		"write_timeout: 60s",
 		"idle_timeout: 120s",

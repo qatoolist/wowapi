@@ -112,7 +112,7 @@ type Pool struct {
 // HTTP holds server guardrails. Zero values are replaced by Defaults.
 type HTTP struct {
 	Addr              string        `conf:"addr" default:":8080" json:"addr" doc:"HTTP listen address"`
-	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"10s" json:"read_header_timeout" doc:"maximum time to read request headers (MATRIX CS-09 safe default 10s)"`
+	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"5s" json:"read_header_timeout" doc:"maximum time to read request headers (v1-compatible safe default 5s)"`
 	// ReadTimeout/WriteTimeout/IdleTimeout are the connection-level http.Server
 	// timeouts (FBL-09 / MATRIX CS-09). Go's zero value means "no timeout" for
 	// each — an unbounded Slowloris-class exhaustion surface — so all three
@@ -180,7 +180,7 @@ func Defaults() Framework {
 		SchemaVersion: SchemaVersion,
 		HTTP: HTTP{
 			Addr:              ":8080",
-			ReadHeaderTimeout: 10 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      60 * time.Second,
 			IdleTimeout:       120 * time.Second,
