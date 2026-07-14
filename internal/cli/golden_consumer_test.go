@@ -176,6 +176,7 @@ func installGoldenConsumerCLI(t *testing.T, version string) string {
 		!strings.Contains(provenance, version) {
 		t.Fatalf("installed CLI provenance does not name wowapi %s:\n%s", version, provenance)
 	}
+	primeReleasedModuleCacheProxy(t, version)
 	return cli
 }
 

@@ -73,16 +73,58 @@ func buildWowapiCLI(t *testing.T, ldflagsVersion string) string {
 	return bin
 }
 
-// modCacheProxyURL returns the local module cache's download directory as a
-// file:// proxy URL — every dependency this repo builds with is already
-// cached there, so pipeline steps resolve dependencies fully offline.
+// modCacheProxyURL primes the local module cache and returns its download
+// directory as a file:// proxy URL. Compiled build-cache entries do not prove
+// that the corresponding module proxy ZIPs are present (notably after a
+// setup-go cache restore), so prime the proxy material explicitly before the
+// generated consumer is restricted to offline resolution.
 func modCacheProxyURL(t *testing.T) string {
 	t.Helper()
+	root := wowapiCheckoutRoot(t)
+	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod for module-cache proxy: %v", err)
+	}
+	gosum, err := os.ReadFile(filepath.Join(root, "go.sum"))
+	if err != nil {
+		t.Fatalf("read go.sum for module-cache proxy: %v", err)
+	}
+	primeModuleCacheProxy(t, gomod, gosum)
+
 	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
 	if err != nil {
 		t.Fatalf("go env GOMODCACHE: %v", err)
 	}
 	return "file://" + filepath.ToSlash(filepath.Join(strings.TrimSpace(string(out)), "cache", "download"))
+}
+
+// primeModuleCacheProxy downloads a complete module graph from a disposable
+// module so priming cannot rewrite the repository's go.sum.
+func primeModuleCacheProxy(t *testing.T, gomod, gosum []byte) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), gomod, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if len(gosum) != 0 {
+		if err := os.WriteFile(filepath.Join(dir, "go.sum"), gosum, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	download := exec.Command("go", "mod", "download", "all")
+	download.Dir = dir
+	download.Env = append(os.Environ(), "GOWORK=off")
+	if out, err := download.CombinedOutput(); err != nil {
+		t.Fatalf("prime local module-cache proxy: %v\n%s", err, out)
+	}
+}
+
+// primeReleasedModuleCacheProxy makes the full dependency graph of a tagged
+// framework release available before golden-consumer resolution goes offline.
+func primeReleasedModuleCacheProxy(t *testing.T, version string) {
+	t.Helper()
+	gomod := fmt.Appendf(nil, "module example.com/wowapi-proxy-prime\n\ngo 1.26.0\n\nrequire github.com/qatoolist/wowapi %s\n", version)
+	primeModuleCacheProxy(t, gomod, nil)
 }
 
 // buildFrameworkProxy packages THIS checkout as module version `version`
