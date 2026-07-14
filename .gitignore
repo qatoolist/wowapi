@@ -62,6 +62,7 @@ visuals/
 
 # stray root build artifact from `go build ./cmd/wowapi`
 /wowapi
+/migrate
 /benchbudget
 
 # AI-prompt / conversation working files that seeded this project. Their durable

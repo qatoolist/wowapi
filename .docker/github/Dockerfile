@@ -2,7 +2,7 @@
 # specific identity, using ONLY an explicitly-mounted SSH key — no ssh-agent, no
 # 1Password, so it can never pick up the wrong account's key. Signing/commits are
 # left to the host; this image does network git ops.
-FROM alpine:3.20
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 
 RUN apk add --no-cache git openssh-client ca-certificates
 

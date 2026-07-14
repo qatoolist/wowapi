@@ -63,6 +63,16 @@ func TestOpenAPIMergePreservesEveryOpenAPI31Field(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDocumentCapacityRejectsIntegerOverflow(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	if _, err := openAPIDocumentCapacity(maxInt - 2); err == nil {
+		t.Fatal("capacity calculation must reject a top-level field count that would overflow")
+	}
+	if got, err := openAPIDocumentCapacity(7); err != nil || got != 10 {
+		t.Fatalf("safe capacity = %d, %v; want 10, nil", got, err)
+	}
+}
+
 func TestOpenAPIMergePoliciesAreCompleteOrLoud(t *testing.T) {
 	tests := []struct {
 		name      string

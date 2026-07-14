@@ -1,6 +1,7 @@
 package httpx_test
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net/http"
@@ -34,6 +35,31 @@ func TestRecoverLogsPanicWithLogger(t *testing.T) {
 	}
 	if body := rec.Body.String(); body == "" || strings.Contains(body, "secret") {
 		t.Errorf("panic detail must not reach the wire: %q", body)
+	}
+}
+
+func TestRecoverSanitizesUntrustedLogFields(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	h := httpx.Chain(
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }),
+		httpx.RequestID(),
+		httpx.Recover(logger),
+	)
+	req := httptest.NewRequest(http.MethodGet, "/safe", nil)
+	req.URL.Path = "/safe\nlevel=ERROR forged=true"
+	req.Header.Set("X-Request-Id", "id\r\nforged=true")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	got := logs.String()
+	trimmed := strings.TrimSuffix(got, "\n")
+	if strings.Contains(trimmed, "\n") || strings.Contains(trimmed, "\r") {
+		t.Fatalf("untrusted request metadata forged an additional log line: %q", got)
+	}
+	for _, escaped := range []string{`\\n`, `\\r`} {
+		if !strings.Contains(got, escaped) {
+			t.Errorf("sanitized log missing %q: %q", escaped, got)
+		}
 	}
 }
 

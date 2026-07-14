@@ -204,7 +204,11 @@ func (m *openAPIMergeState) mergeTags(value json.RawMessage) error {
 }
 
 func (m *openAPIMergeState) document() ([]byte, error) {
-	doc := make(map[string]any, len(m.fields)+3)
+	capacity, err := openAPIDocumentCapacity(len(m.fields))
+	if err != nil {
+		return nil, err
+	}
+	doc := make(map[string]any, capacity)
 	for field, raw := range m.fields {
 		doc[field] = raw
 	}
@@ -245,6 +249,15 @@ func (m *openAPIMergeState) document() ([]byte, error) {
 		return nil, err
 	}
 	return encoded, nil
+}
+
+func openAPIDocumentCapacity(fieldCount int) (int, error) {
+	const syntheticFields = 3
+	maxInt := int(^uint(0) >> 1)
+	if fieldCount < 0 || fieldCount > maxInt-syntheticFields {
+		return 0, fmt.Errorf("OpenAPI document has too many top-level fields")
+	}
+	return fieldCount + syntheticFields, nil
 }
 
 func validateOpenAPI31(raw []byte) error {

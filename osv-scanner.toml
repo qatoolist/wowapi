@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-07-15
+reason = "The advisory affects golang.org/x/crypto/openpgp. wowapi does not import or reach openpgp; x/crypto is retained indirectly for validator/v10's sha3 use, and govulncheck reports no reachable vulnerability."

@@ -4,6 +4,7 @@ package constructorlint
 import (
 	"go/ast"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -41,6 +42,9 @@ func run(pass *analysis.Pass) (any, error) {
 		if strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
+		if isLegacyCompatibilityShim(pass.Pkg.Path(), filename) {
+			continue
+		}
 		ast.Inspect(file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
@@ -67,6 +71,27 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	return nil, nil
+}
+
+func isLegacyCompatibilityShim(packagePath, filename string) bool {
+	if filepath.Base(filename) != "compat.go" {
+		return false
+	}
+	for _, packageName := range []string{
+		"artifact",
+		"attachment",
+		"bulk",
+		"comment",
+		"document",
+		"integration",
+		"notify",
+		"webhook",
+	} {
+		if packagePath == modulePath+"/kernel/"+packageName {
+			return true
+		}
+	}
+	return false
 }
 
 func isInfrastructureConstructor(name string) bool {

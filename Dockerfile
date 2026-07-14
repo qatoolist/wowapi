@@ -2,7 +2,7 @@
 # Multi-stage: base (deps) → dev (toolbox for containerized dev/test/lint)
 #                          → build → cli (distroless wowapi CLI image)
 
-FROM golang:1.26-alpine AS base
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS base
 RUN apk add --no-cache git make bash grep
 WORKDIR /src
 COPY go.mod ./
@@ -14,12 +14,11 @@ COPY . .
 # Toolbox used by deployments/compose.yaml `tools` service:
 #   docker compose -f deployments/compose.yaml run --rm tools make ci
 FROM base AS dev
-ARG ALLURE_CLI_VERSION=2.43.0
 # `go test -race` needs cgo, and Allure Report 2 needs Java plus the
 # `allure-commandline` npm distribution. golurectl converts `go test -json`
 # into Allure result files; its version is pinned by go.mod's tool directive.
 RUN apk add --no-cache gcc musl-dev nodejs npm openjdk21-jre-headless \
-    && npm install --global --omit=dev "allure-commandline@${ALLURE_CLI_VERSION}" \
+    && npm install --global --omit=dev "allure-commandline@2.43.0" \
     && go build -o /usr/local/bin/golurectl github.com/robotomize/go-allure/cmd/golurectl \
     && allure --version \
     && golurectl version
@@ -37,7 +36,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X github.com/qatoolist/wowapi/internal/buildinfo.version=${VERSION}" \
     -o /out/wowapi ./cmd/wowapi
 
-FROM gcr.io/distroless/static-debian12:nonroot AS cli
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:b7bb25d9f7c31d2bdd1982feb4dafcaf137703c7075dbe2febb41c24212b946f AS cli
 COPY --from=build /out/wowapi /usr/local/bin/wowapi
 ENTRYPOINT ["/usr/local/bin/wowapi"]
 CMD ["help"]
