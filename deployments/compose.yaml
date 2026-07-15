@@ -102,6 +102,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      mailpit:
+        condition: service_started
+      jaeger:
+        condition: service_started
 
 volumes:
   pgdata:
