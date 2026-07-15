@@ -212,7 +212,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: restore container Go caches
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cicache
           key: cicache-${{ matrix.leg }}-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
@@ -264,6 +264,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: restore retained Go fuzz corpus
+<<<<<<< HEAD
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .fuzzcache
@@ -293,7 +294,37 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: restore retained Go fuzz corpus
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .fuzzcache
+          key: fuzz-pr-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-pr-${{ hashFiles('go.sum') }}-
+      - name: run real coverage-guided fuzzing (10s per target)
+        run: make test-fuzz-pr FUZZTIME=10s FUZZ_OUTPUT=fuzz-report-pr
+      - name: upload fuzz proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-proof-pr
+          path: fuzz-report-pr/
+          if-no-files-found: error
+          retention-days: 14
+
+  fuzz-scheduled:
+    name: coverage-guided fuzz (long retained-corpus profile)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: restore retained Go fuzz corpus
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+>>>>>>> origin/main
         with:
           path: .fuzzcache
           # A unique save key plus a stable restore prefix lets each nightly
@@ -327,7 +358,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: restore container Go caches
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cicache
           key: cicache-bench-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
@@ -412,7 +443,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: restore container Go caches
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cicache
           key: cicache-coverage-${{ hashFiles('go.sum', 'Dockerfile') }}-${{ github.sha }}
