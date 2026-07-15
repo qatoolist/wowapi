@@ -65,3 +65,22 @@ func BindAndValidate[T any](r *http.Request, v *validation.Validator, maxBytes i
 	}
 	return out, nil
 }
+
+// ValidatedHandler adapts a typed business handler into an http.HandlerFunc
+// that binds and validates the request body through BindAndValidate[T] before
+// the business logic runs (FBL-08 / MATRIX CS-08). Registering a mutating
+// route with `RouteMeta{..., Request: T{}}` and wiring its handler through
+// ValidatedHandler[T] makes declaring the contract and enforcing it the same
+// act — a handler built this way cannot forget validation. Failures surface
+// through WriteError's existing KindValidation problem-details path (400 +
+// field errors), byte-identical to a direct BindAndValidate caller.
+func ValidatedHandler[T any](v *validation.Validator, maxBytes int64, fn func(w http.ResponseWriter, r *http.Request, req T)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		req, err := BindAndValidate[T](r, v, maxBytes)
+		if err != nil {
+			WriteError(r.Context(), w, err)
+			return
+		}
+		fn(w, r, req)
+	}
+}

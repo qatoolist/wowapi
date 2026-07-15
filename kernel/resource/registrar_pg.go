@@ -26,6 +26,21 @@ func (r *PgRegistrar) Bind(db database.TenantDB) Registrar {
 	return &boundRegistrar{db: db}
 }
 
+// UpsertAs writes (or updates) the resources mirror row attributing
+// created_by (and, on update, updated_by) to actorID explicitly. It is the
+// aggregate write helper's mirror stage (kernel/resource/aggregate, DATA-06
+// T1/T2): the helper resolves the acting principal from context — rejecting a
+// user-initiated write with no resolvable actor — before calling it, so every
+// mirror row written through the enforced path carries real attribution.
+//
+// DATA-07 T3 note (single-owner fix surface): this method IS the nil-actor
+// placeholder fix. Later actor-attribution work must route through it (or
+// through the ctx-sourcing Upsert below) rather than reintroducing an
+// independent created_by write.
+func (r *PgRegistrar) UpsertAs(ctx context.Context, db database.TenantDB, actorID uuid.UUID, ref Ref, orgID *uuid.UUID, label, status string) error {
+	return upsertMirror(ctx, db, actorID, ref, orgID, label, status)
+}
+
 // boundRegistrar implements Registrar over a single tenant tx's TenantDB.
 type boundRegistrar struct{ db database.TenantDB }
 
@@ -35,11 +50,21 @@ var _ Registrar = (*boundRegistrar)(nil)
 // aggregate: same id, its resource type, optional org, label and status.
 // tenant_id is set from app_tenant_id() so the RLS WITH CHECK is satisfied and
 // the row can never be written under the wrong tenant.
+//
+// created_by/updated_by are sourced from the actor bound in ctx
+// (database.ActorIDFrom — the same binding TxManager mirrors into the
+// app.actor_id GUC). A caller that never bound an actor writes an
+// unattributed zero id: this low-level API stays compatible for legacy
+// call sites, while the enforced aggregate write path
+// (kernel/resource/aggregate) always resolves and binds a real actor first.
 func (b *boundRegistrar) Upsert(ctx context.Context, ref Ref, orgID *uuid.UUID, label, status string) error {
-	// created_by: NIL uuid placeholder for now. Full actor attribution wires in
-	// from ctx (database.ActorIDFrom) in a later refinement; the column is
-	// NOT NULL so a zero uuid keeps the insert legal without blocking Phase 4.
-	// TODO(phase-later): source created_by/updated_by from the request actor.
+	actorID, _ := database.ActorIDFrom(ctx)
+	return upsertMirror(ctx, b.db, actorID, ref, orgID, label, status)
+}
+
+// upsertMirror is the single mirror-write statement shared by the attributed
+// (UpsertAs) and ctx-sourced (Upsert) paths.
+func upsertMirror(ctx context.Context, db database.TenantDB, actorID uuid.UUID, ref Ref, orgID *uuid.UUID, label, status string) error {
 	const q = `
 INSERT INTO resources (id, tenant_id, resource_type, org_id, label, status, version, created_at, created_by)
 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, 1, now(), $6)
@@ -48,13 +73,14 @@ ON CONFLICT (id) DO UPDATE SET
     status     = EXCLUDED.status,
     org_id     = EXCLUDED.org_id,
     updated_at = now(),
+    updated_by = EXCLUDED.created_by,
     version    = resources.version + 1`
 
 	var org any
 	if orgID != nil {
 		org = *orgID
 	}
-	if _, err := b.db.Exec(ctx, q, ref.ID, ref.Type, org, label, status, uuid.Nil); err != nil {
+	if _, err := db.Exec(ctx, q, ref.ID, ref.Type, org, label, status, actorID); err != nil {
 		return kerr.Wrapf(err, "resource.Upsert", "upsert resources mirror for %s", ref.Type)
 	}
 	return nil

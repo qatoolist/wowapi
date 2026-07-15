@@ -21,7 +21,7 @@ import (
 // module.Context the app builds during Boot (deps threaded from the kernel and
 // bound to the module name) — not merely in the kernel/privileged unit tests. A
 // module named "committee" grants and revokes an edge of its OWN type through
-// mc.Privileged().Relationships(), and a foreign-module context is denied the
+// mc.(module.PrivilegedContext).Privileged().Relationships(), and a foreign-module context is denied the
 // same type — proving ownership binds to the module the context belongs to.
 func TestIntegrationModuleContextPrivilegedWired(t *testing.T) {
 	h := testkit.NewDB(t)
@@ -53,7 +53,7 @@ func TestIntegrationModuleContextPrivilegedWired(t *testing.T) {
 	obj := testkit.CreateResourceTypeAndResource(t, h, tenant, "committee.committee")
 
 	ctx := testkit.TenantCtx(tenant)
-	rel := committeeCtx.Privileged().Relationships()
+	rel := committeeCtx.(module.PrivilegedContext).Privileged().Relationships()
 
 	// Grant an owned edge through the module context and confirm the checker sees it.
 	spec := privileged.GrantSpec{
@@ -85,7 +85,7 @@ func TestIntegrationModuleContextPrivilegedWired(t *testing.T) {
 	}
 
 	// The "other" module's context must NOT be able to grant a committee-owned type.
-	if _, err := otherCtx.Privileged().Relationships().Grant(ctx, spec); kerr.KindOf(err) != kerr.KindForbidden {
+	if _, err := otherCtx.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, spec); kerr.KindOf(err) != kerr.KindForbidden {
 		t.Fatalf("foreign module must be denied a committee type, got %v", err)
 	}
 }

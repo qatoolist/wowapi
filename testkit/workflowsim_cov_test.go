@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/outbox"
@@ -63,7 +64,7 @@ func buildCovRuntime(t *testing.T, h *DBHandle, approverCap uuid.UUID, raws ...s
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntime(h.TxM, reg, covEvaluator(), outbox.NewWriter(model.UUIDv7()), model.UUIDv7())
+	return workflow.NewRuntimeWithCompliance(h.TxM, reg, covEvaluator(), outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 }
 
 func covActor(tenant, userID, cap uuid.UUID) authz.Actor {

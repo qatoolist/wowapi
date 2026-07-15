@@ -2,8 +2,14 @@
 // that lets kernel services (authz record-scope, comments, documents, workflow,
 // relationships) address any module row uniformly. A module owns its business
 // table; on write it upserts a matching row into the kernel `resources` table
-// (same id) via a Registrar, declaring the resource type. See blueprint 01 §3,
-// 03 §2, 04 §2.
+// (same id) via a Registrar, declaring the resource type.
+//
+// The preferred write path is the aggregate.Writer in
+// github.com/qatoolist/wowapi/kernel/resource/aggregate: a single call performs
+// the business-row write, the resources-mirror upsert, an audit row, and an
+// outbox event in one tenant transaction, so a module cannot commit its
+// business row without also committing the mirror. The low-level Registrar
+// remains available for legacy callers. See blueprint 01 §3, 03 §2, 04 §2.
 package resource
 
 import (

@@ -61,7 +61,7 @@ func TestOpenAPIMerge(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errb.String())
 	}
 	got := out.String()
-	for _, want := range []string{`"/a"`, `"/b"`, `"A"`, `"B"`, `"1.2.3"`, `"3.1.0"`} {
+	for _, want := range []string{`"/a"`, `"/b"`, `"A"`, `"B"`, `"1.2.3"`, `"3.1.1"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("merged doc missing %s:\n%s", want, got)
 		}

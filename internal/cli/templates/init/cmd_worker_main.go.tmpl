@@ -52,10 +52,25 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("db.dsn required: set db.dsn in configs/ via secretref://env/DATABASE_URL, or export DATABASE_URL")
 	}
 
+	// Tracing: the relay continues each event's originating request trace across
+	// the async boundary when telemetry.trace_sample_ratio > 0 (roadmap O1/CA-9).
+	// Built before the pools so DB query spans (WithQueryTracer) cover them.
+	tracer := observability.NoOpTracer
+	if cfg.Telemetry.TraceSampleRatio > 0 {
+		ot, terr := oteladapter.NewOTLP(ctx, cfg.Telemetry.TraceSampleRatio)
+		if terr != nil {
+			log.WarnContext(ctx, "tracing disabled: OTLP exporter init failed", "err", terr)
+		} else {
+			tracer = ot
+			defer func() { _ = ot.Shutdown(context.WithoutCancel(ctx)) }()
+		}
+	}
+
 	// Runtime pool: app_rt with RLS enforcement (SEC-11/SEC-12).
 	pool, err := database.NewPool(ctx, dsn, cfg.DB,
 		database.WithSetRole("app_rt"),
 		database.WithConnRLSGuard(),
+		database.WithQueryTracer(tracer), // db.* query spans across the async boundary (FBL-06 T3)
 	)
 	if err != nil {
 		return fmt.Errorf("db pool (runtime): %w", err)
@@ -96,18 +111,7 @@ func run(ctx context.Context) error {
 	metrics.SetGauge("wowapi_config_fingerprint_info", 1,
 		map[string]string{"fingerprint": fp.Short()})
 
-	// Tracing: the relay continues each event's originating request trace across
-	// the async boundary when telemetry.trace_sample_ratio > 0 (roadmap O1/CA-9).
-	tracer := observability.NoOpTracer
-	if cfg.Telemetry.TraceSampleRatio > 0 {
-		ot, terr := oteladapter.NewOTLP(ctx, cfg.Telemetry.TraceSampleRatio)
-		if terr != nil {
-			log.WarnContext(ctx, "tracing disabled: OTLP exporter init failed", "err", terr)
-		} else {
-			tracer = ot
-			defer func() { _ = ot.Shutdown(context.WithoutCancel(ctx)) }()
-		}
-	}
+	// (Tracer initialized above, before the pools.)
 
 	// Object storage (optional, mirrors cmd/api): wired only when
 	// storage.endpoint is configured; otherwise Deps.Storage stays nil and

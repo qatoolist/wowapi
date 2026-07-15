@@ -122,6 +122,8 @@ Endpoint: inbound (provider → us: secret, signature scheme, per-provider verif
 `(tenant_id, actor, key)` → request hash + stored response + status + expiry. Same key + same hash ⇒ replay stored response; same key + different hash ⇒ `409 conflict`.
 
 ### How a society module maps onto this (illustration only — lives entirely in a future society product repo's `internal/modules/society`, importing wowapi)
+
+> **Target, not implemented.**
 building/wing/unit → module tables + `resource_types` (`society.building`, `society.unit`); flat owner/tenant → `relationship_types` (`society.owner_of_unit`, `society.occupier_of_unit`) from party→unit; member/associate/nominal → module-defined membership records + capacities; committee/chairman/secretary/treasurer → roles (`society.tenant.chairman`…) granted via assignments with validity = term; AGM/notice/bill approvals → workflow definitions; maintenance rates, defaulter thresholds, notice periods → rule points; society notices/minutes → document classes; gate entries/complaints → module resources with workflows. Zero kernel changes.
 
 ## 2. Multi-tenancy design
@@ -181,6 +183,7 @@ Caching: per-request memoization always; per-actor assignment snapshot cached 30
 version-stamp invalidation (assignments table `xmin`/updated_at max). No cross-request policy caching in v1.
 
 ### Go interfaces (kernel `authz` package)
+<!-- doc-example: illustrative -->
 ```go
 type Actor struct {
     Kind       ActorKind // user | system | webhook

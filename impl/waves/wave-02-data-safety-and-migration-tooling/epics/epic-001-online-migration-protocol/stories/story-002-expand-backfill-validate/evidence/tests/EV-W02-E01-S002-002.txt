@@ -1,0 +1,4 @@
+=== RUN   TestBackfillInterruptedAndResumed
+--- PASS: TestBackfillInterruptedAndResumed (0.40s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/migration	0.774s

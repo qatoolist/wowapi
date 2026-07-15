@@ -1,0 +1,104 @@
+---
+id: GOV-STATUS-MODEL
+type: governance
+title: Status model — controlled vocabularies for wave, epic, story, and task
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+derived: false
+---
+
+# Status model
+
+Mandate §7. Defines the controlled status vocabulary for each planning-hierarchy level. This
+file is the single normative definition of what each status word means. `lifecycle.md` builds
+the transition rules (who can move an item, entry criteria) on top of this vocabulary; it does
+not redefine the words.
+
+## Canonical source of truth
+
+The canonical status for any item lives in that item's own front matter (`wave.md`, `epic.md`,
+`story.md`, `task.md`) — nowhere else. Every register or index under `impl/tracking/` (e.g.
+`status-register.md`) is a **derived roll-up**, generated or refreshed from the canonical front
+matter fields, and must be clearly marked as such. Per mandate §6:
+
+> Do not create multiple manually maintained sources of truth for the same status.
+
+If a tracking register and an item's own front matter ever disagree, the front matter wins and
+the register is stale and must be regenerated.
+
+## 7.1 Wave and epic statuses
+
+Waves and epics share one vocabulary (mandate §7.1).
+
+| Status | Semantic definition |
+|---|---|
+| `proposed` | Identified as necessary but not yet planned in detail; scope/epics not finalized. |
+| `planned` | Scope, epics/stories, entry/exit criteria, and dependencies are defined; not yet started. |
+| `ready` | Entry criteria are satisfied (predecessor waves/epics accepted or waived); can begin. |
+| `in-progress` | At least one contained epic/story is actively being worked. |
+| `blocked` | Cannot proceed — a dependency, decision, or resource is unresolved. |
+| `verification` | Contained work is implemented and undergoing formal verification against exit criteria. |
+| `accepted` | The acceptance authority has accepted the wave/epic against its defined exit criteria. |
+| `partially-accepted` | Some but not all epics/stories in scope have been accepted; remainder deferred or blocked with rationale. |
+| `deferred` | Intentionally postponed, with an approval and a target milestone for reopening. |
+| `cancelled` | Will not be completed; rationale recorded, not silently dropped (mandate §1.2/§1.4). |
+
+## 7.2 Story statuses
+
+Mandate §7.2, with the expected lifecycle order reproduced verbatim from §7:
+
+```text
+draft
+→ planned
+→ ready
+→ in-progress
+→ implemented
+→ verification
+→ verified
+→ accepted
+```
+
+`blocked`, `deferred`, and `cancelled` are reachable as side-branches from any active state (see
+`lifecycle.md`), not steps in the main chain.
+
+| Status | Semantic definition |
+|---|---|
+| `draft` | Not yet planned/scoped; problem statement and objective may still be forming. |
+| `planned` | Story is fully specified (`story.md` complete: scope, AC, dependencies) but not yet ready to start. |
+| `ready` | Definition of Ready satisfied (see `definition-of-ready.md`); can be picked up. |
+| `in-progress` | Implementation work is underway. |
+| `implemented` | The implementation work is claimed to be complete (mandate §7 definition, verbatim). |
+| `verification` | Implementation is undergoing formal verification (mandate §7 definition, verbatim). |
+| `verified` | Acceptance criteria have been proven with valid evidence (mandate §7 definition, verbatim). |
+| `accepted` | The designated reviewer or authority has accepted the result (mandate §7 definition, verbatim). |
+| `blocked` | Cannot proceed — a dependency, decision, or resource is unresolved. |
+| `deferred` | Intentionally postponed, with an approval and a target milestone. |
+| `cancelled` | Will not be completed; rationale recorded. |
+
+Mandate §7, verbatim, governing the final transition:
+
+> A story must not be accepted solely because all tasks are marked complete.
+
+## 7.3 Task statuses
+
+Mandate §7.3.
+
+| Status | Semantic definition |
+|---|---|
+| `todo` | Identified, not yet started; may still be missing owner or dependency resolution. |
+| `ready` | Task Definition of Ready satisfied (see `definition-of-ready.md`); can be picked up. |
+| `in-progress` | Implementation or verification work on the task is underway. |
+| `blocked` | Cannot proceed — a dependency, decision, or resource is unresolved. |
+| `implemented` | The task's implementation work is claimed to be complete. |
+| `verified` | The task's completion criteria and verification method (per `task.md` §8.6) have produced valid evidence. |
+| `done` | Task is closed: implemented, verified, and its output is registered (artifact/evidence as applicable). |
+| `cancelled` | Will not be completed; rationale recorded. |
+
+## Consistency rule
+
+Status values across all four vocabularies are drawn only from the tables above. Do not invent
+synonyms (e.g. "complete", "closed", "wip") in any `story.md`, `task.md`, `epic.md`, or `wave.md`
+front matter — use the exact tokens defined here so registers can be generated by mechanical
+parsing (mandate §6: "Metadata fields should be consistent enough to permit automated parsing
+and derived reporting").

@@ -127,6 +127,13 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 
 	boot := newBootState()
 	router := httpx.NewRouter()
+	// FBL-08: boot-time request-contract enforcement is profile-flag gated
+	// (compat-first). The mode must be set BEFORE modules register, since
+	// Router.Handle applies the check at registration time; a rejected route
+	// surfaces through router.Err() below with every other registration error.
+	if k.Cfg.Security.EnforceRouteContracts {
+		router.RequireRequestContracts()
+	}
 	val := validation.New()
 	idgen := model.UUIDv7()
 	events := outbox.NewHandlerRegistry()
@@ -185,6 +192,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	// evaluator recognizes them. Iterate module names in sorted order so the
 	// merged bundle and any error messages are deterministic (ARCH-52).
 	var bundle seeds.Bundle
+	seedVersionSource := ""
 	seedModules := make([]string, 0, len(boot.seeds))
 	for name := range boot.seeds {
 		seedModules = append(seedModules, name)
@@ -201,6 +209,14 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		bundle.Roles = append(bundle.Roles, b.Roles...)
 		bundle.ResourceTypes = append(bundle.ResourceTypes, b.ResourceTypes...)
 		bundle.RelationshipTypes = append(bundle.RelationshipTypes, b.RelationshipTypes...)
+		if b.Version != "" {
+			if bundle.Version != "" && bundle.Version != b.Version {
+				regErrs = append(regErrs, fmt.Errorf("module %q seed version %q conflicts with module %q seed version %q", name, b.Version, seedVersionSource, bundle.Version))
+			} else {
+				bundle.Version = b.Version
+				seedVersionSource = name
+			}
+		}
 		for _, p := range b.Permissions {
 			perm := authz.Permission{Key: p.Key, Sensitive: p.Sensitive, GrantedVia: p.GrantedVia, StepUp: p.StepUp}
 			// A richer step-up seed form (specific AMR subset and/or challenge

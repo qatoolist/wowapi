@@ -209,6 +209,73 @@ func TestCSRFUnsafeMethodAcceptsFormField(t *testing.T) {
 	}
 }
 
+// TestCSRFOversizedFormBodyRejected (FBL-09 / gosec G120, AC-W01-E03-S001-04):
+// the form-field fallback must bound its own body read. CSRF's chain position
+// is app-controlled — a product may order CSRFProtect OUTSIDE BodyLimit, in
+// which case r.FormValue would otherwise buffer an unbounded body before the
+// token check. A form body larger than the defensive bound (default 1 MiB)
+// must be rejected with 403 even when it carries a matching token past the
+// bound — proving the read was capped, not fully buffered.
+func TestCSRFOversizedFormBodyRejected(t *testing.T) {
+	served := false
+	h := httpx.CSRFProtect(csrfPolicy())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	// Padding first so the token sits beyond the 1 MiB defensive bound: a
+	// capped read can never see it; an unbounded read (the pre-fix defect)
+	// finds it and lets the request through.
+	body := "pad=" + strings.Repeat("x", 1<<20) + "&csrf_token=form-token"
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "form-token"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if served {
+		t.Fatal("an oversized form body must never reach the handler via the CSRF form fallback")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+}
+
+// TestCSRFCustomMaxFormBytesOverridesDefault proves a policy-level
+// MaxFormBytes replaces the 1 MiB default: a body over the custom bound is
+// rejected even though it would fit the default, and the same-shaped body
+// under the bound still passes — the knob is real, not decorative.
+func TestCSRFCustomMaxFormBytesOverridesDefault(t *testing.T) {
+	policy := csrfPolicy()
+	policy.MaxFormBytes = 64
+
+	newHandler := func(served *bool) http.Handler {
+		return httpx.CSRFProtect(policy)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*served = true
+			w.WriteHeader(http.StatusOK)
+		}))
+	}
+	send := func(h http.Handler, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: "csrf_token", Value: "form-token"})
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	var servedBig bool
+	rec := send(newHandler(&servedBig), "pad="+strings.Repeat("x", 128)+"&csrf_token=form-token")
+	if servedBig || rec.Code != http.StatusForbidden {
+		t.Errorf("body over the custom 64-byte bound: served=%v status=%d, want rejected 403", servedBig, rec.Code)
+	}
+
+	var servedSmall bool
+	rec = send(newHandler(&servedSmall), "csrf_token=form-token")
+	if !servedSmall || rec.Code != http.StatusOK {
+		t.Errorf("in-bound form body must still pass: served=%v status=%d", servedSmall, rec.Code)
+	}
+}
+
 // TestCSRFSafeMethodsExemptFromTokenCheck proves GET/HEAD/OPTIONS never
 // require a token even without a pre-existing cookie.
 func TestCSRFSafeMethodsExemptFromTokenCheck(t *testing.T) {

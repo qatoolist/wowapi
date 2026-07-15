@@ -8,11 +8,13 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/filtering"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/pagination"
 	"github.com/qatoolist/wowapi/kernel/resource"
@@ -77,19 +79,47 @@ type Runtime struct {
 	registry *Registry
 	authz    authz.Evaluator // optional secondary gate
 	outbox   outbox.Writer
+	audit    *audit.Writer
 	idgen    model.IDGen
 	now      func() time.Time
+	metrics  observability.Metrics
 }
 
-// NewRuntime wires the runtime. All dependencies, including the authz
-// Evaluator, are required: Override's privileged permission check is
-// unconditional, so a nil evaluator would silently disable it rather than
-// gate it (blueprint §1.3, review finding SEC-02).
-func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen) *Runtime {
-	if txm == nil || reg == nil || ev == nil || ob == nil || idgen == nil {
-		panic("workflow.NewRuntime: txm, registry, authz evaluator, outbox, and idgen are required")
+// RuntimeOption customizes the workflow runtime.
+type RuntimeOption func(*Runtime)
+
+// WithRuntimeMetrics wires the bounded-cardinality worker timing metrics used by
+// SweepSLA. A nil sink leaves the safe NoOp default in place.
+func WithRuntimeMetrics(metrics observability.Metrics) RuntimeOption {
+	return func(rt *Runtime) {
+		if metrics != nil {
+			rt.metrics = metrics
+		}
 	}
-	return &Runtime{txm: txm, registry: reg, authz: ev, outbox: ob, idgen: idgen, now: time.Now}
+}
+
+// NewRuntime preserves the v1 constructor and wires the mandatory audit writer
+// with the supplied ID generator.
+func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen) *Runtime {
+	return NewRuntimeWithCompliance(txm, reg, ev, ob, idgen, audit.New(idgen, nil))
+}
+
+// NewRuntimeWithCompliance wires the runtime. All dependencies, including the authz
+// Evaluator and audit Writer, are required: Override's privileged permission
+// check is unconditional, and every override must be durable-audited in the
+// same transaction (blueprint §1.3, review finding SEC-02).
+func NewRuntimeWithCompliance(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen, aud *audit.Writer, opts ...RuntimeOption) *Runtime {
+	if txm == nil || reg == nil || ev == nil || ob == nil || idgen == nil || aud == nil {
+		panic("workflow.NewRuntimeWithCompliance: txm, registry, authz evaluator, outbox, idgen, and audit writer are required")
+	}
+	rt := &Runtime{
+		txm: txm, registry: reg, authz: ev, outbox: ob, audit: aud, idgen: idgen,
+		now: time.Now, metrics: observability.NoOp,
+	}
+	for _, opt := range opts {
+		opt(rt)
+	}
+	return rt
 }
 
 // StartIn creates an instance and enters its initial step INSIDE the caller's
@@ -167,6 +197,11 @@ func (rt *Runtime) Decide(ctx context.Context, taskID uuid.UUID, d Decision) err
 
 		var transition *Transition
 		var newStatus, verb string
+		// Fail-closed by design (adjudicated, MATRIX CS-23): the default: arm
+		// rejects DecisionAbstain — and any future unknown decision type — with
+		// an invalid_decision error. The deny-by-default arm IS the safety
+		// property; do not convert to an exhaustive enumeration.
+		//exhaustive:ignore
 		switch d.Type {
 		case DecisionApprove:
 			transition, newStatus, verb = step.OnApprove, "approved", "approved"
@@ -279,9 +314,9 @@ func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until tim
 // instance to a step or terminal, emitting workflow.<def>.overridden. Any open
 // tasks on the current step are marked skipped.
 //
-// TODO(ratify): auto-create a ratification task when the definition declares a
-// ratify_by role (the definition model does not yet carry ratify_by; blueprint
-// §1.3). The jump + event are implemented; ratification is a documented gap.
+// Ratification is explicitly rejected as an interim, Wave-0-compatible posture
+// (W03-E05-S001): definitions declaring ratify_by are rejected at validation
+// time, so every override records ratification_outcome="rejected_interim".
 func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID uuid.UUID, to string, reason string) error {
 	if reason == "" {
 		return kerr.E(kerr.KindValidation, "override_reason_required", "override requires a reason")
@@ -312,6 +347,28 @@ func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID u
 		if !ok {
 			return kerr.E(kerr.KindValidation, "override_target_unknown",
 				fmt.Sprintf("override target step %q does not exist", to))
+		}
+		// Durable audit, written inside the same transaction as the state jump.
+		// If this write fails, the entire override (including any state mutation
+		// that follows) rolls back.
+		ctx = withAuditActor(ctx, actor)
+		if err := rt.audit.Record(ctx, db, audit.Entry{
+			Action:         "workflow.instance.override",
+			EntityType:     "workflow_instance",
+			EntityID:       inst.ID,
+			OldValue:       inst.CurrentStep,
+			NewValue:       to,
+			Reason:         reason,
+			ActorKind:      string(actor.Kind),
+			ImpersonatorID: actor.ImpersonatorUserID,
+			Metadata: map[string]any{
+				"source_state":         inst.CurrentStep,
+				"target_state":         to,
+				"grant_id":             grantIDStr(actor.GrantID),
+				"ratification_outcome": "rejected_interim",
+			},
+		}); err != nil {
+			return kerr.Wrapf(err, "workflow.Override", "audit override")
 		}
 		// Skip any open tasks on the current step — the override supersedes them.
 		if _, err := db.Exec(ctx,
@@ -898,4 +955,29 @@ func decodeJSONMap(b []byte) map[string]any {
 		return map[string]any{}
 	}
 	return m
+}
+
+// withAuditActor returns ctx with the actor id bound for audit attribution.
+// User actors are attributed by UserID; other actor kinds by CapacityID when
+// present, otherwise no actor id is bound (audit row stores NULL actor_id but
+// retains actor_kind).
+func withAuditActor(ctx context.Context, actor authz.Actor) context.Context {
+	switch actor.Kind {
+	case authz.ActorUser:
+		if actor.UserID != uuid.Nil {
+			return database.WithActorID(ctx, actor.UserID)
+		}
+	case authz.ActorSystem, authz.ActorWebhook:
+		if actor.CapacityID != uuid.Nil {
+			return database.WithActorID(ctx, actor.CapacityID)
+		}
+	}
+	return ctx
+}
+
+func grantIDStr(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
+	}
+	return id.String()
 }

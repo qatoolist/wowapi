@@ -1,0 +1,30 @@
+{
+  "story": "W07-E01-S001",
+  "code_revision": "working tree based on entry SHA 1626b11",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T21:51:00Z",
+  "reviewer": "W05ReviewGateFinal",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S001-003",
+  "evidence_type": "concurrency matrix benchmark report",
+  "task": "W07-E01-S001-T003",
+  "acceptance_criteria_proven": [
+    "AC-W07-E01-S001-03"
+  ],
+  "execution_command": "docker network + pinned postgres:16.9 and golang:1.26.5 Linux/amd64 containers; go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests$' -benchtime=1x -count=1 -benchmem",
+  "execution_environment": {
+    "environment": "Linux/amd64 Go container + pinned PostgreSQL container on Docker bridge",
+    "tools": [
+      "go1.26.5",
+      "PostgreSQL 16.9"
+    ]
+  },
+  "result": "PASS: 36 unique profile/cache/concurrency cells (6 x 2 x 3), including 100 tenants",
+  "file_or_uri": "perf/results/request-reference-v1.json",
+  "checksum_sha256": "3d6a6f3f4bef88e46ce91ed61515370746c740112e9a397262fd837e2e49e560",
+  "known_skips": [
+    "Full 5m warmup/15m measurement/3-repeat capture not run locally; reproducible workflow_dispatch full_reference job is registered."
+  ],
+  "findings_or_waivers": [],
+  "review_result": "PASS after 2 gate iterations: executor found and fixed the 10-resources-per-tenant seed mismatch; independent re-review found no open issues"
+}

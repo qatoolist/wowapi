@@ -1,0 +1,18 @@
+UTC: 2026-07-13T17:16:15.420640+00:00
+Revision: 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Command: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/required-gates.yml .github/workflows/release.yml .github/workflows/security-scan.yml .github/workflows/scorecard.yml .github/workflows/codeql.yml .github/workflows/ci.yml
+Exit: 0
+
+STDOUT:
+
+STDERR:
+go: downloading github.com/rhysd/actionlint v1.7.12
+go: downloading github.com/fatih/color v1.19.0
+go: downloading github.com/bmatcuk/doublestar/v4 v4.10.0
+go: downloading github.com/robfig/cron/v3 v3.0.1
+go: downloading github.com/mattn/go-shellwords v1.0.12
+go: downloading github.com/mattn/go-colorable v0.1.14
+go: downloading go.yaml.in/yaml/v4 v4.0.0-rc.3
+go: downloading github.com/mattn/go-runewidth v0.0.21
+go: downloading github.com/clipperhouse/uax29/v2 v2.7.0
+go: downloading github.com/mattn/go-isatty v0.0.20

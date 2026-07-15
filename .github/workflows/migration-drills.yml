@@ -1,0 +1,62 @@
+name: migration-drills
+
+# DATA-09 (W02-E01) online-migration protocol drills.
+# Runs all six directive-named drills on a schedule and on demand:
+#   1. N-1 code on expanded N schema
+#   2. N code before/after backfill
+#   3. interrupted/resumed backfill
+#   4. partial fleet rollout
+#   5. application rollback after switch
+#   6. forward recovery from every failed phase + delayed contract gate
+#
+# The pipeline produces a passing-run artifact (test output + JSON report)
+# registered in evidence/index.md.
+
+on:
+  # Nightly re-verification of the protocol safety properties.
+  schedule:
+    - cron: "42 4 * * *"
+  # On-demand execution from the Actions UI.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.5"
+
+jobs:
+  drills:
+    name: DATA-09 six-drill pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: start postgres
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres
+      - name: run migration protocol drills
+        env:
+          DATABASE_URL: "postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable"
+          WOWAPI_REQUIRE_DB: "1"
+        run: |
+          mkdir -p drill-artifacts
+          go test ./kernel/migration/... -count=1 -v 2>&1 | tee drill-artifacts/drill-run.log
+      - name: report drill summary
+        env:
+          DATABASE_URL: "postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable"
+          WOWAPI_REQUIRE_DB: "1"
+        run: |
+          go test ./kernel/migration/... -count=1 -json > drill-artifacts/drill-run.jsonl
+      - name: upload drill artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: migration-drill-run
+          path: drill-artifacts/
+          if-no-files-found: error
+      - name: tear down
+        if: always()
+        run: docker compose -f deployments/compose.yaml down -v

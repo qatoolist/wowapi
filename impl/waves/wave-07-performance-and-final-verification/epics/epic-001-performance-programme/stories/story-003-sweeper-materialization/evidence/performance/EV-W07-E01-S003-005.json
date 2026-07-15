@@ -1,0 +1,20 @@
+{
+  "story": "W07-E01-S003",
+  "code_revision": "working tree based on entry SHA 733ef3e",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T22:31:00Z",
+  "reviewer": "W07-Scoping-Dispatch.W07E01S003ReviewR",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S003-005",
+  "evidence_type": "lease-expiry crash and duplicate-worker chaos report",
+  "task": "W07-E01-S003-T005",
+  "acceptance_criteria_proven": ["AC-W07-E01-S003-05"],
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres-16.9> go test -race ./kernel/outbox -run '^TestIntegrationOutboxLeaseExpiryFencesDuplicateWorker$' -count=10 && go test ./kernel/jobs/chaos -run '^TestDuplicateWorkerLeaseExpiry$' -count=1 -v",
+  "execution_environment": {"database": "PostgreSQL 16.9", "go": "go1.26.5 race detector"},
+  "result": "PASS: claim commit is observable before the tenant handler; expired worker A is fenced, worker B generation succeeds, one handler effect and one processed_events row; inherited W04 DATA-02 named chaos test passes; existing per-aggregate retry ordering suite passes.",
+  "file_or_uri": "perf/results/perf-04-focused-verification.txt",
+  "checksum_sha256": "ca4e5ba9feee0e555f12ff3844c94c016c77d4c8f32da285feff86132bbb3867",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS: independent review found no open issues"
+}

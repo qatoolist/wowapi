@@ -1,0 +1,15 @@
+{
+  "evidence_id": "EV-W07-E01-S002-004",
+  "task": "W07-E01-S002-T004",
+  "acceptance_criteria": ["AC-W07-E01-S002-04"],
+  "executed_at": "2026-07-14",
+  "result": "pass",
+  "fixture_inventory": [
+    {"path": "perf/results/perf-03-explain-shallow-low.json", "ancestry_depth": 3, "versions_per_scope": 4},
+    {"path": "perf/results/perf-03-explain-shallow-high.json", "ancestry_depth": 3, "versions_per_scope": 1000},
+    {"path": "perf/results/perf-03-explain-deep-low.json", "ancestry_depth": 50, "versions_per_scope": 4},
+    {"path": "perf/results/perf-03-explain-deep-high.json", "ancestry_depth": 50, "versions_per_scope": 1000}
+  ],
+  "fixture_contents": "Each file contains real EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) output for the historical resolution statement and the current active predicate.",
+  "skipped": false
+}

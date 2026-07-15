@@ -54,6 +54,7 @@ The SDK is a public package: product repos import `github.com/qatoolist/wowapi/m
 `Seeds(fs)`, `OpenAPI(fragment)`) are public contracts precisely so *external* modules can hand
 their `embed.FS` assets to the framework.
 
+<!-- doc-example: illustrative -->
 ```go
 // Package module — imported as wowapi/module; Context avoids stutter.
 type Module interface {
@@ -125,6 +126,7 @@ type Context interface {
 }
 ```
 
+<!-- doc-example: illustrative -->
 ```go
 // <product-repo>/internal/modules/requests/module.go — complete wiring example
 import "github.com/qatoolist/wowapi/module"
@@ -161,6 +163,7 @@ cycles — all boot failures with precise messages) → `Migrate` (cmd/migrate o
 
 No container, no reflection, no service locator. Two structs:
 
+<!-- doc-example: illustrative -->
 ```go
 // kernel.Kernel: owns infrastructure + kernel services. Built once, explicit order.
 type Kernel struct {
@@ -189,6 +192,7 @@ func (a *App) Validate() error
 func (a *App) StartAPI(ctx) error / StartWorker(ctx) error / Shutdown(ctx) error
 ```
 
+<!-- doc-example: illustrative -->
 ```go
 // <product-repo>/cmd/api/main.go (pseudocode) — the composition root belongs to the PRODUCT app
 import (
@@ -226,6 +230,7 @@ Shutdown order: health=not-ready → stop accepting (HTTP drain, job intake off)
 Purpose: let modules attach *cross-cutting side behavior* without kernel edits. Not a plugin bus for
 business logic — business reactions belong in **event handlers**; hooks are synchronous, in-flow.
 
+<!-- doc-example: illustrative -->
 ```go
 type Registry struct{ … }
 // Typed registration points (closed set — adding one is a kernel change, deliberately):

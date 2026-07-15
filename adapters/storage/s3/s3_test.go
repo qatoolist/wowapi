@@ -99,6 +99,9 @@ func httpPut(t *testing.T, presigned storage.PresignedURL, body []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for name, value := range presigned.Headers {
+		req.Header.Set(name, value)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("PUT to presigned URL: %v", err)
@@ -137,7 +140,7 @@ func TestS3_PresignedRoundTrip(t *testing.T) {
 	body := []byte("wowapi storage adapter payload — round trip over real minio")
 	sum := sha256.Sum256(body)
 
-	put, err := a.PresignPut(ctx, key, 0) // 0 → configured default TTL
+	put, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(sum[:]), 0) // 0 → configured default TTL
 	if err != nil {
 		t.Fatalf("PresignPut: %v", err)
 	}
@@ -217,7 +220,8 @@ func TestS3_WrongChecksum_StatReportsTrueBytes(t *testing.T) {
 	body := []byte("actual uploaded bytes")
 	defer func() { _ = a.Delete(ctx, key) }()
 
-	put, err := a.PresignPut(ctx, key, time.Minute)
+	truth := sha256.Sum256(body)
+	put, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(truth[:]), time.Minute)
 	if err != nil {
 		t.Fatalf("PresignPut: %v", err)
 	}
@@ -231,7 +235,6 @@ func TestS3_WrongChecksum_StatReportsTrueBytes(t *testing.T) {
 	if info.Checksum == lying {
 		t.Fatal("Stat checksum equals the lying declared checksum — confirm could not reject tampering")
 	}
-	truth := sha256.Sum256(body)
 	if info.Checksum != hex.EncodeToString(truth[:]) {
 		t.Fatalf("Stat checksum = %s, want the sha256 of the stored bytes", info.Checksum)
 	}
@@ -262,14 +265,15 @@ func TestS3_PresignTTL_ConfiguredExpiryClamp(t *testing.T) {
 	ctx := context.Background()
 	key := testKey(t)
 
-	over, err := a.PresignPut(ctx, key, 24*time.Hour)
+	empty := sha256.Sum256(nil)
+	over, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(empty[:]), 24*time.Hour)
 	if err != nil {
 		t.Fatalf("PresignPut: %v", err)
 	}
 	if got, want := amzExpires(t, over.URL), int((5 * time.Minute).Seconds()); got != want {
 		t.Errorf("over-long request: X-Amz-Expires = %d, want clamp to configured %d", got, want)
 	}
-	under, err := a.PresignPut(ctx, key, 45*time.Second)
+	under, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(empty[:]), 45*time.Second)
 	if err != nil {
 		t.Fatalf("PresignPut: %v", err)
 	}
@@ -289,7 +293,8 @@ func TestS3_EmptyObject(t *testing.T) {
 	key := testKey(t)
 	defer func() { _ = a.Delete(ctx, key) }()
 
-	put, err := a.PresignPut(ctx, key, time.Minute)
+	empty := sha256.Sum256(nil)
+	put, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(empty[:]), time.Minute)
 	if err != nil {
 		t.Fatalf("PresignPut: %v", err)
 	}
@@ -299,7 +304,7 @@ func TestS3_EmptyObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(empty): %v", err)
 	}
-	empty := sha256.Sum256(nil)
+	empty = sha256.Sum256(nil)
 	if info.Size != 0 || info.Checksum != hex.EncodeToString(empty[:]) {
 		t.Errorf("Stat(empty) = %+v, want size 0 + sha256 of no bytes", info)
 	}
@@ -346,11 +351,13 @@ func TestS3_New_CreateBucketProvisionsFreshBucket(t *testing.T) {
 	a := requireMinio(t, cfg)
 	ctx := context.Background()
 	key := testKey(t)
-	put, err := a.PresignPut(ctx, key, time.Minute)
+	body := []byte("hello fresh bucket")
+	sum := sha256.Sum256(body)
+	put, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(sum[:]), time.Minute)
 	if err != nil {
-		t.Fatalf("PresignPut against freshly created bucket: %v", err)
+		t.Fatalf("PresignPutChecksum against freshly created bucket: %v", err)
 	}
-	httpPut(t, put, []byte("hello fresh bucket"))
+	httpPut(t, put, body)
 	if _, err := a.Stat(ctx, key); err != nil {
 		t.Fatalf("Stat against freshly created bucket: %v", err)
 	}
@@ -406,11 +413,13 @@ func TestS3_Peek_NonPositiveN(t *testing.T) {
 
 	present := testKey(t)
 	defer func() { _ = a.Delete(ctx, present) }()
-	put, err := a.PresignPut(ctx, present, time.Minute)
+	body := []byte("some bytes")
+	sum := sha256.Sum256(body)
+	put, err := a.PresignPutChecksum(ctx, present, hex.EncodeToString(sum[:]), time.Minute)
 	if err != nil {
-		t.Fatalf("PresignPut: %v", err)
+		t.Fatalf("PresignPutChecksum: %v", err)
 	}
-	httpPut(t, put, []byte("some bytes"))
+	httpPut(t, put, body)
 	prefix, err := a.Peek(ctx, present, 0)
 	if err != nil {
 		t.Fatalf("Peek(present, 0): %v", err)
@@ -439,13 +448,17 @@ func TestS3_ConcurrentRoundTrips(t *testing.T) {
 			errs[i] = func() error {
 				key := fmt.Sprintf("it/%s/%d-%s", t.Name(), i, uuid.NewString())
 				body := bytes.Repeat([]byte{byte('a' + i)}, 1024*(i+1))
-				put, err := a.PresignPut(ctx, key, time.Minute)
+				sum := sha256.Sum256(body)
+				put, err := a.PresignPutChecksum(ctx, key, hex.EncodeToString(sum[:]), time.Minute)
 				if err != nil {
 					return fmt.Errorf("presign %d: %w", i, err)
 				}
 				req, err := http.NewRequest(http.MethodPut, put.URL, bytes.NewReader(body))
 				if err != nil {
 					return err
+				}
+				for name, value := range put.Headers {
+					req.Header.Set(name, value)
 				}
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
@@ -459,7 +472,6 @@ func TestS3_ConcurrentRoundTrips(t *testing.T) {
 				if err != nil {
 					return fmt.Errorf("stat %d: %w", i, err)
 				}
-				sum := sha256.Sum256(body)
 				if info.Size != int64(len(body)) || info.Checksum != hex.EncodeToString(sum[:]) {
 					return fmt.Errorf("stat %d mismatch: %+v", i, info)
 				}

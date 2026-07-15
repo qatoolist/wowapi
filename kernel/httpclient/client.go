@@ -68,7 +68,15 @@ func New(cfg Config) *http.Client {
 		timeout = DefaultTimeout
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		// Impossible under the stdlib contract (http.DefaultTransport is a
+		// *http.Transport); fail loudly at construction — consistent with this
+		// constructor's documented panic-on-bad-config behavior — rather than
+		// proceeding without the SSRF-guarded dialer below.
+		panic("httpclient: http.DefaultTransport is not *http.Transport")
+	}
+	transport := base.Clone()
 	// SSRF safety: http.DefaultTransport.Proxy is http.ProxyFromEnvironment,
 	// which Clone() preserves. If left in place, an HTTP_PROXY/HTTPS_PROXY
 	// env var would make the transport dial the PROXY's address instead of

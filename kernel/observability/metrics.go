@@ -35,6 +35,21 @@ type Metrics interface {
 	SetGauge(name string, value float64, labels map[string]string)
 }
 
+// HistogramMetrics is the additive v1 extension for sampled distributions.
+type HistogramMetrics interface {
+	Metrics
+	ObserveHistogram(name string, value float64, labels map[string]string)
+}
+
+// ObserveHistogram records a histogram sample when the configured sink
+// supports HistogramMetrics. Legacy v1 Metrics implementations safely ignore
+// the additive signal.
+func ObserveHistogram(metrics Metrics, name string, value float64, labels map[string]string) {
+	if sink, ok := metrics.(HistogramMetrics); ok {
+		sink.ObserveHistogram(name, value, labels)
+	}
+}
+
 // NoOp is the safe-default Metrics implementation whose methods are all
 // no-ops. Wire it when no adapter is configured so callers never check nil.
 var NoOp Metrics = noOp{}
@@ -44,3 +59,4 @@ type noOp struct{}
 func (noOp) ObserveRequest(_, _ string, _ int, _ time.Duration, _ int) {}
 func (noOp) IncCounter(_ string, _ float64, _ map[string]string)       {}
 func (noOp) SetGauge(_ string, _ float64, _ map[string]string)         {}
+func (noOp) ObserveHistogram(_ string, _ float64, _ map[string]string) {}

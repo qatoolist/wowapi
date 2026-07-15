@@ -7,6 +7,25 @@ linters:
     - misspell
     - unconvert
     - unparam
+    # W01-E01-S001 (FBL-05): zero-cost leak/correctness set — zero hits at
+    # enablement (see story evidence); CI now pins these defect classes shut.
+    - sqlclosecheck
+    - rowserrcheck
+    - bodyclose
+    - wastedassign
+    - makezero
+    - musttag
+    - testifylint
+    # W01-E01-S001 (FBL-05): near-zero set — production hits fixed in-story.
+    - noctx
+    - copyloopvar
+    # W01-E01-S002 (FBL-07): judged set — every hit fixed or annotated with an
+    # inline justification (see story-002 triage record).
+    - gosec
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - usestdlibvars
   settings:
     # Encode the blueprint 04 §1 import law as a machine check, complementing
     # scripts/lint_boundaries.sh (which does path-level + vocabulary checks).
@@ -20,6 +39,23 @@ linters:
             # Test files legitimately import testkit (and may cross layers for
             # test setup); the import law governs PRODUCTION code only.
             - "!**/kernel/**/*_test.go"
+            # kernel/kernel.go is the composition root and is exempt from the layering check
+            - "!**/kernel/kernel.go"
+            # kernel/mfa/shim.go is a deprecated forwarding shim and is exempt
+            - "!**/kernel/mfa/*.go"
+            # These deprecated v1 forwarding shims preserve legacy import paths
+            # after their implementations moved to foundation. Keep the
+            # exception file-scoped so new kernel code remains subject to FBL-01.
+            - "!**/kernel/artifact/compat.go"
+            - "!**/kernel/attachment/compat.go"
+            - "!**/kernel/bulk/compat.go"
+            - "!**/kernel/comment/compat.go"
+            - "!**/kernel/document/compat.go"
+            - "!**/kernel/integration/compat.go"
+            - "!**/kernel/notify/compat.go"
+            - "!**/kernel/webhook/compat.go"
+            # kernel/jobs/chaos is a chaos test utility package and is exempt
+            - "!**/kernel/jobs/chaos/*.go"
           deny:
             - pkg: github.com/qatoolist/wowapi/module
               desc: "kernel must not import module (04 §1 import law)"
@@ -27,16 +63,41 @@ linters:
               desc: "kernel must not import app (04 §1 import law)"
             - pkg: github.com/qatoolist/wowapi/adapters
               desc: "kernel must not import adapters (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/foundation
+              desc: "kernel must not import foundation (FBL-01 layering)"
+            - pkg: github.com/qatoolist/wowapi/testkit
+              desc: "production code must not import testkit"
+        foundation:
+          list-mode: lax
+          files:
+            - "**/foundation/**/*.go"
+            - "!**/foundation/**/*_test.go"
+          deny:
+            - pkg: github.com/qatoolist/wowapi/app
+              desc: "foundation must not import app (04 §1 import law)"
+            - pkg: github.com/qatoolist/wowapi/adapters
+              desc: "foundation must not import adapters (04 §1 import law)"
             - pkg: github.com/qatoolist/wowapi/testkit
               desc: "production code must not import testkit"
   exclusions:
     # Tests commonly ignore errors (t.Fatal paths, best-effort cleanup) and use
     # fixed-value helpers, so errcheck/unparam there are noise, not defects.
+    # W01-E01-S001/S002 extend the same house rule to test-idiom classes:
+    #   noctx           — httptest/context-less requests in tests (145 hits, all
+    #                     test-shaped; request cancellation is meaningless there)
+    #   gosec           — test fixtures trip G404/G301/G306-style rules by
+    #                     design (weak RNG, fixture perms); prod files stay hot
+    #   forcetypeassert — a panicking assertion in a test IS the failure signal
+    #   errorlint       — tests legitimately assert exact sentinel/type identity
     rules:
       - path: _test\.go
         linters:
           - errcheck
           - unparam
+          - noctx
+          - gosec
+          - forcetypeassert
+          - errorlint
       # CLI commands write user-facing output to stdout/stderr (the io.Writer args
       # are os.Stdout/os.Stderr in production, bytes.Buffer in tests). A failed
       # terminal write has no meaningful recovery, so errcheck on fmt.Fprint* in the

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/qatoolist/wowapi/ci/security-waivers.schema.json",
+  "title": "wowapi expiring security waivers",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "waivers"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "waivers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "scanner", "scope", "owner", "rationale", "expires", "remediation_link"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "scanner": {"enum": ["trivy", "gitleaks", "govulncheck", "dependency-review", "actionlint", "codeql", "scorecard", "local-sast"]},
+          "scope": {"type": "string", "minLength": 1},
+          "owner": {"type": "string", "minLength": 1},
+          "rationale": {"type": "string", "minLength": 10},
+          "expires": {"type": "string", "format": "date"},
+          "remediation_link": {"type": "string", "format": "uri", "pattern": "^https://"}
+        }
+      }
+    }
+  }
+}

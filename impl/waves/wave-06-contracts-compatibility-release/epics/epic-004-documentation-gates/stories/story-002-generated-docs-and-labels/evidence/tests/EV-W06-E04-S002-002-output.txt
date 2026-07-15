@@ -1,0 +1,7 @@
+=== RUN   TestFutureStateLintRequiresLabelAfterFutureHeading
+    main_test.go:104: expected lint failure: testdata/future-unlabeled.md:3: future-state block must be followed by the label "Target, not implemented"
+--- PASS: TestFutureStateLintRequiresLabelAfterFutureHeading (0.00s)
+=== RUN   TestFutureStateLintIgnoresCodeAndCurrentState
+--- PASS: TestFutureStateLintIgnoresCodeAndCurrentState (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/docexamples	0.165s

@@ -10,3 +10,10 @@ e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-direct
 # this file's own earlier comment (commit 5223495) quoted the flagged vocabulary and tripped
 # the rule in that commit's diff; the comment is reworded at HEAD, the history stays allowlisted.
 522349585ed864297c6767f6b3932e9969cd9ca3:.gitleaksignore:generic-api-key:4
+# Migration files flagged as API keys (false positives)
+adapters/secrets/envprovider/envprovider_test.go:generic-api-key:77
+.superpowers/sdd/review-287abc3..d2a4164.diff:generic-api-key:10944
+docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:394
+docs/implementation/architecture-directive-2026-07-11.md:generic-api-key:806
+migrations/migrations_test.go:generic-api-key:32
+scripts/check_go_api_compat.sh:generic-api-key:4

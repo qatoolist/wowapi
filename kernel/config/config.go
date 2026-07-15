@@ -98,14 +98,33 @@ type DB struct {
 type Pool struct {
 	MaxConns     int           `conf:"max_conns" default:"16" json:"max_conns" doc:"maximum pool connections"`
 	QueryTimeout time.Duration `conf:"query_timeout" default:"5s" json:"query_timeout" doc:"per-query context deadline"`
+	// MaxConnLifetime/MaxConnIdleTime cap a pooled connection's total age and
+	// idle age (W01-E01-S001 / FBL-05). The defaults reproduce pgx v5's own
+	// internal defaults (1h / 30m), so deployments that do not set them observe
+	// unchanged pool behavior; explicit values exist for credential-rotation
+	// and load-balancer-rebalance hygiene (a rotated password or a drained LB
+	// backend takes effect within the lifetime cap instead of "whenever the
+	// connection happens to die"). Zero means "use the pgx default".
+	MaxConnLifetime time.Duration `conf:"max_conn_lifetime" default:"1h" json:"max_conn_lifetime" doc:"maximum total age of a pooled connection before it is closed and replaced (0 = pgx default 1h); bounds how long rotated credentials/drained backends linger"`
+	MaxConnIdleTime time.Duration `conf:"max_conn_idle_time" default:"30m" json:"max_conn_idle_time" doc:"maximum idle age of a pooled connection before it is closed (0 = pgx default 30m)"`
 }
 
 // HTTP holds server guardrails. Zero values are replaced by Defaults.
 type HTTP struct {
 	Addr              string        `conf:"addr" default:":8080" json:"addr" doc:"HTTP listen address"`
-	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"5s" json:"read_header_timeout" doc:"maximum time to read request headers"`
-	RequestTimeout    time.Duration `conf:"request_timeout" default:"30s" json:"request_timeout" doc:"per-request handler timeout"`
-	MaxBodyBytes      int64         `conf:"max_body_bytes" default:"1048576" json:"max_body_bytes" doc:"maximum request body size in bytes"`
+	ReadHeaderTimeout time.Duration `conf:"read_header_timeout" default:"5s" json:"read_header_timeout" doc:"maximum time to read request headers (v1-compatible safe default 5s)"`
+	// ReadTimeout/WriteTimeout/IdleTimeout are the connection-level http.Server
+	// timeouts (FBL-09 / MATRIX CS-09). Go's zero value means "no timeout" for
+	// each — an unbounded Slowloris-class exhaustion surface — so all three
+	// carry safe non-zero defaults and Validate() refuses an explicit zero in
+	// prod. They bound the TCP connection's read/body/write/idle time; the
+	// per-request handler budget is RequestTimeout (httpx.Timeout), a
+	// different layer.
+	ReadTimeout    time.Duration `conf:"read_timeout" default:"30s" json:"read_timeout" doc:"maximum duration for reading the entire request including the body (0 = unlimited; refused in prod)"`
+	WriteTimeout   time.Duration `conf:"write_timeout" default:"60s" json:"write_timeout" doc:"maximum duration before timing out response writes (0 = unlimited; refused in prod)"`
+	IdleTimeout    time.Duration `conf:"idle_timeout" default:"120s" json:"idle_timeout" doc:"maximum keep-alive idle time between requests (0 = unlimited; refused in prod)"`
+	RequestTimeout time.Duration `conf:"request_timeout" default:"30s" json:"request_timeout" doc:"per-request handler timeout"`
+	MaxBodyBytes   int64         `conf:"max_body_bytes" default:"1048576" json:"max_body_bytes" doc:"maximum request body size in bytes"`
 	// CORSAllowedOrigins is the exact-match CORS allowlist (deny-by-default when
 	// empty). Set per environment, e.g. modules-free base leaves it empty and the
 	// prod overlay lists the product's web origins.
@@ -162,12 +181,18 @@ func Defaults() Framework {
 		HTTP: HTTP{
 			Addr:              ":8080",
 			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
 			RequestTimeout:    30 * time.Second,
 			MaxBodyBytes:      1 << 20, // 1 MiB
 			RateLimit:         RateLimit{Disabled: false, RequestsPerSecond: 20, Burst: 40},
 		},
-		Log:         Log{Level: "info", Format: "json"},
-		DB:          DB{Pool: Pool{MaxConns: 16, QueryTimeout: 5 * time.Second}},
+		Log: Log{Level: "info", Format: "json"},
+		DB: DB{Pool: Pool{
+			MaxConns: 16, QueryTimeout: 5 * time.Second,
+			MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute,
+		}},
 		Telemetry:   Telemetry{TraceSampleRatio: 0},
 		Security:    DefaultSecurity(),
 		Concurrency: ConcurrencyDefaults(),
@@ -213,6 +238,14 @@ func (f Framework) Validate() error {
 	}
 	if f.DB.QueryTimeout < 100*time.Millisecond || f.DB.QueryTimeout > 60*time.Second {
 		add("db.query_timeout: %v outside safe range 100ms..60s", f.DB.QueryTimeout)
+	}
+	// 0 = "use the pgx default" (back-compat for hand-built Pool literals);
+	// non-zero values must land in an operationally sane window.
+	if f.DB.MaxConnLifetime != 0 && (f.DB.MaxConnLifetime < time.Minute || f.DB.MaxConnLifetime > 24*time.Hour) {
+		add("db.max_conn_lifetime: %v outside safe range 1m..24h (or 0 for the pgx default)", f.DB.MaxConnLifetime)
+	}
+	if f.DB.MaxConnIdleTime != 0 && (f.DB.MaxConnIdleTime < 30*time.Second || f.DB.MaxConnIdleTime > 24*time.Hour) {
+		add("db.max_conn_idle_time: %v outside safe range 30s..24h (or 0 for the pgx default)", f.DB.MaxConnIdleTime)
 	}
 	if f.Telemetry.TraceSampleRatio < 0 || f.Telemetry.TraceSampleRatio > 1 {
 		add("telemetry.trace_sample_ratio: %v outside range 0.0..1.0", f.Telemetry.TraceSampleRatio)
@@ -260,6 +293,20 @@ func (f Framework) Validate() error {
 		}
 		if f.Webhook.Outbound.SSRFProtectionDisabled {
 			add("webhook.outbound.ssrf_protection_disabled: must not be true in prod")
+		}
+		// Connection-level server timeouts (FBL-09 / MATRIX CS-09): zero means
+		// "no timeout" — an unbounded Slowloris-class exhaustion surface prod
+		// must never run with. Non-prod tolerates an explicit zero as a
+		// deliberate local/dev convenience; unset config never reaches here
+		// with zero because Defaults() supplies safe non-zero values.
+		if f.HTTP.ReadTimeout <= 0 {
+			add("http.read_timeout: must be > 0 in prod (0 disables the connection read timeout)")
+		}
+		if f.HTTP.WriteTimeout <= 0 {
+			add("http.write_timeout: must be > 0 in prod (0 disables the connection write timeout)")
+		}
+		if f.HTTP.IdleTimeout <= 0 {
+			add("http.idle_timeout: must be > 0 in prod (0 disables the keep-alive idle timeout)")
 		}
 	}
 

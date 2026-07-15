@@ -30,6 +30,48 @@ const (
 	ActorWebhook ActorKind = "webhook"
 )
 
+// CredentialScheme classifies the credential that authenticated the actor.
+// It is orthogonal to ActorKind: an API-key actor is ActorSystem with scheme
+// CredentialAPIKey, while an internal system actor is ActorSystem with scheme
+// CredentialInternal. Permissions can scope themselves to one or more schemes
+// so that, for example, a user-only permission cannot be satisfied by a valid
+// API key (SEC-01 T7).
+type CredentialScheme string
+
+const (
+	// CredentialUser is a human authenticated via OIDC/JWT.
+	CredentialUser CredentialScheme = "user"
+	// CredentialAPIKey is a machine principal authenticated via a scoped API key.
+	CredentialAPIKey CredentialScheme = "api_key"
+	// CredentialWebhook is a webhook caller authenticated via webhook security.
+	CredentialWebhook CredentialScheme = "webhook"
+	// CredentialInternal is an internal system actor (e.g. outbox relay) with
+	// no explicit scope set.
+	CredentialInternal CredentialScheme = "internal"
+)
+
+// defaultCredentialScheme derives a scheme from ActorKind and Scopes when the
+// actor was not constructed with an explicit CredentialScheme. This preserves
+// backward compatibility for existing tests and internal callers.
+func defaultCredentialScheme(a Actor) CredentialScheme {
+	if a.CredentialScheme != "" {
+		return a.CredentialScheme
+	}
+	switch a.Kind {
+	case ActorUser:
+		return CredentialUser
+	case ActorWebhook:
+		return CredentialWebhook
+	case ActorSystem:
+		if len(a.Scopes) > 0 {
+			return CredentialAPIKey
+		}
+		return CredentialInternal
+	default:
+		return CredentialInternal
+	}
+}
+
 // Actor is the authenticated principal for an authorization decision. For a
 // human it carries the user and their active capacity in the tenant; for a
 // non-human it carries a system identifier.
@@ -42,14 +84,30 @@ type Actor struct {
 	// ImpersonatorUserID is set when a support actor impersonates a user; both
 	// identities are audited and impersonation is policy-restricted (01 §3).
 	ImpersonatorUserID uuid.UUID
+	// GrantID is the verified privileged-session grant that authorized this
+	// actor (W03-E01-S005). It is recorded in audit metadata for workflow
+	// overrides and other privileged completions.
+	GrantID uuid.UUID
 	// BreakGlass marks an actor operating under an activated break-glass grant;
 	// every decision it produces is audited and bannered.
 	BreakGlass bool
+	// CredentialScheme classifies how the actor was authenticated. It drives
+	// permission-level scheme scoping (SEC-01 T7) and is set by each
+	// authenticator (JWT user, API key, webhook, internal system). A zero value
+	// is interpreted by the evaluator using ActorKind/Scopes heuristics for
+	// backward compatibility, but authenticators should set it explicitly.
+	CredentialScheme CredentialScheme
 	// Scopes is the explicit permission set of a machine principal (API key /
 	// service principal). It is meaningful only for ActorSystem actors: a scope
 	// authorizes like an RBAC grant but remains subject to ABAC deny policies.
 	// Human and internal-system actors leave it empty and are unaffected.
 	Scopes []string
+	// AuthTime records when the user authenticated at the IdP (OIDC auth_time).
+	// It drives step-up freshness enforcement (SEC-01 T6). Zero means unknown.
+	AuthTime time.Time
+	// ACR is the authentication-context-class-reference surfaced from the IdP
+	// token; policies can gate on it but it does not by itself drive step-up.
+	ACR string
 	// AMR is the authentication-methods-references set surfaced from the IdP token
 	// (e.g. ["pwd","mfa","otp"]). It drives step-up enforcement and the env.mfa
 	// ABAC attribute (roadmap S3).

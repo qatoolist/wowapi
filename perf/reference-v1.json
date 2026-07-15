@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "policy_status": "provisional-advisory",
+  "decision_dependency": "DEC-Q9",
+  "environment": {
+    "os": "linux",
+    "arch": "amd64",
+    "runner": {
+      "name": "GitHub-hosted ubuntu-24.04",
+      "image": "ubuntu-24.04",
+      "image_digest": "captured-per-run-from-ImageOS-and-ImageVersion"
+    },
+    "cpu": {
+      "model_source": "/proc/cpuinfo captured per run",
+      "logical_cores": "captured-per-run"
+    },
+    "go": {
+      "version": "go1.26.5",
+      "container_image": "docker.io/library/golang:1.26.5-bookworm@sha256:5ab8e9af080c5f58dab00dd8055ea9309ec54c47722681b5ee8d0a3602f85316",
+      "clean_cache_policy": "go clean -cache -testcache before the reference run; module cache retained and go.sum-verified"
+    },
+    "postgres": {
+      "image": "postgres:16.9-bookworm",
+      "image_digest": "sha256:ef463f9f754e6d381d27513b032ace3607532c752427423d344e9fbfd852257a",
+      "version": "16.9",
+      "config": {
+        "shared_buffers": "128MB",
+        "max_connections": 200,
+        "fsync": "on",
+        "synchronous_commit": "on",
+        "full_page_writes": "on",
+        "jit": "off",
+        "track_io_timing": "on"
+      }
+    },
+    "pool": {
+      "max_connections": 32,
+      "min_connections": 0,
+      "query_timeout": "5s"
+    },
+    "network": {
+      "mode": "GitHub Actions service-container bridge",
+      "shaping": "loopback/service bridge; no artificial delay, loss, or bandwidth cap"
+    }
+  },
+  "dataset": {
+    "cardinality": {
+      "tenants": 100,
+      "users_per_tenant": 1,
+      "capacities_per_tenant": 1,
+      "organizations_per_tenant": 1,
+      "resources_per_tenant": 10,
+      "historical_rows_per_tenant": 25
+    },
+    "tenant_distribution": "uniform round-robin across the 100 fixed tenants",
+    "object_sizes_bytes": [0, 1024, 65536, 1048576],
+    "fixture_checksum_algorithm": "sha256"
+  },
+  "provider_latency_model": {
+    "mode": "local deterministic",
+    "authentication": "in-process fixed actor; no external IdP latency",
+    "postgres": "service-container bridge, observed latency only",
+    "object_storage": "not exercised by PERF-02 request profiles",
+    "queue_provider": "transactional PostgreSQL outbox; no external broker"
+  },
+  "workload": {
+    "seed": 70701001,
+    "fixture": "perf/fixtures/request-workloads-v1.json",
+    "profiles": [
+      "public",
+      "authenticated-read",
+      "authenticated-write",
+      "resource-authz",
+      "idempotent-write",
+      "async-enqueue"
+    ],
+    "cache_states": ["cold", "warm"],
+    "concurrent_tenants": [1, 10, 100]
+  },
+  "procedure": {
+    "warm_up_duration": "5m",
+    "measurement_duration": "15m",
+    "repetitions": 3,
+    "selected_run": "median for p50/p95/p99; worst for errors and resource ceilings",
+    "microbenchmark_count": 10,
+    "benchstat_alpha": 0.01,
+    "flaky_rerun_policy": "rerun the complete workload once; second failure is final"
+  },
+  "relative_ceilings": {
+    "microbenchmark_ns_per_op_regression_percent": 10,
+    "allocation_increase_per_op": 1,
+    "request_p95_regression_percent": 10,
+    "request_p99_regression_percent": 15,
+    "sql_statement_count_increase": 0,
+    "error_rate_percent": 0.01
+  },
+  "absolute_ceilings": {
+    "status": "conditional-on-DEC-Q9",
+    "dependency": "A performance/SRE lead must approve a dedicated bare-metal reference environment and numeric ceilings before any absolute-SLO claim is valid.",
+    "request_p50": "pending-DEC-Q9",
+    "request_p95": "pending-DEC-Q9",
+    "request_p99": "pending-DEC-Q9",
+    "allocations_per_request": "pending-DEC-Q9",
+    "sql_statements_per_request": "pending-DEC-Q9",
+    "pool_wait_per_request": "pending-DEC-Q9",
+    "transaction_duration_per_request": "pending-DEC-Q9",
+    "lock_wait_per_request": "pending-DEC-Q9",
+    "memory_bytes": "pending-DEC-Q9"
+  },
+  "publication": {
+    "raw_output": "source-SHA-addressed GitHub Actions artifact",
+    "plan_hashes": "perf-request-reference/source-SHA/plan-hashes.json",
+    "profiles": "perf-request-reference/source-SHA/profiles/",
+    "source_sha_addressed": true,
+    "comparison_mode": "relative/container until DEC-Q9 resolves"
+  }
+}

@@ -40,6 +40,31 @@ func TestSharedFingerprintChangesWithSharedSection(t *testing.T) {
 	}
 }
 
+func TestSharedFingerprintChangesWithOutboundAllowlist(t *testing.T) {
+	base := config.Defaults()
+	mutated := base
+	mutated.Webhook.Outbound.AllowedHosts = []string{"relay.internal.example"}
+	mutated.Webhook.Outbound.AllowedCIDRs = []string{"10.0.0.0/8"}
+
+	bf, _ := base.SharedFingerprint()
+	mf, _ := mutated.SharedFingerprint()
+	if bf == mf {
+		t.Fatal("SharedFingerprint must change when the outbound allowlist changes")
+	}
+}
+
+func TestSharedFingerprintChangesWithTrustedIssuers(t *testing.T) {
+	base := config.Defaults()
+	mutated := base
+	mutated.Security.TrustedIssuers = []string{"https://idp.example.com"}
+
+	bf, _ := base.SharedFingerprint()
+	mf, _ := mutated.SharedFingerprint()
+	if bf == mf {
+		t.Fatal("SharedFingerprint must change when security.trusted_issuers changes")
+	}
+}
+
 func TestCheckSharedDrift(t *testing.T) {
 	cfg := config.Defaults()
 	fp, err := cfg.SharedFingerprint()

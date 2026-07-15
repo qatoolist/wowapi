@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -57,6 +58,16 @@ type JWKSConfig struct {
 	// Client is the HTTP client used to fetch discovery/JWKS documents. A nil
 	// client defaults to one with a 10s timeout.
 	Client *http.Client
+	// TrustedIssuers is the declared, fingerprinted allowlist of trusted issuer
+	// URLs/hostnames that governs this custom Client injection (D-07 / SEC-06
+	// T4). In prod profile, a non-nil Client is rejected unless this list is
+	// non-empty. When Client is nil the default transport is used and this list
+	// is ignored.
+	TrustedIssuers []string
+	// Env is the deployment environment. It gates the prod-profile trusted-
+	// issuer check. A zero Env is treated as non-prod, preserving backwards
+	// compatibility for existing callers that do not set it.
+	Env config.Env
 	// Now is the clock, injectable for tests (default time.Now). It drives the
 	// cache TTL and the rotation-refetch throttle.
 	Now func() time.Time
@@ -83,6 +94,12 @@ func NewJWKSKeySource(cfg JWKSConfig) (KeySource, error) {
 	client := cfg.Client
 	if client == nil {
 		client = &http.Client{Timeout: defaultJWKSTimeout, Transport: jwksTransport()}
+	} else if cfg.Env.IsProd() && len(cfg.TrustedIssuers) == 0 {
+		// D-07 / SEC-06 T4: a custom JWKS client in prod must declare a trusted-
+		// issuer allowlist. Without that declaration the escape hatch is
+		// ungoverned, so fail closed at construction time (boot/readiness).
+		return nil, errors.E(errors.KindInternal, "internal",
+			"auth: prod profile requires security.trusted_issuers when a custom JWKS client is injected", errors.Op("auth.NewJWKSKeySource"))
 	}
 	now := cfg.Now
 	if now == nil {
@@ -109,7 +126,14 @@ func NewJWKSKeySource(cfg JWKSConfig) (KeySource, error) {
 // supported deployment that validateHTTPSURL permits. A deployment that wants a
 // fully guarded client can inject one via JWKSConfig.Client.
 func jwksTransport() *http.Transport {
-	t := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		// Impossible under the stdlib contract (http.DefaultTransport is a
+		// *http.Transport); fail loudly at boot rather than proceeding with an
+		// unclonable transport whose proxy behavior we could not disable.
+		panic("auth: http.DefaultTransport is not *http.Transport")
+	}
+	t := base.Clone()
 	t.Proxy = nil
 	return t
 }
@@ -201,13 +225,16 @@ func (s *jwksKeySource) discover(ctx context.Context) (string, error) {
 
 // get performs a size-capped GET and returns the body, or a KindExternal error.
 func (s *jwksKeySource) get(ctx context.Context, uri string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	// SEC-06 (D-07): governed outbound fetch — the issuer/JWKS URI is trusted
+	// boot-time configuration constrained by validateHTTPSURL, not runtime
+	// user input; see jwksTransport above for the egress posture.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil) // #nosec G704 -- trusted-issuer JWKS/discovery URI from validated boot config (SEC-06)
 	if err != nil {
 		return nil, errors.E(errors.KindExternal, "upstream_error",
 			"auth: build JWKS request", err, errors.Op("auth.JWKS.get"))
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := s.client.Do(req)
+	resp, err := s.client.Do(req) // #nosec G704 -- same governed fetch: URI validated at boot (SEC-06)
 	if err != nil {
 		return nil, errors.E(errors.KindExternal, "upstream_error",
 			"auth: fetch JWKS", err, errors.Op("auth.JWKS.get"))

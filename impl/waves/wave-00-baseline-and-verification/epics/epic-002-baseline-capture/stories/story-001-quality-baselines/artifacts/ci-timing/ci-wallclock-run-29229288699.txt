@@ -1,0 +1,20 @@
+# CI wall-clock capture — run 29229288699 (schedule/nightly, main, headSha 0a31186cada5c275a588c74081cf977adf346e61, 2026-07-13T06:32:19Z, conclusion success)
+# Captured 2026-07-13 via: gh run view 29229288699 --json jobs
+unit (no DB)	success	2026-07-13T06:32:22Z	2026-07-13T06:34:36Z
+classify diff (docs-only? bench-relevant?)	success	2026-07-13T06:32:23Z	2026-07-13T06:32:29Z
+workflow lint (actionlint)	success	2026-07-13T06:32:22Z	2026-07-13T06:32:47Z
+coverage (profile + floor)	success	2026-07-13T06:32:31Z	2026-07-13T06:35:25Z
+reference-stack header smoke (nginx TLS)	success	2026-07-13T06:32:31Z	2026-07-13T06:33:31Z
+authoritative gate — bench (container, DB+S3 required)	success	2026-07-13T06:32:31Z	2026-07-13T06:35:43Z
+authoritative gate — race (container, DB+S3 required)	success	2026-07-13T06:32:31Z	2026-07-13T06:35:35Z
+authoritative gate — test (container, DB+S3 required)	success	2026-07-13T06:32:31Z	2026-07-13T06:34:10Z
+
+# Recent ci.yml run list (gh run list --workflow=ci.yml --limit 8):
+29229288699	schedule	success	2026-07-13T06:32:19Z	0a31186ca	ci
+29182363356	schedule	success	2026-07-12T06:14:45Z	0a31186ca	ci
+29168274550	push	success	2026-07-11T21:08:18Z	0a31186ca	perf(bench): fix O(n²) setup + empty-map measurement in sweep benchma…
+29168150465	pull_request	success	2026-07-11T21:04:02Z	345d6e8e4	perf(bench): fix O(n²) setup + empty-map measurement in sweep benchmar
+29167655293	push	success	2026-07-11T20:47:34Z	3ef3a8b8b	ci: path-scope bench on PRs; merge_group support; nightly sweep (#24)
+29167194769	pull_request	success	2026-07-11T20:31:43Z	23d7cdaf1	ci: path-scope bench on PRs; run it once per PR via merge queue; night
+29166759402	push	success	2026-07-11T20:17:23Z	3e3d6f84b	ci: parallelize the authoritative gate (3 legs), warm caches, docs-on…
+29166204902	pull_request	success	2026-07-11T19:58:52Z	88b9f6aad	ci: parallelize the authoritative gate (3 legs), warm Go caches, docs-

@@ -1,0 +1,28 @@
+{
+  "story": "W07-E01-S001",
+  "code_revision": "working tree based on entry SHA 1626b11",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T21:51:00Z",
+  "reviewer": "W05ReviewGateFinal",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S001-002",
+  "evidence_type": "real PostgreSQL benchmark report",
+  "task": "W07-E01-S001-T002",
+  "acceptance_criteria_proven": [
+    "AC-W07-E01-S001-02"
+  ],
+  "execution_command": "DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 go test ./perf/requestbench -run '^(TestReferenceV1FullFieldContract|TestWorkloadFixtureDefinesCompleteMatrix|TestPublicationRequiresCompleteMatrixAndAttribution|TestPublicationPathIsRepositoryRelative|TestReferenceWarmupDurationConfiguration|TestEachProfileHasARepresentativeQueryPlanHash|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestMatrixContractHasSixVariantsPerProfile|TestRealPostgresRequestProfileMatrix)$' -count=1 -v",
+  "execution_environment": {
+    "environment": "local PostgreSQL 16.14 for focused contract; pinned PostgreSQL 16.9 container for publication",
+    "tools": [
+      "go1.26.5",
+      "PostgreSQL 16.9/16.14"
+    ]
+  },
+  "result": "PASS: six profiles exercised through HTTP chain against isolated real PostgreSQL with current_user=app_rt and RLS guard",
+  "file_or_uri": "perf/results/request-reference-v1.txt",
+  "checksum_sha256": "cf5240c1111fa0e4d9f4bbdb42ced38dd5053cef4853e409cec1860e4ff550fa",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS after 2 gate iterations: executor found and fixed the 10-resources-per-tenant seed mismatch; independent re-review found no open issues"
+}

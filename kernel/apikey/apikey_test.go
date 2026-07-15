@@ -225,6 +225,9 @@ func TestIntegrationApiKeyAuthenticator(t *testing.T) {
 	if actor.Kind != authz.ActorSystem || actor.TenantID != tenant || len(actor.Scopes) != 2 {
 		t.Fatalf("actor = %+v, want ActorSystem/tenant/2 scopes", actor)
 	}
+	if actor.CredentialScheme != authz.CredentialAPIKey {
+		t.Fatalf("actor.CredentialScheme = %q, want api_key", actor.CredentialScheme)
+	}
 
 	// A non-API-key bearer (e.g. a JWT) is passed over (unauthenticated here) so a
 	// composite authenticator can try OIDC.

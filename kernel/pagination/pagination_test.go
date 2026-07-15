@@ -2,6 +2,7 @@ package pagination_test
 
 import (
 	"encoding/base64"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,30 @@ func TestEncodeUnsupportedType(t *testing.T) {
 	_, err := pagination.EncodeCursor(map[string]any{"bad": struct{ X int }{1}})
 	if err == nil {
 		t.Fatal("expected error for unsupported cursor value type")
+	}
+}
+
+// TestEncodeCursorUnsignedOverflow pins the W01-E01-S002 gosec-G115 fix:
+// unsigned cursor values above math.MaxInt64 must fail closed instead of
+// silently wrapping negative and corrupting keyset ordering; values at the
+// boundary still round-trip.
+func TestEncodeCursorUnsignedOverflow(t *testing.T) {
+	if _, err := pagination.EncodeCursor(map[string]any{"n": uint64(math.MaxInt64) + 1}); err == nil {
+		t.Fatal("uint64 > MaxInt64 must be rejected, not wrapped")
+	}
+	if _, err := pagination.EncodeCursor(map[string]any{"n": uint(math.MaxUint64)}); err == nil {
+		t.Fatal("uint > MaxInt64 must be rejected, not wrapped")
+	}
+	s, err := pagination.EncodeCursor(map[string]any{"n": uint64(math.MaxInt64)})
+	if err != nil {
+		t.Fatalf("uint64 == MaxInt64 must encode: %v", err)
+	}
+	cur, err := pagination.DecodeCursor(s)
+	if err != nil {
+		t.Fatalf("DecodeCursor: %v", err)
+	}
+	if got := cur.Values()["n"]; got != int64(math.MaxInt64) {
+		t.Errorf("round-trip = %v (%T), want int64 MaxInt64", got, got)
 	}
 }
 

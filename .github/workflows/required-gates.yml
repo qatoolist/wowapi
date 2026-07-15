@@ -1,0 +1,194 @@
+name: required gates (exact commit)
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Full 40-hex commit SHA whose exact tree must pass every required gate
+        required: true
+        type: string
+      hosted_results_sha:
+        description: Full SHA used by GitHub Actions to index hosted scanner runs
+        required: true
+        type: string
+    outputs:
+      source_sha:
+        description: Exact verified source commit
+        value: ${{ jobs.summarize.outputs.source_sha }}
+      gate_results_sha256:
+        description: SHA-256 of the deterministic gate-results.json
+        value: ${{ jobs.summarize.outputs.gate_results_sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: validate gate manifest and exact SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      gates: ${{ steps.manifest.outputs.gates }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: prove checkout is the requested commit (never branch HEAD)
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
+        run: |
+          set -euo pipefail
+          case "$SOURCE_SHA" in
+            *[!0-9a-f]*|'') echo "source_sha must be lowercase hex" >&2; exit 1 ;;
+          esac
+          [ "${#SOURCE_SHA}" -eq 40 ] || { echo "source_sha must be 40 hex characters" >&2; exit 1; }
+          case "$HOSTED_RESULTS_SHA" in
+            *[!0-9a-f]*|'') echo "hosted_results_sha must be lowercase hex" >&2; exit 1 ;;
+          esac
+          [ "${#HOSTED_RESULTS_SHA}" -eq 40 ] || { echo "hosted_results_sha must be 40 hex characters" >&2; exit 1; }
+          test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+      - name: validate versioned manifest
+        run: python3 scripts/validation/release_contract.py validate-gates --manifest ci/release-gates.yaml --schema ci/release-gates.schema.json
+      - name: export deterministic matrix
+        id: manifest
+        run: echo "gates=$(jq -c '.gates' ci/release-gates.yaml)" >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: gate / ${{ matrix.gate.id }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.gate.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: ${{ fromJSON(needs.prepare.outputs.gates) }}
+    env:
+      DATABASE_URL: postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
+      GH_TOKEN: ${{ github.token }}
+      WOWAPI_REQUIRE_DB: "1"
+      WOWAPI_REQUIRE_S3: "1"
+      WOWAPI_GATE_SOURCE_SHA: ${{ inputs.source_sha }}
+      WOWAPI_HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: "1.26.5"
+          cache: true
+      - name: prove exact checkout again in isolated gate runner
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+      - name: start required integration services
+        if: matrix.gate.requires_services == true
+        run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit jaeger
+      - name: execute Trivy gate (blocking)
+        id: trivy
+        if: matrix.gate.id == 'trivy-blocking'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig,license
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+          exit-code: "1"
+      - name: execute manifest command
+        id: command
+        if: matrix.gate.id != 'trivy-blocking'
+        continue-on-error: true
+        env:
+          GATE_COMMAND: ${{ matrix.gate.command }}
+        run: bash -euo pipefail -c "$GATE_COMMAND"
+      - name: emit per-gate result even on failure
+        if: always()
+        env:
+          GATE_ID: ${{ matrix.gate.id }}
+          JOB_REF: ${{ matrix.gate.job_ref }}
+          EVIDENCE_ARTIFACT: ${{ matrix.gate.evidence_artifact }}
+          COMMAND_TEXT: ${{ matrix.gate.command }}
+          OUTCOME: ${{ matrix.gate.id == 'trivy-blocking' && steps.trivy.outcome || steps.command.outcome }}
+        run: |
+          set -euo pipefail
+          status=failed
+          [ "$OUTCOME" = success ] && status=passed
+          jq -n -c \
+            --arg id "$GATE_ID" --arg job_ref "$JOB_REF" \
+            --arg evidence_artifact "$EVIDENCE_ARTIFACT" \
+            --arg command_sha256 "$(printf %s "$COMMAND_TEXT" | sha256sum | cut -d' ' -f1)" \
+            --arg status "$status" \
+            '{id:$id,job_ref:$job_ref,evidence_artifact:$evidence_artifact,command_sha256:$command_sha256,status:$status}' \
+            > gate-result.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: gate-result-${{ matrix.gate.id }}
+          path: gate-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: tear down integration services
+        if: always() && matrix.gate.requires_services == true
+        run: docker compose -f deployments/compose.yaml down -v
+
+  summarize:
+    name: attest exact-SHA gate results
+    needs: [prepare, gate]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      source_sha: ${{ steps.summary.outputs.source_sha }}
+      gate_results_sha256: ${{ steps.summary.outputs.gate_results_sha256 }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v8.0.0
+        with:
+          pattern: gate-result-*
+          path: gate-results
+          merge-multiple: false
+      - name: create deterministic gate-results.json
+        id: summary
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          expected=$(jq '.gates | length' ci/release-gates.yaml)
+          mapfile -t result_files < <(find gate-results -name gate-result.json -type f | sort)
+          actual=${#result_files[@]}
+          test "$actual" = "$expected" || { echo "missing per-gate results: expected $expected, got $actual" >&2; exit 1; }
+          jq -s -c \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg manifest_sha256 "$(sha256sum ci/release-gates.yaml | cut -d' ' -f1)" \
+            --argjson completed_wave "$(jq '.completed_wave' ci/release-gates.yaml)" \
+            '{schema_version:1,source_sha:$source_sha,manifest_sha256:$manifest_sha256,completed_wave:$completed_wave,status:(if all(.[];.status=="passed") then "passed" else "failed" end),gates:sort_by(.id)}' \
+            "${result_files[@]}" > gate-results.json
+          sha=$(sha256sum gate-results.json | cut -d' ' -f1)
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "gate_results_sha256=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gate-results-${{ inputs.source_sha }}
+          path: gate-results.json
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: gate-results.json
+      - name: fail closed after preserving the complete result set
+        run: test "$(jq -r '.status' gate-results.json)" = passed

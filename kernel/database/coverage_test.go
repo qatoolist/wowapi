@@ -614,6 +614,43 @@ func TestIntegrationNewPoolChainedAfterConnectPropagatesError(t *testing.T) {
 	}
 }
 
+// TestIntegrationPoolLifetimeConfigWiring pins W01-E01-S001-T004's contract:
+// explicit MaxConnLifetime/MaxConnIdleTime config values reach the pgx pool
+// config, and OMITTED (zero) values leave pgx's own internal defaults
+// (1h / 30m at the pinned pgx v5) untouched — i.e. deployments that never set
+// the new keys observe exactly the pre-story pool behavior.
+func TestIntegrationPoolLifetimeConfigWiring(t *testing.T) {
+	dsn := guardTestDSN(t)
+
+	explicit := config.Defaults().DB
+	explicit.MaxConnLifetime = 2 * time.Hour
+	explicit.MaxConnIdleTime = 10 * time.Minute
+	pool, err := database.NewPool(context.Background(), dsn, explicit)
+	if err != nil {
+		t.Fatalf("NewPool(explicit lifetimes): %v", err)
+	}
+	defer pool.Close()
+	pc := pool.Config()
+	if pc.MaxConnLifetime != 2*time.Hour || pc.MaxConnIdleTime != 10*time.Minute {
+		t.Errorf("explicit lifetimes not wired: got (%v, %v), want (2h, 10m)",
+			pc.MaxConnLifetime, pc.MaxConnIdleTime)
+	}
+
+	omitted := config.Defaults().DB
+	omitted.MaxConnLifetime = 0 // hand-built Pool literal that never set the keys
+	omitted.MaxConnIdleTime = 0
+	pool2, err := database.NewPool(context.Background(), dsn, omitted)
+	if err != nil {
+		t.Fatalf("NewPool(omitted lifetimes): %v", err)
+	}
+	defer pool2.Close()
+	pc2 := pool2.Config()
+	if pc2.MaxConnLifetime != time.Hour || pc2.MaxConnIdleTime != 30*time.Minute {
+		t.Errorf("omitted lifetimes must keep pgx defaults: got (%v, %v), want (1h, 30m)",
+			pc2.MaxConnLifetime, pc2.MaxConnIdleTime)
+	}
+}
+
 // assertKeyCount opens a fresh tenant transaction and asserts the number of
 // idempotency_keys rows the tenant can see for idem_key — the canonical RLS
 // visibility check.

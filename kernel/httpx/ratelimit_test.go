@@ -28,16 +28,16 @@ func TestRateLimitOnDropFires(t *testing.T) {
 	drops := 0
 	mw := httpx.RateLimit(tb, func(*http.Request) string { return "k" },
 		httpx.OnRateLimitDrop(func(string) { drops++ }))
-	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 
 	// First request consumes the single burst token → allowed, no drop.
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x", nil))
 	if drops != 0 {
 		t.Fatalf("allowed request must not fire OnDrop, got %d", drops)
 	}
 	// Second request is over budget → 429 + one drop.
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("over-budget request should be 429, got %d", rec.Code)
 	}
@@ -94,7 +94,7 @@ func TestTokenBucketKeysAreIndependent(t *testing.T) {
 func TestRateLimitMiddleware429(t *testing.T) {
 	// A limiter that always denies.
 	h := httpx.RateLimit(denyLimiter{}, httpx.KeyByIP)(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 

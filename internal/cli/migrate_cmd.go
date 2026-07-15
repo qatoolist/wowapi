@@ -69,7 +69,7 @@ func runMigrateCreate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "wowapi migrate create: %v\n", err)
 		return 1
 	}
-	if err := os.MkdirAll(*dir, 0o755); err != nil {
+	if err := os.MkdirAll(*dir, 0o755); err != nil { // #nosec G301 -- migrations directory is project source, world-readable by design
 		fmt.Fprintf(stderr, "wowapi migrate create: %v\n", err)
 		return 1
 	}
@@ -80,7 +80,7 @@ func runMigrateCreate(args []string, stdout, stderr io.Writer) int {
 	}
 	body := "-- " + fmt.Sprintf("%05d_%s", next, *name) + ": TODO describe this migration.\n\n" +
 		"-- +goose Up\n\n\n-- +goose Down\n\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil { // #nosec G306 -- generated migration stub is project source, world-readable by design
 		fmt.Fprintf(stderr, "wowapi migrate create: %v\n", err)
 		return 1
 	}

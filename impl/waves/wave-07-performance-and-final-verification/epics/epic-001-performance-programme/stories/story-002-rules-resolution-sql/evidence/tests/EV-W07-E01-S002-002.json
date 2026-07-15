@@ -1,0 +1,21 @@
+{
+  "evidence_id": "EV-W07-E01-S002-002",
+  "task": "W07-E01-S002-T002",
+  "acceptance_criteria": ["AC-W07-E01-S002-02"],
+  "executed_at": "2026-07-14",
+  "base_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "working_tree_measurement": true,
+  "environment": "real PostgreSQL 16.14 container; WOWAPI_REQUIRE_DB=1",
+  "command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -run 'TestIntegrationResolver(QueryCountConstantWithDepth|SetBasedParity)$' -count=1 -v",
+  "result": "pass",
+  "parity_cases": [
+    "nearest_org",
+    "ancestor_org",
+    "tenant",
+    "platform",
+    "code_default",
+    "historical_superseded"
+  ],
+  "query_contract": "one rule_versions SQL statement per Resolve call; nearest ancestor then tenant then platform then code default",
+  "skipped": false
+}

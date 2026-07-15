@@ -1,0 +1,21 @@
+{
+  "evidence_id": "EV-W07-E01-S002-006",
+  "task": "W07-E01-S002-T006",
+  "acceptance_criteria": ["AC-W07-E01-S002-06"],
+  "executed_at": "2026-07-14",
+  "base_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "working_tree_measurement": true,
+  "environment": "real PostgreSQL 16.14 container; WOWAPI_REQUIRE_DB=1",
+  "command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -count=1 -v",
+  "result": "pass",
+  "package_result": "ok github.com/qatoolist/wowapi/kernel/rules",
+  "live_update_tests": {
+    "TestIntegrationRuleResolutionPrecedence": "pass; platform activation and then tenant activation are visible on subsequent Resolve calls",
+    "TestIntegrationRuleApprovalGating": "pass; activation becomes visible on the next Resolve call",
+    "TestIntegrationFeatureFlagRollout": "pass; activated tenant rollout is visible on the next Resolve call",
+    "TestIntegrationRuleOrgScopePrecedence": "pass; newly activated child org value is visible on the next Resolve call"
+  },
+  "b13_required": false,
+  "reason": "Resolver remains stateless and executes against the caller's per-request TenantDB snapshot; no cross-request rule cache or hot overlay was introduced.",
+  "skipped": false
+}

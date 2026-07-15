@@ -1,0 +1,3 @@
+# command-line-arguments
+kernel/port/testdata/registrar_forge_compile_fail_fixture/main.go:20:3: cannot refer to unexported field owner in struct literal of type appmodel.Registrar[any]
+kernel/port/testdata/registrar_forge_compile_fail_fixture/main.go:29:12: forgedReg.seal undefined (type appmodel.Registrar[any] has no field or method seal)

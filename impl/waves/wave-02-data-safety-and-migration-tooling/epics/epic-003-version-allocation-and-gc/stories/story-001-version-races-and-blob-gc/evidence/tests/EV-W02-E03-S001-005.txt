@@ -1,0 +1,4 @@
+=== RUN   TestIntegrationSweepUploadSessionsAdversarial
+--- PASS: TestIntegrationSweepUploadSessionsAdversarial (0.16s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/document	0.368s

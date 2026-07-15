@@ -1,0 +1,5 @@
+=== RUN   TestIntegrationGenerateConcurrentVersionAllocation
+    version_race_test.go:102: lock-wait under 24 concurrent callers: max=74.226459ms avg=48.750531ms
+--- PASS: TestIntegrationGenerateConcurrentVersionAllocation (0.26s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/artifact	0.785s

@@ -1,0 +1,7 @@
+=== RUN   TestIntegrationTenantFKEdgeCensus
+--- PASS: TestIntegrationTenantFKEdgeCensus (0.18s)
+PASS
+ok  	github.com/qatoolist/wowapi/testkit	0.447s
+testing: warning: no tests to run
+PASS
+ok  	github.com/qatoolist/wowapi/testkit/fakes	0.420s [no tests to run]

@@ -2,11 +2,13 @@ package retention
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
@@ -88,24 +90,46 @@ func (r *Registry) ordered() []RecordClass {
 
 // Engine orchestrates disposition and DSR fulfilment over the registered classes.
 type Engine struct {
-	reg *Registry
-	dsr *DSR
+	reg       *Registry
+	dsr       *DSR
+	holds     *Holds
+	artifacts ArtifactWriter
+	audit     *audit.Writer
 }
 
-// NewEngine wires the engine over a record-class registry and the DSR ledger.
+// NewEngine preserves the v1 constructor. Export fulfilment uses the legacy
+// in-transaction payload path until compliance dependencies are supplied with
+// NewEngineWithCompliance.
 func NewEngine(reg *Registry, dsr *DSR) *Engine {
 	return &Engine{reg: reg, dsr: dsr}
 }
 
+// NewEngineWithCompliance wires the engine over a record-class registry, the DSR ledger, and
+// the compliance wrappers. holds, artifacts, and audit may be nil in unit tests
+// that do not exercise hold-blocking or artifact-writing paths; passing nil for
+// artifacts makes RunExportDetailed fail closed.
+func NewEngineWithCompliance(reg *Registry, dsr *DSR, holds *Holds, artifacts ArtifactWriter, audit *audit.Writer) *Engine {
+	return &Engine{reg: reg, dsr: dsr, holds: holds, artifacts: artifacts, audit: audit}
+}
+
 // SweepDisposition runs each class's Dispose for records whose retention lapsed by
 // `at`, in the caller's tenant transaction, returning the total disposed. Classes
-// without a Dispose callback are skipped. Intended to be driven periodically by
-// the scheduler.
+// without a Dispose callback are skipped. A class under a record_class legal hold
+// is blocked by the central wrapper.
 func (e *Engine) SweepDisposition(ctx context.Context, db database.TenantDB, at time.Time) (int, error) {
 	total := 0
 	for _, c := range e.reg.ordered() {
 		if c.Dispose == nil {
 			continue
+		}
+		if e.holds != nil {
+			held, err := e.holds.IsHeld(ctx, db, "record_class", holdID(c.Key))
+			if err != nil {
+				return total, kerr.Wrapf(err, "retention.SweepDisposition", "check hold for class %s", c.Key)
+			}
+			if held {
+				return total, fmt.Errorf("%w: record class %s", ErrHeld, c.Key)
+			}
 		}
 		n, err := c.Dispose(ctx, db, at)
 		if err != nil {
@@ -116,11 +140,83 @@ func (e *Engine) SweepDisposition(ctx context.Context, db database.TenantDB, at 
 	return total, nil
 }
 
-// RunExport fulfils a pending export DSR: it invokes each class's Export for the
-// subject, aggregates the results by class key, marks the request completed, and
-// returns the payload. All work is in the caller's tenant tx, so a failure leaves
-// the request pending and rolls back partial exports.
+// RunExportDetailed fulfils a pending export DSR: it invokes each class's Export for the
+// subject, builds an encrypted artifact manifest with explicit per-class status,
+// and completes the request only after the artifact is written. All work is in
+// the caller's tenant tx, so a failure leaves the request pending and rolls back
+// partial exports.
+func (e *Engine) RunExportDetailed(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ArtifactManifest, error) {
+	req, err := e.dsr.Get(ctx, db, requestID)
+	if err != nil {
+		return nil, err
+	}
+	if req.Kind != KindExport {
+		return nil, kerr.E(kerr.KindConflict, "wrong_kind", "DSR is not an export request")
+	}
+	if req.Status != "pending" {
+		return nil, kerr.E(kerr.KindConflict, "not_pending", "DSR is not pending")
+	}
+
+	manifest := &ArtifactManifest{
+		RequestID:       requestID,
+		CreatedAt:       time.Now().UTC(),
+		ExpiresAt:       time.Now().UTC().Add(30 * 24 * time.Hour),
+		AccessPolicy:    "tenant_admin_only",
+		PerClassResults: map[string]ClassResult{},
+	}
+	for _, c := range e.reg.ordered() {
+		if c.Export == nil {
+			manifest.PerClassResults[c.Key] = ClassResult{Status: ClassStatusNotApplicable}
+			continue
+		}
+		data, err := c.Export(ctx, db, req.SubjectRef)
+		if err != nil {
+			return nil, kerr.Wrapf(err, "retention.RunExport", "export class %s", c.Key)
+		}
+		if len(data) == 0 {
+			manifest.PerClassResults[c.Key] = ClassResult{Status: ClassStatusEmpty}
+		} else {
+			manifest.PerClassResults[c.Key] = ClassResult{Status: ClassStatusExported, Data: data}
+		}
+	}
+
+	if e.artifacts == nil {
+		return nil, kerr.E(kerr.KindInternal, "no_artifact_writer", "artifact writer not configured")
+	}
+	checksum, _, err := e.artifacts.Write(ctx, db, requestID, manifest)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "retention.RunExport", "write artifact")
+	}
+	manifest.Checksum = checksum
+
+	if err := e.dsr.Complete(ctx, db, requestID); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+// RunExport preserves the v1 API while using the fail-closed artifact path. The
+// returned map contains the exported per-class payloads; callers that need the
+// artifact checksum or explicit empty/not-applicable statuses should use
+// RunExportDetailed.
 func (e *Engine) RunExport(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (map[string]any, error) {
+	if e.artifacts == nil {
+		return e.runExportLegacy(ctx, db, requestID)
+	}
+	manifest, err := e.RunExportDetailed(ctx, db, requestID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(manifest.PerClassResults))
+	for key, result := range manifest.PerClassResults {
+		if result.Status == ClassStatusExported || result.Status == ClassStatusEmpty {
+			out[key] = result.Data
+		}
+	}
+	return out, nil
+}
+
+func (e *Engine) runExportLegacy(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (map[string]any, error) {
 	req, err := e.dsr.Get(ctx, db, requestID)
 	if err != nil {
 		return nil, err
@@ -148,34 +244,60 @@ func (e *Engine) RunExport(ctx context.Context, db database.TenantDB, requestID 
 	return out, nil
 }
 
-// RunErasure fulfils a pending erasure DSR: it invokes each class's Erase for the
-// subject and marks the request completed, returning the total records affected.
-// A legal hold that forbids erasure must be enforced by the product's Erase
-// callback (skip held records) or by rejecting the DSR first with a reason.
-func (e *Engine) RunErasure(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (int, error) {
+// RunErasureDetailed fulfils a pending erasure DSR: it invokes each class's Erase for
+// the subject through the central legal-hold wrapper, marks the request
+// completed, and returns a per-class status map plus the total records affected.
+func (e *Engine) RunErasureDetailed(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ErasureResult, error) {
 	req, err := e.dsr.Get(ctx, db, requestID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if req.Kind != KindErasure {
-		return 0, kerr.E(kerr.KindConflict, "wrong_kind", "DSR is not an erasure request")
+		return nil, kerr.E(kerr.KindConflict, "wrong_kind", "DSR is not an erasure request")
 	}
 	if req.Status != "pending" {
-		return 0, kerr.E(kerr.KindConflict, "not_pending", "DSR is not pending")
+		return nil, kerr.E(kerr.KindConflict, "not_pending", "DSR is not pending")
 	}
-	total := 0
+
+	if e.holds != nil {
+		held, err := e.holds.IsHeld(ctx, db, "dsr_subject", holdID(req.SubjectRef))
+		if err != nil {
+			return nil, kerr.Wrapf(err, "retention.RunErasure", "check subject hold")
+		}
+		if held {
+			return nil, fmt.Errorf("%w: dsr subject %s", ErrHeld, req.SubjectRef)
+		}
+	}
+
+	result := &ErasureResult{Statuses: map[string]string{}}
 	for _, c := range e.reg.ordered() {
 		if c.Erase == nil {
+			result.Statuses[c.Key] = ClassStatusNotApplicable
 			continue
 		}
 		n, err := c.Erase(ctx, db, req.SubjectRef)
 		if err != nil {
-			return total, kerr.Wrapf(err, "retention.RunErasure", "erase class %s", c.Key)
+			return result, kerr.Wrapf(err, "retention.RunErasure", "erase class %s", c.Key)
 		}
-		total += n
+		if n == 0 {
+			result.Statuses[c.Key] = ClassStatusEmpty
+		} else {
+			result.Statuses[c.Key] = ClassStatusErased
+		}
+		result.Total += n
 	}
 	if err := e.dsr.Complete(ctx, db, requestID); err != nil {
-		return total, err
+		return result, err
 	}
-	return total, nil
+	return result, nil
+}
+
+// RunErasure preserves the v1 API. Call RunErasureDetailed when per-class
+// statuses are required.
+func (e *Engine) RunErasure(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (int, error) {
+	result, err := e.RunErasureDetailed(ctx, db, requestID)
+	if result == nil {
+		return 0, err
+	}
+	return result.Total, err
 }

@@ -89,7 +89,7 @@ type result struct {
 }
 
 func loadBudgets(path string) (map[string]budget, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 G703 -- build-tooling only: reads the budgets file path given on the tool's own command line
 	if err != nil {
 		return nil, err
 	}
@@ -111,11 +111,11 @@ func loadBudgets(path string) (map[string]budget, error) {
 		name := fields[0]
 		ns, err := strconv.ParseInt(fields[1], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: max_ns_per_op %q: %v", lineNo, fields[1], err)
+			return nil, fmt.Errorf("line %d: max_ns_per_op %q: %w", lineNo, fields[1], err)
 		}
 		allocs, err := strconv.ParseInt(fields[2], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: max_allocs_per_op %q: %v", lineNo, fields[2], err)
+			return nil, fmt.Errorf("line %d: max_allocs_per_op %q: %w", lineNo, fields[2], err)
 		}
 		budgets[name] = budget{maxNsPerOp: ns, maxAllocsPerOp: allocs}
 	}

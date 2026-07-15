@@ -25,6 +25,7 @@ config never redefines framework keys (it overrides values through the same type
 No global config maps, no `map[string]any` handed to services, no reflection-driven magic beyond
 one well-audited struct binder.
 
+<!-- doc-example: illustrative -->
 ```go
 // kernel/config — consumer-facing contracts (importable; values flow only through constructors)
 type Framework struct {

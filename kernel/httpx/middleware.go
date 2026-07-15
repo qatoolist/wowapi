@@ -1,8 +1,10 @@
 package httpx
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -51,14 +53,16 @@ func Recover(logger *slog.Logger) Middleware {
 				}
 				// http.ErrAbortHandler is the stdlib convention for aborting a
 				// response silently — must propagate, not become a 500.
-				if rec == http.ErrAbortHandler {
+				// errors.Is (not ==) so a wrapped abort sentinel still
+				// propagates; non-error panic values fall through to logging.
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rec)
 				}
 				if logger != nil {
 					logger.ErrorContext(r.Context(), "panic recovered",
-						"request_id", RequestIDFrom(r.Context()),
-						"method", r.Method,
-						"path", r.URL.Path,
+						"request_id", sanitizeLogField(RequestIDFrom(r.Context())),
+						"method", sanitizeLogField(r.Method),
+						"path", sanitizeLogField(r.URL.Path),
 						"panic", rec,
 					)
 				}
@@ -72,6 +76,14 @@ func Recover(logger *slog.Logger) Middleware {
 			next.ServeHTTP(tw, r)
 		})
 	}
+}
+
+// sanitizeLogField prevents attacker-controlled request metadata from forging
+// additional text log records. Structured JSON handlers already escape these
+// bytes, but Recover also supports text and custom slog handlers.
+func sanitizeLogField(value string) string {
+	value = strings.ReplaceAll(value, "\r", `\r`)
+	return strings.ReplaceAll(value, "\n", `\n`)
 }
 
 // trackedWriter records whether the handler has begun the response, so Recover

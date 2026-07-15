@@ -1,0 +1,60 @@
+UTC: 2026-07-13T17:16:15.420640+00:00
+Revision: 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Command: python3 scripts/validation/security_contract.py private-fallback --path .
+Exit: 0
+
+STDOUT:
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 0 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.
+
+Report Summary
+
+┌─────────────────────────────────────────────────────────┬────────────┬─────────────────┬─────────┬───────────────────┬──────────┐
+│                         Target                          │    Type    │ Vulnerabilities │ Secrets │ Misconfigurations │ Licenses │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ go.mod                                                  │   gomod    │        0        │    -    │         -         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ internal/compat/testdata/go-api/additive/go.mod         │   gomod    │        0        │    -    │         -         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ internal/compat/testdata/go-api/baseline/go.mod         │   gomod    │        0        │    -    │         -         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ internal/compat/testdata/go-api/breaking-changed/go.mod │   gomod    │        0        │    -    │         -         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ internal/compat/testdata/go-api/breaking-removed/go.mod │   gomod    │        0        │    -    │         -         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ .docker/github/Dockerfile                               │ dockerfile │        -        │    -    │         0         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ Dockerfile                                              │ dockerfile │        -        │    -    │         0         │    -     │
+├─────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┼───────────────────┼──────────┤
+│ go.mod                                                  │     -      │        -        │    -    │         -         │    0     │
+└─────────────────────────────────────────────────────────┴────────────┴─────────────────┴─────────┴───────────────────┴──────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+private fallback scanners passed (local SAST/posture/actionlint/govulncheck/Trivy)
+
+STDERR:
+go: downloading golang.org/x/vuln v1.1.4
+go: downloading golang.org/x/tools v0.29.0
+go: downloading golang.org/x/telemetry v0.0.0-20240522233618-39ace7a40ae7
+go: downloading golang.org/x/mod v0.22.0
+go: downloading golang.org/x/sync v0.10.0
+2026-07-13T22:46:45+05:30	INFO	[vuln] Vulnerability scanning is enabled
+2026-07-13T22:46:45+05:30	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-07-13T22:46:45+05:30	INFO	[checks-client] Using existing checks from cache	path="/Users/qatoolist/Library/Caches/trivy/policy/content"
+2026-07-13T22:46:45+05:30	INFO	[secret] Secret scanning is enabled
+2026-07-13T22:46:45+05:30	INFO	[secret] If your scanning is slow, please try '--scanners vuln,misconfig,license' to disable secret scanning
+2026-07-13T22:46:45+05:30	INFO	[secret] Please see https://trivy.dev/docs/v0.72/guide/scanner/secret#recommendation for faster secret detection
+2026-07-13T22:46:45+05:30	INFO	[license] License scanning is enabled
+2026-07-13T22:46:48+05:30	INFO	Number of language-specific files	num=5
+2026-07-13T22:46:48+05:30	INFO	[gomod] Detecting vulnerabilities...
+2026-07-13T22:46:48+05:30	INFO	Detected config files	num=2
+2026-07-13T22:46:48+05:30	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.72/guide/scanner/vulnerability#severity-selection for details.

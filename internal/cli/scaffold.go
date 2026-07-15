@@ -44,7 +44,7 @@ func renderToFile(destPath, tmplName string, data any, force bool) error {
 			return fmt.Errorf("file already exists: %s (use --force to overwrite)", destPath)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil { // #nosec G301 -- scaffolded project directories are user source trees, world-readable by design
 		return err
 	}
 	var buf bytes.Buffer
@@ -61,7 +61,7 @@ func renderToFile(destPath, tmplName string, data any, force bool) error {
 		}
 		out = formatted
 	}
-	return os.WriteFile(destPath, out, 0o644)
+	return os.WriteFile(destPath, out, 0o644) // #nosec G306 -- scaffolded files are the user's project source, world-readable by design
 }
 
 // writeEmpty writes an empty file to destPath, creating parent dirs.
@@ -72,10 +72,10 @@ func writeEmpty(destPath string, force bool) error {
 			return nil // already exists, skip
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil { // #nosec G301 -- scaffolded project directories are user source trees, world-readable by design
 		return err
 	}
-	return os.WriteFile(destPath, nil, 0o644)
+	return os.WriteFile(destPath, nil, 0o644) // #nosec G306 -- scaffolded placeholder is project source, world-readable by design
 }
 
 // toCamel converts a snake_case identifier to CamelCase.

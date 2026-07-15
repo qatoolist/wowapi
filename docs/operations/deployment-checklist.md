@@ -85,13 +85,14 @@ resource types, relationship types) must also be synced into the database, or ev
 resource writes fail their FK. See
 [Database & Migrations § Seeds](../user-guide/database-migrations.md#seeds-declarative-yaml-catalogs).
 
-- [ ] The generated `cmd/migrate up` (`make migrate-up`) runs `seeds.Sync` automatically after
+- [ ] The generated `cmd/migrate up` (`make migrate-up`) runs `seeds.Apply` automatically after
       migrations — confirm your deploy pipeline still calls this and hasn't replaced it with a custom
       migrate step that drops the sync.
 - [ ] If you run `wowapi seed sync` standalone instead, it's part of the deploy pipeline, not a one-time
       setup step — run it on every deploy (idempotent).
-- [ ] Confirm the api process's `/readyz` includes the `seeds` check (`app.CatalogsSeeded`) so a pod
-      that skipped seed sync fails readiness with an actionable message instead of taking traffic.
+- [ ] Confirm the api process's `/readyz` includes the `seed_catalogs` check (`app.ReadinessWithCatalogs`)
+      so a pod that skipped seed sync fails readiness with an actionable message instead of taking traffic.
+- [ ] Confirm `/readyz` reports `details.seed_catalog_hash` after seed-sync has run, for drift correlation.
 
 ## 6. Rate limiting
 

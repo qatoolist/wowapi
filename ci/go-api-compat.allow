@@ -1,0 +1,141 @@
+# Exact apidiff diagnostics reviewed for the additive v1 compatibility layer.
+# Most entries are type-alias relocations from kernel/* to foundation/*; the
+# remaining named comparability diagnostics cover additive slice/map fields.
+# The gate rejects new diagnostics and stale entries.
+- ./kernel/bulk.ItemFunc: changed from ItemFunc to github.com/qatoolist/wowapi/foundation/bulk.ItemFunc
+- ./kernel/bulk.New: changed from func(github.com/qatoolist/wowapi/kernel/model.IDGen) *Service to func(github.com/qatoolist/wowapi/kernel/model.IDGen) *Service
+- ./kernel/bulk.Progress: changed from Progress to github.com/qatoolist/wowapi/foundation/bulk.Progress
+- ./kernel/bulk.Service: changed from Service to github.com/qatoolist/wowapi/foundation/bulk.Service
+- ./kernel/comment.Comment: changed from Comment to github.com/qatoolist/wowapi/foundation/comment.Comment
+- ./kernel/comment.CreateIn: changed from CreateIn to github.com/qatoolist/wowapi/foundation/comment.CreateIn
+- ./kernel/comment.New: changed from func(github.com/qatoolist/wowapi/kernel/model.IDGen, github.com/qatoolist/wowapi/kernel/outbox.Writer) *Service to func(github.com/qatoolist/wowapi/kernel/model.IDGen, github.com/qatoolist/wowapi/kernel/outbox.Writer) *Service
+- ./kernel/comment.Service: changed from Service to github.com/qatoolist/wowapi/foundation/comment.Service
+- ./kernel/artifact.Artifact: changed from Artifact to github.com/qatoolist/wowapi/foundation/artifact.Artifact
+- ./kernel/artifact.Input: changed from Input to github.com/qatoolist/wowapi/foundation/artifact.Input
+- ./kernel/artifact.New: changed from func(github.com/qatoolist/wowapi/kernel/model.IDGen) *Pipeline to func(github.com/qatoolist/wowapi/kernel/model.IDGen) *Pipeline
+- ./kernel/artifact.NewTemplates: changed from func() *Templates to func() *Templates
+- ./kernel/artifact.Pipeline: changed from Pipeline to github.com/qatoolist/wowapi/foundation/artifact.Pipeline
+- ./kernel/artifact.TemplateVersion: changed from TemplateVersion to github.com/qatoolist/wowapi/foundation/artifact.TemplateVersion
+- ./kernel/artifact.Templates: changed from Templates to github.com/qatoolist/wowapi/foundation/artifact.Templates
+- ./kernel/integration.Config: changed from Config to github.com/qatoolist/wowapi/foundation/integration.Config
+- ./kernel/integration.NewRegistry: changed from func() *Registry to func() *Registry
+- ./kernel/integration.NewStore: changed from func(*Registry, github.com/qatoolist/wowapi/kernel/secrets.Provider, github.com/qatoolist/wowapi/kernel/model.IDGen) *Store to func(*Registry, github.com/qatoolist/wowapi/kernel/secrets.Provider, github.com/qatoolist/wowapi/kernel/model.IDGen) *Store
+- ./kernel/integration.Provider: changed from Provider to github.com/qatoolist/wowapi/foundation/integration.Provider
+- ./kernel/integration.Registry: changed from Registry to github.com/qatoolist/wowapi/foundation/integration.Registry
+- ./kernel/integration.Store: changed from Store to github.com/qatoolist/wowapi/foundation/integration.Store
+- ./kernel/integration.UpsertIn: changed from UpsertIn to github.com/qatoolist/wowapi/foundation/integration.UpsertIn
+- ./kernel/notify.Channel: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.ChannelDest: changed from ChannelDest to github.com/qatoolist/wowapi/foundation/notify.ChannelDest
+- ./kernel/notify.ChannelEmail: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.ChannelInApp: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.ChannelPush: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.ChannelSMS: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.ChannelSender: changed from ChannelSender to github.com/qatoolist/wowapi/foundation/notify.ChannelSender
+- ./kernel/notify.ChannelWhatsApp: changed from Channel to github.com/qatoolist/wowapi/foundation/notify.Channel
+- ./kernel/notify.Delivery: changed from Delivery to github.com/qatoolist/wowapi/foundation/notify.Delivery
+- ./kernel/notify.DeliveryReceipt: changed from DeliveryReceipt to github.com/qatoolist/wowapi/foundation/notify.DeliveryReceipt
+- ./kernel/notify.FakeSender: changed from FakeSender to github.com/qatoolist/wowapi/foundation/notify.FakeSender
+- ./kernel/notify.Importance: changed from Importance to github.com/qatoolist/wowapi/foundation/notify.Importance
+- ./kernel/notify.ImportanceImportant: changed from Importance to github.com/qatoolist/wowapi/foundation/notify.Importance
+- ./kernel/notify.ImportanceLegal: changed from Importance to github.com/qatoolist/wowapi/foundation/notify.Importance
+- ./kernel/notify.ImportanceNormal: changed from Importance to github.com/qatoolist/wowapi/foundation/notify.Importance
+- ./kernel/notify.Message: changed from Message to github.com/qatoolist/wowapi/foundation/notify.Message
+- ./kernel/notify.New: changed from func(*Registry, github.com/qatoolist/wowapi/kernel/model.IDGen, ...Option) *Service to func(*Registry, github.com/qatoolist/wowapi/kernel/model.IDGen, ...Option) *Service
+- ./kernel/notify.NewRegistry: changed from func() *Registry to func() *Registry
+- ./kernel/notify.Notification: changed from Notification to github.com/qatoolist/wowapi/foundation/notify.Notification
+- ./kernel/notify.Option: changed from Option to github.com/qatoolist/wowapi/foundation/notify.Option
+- ./kernel/notify.Registry: changed from Registry to github.com/qatoolist/wowapi/foundation/notify.Registry
+- ./kernel/notify.RenderBody: changed from func(TemplateSpec, Channel, string, map[string]any) (string, error) to func(TemplateSpec, Channel, string, map[string]any) (string, error)
+- ./kernel/notify.Service: changed from Service to github.com/qatoolist/wowapi/foundation/notify.Service
+- ./kernel/notify.TemplateSpec: changed from TemplateSpec to github.com/qatoolist/wowapi/foundation/notify.TemplateSpec
+- ./kernel/notify.ValidateBody: changed from func(TemplateSpec, string) error to func(TemplateSpec, string) error
+- ./kernel/notify.WithTracer: changed from func(github.com/qatoolist/wowapi/kernel/observability.Tracer) Option to func(github.com/qatoolist/wowapi/kernel/observability.Tracer) Option
+- ./kernel/jobs.WithRunnerTracer: changed from func(github.com/qatoolist/wowapi/kernel/observability.Tracer) RunnerOpt to func(github.com/qatoolist/wowapi/kernel/observability.Tracer) RunnerOpt
+- ./kernel/jobs.WithTracer: changed from func(github.com/qatoolist/wowapi/kernel/observability.Tracer) Opt to func(github.com/qatoolist/wowapi/kernel/observability.Tracer) Opt
+- ./kernel/config.SharedSection: old is comparable, new is not
+- ./kernel/authz.Permission: old is comparable, new is not
+- ./kernel/storage.PresignedURL: old is comparable, new is not
+- ./kernel/webhook.Endpoint: changed from Endpoint to github.com/qatoolist/wowapi/foundation/webhook.Endpoint
+- ./kernel/webhook.Event: changed from Event to github.com/qatoolist/wowapi/foundation/webhook.Event
+- ./kernel/webhook.FakeSecretResolver: changed from FakeSecretResolver to github.com/qatoolist/wowapi/foundation/webhook.FakeSecretResolver
+- ./kernel/webhook.FakeSender: changed from FakeSender to github.com/qatoolist/wowapi/foundation/webhook.FakeSender
+- ./kernel/webhook.FakeVerifier: changed from FakeVerifier to github.com/qatoolist/wowapi/foundation/webhook.FakeVerifier
+- ./kernel/webhook.HMACVerifier: changed from HMACVerifier to github.com/qatoolist/wowapi/foundation/webhook.HMACVerifier
+- ./kernel/webhook.HTTPSender: changed from HTTPSender to github.com/qatoolist/wowapi/foundation/webhook.HTTPSender
+- ./kernel/webhook.InboundHandler: changed from InboundHandler to github.com/qatoolist/wowapi/foundation/webhook.InboundHandler
+- ./kernel/webhook.InboundIn: changed from InboundIn to github.com/qatoolist/wowapi/foundation/webhook.InboundIn
+- ./kernel/webhook.New: changed from func(Sender, SecretResolver, github.com/qatoolist/wowapi/kernel/model.IDGen, ...Option) *Service to func(Sender, SecretResolver, github.com/qatoolist/wowapi/kernel/model.IDGen, ...Option) *Service
+- ./kernel/webhook.NewHTTPSender: changed from func() *HTTPSender to func() *HTTPSender
+- ./kernel/webhook.NewWithClock: changed from func(Sender, SecretResolver, github.com/qatoolist/wowapi/kernel/model.IDGen, func() time.Time, ...Option) *Service to func(Sender, SecretResolver, github.com/qatoolist/wowapi/kernel/model.IDGen, func() time.Time, ...Option) *Service
+- ./kernel/webhook.Option: changed from Option to github.com/qatoolist/wowapi/foundation/webhook.Option
+- ./kernel/webhook.SecretResolver: changed from SecretResolver to github.com/qatoolist/wowapi/foundation/webhook.SecretResolver
+- ./kernel/webhook.Sender: changed from Sender to github.com/qatoolist/wowapi/foundation/webhook.Sender
+- ./kernel/webhook.SentCall: changed from SentCall to github.com/qatoolist/wowapi/foundation/webhook.SentCall
+- ./kernel/webhook.Service: changed from Service to github.com/qatoolist/wowapi/foundation/webhook.Service
+- ./kernel/webhook.Verifier: changed from Verifier to github.com/qatoolist/wowapi/foundation/webhook.Verifier
+- ./kernel/webhook.WithMetrics: changed from func(github.com/qatoolist/wowapi/kernel/observability.Metrics) Option to func(github.com/qatoolist/wowapi/kernel/observability.Metrics) Option
+- ./testkit.tokenConfig: old is comparable, new is not
+- ./kernel/observability.NoOpTracer: changed from Tracer to github.com/qatoolist/wowapi/kernel/tracing.Tracer
+- ./kernel/observability.Span: changed from Span to github.com/qatoolist/wowapi/kernel/tracing.Span
+- ./kernel/observability.Trace: changed from func(Tracer) github.com/qatoolist/wowapi/kernel/httpx.Middleware to func(Tracer) github.com/qatoolist/wowapi/kernel/httpx.Middleware
+- ./kernel/observability.Tracer: changed from Tracer to github.com/qatoolist/wowapi/kernel/tracing.Tracer
+- ./kernel.Deps.Tracer: changed from github.com/qatoolist/wowapi/kernel/observability.Tracer to github.com/qatoolist/wowapi/kernel/tracing.Tracer
+- ./kernel.Deps.WebhookSender: changed from github.com/qatoolist/wowapi/kernel/webhook.Sender to github.com/qatoolist/wowapi/foundation/webhook.Sender
+- ./kernel.Deps: old is comparable, new is not
+- ./kernel.Kernel.Artifacts: changed from *github.com/qatoolist/wowapi/kernel/artifact.Pipeline to *github.com/qatoolist/wowapi/foundation/artifact.Pipeline
+- ./kernel.Kernel.Attachments: changed from *github.com/qatoolist/wowapi/kernel/attachment.Service to *github.com/qatoolist/wowapi/foundation/attachment.Service
+- ./kernel.Kernel.Bulk: changed from *github.com/qatoolist/wowapi/kernel/bulk.Service to *github.com/qatoolist/wowapi/foundation/bulk.Service
+- ./kernel.Kernel.Comments: changed from *github.com/qatoolist/wowapi/kernel/comment.Service to *github.com/qatoolist/wowapi/foundation/comment.Service
+- ./kernel.Kernel.DocumentClasses: changed from *github.com/qatoolist/wowapi/kernel/document.Registry to *github.com/qatoolist/wowapi/foundation/document.Registry
+- ./kernel.Kernel.DocumentHooks: changed from *github.com/qatoolist/wowapi/kernel/document.Hooks to *github.com/qatoolist/wowapi/foundation/document.Hooks
+- ./kernel.Kernel.Documents: changed from *github.com/qatoolist/wowapi/kernel/document.Service to *github.com/qatoolist/wowapi/foundation/document.Service
+- ./kernel.Kernel.IntegrationProviders: changed from *github.com/qatoolist/wowapi/kernel/integration.Registry to *github.com/qatoolist/wowapi/foundation/integration.Registry
+- ./kernel.Kernel.Integrations: changed from *github.com/qatoolist/wowapi/kernel/integration.Store to *github.com/qatoolist/wowapi/foundation/integration.Store
+- ./kernel.Kernel.Notify: changed from *github.com/qatoolist/wowapi/kernel/notify.Service to *github.com/qatoolist/wowapi/foundation/notify.Service
+- ./kernel.Kernel.NotifyTemplates: changed from *github.com/qatoolist/wowapi/kernel/notify.Registry to *github.com/qatoolist/wowapi/foundation/notify.Registry
+- ./kernel.Kernel.Tracer: changed from github.com/qatoolist/wowapi/kernel/observability.Tracer to github.com/qatoolist/wowapi/kernel/tracing.Tracer
+- ./kernel.Kernel.Webhooks: changed from *github.com/qatoolist/wowapi/kernel/webhook.Service to *github.com/qatoolist/wowapi/foundation/webhook.Service
+- ./app.bootOpts: old is comparable, new is not
+- ./adapters/tracing/otel.(*Tracer).StartSpan: changed from func(context.Context, string) (context.Context, github.com/qatoolist/wowapi/kernel/observability.Span) to func(context.Context, string) (context.Context, github.com/qatoolist/wowapi/kernel/observability.Span)
+- ./kernel/outbox.WithRelayTracer: changed from func(github.com/qatoolist/wowapi/kernel/observability.Tracer) RelayOption to func(github.com/qatoolist/wowapi/kernel/observability.Tracer) RelayOption
+- ./kernel/outbox.WithWriterTracer: changed from func(github.com/qatoolist/wowapi/kernel/observability.Tracer) WriterOption to func(github.com/qatoolist/wowapi/kernel/observability.Tracer) WriterOption
+- ./kernel/audit.Log: old is comparable, new is not
+- ./kernel/document.AccessEvent: changed from AccessEvent to github.com/qatoolist/wowapi/foundation/document.AccessEvent
+- ./kernel/document.AccessHook: changed from AccessHook to github.com/qatoolist/wowapi/foundation/document.AccessHook
+- ./kernel/document.Class: changed from Class to github.com/qatoolist/wowapi/foundation/document.Class
+- ./kernel/document.ConfirmInput: changed from ConfirmInput to github.com/qatoolist/wowapi/foundation/document.ConfirmInput
+- ./kernel/document.CreateInput: changed from CreateInput to github.com/qatoolist/wowapi/foundation/document.CreateInput
+- ./kernel/document.Download: changed from Download to github.com/qatoolist/wowapi/foundation/document.Download
+- ./kernel/document.DownloadInput: changed from DownloadInput to github.com/qatoolist/wowapi/foundation/document.DownloadInput
+- ./kernel/document.GrantInput: changed from GrantInput to github.com/qatoolist/wowapi/foundation/document.GrantInput
+- ./kernel/document.Hooks: changed from Hooks to github.com/qatoolist/wowapi/foundation/document.Hooks
+- ./kernel/document.New: changed from func(*Registry, github.com/qatoolist/wowapi/kernel/storage.Adapter, github.com/qatoolist/wowapi/kernel/authz.Evaluator, github.com/qatoolist/wowapi/kernel/outbox.Writer, *Hooks, github.com/qatoolist/wowapi/kernel/model.IDGen) *Service to func(*Registry, github.com/qatoolist/wowapi/kernel/storage.Adapter, github.com/qatoolist/wowapi/kernel/authz.Evaluator, github.com/qatoolist/wowapi/kernel/outbox.Writer, *Hooks, github.com/qatoolist/wowapi/kernel/model.IDGen) *Service
+- ./kernel/document.NewHooks: changed from func() *Hooks to func() *Hooks
+- ./kernel/document.NewRegistry: changed from func() *Registry to func() *Registry
+- ./kernel/document.Registry: changed from Registry to github.com/qatoolist/wowapi/foundation/document.Registry
+- ./kernel/document.Sensitivity: changed from Sensitivity to github.com/qatoolist/wowapi/foundation/document.Sensitivity
+- ./kernel/document.SensitivityConfidential: changed from Sensitivity to github.com/qatoolist/wowapi/foundation/document.Sensitivity
+- ./kernel/document.SensitivityInternal: changed from Sensitivity to github.com/qatoolist/wowapi/foundation/document.Sensitivity
+- ./kernel/document.SensitivityPublic: changed from Sensitivity to github.com/qatoolist/wowapi/foundation/document.Sensitivity
+- ./kernel/document.SensitivityRestricted: changed from Sensitivity to github.com/qatoolist/wowapi/foundation/document.Sensitivity
+- ./kernel/document.Service: changed from Service to github.com/qatoolist/wowapi/foundation/document.Service
+- ./kernel/document.UploadEvent: changed from UploadEvent to github.com/qatoolist/wowapi/foundation/document.UploadEvent
+- ./kernel/document.UploadHook: changed from UploadHook to github.com/qatoolist/wowapi/foundation/document.UploadHook
+- ./kernel/document.UploadSession: changed from UploadSession to github.com/qatoolist/wowapi/foundation/document.UploadSession
+- ./kernel/seeds.PermissionSeed: old is comparable, new is not
+- ./module.Context.Artifacts: changed from func() *github.com/qatoolist/wowapi/kernel/artifact.Pipeline to func() *github.com/qatoolist/wowapi/foundation/artifact.Pipeline
+- ./module.Context.Attachments: changed from func() *github.com/qatoolist/wowapi/kernel/attachment.Service to func() *github.com/qatoolist/wowapi/foundation/attachment.Service
+- ./module.Context.Bulk: changed from func() *github.com/qatoolist/wowapi/kernel/bulk.Service to func() *github.com/qatoolist/wowapi/foundation/bulk.Service
+- ./module.Context.Comments: changed from func() *github.com/qatoolist/wowapi/kernel/comment.Service to func() *github.com/qatoolist/wowapi/foundation/comment.Service
+- ./module.Context.DocumentClasses: changed from func() *github.com/qatoolist/wowapi/kernel/document.Registry to func() *github.com/qatoolist/wowapi/foundation/document.Registry
+- ./module.Context.DocumentHooks: changed from func() *github.com/qatoolist/wowapi/kernel/document.Hooks to func() *github.com/qatoolist/wowapi/foundation/document.Hooks
+- ./module.Context.Documents: changed from func() *github.com/qatoolist/wowapi/kernel/document.Service to func() *github.com/qatoolist/wowapi/foundation/document.Service
+- ./module.Context.IntegrationProviders: changed from func() *github.com/qatoolist/wowapi/kernel/integration.Registry to func() *github.com/qatoolist/wowapi/foundation/integration.Registry
+- ./module.Context.Integrations: changed from func() *github.com/qatoolist/wowapi/kernel/integration.Store to func() *github.com/qatoolist/wowapi/foundation/integration.Store
+- ./module.Context.Notify: changed from func() *github.com/qatoolist/wowapi/kernel/notify.Service to func() *github.com/qatoolist/wowapi/foundation/notify.Service
+- ./module.Context.NotifyTemplates: changed from func() *github.com/qatoolist/wowapi/kernel/notify.Registry to func() *github.com/qatoolist/wowapi/foundation/notify.Registry
+- ./module.Context.Webhooks: changed from func() *github.com/qatoolist/wowapi/kernel/webhook.Service to func() *github.com/qatoolist/wowapi/foundation/webhook.Service
+- ./kernel/attachment.AttachIn: changed from AttachIn to github.com/qatoolist/wowapi/foundation/attachment.AttachIn
+- ./kernel/attachment.Attachment: changed from Attachment to github.com/qatoolist/wowapi/foundation/attachment.Attachment
+- ./kernel/attachment.New: changed from func(github.com/qatoolist/wowapi/kernel/model.IDGen, github.com/qatoolist/wowapi/kernel/outbox.Writer) *Service to func(github.com/qatoolist/wowapi/kernel/model.IDGen, github.com/qatoolist/wowapi/kernel/outbox.Writer) *Service
+- ./kernel/attachment.Service: changed from Service to github.com/qatoolist/wowapi/foundation/attachment.Service

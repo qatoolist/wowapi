@@ -72,19 +72,19 @@ func TestIntegrationPrivilegedConfigAllowListWiredThroughContext(t *testing.T) {
 
 	// 1. WITH config allow-list: committee manages the kernel "core.owner_of"
 	// type through the privileged service — tenant-bound, still audited.
-	id, err := committeeCtx.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+	id, err := committeeCtx.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
 		RelType: "core.owner_of", SubjectKind: relationship.KindCapacity, SubjectID: cap1,
 		Object: resource.Ref{Type: obj.Type, ID: obj.ID}, Actor: user,
 	})
 	if err != nil {
 		t.Fatalf("committee (allow-listed) Grant of core.owner_of: %v", err)
 	}
-	if err := committeeCtx.Privileged().Relationships().Revoke(ctx, id, user); err != nil {
+	if err := committeeCtx.(module.PrivilegedContext).Privileged().Relationships().Revoke(ctx, id, user); err != nil {
 		t.Fatalf("committee Revoke: %v", err)
 	}
 
 	// committee still owns its OWN prefix — allow-list widens, does not replace.
-	if _, err := committeeCtx.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+	if _, err := committeeCtx.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
 		RelType: "committee.seat_of", SubjectKind: relationship.KindCapacity, SubjectID: cap1,
 		Object: resource.Ref{Type: obj.Type, ID: obj.ID}, Actor: user,
 	}); err != nil {
@@ -93,7 +93,7 @@ func TestIntegrationPrivilegedConfigAllowListWiredThroughContext(t *testing.T) {
 
 	// 2. WITHOUT config (module "other" has no Privileged entry): unchanged —
 	// only prefix-owned keys, still denied the kernel type AND committee's type.
-	if _, err := otherCtx.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+	if _, err := otherCtx.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
 		RelType: "core.owner_of", SubjectKind: relationship.KindCapacity, SubjectID: cap1,
 		Object: resource.Ref{Type: obj.Type, ID: obj.ID}, Actor: user,
 	}); kerr.KindOf(err) != kerr.KindForbidden {
@@ -101,7 +101,7 @@ func TestIntegrationPrivilegedConfigAllowListWiredThroughContext(t *testing.T) {
 	}
 
 	// 3. Cross-module isolation: committee's allow-list must not leak to other.
-	if _, err := otherCtx.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+	if _, err := otherCtx.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
 		RelType: "committee.seat_of", SubjectKind: relationship.KindCapacity, SubjectID: cap1,
 		Object: resource.Ref{Type: obj.Type, ID: obj.ID}, Actor: user,
 	}); kerr.KindOf(err) != kerr.KindForbidden {
@@ -134,7 +134,7 @@ func TestIntegrationPrivilegedConfigNoEntryUnchanged(t *testing.T) {
 	obj := testkit.CreateResourceTypeAndResource(t, h, tenant, "committee.committee")
 	ctx := testkit.TenantCtx(tenant)
 
-	if _, err := mc.Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
+	if _, err := mc.(module.PrivilegedContext).Privileged().Relationships().Grant(ctx, privileged.GrantSpec{
 		RelType: "core.owner_of", SubjectKind: relationship.KindCapacity, SubjectID: cap1,
 		Object: resource.Ref{Type: obj.Type, ID: obj.ID}, Actor: user,
 	}); kerr.KindOf(err) != kerr.KindForbidden {

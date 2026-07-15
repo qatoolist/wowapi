@@ -1,0 +1,23 @@
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/persons_party_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/legal_entities_party_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/party_contacts_party_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/acting_capacities_party_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/resources_org_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/document_versions_document_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/document_access_grants_document_id
+=== RUN   TestIntegrationTenantFKCrossTenantInsertBlocked/attachments_document_version_id
+--- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked (0.47s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/persons_party_id (0.06s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/legal_entities_party_id (0.02s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/party_contacts_party_id (0.03s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/acting_capacities_party_id (0.05s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/resources_org_id (0.05s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/document_versions_document_id (0.03s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/document_access_grants_document_id (0.04s)
+    --- PASS: TestIntegrationTenantFKCrossTenantInsertBlocked/attachments_document_version_id (0.03s)
+PASS
+ok  	github.com/qatoolist/wowapi/testkit	0.771s
+testing: warning: no tests to run
+PASS
+ok  	github.com/qatoolist/wowapi/testkit/fakes	0.482s [no tests to run]

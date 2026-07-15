@@ -1,0 +1,16 @@
+{
+  "evidence_id": "EV-W07-E01-S002-003",
+  "task": "W07-E01-S002-T003",
+  "acceptance_criteria": ["AC-W07-E01-S002-03"],
+  "executed_at": "2026-07-14",
+  "base_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "working_tree_measurement": true,
+  "environment": "real PostgreSQL 16.14 container; WOWAPI_REQUIRE_DB=1",
+  "command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 WOWAPI_UPDATE_EXPLAIN_FIXTURES=1 go test ./kernel/rules -run TestIntegrationResolverExplainFixtures -count=1 -v",
+  "result": "pass",
+  "current_predicate_index": "active-only GiST exclusion index defined by migrations/00008_rules.sql",
+  "historical_predicate_index": "rule_versions_history_resolution_idx defined by migrations/00048_rule_versions_resolution_indexes.sql",
+  "rule_versions_sequential_scans": 0,
+  "fixtures_checked": 4,
+  "skipped": false
+}

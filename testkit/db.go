@@ -76,11 +76,24 @@ var (
 	tmplCopyMu sync.Mutex
 )
 
-// NewDB provisions an exclusive database for t cloned from the migrated kernel
-// template, returning admin + runtime pools and a TxManager over runtime. It
-// skips (never fails) when no admin DSN is configured. Accepts testing.TB so
-// both tests and benchmarks (Benchmark* over the DB-backed hot paths) share it.
+// DBOptions customizes the runtime and platform pools created by NewDBWithOptions.
+// It exists for integration tests that need to observe real pgx query traffic;
+// production pool construction remains owned by kernel/database.
+type DBOptions struct {
+	RuntimePool  []database.Option
+	PlatformPool []database.Option
+}
+
+// NewDB provisions an exclusive database with the default runtime and platform
+// pool configuration.
 func NewDB(t testing.TB) *DBHandle {
+	t.Helper()
+	return NewDBWithOptions(t, DBOptions{})
+}
+
+// NewDBWithOptions provisions an exclusive database while applying additional
+// pool options. The standard RLS guard remains enabled for the runtime pool.
+func NewDBWithOptions(t testing.TB, opts DBOptions) *DBHandle {
 	t.Helper()
 	dsn := adminDSN(t)
 	ctx := context.Background()
@@ -104,8 +117,10 @@ func NewDB(t testing.TB) *DBHandle {
 	// WithConnRLSGuard refuses the connection if the effective role somehow
 	// bypasses RLS (SEC-12); the TxManager re-asserts the role and guards each
 	// transaction — the same wiring product api/worker processes use.
-	runtime, err := runtimePoolDB(ctx, dsn, name, 4,
-		database.WithConnRLSGuard())
+	runtimeOpts := make([]database.Option, 0, len(opts.RuntimePool)+1)
+	runtimeOpts = append(runtimeOpts, database.WithConnRLSGuard())
+	runtimeOpts = append(runtimeOpts, opts.RuntimePool...)
+	runtime, err := runtimePoolDB(ctx, dsn, name, 4, runtimeOpts...)
 	if err != nil {
 		admin.Close()
 		dropTestDB(context.Background(), dsn, name)
@@ -115,7 +130,7 @@ func NewDB(t testing.TB) *DBHandle {
 	// the catalog grants (SEC-13) but NOT app_rt's, so a contract seed sync runs
 	// under exactly the privilege a real platform sync has — a seed needing a
 	// grant app_platform lacks fails here instead of in production (SEC-33).
-	platform, err := platformPoolDB(ctx, dsn, name, 2)
+	platform, err := platformPoolDB(ctx, dsn, name, 2, opts.PlatformPool...)
 	if err != nil {
 		runtime.Close()
 		admin.Close()
@@ -372,12 +387,16 @@ func testDBName(t testing.TB) string {
 // The password is local-test-only and never leaves the harness (it is set by
 // buildTemplate via ALTER ROLE, not by any committed migration).
 const (
-	runtimeRole         = "app_rt"
+	runtimeRole = "app_rt"
+	// #nosec G101 -- local-test-only password: set via ALTER ROLE inside the
+	// throwaway test database (buildTemplate); never a committed production
+	// credential, never leaves the harness.
 	runtimeRolePassword = "app_rt_testkit_local"
 	// platformRole is the catalog/seed role (app_platform): it holds the global
 	// catalog grants but NOT app_rt's, so seed sync runs under the real
 	// platform privilege (SEC-33). Local-test-only password, never committed.
-	platformRole         = "app_platform"
+	platformRole = "app_platform"
+	// #nosec G101 -- same local-test-only harness credential as above.
 	platformRolePassword = "app_platform_testkit_local"
 )
 

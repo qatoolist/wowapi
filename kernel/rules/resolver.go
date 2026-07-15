@@ -70,37 +70,100 @@ func (r *Resolver) Resolve(ctx context.Context, db database.TenantDB, key string
 			"resolved an unregistered rule point: "+key)
 	}
 
-	// Org scope: walk ancestry nearest-first, taking the first org that has an
-	// active version at `at`.
+	var ancestors []uuid.UUID
 	if org != uuid.Nil && r.ancestry != nil {
-		ancestors, err := r.ancestry(ctx, db, org)
+		var err error
+		ancestors, err = r.ancestry(ctx, db, org)
 		if err != nil {
 			return Resolved{}, kerr.Wrapf(err, "rules.Resolve", "org ancestry")
 		}
-		for _, oid := range ancestors {
-			if res, found, err := r.lookup(ctx, db, key, ScopeOrg, oid, at); err != nil {
-				return Resolved{}, err
-			} else if found {
-				return validateResolved(point, res)
-			}
-		}
 	}
 
-	// Tenant scope.
-	if res, found, err := r.lookup(ctx, db, key, ScopeTenant, uuid.Nil, at); err != nil {
-		return Resolved{}, err
-	} else if found {
-		return validateResolved(point, res)
+	var (
+		id    uuid.UUID
+		val   []byte
+		scope string
+	)
+	err := db.QueryRow(ctx, resolveVersionSQL, key, ancestors, at).Scan(&id, &val, &scope)
+	if err != nil {
+		if isNoRows(err) {
+			// Code default: already validated against this schema at Register.
+			return Resolved{Key: key, Value: point.Default, IsDefault: true}, nil
+		}
+		return Resolved{}, kerr.Wrapf(err, "rules.Resolve", "lookup %s", key)
 	}
-	// Platform scope.
-	if res, found, err := r.lookup(ctx, db, key, ScopePlatform, uuid.Nil, at); err != nil {
-		return Resolved{}, err
-	} else if found {
-		return validateResolved(point, res)
-	}
-	// Code default: already validated against this schema at Register.
-	return Resolved{Key: key, Value: point.Default, IsDefault: true}, nil
+	return validateResolved(point, Resolved{
+		Key: key, Value: json.RawMessage(val), Scope: ScopeKind(scope), VersionID: id,
+	})
 }
+
+// resolveVersionSQL evaluates every eligible org, tenant, and platform version
+// in one statement. WITH ORDINALITY preserves the ancestry callback's
+// nearest-first order; tenant and platform are assigned priorities after every
+// org. The final effective_from ordering retains the historical lookup rule
+// within one scope. RLS continues to constrain tenant/platform visibility.
+const resolveVersionSQL = `
+WITH ancestry(scope_id, precedence) AS (
+    SELECT scope_id, precedence
+    FROM unnest($2::uuid[]) WITH ORDINALITY AS a(scope_id, precedence)
+),
+candidates AS (
+    SELECT org_version.id, org_version.value, org_version.scope_kind,
+           org_version.effective_from, a.precedence
+    FROM ancestry a
+    CROSS JOIN LATERAL (
+        SELECT rv.id, rv.value, rv.scope_kind, rv.effective_from
+        FROM rule_versions rv
+        WHERE rv.rule_key = $1
+          AND rv.scope_kind = 'org'
+          AND rv.scope_id = a.scope_id
+          AND rv.status IN ('active','superseded')
+          AND rv.effective_from <= $3
+          AND (rv.effective_to IS NULL OR rv.effective_to > $3)
+        ORDER BY rv.effective_from DESC
+        LIMIT 1
+    ) org_version
+
+    UNION ALL
+
+    SELECT tenant_version.id, tenant_version.value, tenant_version.scope_kind,
+           tenant_version.effective_from,
+           COALESCE(cardinality($2::uuid[]), 0) + 1
+    FROM LATERAL (
+        SELECT rv.id, rv.value, rv.scope_kind, rv.effective_from
+        FROM rule_versions rv
+        WHERE rv.rule_key = $1
+          AND rv.scope_kind = 'tenant'
+          AND rv.scope_id IS NULL
+          AND rv.status IN ('active','superseded')
+          AND rv.effective_from <= $3
+          AND (rv.effective_to IS NULL OR rv.effective_to > $3)
+        ORDER BY rv.effective_from DESC
+        LIMIT 1
+    ) tenant_version
+
+    UNION ALL
+
+    SELECT platform_version.id, platform_version.value, platform_version.scope_kind,
+           platform_version.effective_from,
+           COALESCE(cardinality($2::uuid[]), 0) + 2
+    FROM LATERAL (
+        SELECT rv.id, rv.value, rv.scope_kind, rv.effective_from
+        FROM rule_versions rv
+        WHERE rv.rule_key = $1
+          AND rv.scope_kind = 'platform'
+          AND rv.scope_id IS NULL
+          AND rv.status IN ('active','superseded')
+          AND rv.effective_from <= $3
+          AND (rv.effective_to IS NULL OR rv.effective_to > $3)
+        ORDER BY rv.effective_from DESC
+        LIMIT 1
+    ) platform_version
+)
+SELECT id, value, scope_kind
+FROM candidates
+ORDER BY precedence, effective_from DESC
+LIMIT 1`
 
 // validateResolved re-checks a resolved (non-default) value against the
 // point's current schema, surfacing schema drift as a loud KindInternal
@@ -111,40 +174,4 @@ func validateResolved(point Point, res Resolved) (Resolved, error) {
 			"stored rule value for "+point.Key+" no longer conforms to its current value_schema: "+err.Error())
 	}
 	return res, nil
-}
-
-// lookup finds the version of key that was IN EFFECT at `at` for a scope+id.
-// It considers 'active' AND 'superseded' versions (a superseded version was the
-// effective value during its [effective_from, effective_to) window — excluding
-// it would make any historical `at` inside a closed window fall through to the
-// default, review finding ARCH-60). Draft/pending/rejected are excluded so
-// approval gating holds. The exclusion constraint guarantees one active per
-// instant; the supersession chain partitions the past into non-overlapping
-// windows, so ORDER BY effective_from DESC picks the one covering `at`.
-// RLS scopes the read to the tenant (+ platform rows).
-func (r *Resolver) lookup(ctx context.Context, db database.TenantDB, key string, scope ScopeKind, scopeID uuid.UUID, at time.Time) (Resolved, bool, error) {
-	var (
-		id  uuid.UUID
-		val []byte
-	)
-	var scopeArg any
-	if scopeID != uuid.Nil {
-		scopeArg = scopeID
-	}
-	err := db.QueryRow(ctx,
-		`SELECT id, value FROM rule_versions
-          WHERE rule_key = $1 AND scope_kind = $2
-            AND (scope_id = $3 OR ($3 IS NULL AND scope_id IS NULL))
-            AND status IN ('active','superseded')
-            AND effective_from <= $4 AND (effective_to IS NULL OR effective_to > $4)
-          ORDER BY effective_from DESC
-          LIMIT 1`,
-		key, string(scope), scopeArg, at).Scan(&id, &val)
-	if err != nil {
-		if isNoRows(err) {
-			return Resolved{}, false, nil
-		}
-		return Resolved{}, false, kerr.Wrapf(err, "rules.Resolve", "lookup %s at %s", key, scope)
-	}
-	return Resolved{Key: key, Value: json.RawMessage(val), Scope: scope, VersionID: id}, true, nil
 }

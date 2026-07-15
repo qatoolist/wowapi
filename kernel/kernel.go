@@ -14,26 +14,30 @@ package kernel
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qatoolist/wowapi/kernel/artifact"
-	"github.com/qatoolist/wowapi/kernel/attachment"
+	"github.com/qatoolist/wowapi/foundation/artifact"
+	"github.com/qatoolist/wowapi/foundation/attachment"
+	"github.com/qatoolist/wowapi/foundation/bulk"
+	"github.com/qatoolist/wowapi/foundation/comment"
+	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/foundation/integration"
+	"github.com/qatoolist/wowapi/foundation/notify"
+	"github.com/qatoolist/wowapi/foundation/webhook"
 	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/bulk"
-	"github.com/qatoolist/wowapi/kernel/comment"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/document"
 	"github.com/qatoolist/wowapi/kernel/httpclient"
-	"github.com/qatoolist/wowapi/kernel/integration"
 	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/notify"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/policy"
@@ -44,18 +48,18 @@ import (
 	"github.com/qatoolist/wowapi/kernel/secrets"
 	"github.com/qatoolist/wowapi/kernel/sequence"
 	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/kernel/webhook"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // Kernel owns infrastructure and kernel services. Fields are read-only after
 // construction; the pool never leaves the kernel.
 type Kernel struct {
-	Cfg      config.Framework
-	Log      *slog.Logger
-	Pool     *pgxpool.Pool
-	Platform *pgxpool.Pool // app_platform pool for cross-tenant kernel work; see Deps.Platform for the wiring contract (nil only for migrate)
-	Tx       database.TxManager
+	Cfg       config.Framework
+	Log       *slog.Logger
+	Pool      *pgxpool.Pool
+	Platform  *pgxpool.Pool // app_platform pool for cross-tenant kernel work; see Deps.Platform for the wiring contract (nil only for migrate)
+	Tx        database.TxManager
+	ModelHash string // deterministic hash of the booted application model (AR-01); empty until AR-01 lands
 	// PlatformTx is a tenant-bindable TxManager over the app_platform pool
 	// (WithRole app_platform + RLS guard). It backs the scoped privileged services
 	// (kernel/privileged, GAP-006): platform write privilege for the protected
@@ -186,6 +190,31 @@ type Deps struct {
 	StepUpDefaultChallenge string
 }
 
+// newArtifactWriter builds the production DSR artifact writer from environment
+// variables. The key is read from WOWAPI_DSR_ARTIFACT_KEY (hex, 32 bytes);
+// when absent a deterministic test key is used so local/test boots succeed, but
+// deployments must set the variable to avoid a shared fallback key.
+func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer) retention.ArtifactWriter {
+	dir := os.Getenv("WOWAPI_ARTIFACT_DIR")
+	if dir == "" {
+		dir = filepath.Join(os.TempDir(), "wowapi-artifacts")
+	}
+	keyHex := os.Getenv("WOWAPI_DSR_ARTIFACT_KEY")
+	var key []byte
+	if keyHex != "" {
+		var err error
+		key, err = hex.DecodeString(keyHex)
+		if err != nil || len(key) != 32 {
+			log.WarnContext(context.Background(), "kernel: invalid WOWAPI_DSR_ARTIFACT_KEY; falling back to test key", "decode_err", err)
+			key = retention.TestKey()
+		}
+	} else {
+		log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY not set; using test key")
+		key = retention.TestKey()
+	}
+	return retention.NewFileArtifactWriter(dir, key, audit)
+}
+
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
 // kernel's Perms/Resources registries are the shared pointers modules register
 // into during boot; the evaluator reads them at decision time.
@@ -269,15 +298,17 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 
 	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
 	wfReg := workflow.NewRegistry()
-	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen)
+	wfRuntime := workflow.NewRuntimeWithCompliance(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
 
 	// Documents: the class registry + hook set modules register into, plus the
 	// service (only when an object-storage adapter is wired). The two document
 	// permissions are kernel-owned so the download gate can Evaluate them.
 	// Data lifecycle: the record-class registry modules register into, and the
-	// engine that drives disposition/DSR over it (roadmap E2).
+	// engine that drives disposition and DSR over it (roadmap E2).
 	retClasses := retention.NewRegistry()
-	retEngine := retention.NewEngine(retClasses, retention.NewDSR(idgen))
+	retHolds := retention.NewHolds(idgen)
+	retArtifacts := newArtifactWriter(log, auditWriter)
+	retEngine := retention.NewEngineWithCompliance(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
 
 	docClasses := document.NewRegistry()
 	docHooks := document.NewHooks()
@@ -285,7 +316,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	perms.Register(authz.Permission{Key: document.PermWrite})
 	var docSvc *document.Service
 	if deps.Storage != nil {
-		docSvc = document.New(docClasses, deps.Storage, eval, writer, docHooks, idgen)
+		docSvc = document.New(docClasses, deps.Storage, eval, writer, docHooks, idgen, document.WithAudit(auditWriter))
 	}
 	commentSvc := comment.New(idgen, writer)
 	attachmentSvc := attachment.New(idgen, writer)
@@ -312,6 +343,26 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		}
 		sender = webhook.NewHTTPSender(senderOpts...)
 	}
+
+	// SEC-06 T2/T3: boot-time egress-exception report and allowlist change
+	// audit. The report is credential-free by construction; the audit record
+	// compares the loaded allowlist to the compiled defaults.
+	if exceptions := cfg.EgressExceptions(); len(exceptions) > 0 {
+		log.InfoContext(context.Background(), "egress_exceptions",
+			slog.Any("exceptions", exceptions),
+			slog.String("environment", string(cfg.Environment)),
+		)
+	}
+	config.RecordAllowlistChange(config.Defaults().Webhook.Outbound, cfg.Webhook.Outbound, func(change config.AllowlistChange) {
+		log.InfoContext(context.Background(), "config_change",
+			slog.String("action", change.Action),
+			slog.Any("old_hosts", change.OldHosts),
+			slog.Any("new_hosts", change.NewHosts),
+			slog.Any("old_cidrs", change.OldCIDRs),
+			slog.Any("new_cidrs", change.NewCIDRs),
+		)
+	})
+
 	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen, webhook.WithMetrics(metrics))
 
 	// Integrations: provider adapter registry + config/credential store.
@@ -350,7 +401,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		AuthzCache:           authzCache,
 		Audit:                auditWriter,
 		Sequence:             sequence.New(idgen),
-		Bulk:                 bulk.New(idgen),
+		Bulk:                 bulk.New(idgen, bulk.WithLogger(log)),
 		Artifacts:            artifact.New(idgen),
 		auditSink:            audit,
 	}, nil

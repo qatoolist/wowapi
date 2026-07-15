@@ -2,13 +2,16 @@ name: scorecard
 
 # OpenSSF Scorecard — supply-chain security posture score.
 #
-# Scorecard's value (SARIF in the Security tab + the public results API that
-# backs the README badge) requires a PUBLIC repo or GitHub Advanced Security.
-# The `guard` job skips the analysis until the repo is public/GHAS, so it does
-# not fail on the current private repo; it activates automatically when public.
+# Scorecard's SARIF/public-results path requires a public repo or GHAS. Public
+# pull requests run it on the exact merge SHA so security-scan's hosted-scanner
+# meta-check can fail closed. Non-public repositories use the local posture
+# fallback in security-scan.yml; that narrower fallback does not claim parity.
 on:
   branch_protection_rule:
   push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
     branches: [main]
   schedule:
     - cron: "22 4 * * 1" # Mondays 04:22 UTC

@@ -8,6 +8,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,17 +24,35 @@ import (
 )
 
 // delegateConfigCheck runs the product-local tools/configcheck for mode when it
-// exists in the working directory, forwarding args and stdio. It returns
-// handled=false when no product checker is present so the caller runs the
-// framework-only path.
+// exists in the product root. The product root is discovered via --project, or
+// by running `go env GOMOD` in the current directory, so delegation works from
+// nested subdirectories or outside the repo. It prints an explicit message to
+// stderr reporting whether product validation ran.
+//
+// It returns handled=false when no product checker is present so the caller
+// runs the framework-only path.
 func delegateConfigCheck(mode string, args []string, stdout, stderr io.Writer) (handled bool, code int) {
-	if _, err := os.Stat(filepath.Join("tools", "configcheck", "main.go")); err != nil {
-		return false, 0 // no product checker → framework-only handling
+	root, args, err := resolveProductRoot(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "wowapi config %s: product root discovery: %v\n", mode, err)
+		return false, 0 // fail open to framework-only path
 	}
+
+	checker := filepath.Join(root, "tools", "configcheck", "main.go")
+	if _, err := os.Stat(checker); err != nil {
+		fmt.Fprintf(stderr, "product validation: skipped (no product checker at %s)\n", checker)
+		return false, 0
+	}
+
 	runArgs := append([]string{"run", "./tools/configcheck", mode}, args...)
-	cmd := exec.Command("go", runArgs...)
+	// Deliberate subprocess: the CLI's job here IS to run the product's own
+	// configcheck via the local go toolchain with caller-supplied args (W01-E01
+	// gosec triage). Context-bound so the launch is cancellable in principle.
+	cmd := exec.CommandContext(context.Background(), "go", runArgs...) // #nosec G204 -- runs the repo's own `go run ./tools/configcheck`; args are the CLI caller's own
+	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	fmt.Fprintf(stderr, "product validation: engaged (%s)\n", root)
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -43,6 +62,46 @@ func delegateConfigCheck(mode string, args []string, stdout, stderr io.Writer) (
 		return true, 1
 	}
 	return true, 0
+}
+
+// resolveProductRoot extracts an explicit --project flag from args and, if
+// absent, asks the local Go toolchain for the module root. It returns the root
+// and the remaining args (with --project removed).
+func resolveProductRoot(args []string) (string, []string, error) {
+	root := ""
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--project":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("--project requires a value")
+			}
+			root = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--project="):
+			root = strings.TrimPrefix(a, "--project=")
+		default:
+			out = append(out, a)
+		}
+	}
+	if root != "" {
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			return "", nil, err
+		}
+		return abs, out, nil
+	}
+	cmd := exec.CommandContext(context.Background(), "go", "env", "GOMOD")
+	outBytes, err := cmd.Output()
+	if err != nil {
+		return "", nil, fmt.Errorf("go env GOMOD: %w", err)
+	}
+	mod := strings.TrimSpace(string(outBytes))
+	if mod == "" || mod == "/dev/null" {
+		return "", nil, fmt.Errorf("not inside a Go module (and --project not given)")
+	}
+	return filepath.Dir(mod), out, nil
 }
 
 // runConfigDiff implements `wowapi config diff --from <env> --to <env>`: a

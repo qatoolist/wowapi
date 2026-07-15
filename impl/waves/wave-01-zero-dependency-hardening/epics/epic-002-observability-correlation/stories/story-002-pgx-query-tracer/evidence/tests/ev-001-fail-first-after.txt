@@ -1,0 +1,14 @@
+=== RUN   TestIntegrationQueryTracerChildSpanInTraceTree
+--- PASS: TestIntegrationQueryTracerChildSpanInTraceTree (0.04s)
+=== RUN   TestIntegrationQueryTracerStatementAndRowsAffectedAttrs
+--- PASS: TestIntegrationQueryTracerStatementAndRowsAffectedAttrs (0.01s)
+=== RUN   TestIntegrationQueryTracerMarksFailedQueryErrored
+--- PASS: TestIntegrationQueryTracerMarksFailedQueryErrored (0.01s)
+=== RUN   TestIntegrationQueryTracerDoesNotLeakBoundParameterLiterals
+--- PASS: TestIntegrationQueryTracerDoesNotLeakBoundParameterLiterals (0.01s)
+=== RUN   TestIntegrationQueryTracerRootSpanWithoutParent
+--- PASS: TestIntegrationQueryTracerRootSpanWithoutParent (0.01s)
+=== RUN   TestIntegrationQueryTracerInheritsParentSamplingDecision
+--- PASS: TestIntegrationQueryTracerInheritsParentSamplingDecision (0.01s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/database	1.689s

@@ -5,6 +5,7 @@
 No generic controller. Handlers are small explicit funcs on a struct holding the module's service +
 kernel helpers. The kernel provides *helpers*, the module keeps the *flow* visible.
 
+<!-- doc-example: illustrative -->
 ```go
 // kernel/httpx — the toolbox (signatures)
 func DecodeJSON[T any](r *http.Request, maxBytes int64) (T, error)          // strict: unknown fields rejected
@@ -31,6 +32,7 @@ func (r *Router) Handle(method, pattern string, meta RouteMeta, h http.HandlerFu
 
 ### Canonical module handler
 
+<!-- doc-example: illustrative -->
 ```go
 type Handlers struct {
     svc  *app.Service            // module service
@@ -61,6 +63,7 @@ validate shape, tx/idempotency wrapper, map to DTO; service = everything busines
 
 ## 2. Persistence helpers (`kernel/database`)
 
+<!-- doc-example: illustrative -->
 ```go
 // TxManager is the ONLY door to the database for tenant work.
 type TxManager interface {
@@ -116,6 +119,7 @@ type Allowlist map[string]filtering.FieldSpec              // "status": {Col: "s
 
 ## 3. Service / use-case conventions (module `app/`)
 
+<!-- doc-example: illustrative -->
 ```go
 // commands.go / queries.go — plain structs, no behavior:
 type CreateRequestCommand struct { OrgID uuid.UUID; Title string; Body string; … }

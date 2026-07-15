@@ -1,0 +1,295 @@
+diff --git a/kernel/bulk/bulk.go b/kernel/bulk/bulk.go
+index 88734c4..c162e24 100644
+--- a/kernel/bulk/bulk.go
++++ b/kernel/bulk/bulk.go
+@@ -14,6 +14,8 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
++	"log/slog"
++	"time"
+ 
+ 	"github.com/google/uuid"
+ 	"github.com/jackc/pgx/v5"
+@@ -40,6 +42,7 @@ type Progress struct {
+ // Service starts and drives bulk operations.
+ type Service struct {
+ 	idgen model.IDGen
++	log   *slog.Logger
+ }
+ 
+ // New builds the service. idgen mints operation and item ids.
+@@ -47,9 +50,20 @@ func New(idgen model.IDGen) *Service {
+ 	if idgen == nil {
+ 		idgen = model.UUIDv7()
+ 	}
+-	return &Service{idgen: idgen}
++	return &Service{idgen: idgen, log: slog.Default()}
+ }
+ 
++// WithLogger replaces the logger used by the service. The default logger is
++// slog.Default().
++func (s *Service) WithLogger(log *slog.Logger) *Service {
++	s.log = log
++	return s
++}
++
++// ErrConcurrentProcessor is returned when a second processor attempts to
++// process a bulk operation that already has an active processor.
++var ErrConcurrentProcessor = kerr.E(kerr.KindConflict, "concurrent_processor", "another processor is already active on this bulk operation")
++
+ // Start creates a bulk operation of kind with one pending item per payload, in
+ // the caller's tenant transaction (so the operation and its items commit with any
+ // business write that spawned them). Returns the operation id. An empty item set
+@@ -79,14 +93,36 @@ func (s *Service) Start(ctx context.Context, db database.TenantDB, kind string,
+ 	return opID, nil
+ }
+ 
++// lockTimeout is how long a processor lock survives without a heartbeat before
++// a new processor may reclaim it. It is intentionally generous: this is a
++// stopgap until the leased-claim rewrite (DATA-04 T2) makes single-processor
++// enforcement unnecessary.
++const lockTimeout = 5 * time.Minute
++
+ // Process runs up to `limit` pending items of the operation (limit <= 0 = all
+ // remaining), each in its own tenant transaction, and returns how many it
+ // processed this call. Re-run to continue — Process is resumable and picks up
+ // only still-pending items. When no pending items remain it marks the operation
+ // completed. txm is the tenant runtime TxManager (app_rt); a worker drives this
+ // per operation, binding tenantID for each item's transaction.
++//
++// A second concurrent Process call against the same bulkID is rejected with
++// ErrConcurrentProcessor; the first processor holds an operation-level lock for
++// the duration of the call.
+ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID, bulkID uuid.UUID, limit int, fn ItemFunc) (int, error) {
+ 	tctx := database.WithTenantID(ctx, tenantID)
++
++	// Stopgap single-processor enforcement: a second concurrent Process against
++	// the same bulkID is rejected rather than racing against the first.
++	sessionID, err := s.acquireProcessor(tctx, txm, bulkID)
++	if err != nil {
++		if errors.Is(err, ErrConcurrentProcessor) {
++			s.log.InfoContext(tctx, "bulk processor rejected: another processor active", "bulk_id", bulkID)
++		}
++		return 0, err
++	}
++	defer s.releaseProcessor(tctx, txm, bulkID, sessionID)
++
+ 	if err := s.mark(tctx, txm, bulkID, "running"); err != nil {
+ 		return 0, err
+ 	}
+@@ -115,6 +151,55 @@ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID,
+ 	return processed, nil
+ }
+ 
++// acquireProcessor attempts to claim the single-processor slot for bulkID. It
++// returns a session id on success, or ErrConcurrentProcessor if another
++// processor is active (or its lock has not yet timed out).
++func (s *Service) acquireProcessor(ctx context.Context, txm database.TxManager, bulkID uuid.UUID) (uuid.UUID, error) {
++	sessionID := s.idgen.New()
++	var acquired bool
++	err := txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
++		var id uuid.UUID
++		err := db.QueryRow(ctx,
++			`UPDATE bulk_operations
++			    SET processor_id = $2, processor_started_at = now()
++			  WHERE id = $1
++			    AND (processor_id IS NULL OR processor_started_at < now() - $3::interval)
++			RETURNING processor_id`,
++			bulkID, sessionID, lockTimeout.String()).Scan(&id)
++		if err != nil {
++			if errors.Is(err, pgx.ErrNoRows) {
++				return nil
++			}
++			return kerr.Wrapf(err, "bulk.acquireProcessor", "claim lock for bulk %s", bulkID)
++		}
++		acquired = true
++		return nil
++	})
++	if err != nil {
++		return uuid.Nil, err
++	}
++	if !acquired {
++		return uuid.Nil, ErrConcurrentProcessor
++	}
++	return sessionID, nil
++}
++
++// releaseProcessor clears the single-processor slot, but only if it is still
++// held by sessionID (defensive against a timeout/reclaim race).
++func (s *Service) releaseProcessor(ctx context.Context, txm database.TxManager, bulkID, sessionID uuid.UUID) {
++	err := txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
++		_, err := db.Exec(ctx,
++			`UPDATE bulk_operations
++			    SET processor_id = NULL, processor_started_at = NULL
++			  WHERE id = $1 AND processor_id = $2`,
++			bulkID, sessionID)
++		return err
++	})
++	if err != nil && s.log != nil {
++		s.log.ErrorContext(ctx, "bulk processor lock release failed", "bulk_id", bulkID, "error", err)
++	}
++}
++
+ type claimedItem struct {
+ 	id      uuid.UUID
+ 	payload []byte
+diff --git a/kernel/bulk/bulk_test.go b/kernel/bulk/bulk_test.go
+index 35a4b1c..fd02738 100644
+--- a/kernel/bulk/bulk_test.go
++++ b/kernel/bulk/bulk_test.go
+@@ -4,12 +4,15 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
++	"sync"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/google/uuid"
+ 
+ 	"github.com/qatoolist/wowapi/kernel/bulk"
+ 	"github.com/qatoolist/wowapi/kernel/database"
++	kerr "github.com/qatoolist/wowapi/kernel/errors"
+ 	"github.com/qatoolist/wowapi/kernel/model"
+ 	"github.com/qatoolist/wowapi/testkit"
+ )
+@@ -178,3 +181,70 @@ func ensureMarks(h *testkit.DBHandle) {
+ 	_, _ = h.Admin.Exec(ctx, `CREATE TABLE IF NOT EXISTS bulk_marks (val int)`)
+ 	_, _ = h.Admin.Exec(ctx, `GRANT INSERT, SELECT ON bulk_marks TO app_rt`)
+ }
++
++// TestIntegrationBulkConcurrentProcessorRejected proves the DATA-04 T1 stopgap:
++// a second Process call against the same bulkID while a first is active is
++// rejected with ErrConcurrentProcessor, not silently allowed to race.
++func TestIntegrationBulkConcurrentProcessorRejected(t *testing.T) {
++	h := testkit.NewDB(t)
++	svc := bulk.New(model.UUIDv7())
++	tenant := uuid.New()
++	ctx := database.WithTenantID(context.Background(), tenant)
++
++	id := start(t, h, svc, ctx, payloads(item{Val: 1}, item{Val: 2}, item{Val: 3}))
++
++	unblock := make(chan struct{})
++	var started sync.WaitGroup
++	started.Add(1)
++	var signalOnce sync.Once
++
++	slowFunc := func(ctx context.Context, db database.TenantDB, payload []byte) error {
++		signalOnce.Do(started.Done)
++		<-unblock
++		return nil
++	}
++
++	var wg sync.WaitGroup
++	var firstErr error
++	var firstN int
++	wg.Add(1)
++	go func() {
++		defer wg.Done()
++		firstN, firstErr = svc.Process(context.Background(), h.TxM, tenant, id, 0, slowFunc)
++	}()
++
++	started.Wait() // first processor is now inside an item
++
++	var secondErr error
++	wg.Add(1)
++	go func() {
++		defer wg.Done()
++		_, secondErr = svc.Process(context.Background(), h.TxM, tenant, id, 0, okFunc)
++	}()
++
++	// Give the second processor time to attempt acquisition and be rejected.
++	// It should return quickly because the lock check is a single UPDATE.
++	for i := 0; i < 50 && secondErr == nil; i++ {
++		time.Sleep(10 * time.Millisecond)
++	}
++	if secondErr == nil {
++		t.Fatal("second processor was not rejected while first is active")
++	}
++	if kerr.KindOf(secondErr) != kerr.KindConflict {
++		t.Fatalf("second processor error kind = %v, want KindConflict (err=%v)", kerr.KindOf(secondErr), secondErr)
++	}
++
++	close(unblock)
++	wg.Wait()
++
++	if firstErr != nil {
++		t.Fatalf("first processor failed: %v", firstErr)
++	}
++	if firstN != 3 {
++		t.Fatalf("first processor processed %d, want 3", firstN)
++	}
++	p := progress(t, h, svc, ctx, id)
++	if p.Done != 3 || p.Pending != 0 || p.Status != "completed" {
++		t.Fatalf("progress = %+v, want Done3/Pending0/completed", p)
++	}
++}
+diff --git a/kernel/kernel.go b/kernel/kernel.go
+index ae9a1c6..f89d86e 100644
+--- a/kernel/kernel.go
++++ b/kernel/kernel.go
+@@ -285,7 +285,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+ 	perms.Register(authz.Permission{Key: document.PermWrite})
+ 	var docSvc *document.Service
+ 	if deps.Storage != nil {
+-		docSvc = document.New(docClasses, deps.Storage, eval, writer, docHooks, idgen)
++		docSvc = document.New(docClasses, deps.Storage, eval, writer, docHooks, idgen, document.WithAudit(auditWriter))
+ 	}
+ 	commentSvc := comment.New(idgen, writer)
+ 	attachmentSvc := attachment.New(idgen, writer)
+@@ -312,6 +312,26 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+ 		}
+ 		sender = webhook.NewHTTPSender(senderOpts...)
+ 	}
++
++	// SEC-06 T2/T3: boot-time egress-exception report and allowlist change
++	// audit. The report is credential-free by construction; the audit record
++	// compares the loaded allowlist to the compiled defaults.
++	if exceptions := cfg.EgressExceptions(); len(exceptions) > 0 {
++		log.InfoContext(context.Background(), "egress_exceptions",
++			slog.Any("exceptions", exceptions),
++			slog.String("environment", string(cfg.Environment)),
++		)
++	}
++	config.RecordAllowlistChange(config.Defaults().Webhook.Outbound, cfg.Webhook.Outbound, func(change config.AllowlistChange) {
++		log.InfoContext(context.Background(), "config_change",
++			slog.String("action", change.Action),
++			slog.Any("old_hosts", change.OldHosts),
++			slog.Any("new_hosts", change.NewHosts),
++			slog.Any("old_cidrs", change.OldCIDRs),
++			slog.Any("new_cidrs", change.NewCIDRs),
++		)
++	})
++
+ 	webhookSvc := webhook.New(sender, secretRefResolver{p: deps.Secrets}, idgen, webhook.WithMetrics(metrics))
+ 
+ 	// Integrations: provider adapter registry + config/credential store.
+@@ -350,7 +370,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+ 		AuthzCache:           authzCache,
+ 		Audit:                auditWriter,
+ 		Sequence:             sequence.New(idgen),
+-		Bulk:                 bulk.New(idgen),
++		Bulk:                 bulk.New(idgen).WithLogger(log),
+ 		Artifacts:            artifact.New(idgen),
+ 		auditSink:            audit,
+ 	}, nil
+diff --git a/migrations/00016_bulk_operations.sql b/migrations/00016_bulk_operations.sql
+index a99e322..9d17518 100644
+--- a/migrations/00016_bulk_operations.sql
++++ b/migrations/00016_bulk_operations.sql
+@@ -1,9 +1,10 @@
+ -- Bulk-operation framework (roadmap E6). Chunked processing of large item sets
+ -- with progress reporting, a partial-failure ledger, and resumability. A bulk
+--- operation owns N item rows; a processor claims pending items in chunks
+--- (FOR UPDATE SKIP LOCKED — safe across replicas), runs each, and records
+--- done/failed per item so a crash resumes from the remaining pending items and
+--- one bad item never fails the whole run. Tenant-scoped under RLS.
++-- operation owns N item rows; a processor claims pending items one at a time
++-- (single processor per operation; multi-worker fan-out is added later by the
++-- DATA-04 leased-claim migration). Each item is run and its done/failed status
++-- recorded so a crash resumes from the remaining pending items and one bad item
++-- never fails the whole run. Tenant-scoped under RLS.
+ 
+ -- +goose Up
+ 

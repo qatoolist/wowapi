@@ -183,9 +183,11 @@ steps must both happen before a deployed process serves traffic:
 
 1. **Boot** parses every module's seeds and registers them into the in-memory registries the evaluator
    reads (`app.Boot`) — this always happens, on every process (api/worker/migrate).
-2. **Sync** (`kernel/seeds.Sync`) upserts that merged bundle into the database's global catalog tables
+2. **Sync** (`kernel/seeds.Apply`) upserts that merged bundle into the database's global catalog tables
    (`permissions`, `roles`, `role_permissions`, `resource_types`, `relationship_types`) on a
-   platform-privileged (`app_platform`) connection — this does **not** happen automatically.
+   platform-privileged (`app_platform`) connection — this does **not** happen automatically. Apply
+   computes a canonical content hash of the parsed bundle, records every run in `seed_sync_runs`,
+   and short-circuits to a true no-op when the database already reflects the same hash.
 
 Skipping step 2 leaves the catalog tables empty on a fresh database: every authorization check denies
 (deny-by-default with no seeded grants) and resource-mirror writes fail their foreign key against the
@@ -194,10 +196,10 @@ applied — and surfaces only as scattered 403s and FK errors once the process i
 
 **The production path is the generated `cmd/migrate`.** It loads the composed product config via
 `appcfg.Load()` (`configs/base.yaml` + `configs/<env>.yaml` + `secretref://` resolution), then runs
-migrations, `seeds.Sync`, and `rules.SyncDefinitions` — in that order, on one privileged connection:
+migrations, `seeds.Apply`, and `rules.SyncDefinitions` — in that order, on one privileged connection:
 
 ```bash
-make migrate-up          # kernel migrations → module migrations → seeds.Sync → rules.SyncDefinitions
+make migrate-up          # kernel migrations → module migrations → seeds.Apply → rules.SyncDefinitions
 ```
 
 **`wowapi seed sync` is a low-level, standalone escape hatch** — e.g. to re-sync seed catalogs without a
@@ -206,6 +208,8 @@ full migrate run — not a substitute for the generated migrate on a fresh envir
 ```bash
 wowapi seed sync --module widgets=internal/modules/widgets/seeds \
                   --module billing=internal/modules/billing/seeds
+
+wowapi seed sync --dry-run --module widgets=internal/modules/widgets/seeds
 ```
 
 It has real limitations relative to the generated migrate path:
@@ -219,17 +223,19 @@ It has real limitations relative to the generated migrate path:
   registry to read, so there is nothing to sync here even in principle. The command prints a warning to
   this effect on every run.
 
-Both `seeds.Sync` calls are idempotent (safe to re-run every deploy). `wowapi seed sync` connects to
+Both `seeds.Apply` calls are idempotent (safe to re-run every deploy). `wowapi seed sync` connects to
 `DATABASE_URL` as `app_platform` (the same role/RLS-guard convention as `wowapi dlq`), loads and merges
-every named module's seed directory the same way `app.Boot` does, then calls `seeds.Sync`. It has no
+every named module's seed directory the same way `app.Boot` does, then calls `seeds.Apply`. It has no
 long-lived process, so it never holds an in-process authz cache to invalidate; a running api/worker with
-`AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call because `seeds.Sync` accepts the kernel's
-`AuthzCache` as a `SpineInvalidator` — pass it when calling `seeds.Sync` from a long-lived process (the
-generated migrate/CLI paths don't need to; they exit immediately after).
+`AuthzCacheTTL` set gets the equivalent `InvalidateAll()` call because `seeds.Apply` passes invalidators
+through to `seeds.Sync` — pass it when calling `seeds.Apply` from a long-lived process (the generated
+migrate/CLI paths don't need to; they exit immediately after).
 
-A generated api process also wires a `/readyz` check (`app.CatalogsSeeded`) that fails loudly — naming
-`wowapi seed sync` — if any module's declared seeds are missing from the database, so a pod that skipped
-this step never reports ready instead of silently denying every request.
+A generated api process wires a `/readyz` check (`app.ReadinessWithCatalogs`, check name `seed_catalogs`)
+that fails loudly — naming `wowapi seed sync` — if any module's declared seeds are missing from the
+database, so a pod that skipped this step never reports ready instead of silently denying every request.
+Once seed-sync has run, the readiness payload reports the seed/catalog hash as
+`details.seed_catalog_hash` for drift correlation (MATRIX CS-21).
 
 ## Rule definitions
 

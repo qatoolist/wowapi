@@ -1,13 +1,9 @@
 name: release
 
-# Tag-driven supply-chain release. On a v* tag:
-#   binaries — GoReleaser builds cross-platform CLI archives + checksums + SBOMs,
-#              cosign keyless-signs the checksums, publishes the GitHub Release,
-#              and attaches SLSA build-provenance to the archives.
-#   image    — multi-arch container built from the distroless `cli` stage, pushed
-#              to GHCR, with SLSA provenance + SBOM attestations on the digest.
-#
-# No secrets: signing/attestation use GitHub OIDC; GHCR auth uses GITHUB_TOKEN.
+# Exact-commit promotion boundary:
+#   verify -> immutable build-candidate -> protected publish -> clean verification -> mutable aliases.
+# Build-candidate has no contents/packages write permission. Publish never builds; it copies only
+# bytes bound by the attested release-manifest.json. `latest` moves only after clean verification.
 on:
   push:
     tags: ["v*"]
@@ -21,108 +17,399 @@ permissions:
 
 env:
   IMAGE: ghcr.io/qatoolist/wowapi
+  GORELEASER_VERSION: v2.17.0
+  ORAS_VERSION: 1.2.3
 
 jobs:
-  binaries:
-    name: binaries (goreleaser + sign + attest)
+  verify:
+    name: verify required gates for exact tag SHA
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/required-gates.yml
+    with:
+      source_sha: ${{ github.sha }}
+      hosted_results_sha: ${{ github.sha }}
+
+  hosted-security:
+    name: require exact-SHA security workflow success
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write # create the GitHub Release
-      id-token: write # cosign keyless + provenance
-      attestations: write # SLSA build provenance
+      actions: read
+      contents: read
+    steps:
+      - name: wait for blocking security workflow at this exact SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          conclusion=missing
+          for _ in $(seq 1 40); do
+            if gh run list --workflow security-scan.yml --commit "$SOURCE_SHA" --limit 20 \
+              --json conclusion --jq 'any(.[]; .conclusion == "success")' | grep -qx true; then
+              conclusion=success
+              break
+            fi
+            sleep 30
+          done
+          test "$conclusion" = success
+
+  build-candidate:
+    name: build immutable candidate (never publish)
+    needs: [verify, hosted-security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0 # full history for the changelog
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: prove tag and checkout resolve to the exact verified commit
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          TAG_REF: ${{ github.ref }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+          test "$(git rev-parse "$TAG_REF^{commit}")" = "$SOURCE_SHA"
+          python3 scripts/validation/release_contract.py verify-tag \
+            --repo . --tag "$TAG_NAME" --source-sha "$SOURCE_SHA"
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.26.5"
           cache: true
       - name: install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: install syft (SBOM generator)
+      - name: install syft
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
-      - name: run goreleaser
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v8.0.0
+        with:
+          name: gate-results-${{ github.sha }}
+          path: candidate
+      - name: verify gate-results attestation before any build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify candidate/gate-results.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/required-gates.yml"
+          test "$(jq -r '.source_sha' candidate/gate-results.json)" = "$GITHUB_SHA"
+          test "$(jq -r '.status' candidate/gate-results.json)" = passed
+          test "$(jq -r '.manifest_sha256' candidate/gate-results.json)" = \
+            "$(sha256sum ci/release-gates.yaml | cut -d' ' -f1)"
+      - name: GoReleaser candidate only (ADR-005; exact pinned version)
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: attest build provenance (archives)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
-        with:
-          subject-path: |
-            dist/wowapi_*.tar.gz
-            dist/wowapi_*.zip
-
-  image:
-    name: image (buildx + push + attest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write # push to GHCR
-      id-token: write # keyless attestation
-      attestations: write # SLSA provenance + SBOM attestations
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: set up QEMU
+      - name: set up QEMU for arm64 candidate
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-      - name: set up buildx
+      - name: set up isolated BuildKit builder
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-      - name: log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: image metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
-      - name: build and push (multi-arch, distroless cli stage)
-        id: build
+      - name: build multi-platform OCI layout once (never push)
+        id: image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ./Dockerfile
           target: cli
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            # Matches GoReleaser's stripped .Version (e.g. 1.2.3), so the archive
-            # binary and the container binary report the same version string.
-            VERSION=${{ steps.meta.outputs.version }}
-      - name: generate image SBOM (syft)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+          push: false
+          tags: ${{ env.IMAGE }}:${{ github.ref_name }}
+          outputs: type=oci,dest=dist/wowapi-image.oci.tar
+          build-args: VERSION=${{ github.ref_name }}
+      - name: install pinned ORAS for candidate smoke
+        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
         with:
-          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
-          format: spdx-json
-          output-file: image-sbom.spdx.json
-          # Don't attach the SBOM to the GitHub Release (that needs contents:write,
-          # which this least-privilege job doesn't have). The image SBOM is attested
-          # to the image DIGEST in the next step; the archive SBOMs are on the Release.
-          upload-release-assets: false
-      - name: attest build provenance (image)
+          version: ${{ env.ORAS_VERSION }}
+      - name: boot every platform from the exact OCI candidate before publish
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: scripts/smoke_candidate_oci.sh dist/wowapi-image.oci.tar "$GITHUB_REF_NAME" "$IMAGE_DIGEST"
+      - name: add candidate SBOM, provenance records, and verification binary
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          syft "oci-archive:dist/wowapi-image.oci.tar" -o spdx-json=dist/image-sbom.spdx.json
+          jq -n -c --arg source_sha "$GITHUB_SHA" \
+            --arg builder "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            '{source_sha:$source_sha,builder:$builder,predicateType:"https://slsa.dev/provenance/v1"}' \
+            > dist/archive-provenance.intoto.jsonl
+          jq -n -c --arg source_sha "$GITHUB_SHA" --arg digest "$IMAGE_DIGEST" \
+            '{source_sha:$source_sha,subject_digest:$digest,predicateType:"https://slsa.dev/provenance/v1"}' \
+            > dist/image-provenance.intoto.jsonl
+          binary=$(find dist -type f -name wowapi -perm -111 | sort | head -n 1)
+          test -n "$binary"
+          cp "$binary" dist/wowapi
+          mv dist candidate/dist
+      - name: block on vulnerabilities, secrets, and disallowed licenses in release artifacts
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          version: v0.72.0
+          scan-type: fs
+          scan-ref: candidate/dist
+          scanners: vuln,secret,license
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+          format: json
+          output: candidate/dist/artifact-security.trivy.json
+          exit-code: "1"
+      - name: block on vulnerabilities in the immutable OCI candidate
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
+        with:
+          version: v0.72.0
+          scan-type: image
+          input: candidate/dist/wowapi-image.oci.tar
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          trivyignores: .trivyignore.yaml
+          format: json
+          output: candidate/dist/image-security.trivy.json
+          exit-code: "1"
+      - name: bind every candidate byte into release-manifest.json
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=${VERSION#v}
+          python3 scripts/validation/release_contract.py describe-candidate \
+            --candidate candidate --version "$version" --source-sha "$GITHUB_SHA" \
+            --gate-results gate-results.json --image-digest "$IMAGE_DIGEST" \
+            --output candidate/candidate-descriptor.json
+          python3 scripts/validation/release_contract.py create-manifest \
+            --candidate candidate --descriptor candidate-descriptor.json \
+            --output candidate/release-manifest.json
+          jq -n -c \
+            --arg subject_sha256 "$(sha256sum candidate/release-manifest.json | cut -d' ' -f1)" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg workflow_identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF" \
+            --arg oidc_issuer "https://token.actions.githubusercontent.com" \
+            '{subject_sha256:$subject_sha256,source_sha:$source_sha,workflow_identity:$workflow_identity,oidc_issuer:$oidc_issuer}' \
+            > candidate/release-manifest.attestation.json
+          python3 scripts/validation/release_contract.py verify-candidate \
+            --candidate candidate --attestation release-manifest.attestation.json
+      - name: attest immutable release manifest
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-      - name: attest SBOM (image)
+          subject-path: candidate/release-manifest.json
+      - name: attest candidate archives and OCI layout
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            candidate/dist/wowapi_*.tar.gz
+            candidate/dist/wowapi_*.zip
+            candidate/dist/wowapi-image.oci.tar
+      - name: attest OCI-layout SBOM
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          sbom-path: image-sbom.spdx.json
-          push-to-registry: true
+          subject-path: candidate/dist/wowapi-image.oci.tar
+          sbom-path: candidate/dist/image-sbom.spdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: immutable-candidate-${{ github.sha }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: publish attested candidate bytes (no rebuild)
+    needs: [verify, build-candidate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image_digest: ${{ steps.manifest.outputs.image_digest }}
+      version: ${{ steps.manifest.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v8.0.0
+        with:
+          name: immutable-candidate-${{ github.sha }}
+          path: candidate
+      - name: cryptographically verify manifest, then every manifested byte
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify candidate/release-manifest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          python3 scripts/validation/release_contract.py verify-candidate \
+            --candidate candidate --attestation release-manifest.attestation.json
+          test "$(jq -r '.gate_manifest_sha256' candidate/release-manifest.json)" = \
+            "$(sha256sum ci/release-gates.yaml | cut -d' ' -f1)"
+          rm -rf dist
+          cp -a candidate/dist dist
+      # ADR-005 deviation: GoReleaser OSS v2.17.0 has no separate publish
+      # command. The release/security lead authorized this exact-byte gh/ORAS
+      # publisher after the implementation-time caveat was proven false.
+      - name: create draft release without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          options=(--verify-tag --draft --title "$VERSION_TAG" --generate-notes)
+          if printf %s "$VERSION_TAG" | grep -q -- '-'; then
+            options+=(--prerelease)
+          fi
+          gh release create "$VERSION_TAG" "${options[@]}"
+      - name: install pinned ORAS
+        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        with:
+          version: ${{ env.ORAS_VERSION }}
+      - name: publish existing OCI layout under immutable version tag
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          printf %s "$GHCR_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          oras cp --from-oci-layout "candidate/dist/wowapi-image.oci.tar:$VERSION_TAG" "$IMAGE:$VERSION_TAG"
+      - name: attach manifest and every candidate subject to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$VERSION_TAG" --clobber \
+            candidate/release-manifest.json \
+            candidate/release-manifest.attestation.json \
+            candidate/candidate-descriptor.json \
+            candidate/gate-results.json
+          jq -r '.artifacts[].path' candidate/release-manifest.json | while IFS= read -r path; do
+            gh release upload "$VERSION_TAG" --clobber "candidate/$path"
+          done
+      - name: expose immutable published identity
+        id: manifest
+        run: |
+          echo "version=$(jq -r '.version' candidate/release-manifest.json)" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$(jq -r '.artifacts[] | select(.kind==\"image\") | .digest' candidate/release-manifest.json)" >> "$GITHUB_OUTPUT"
+
+  verify-published:
+    name: verify published release from clean runner
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    steps:
+      - name: install cosign for clean signature verification
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: download verifier at the immutable source SHA (no source checkout)
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p verifier release/dist
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$SOURCE_SHA/scripts/validation/verify_release.sh" \
+            -o verifier/verify_release.sh
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$SOURCE_SHA/scripts/validation/release_contract.py" \
+            -o verifier/release_contract.py
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$SOURCE_SHA/scripts/smoke_candidate_arch.sh" \
+            -o verifier/smoke_candidate_arch.sh
+          chmod +x verifier/verify_release.sh verifier/smoke_candidate_arch.sh
+      - name: download published subjects into their manifested paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for name in release-manifest.json release-manifest.attestation.json candidate-descriptor.json gate-results.json; do
+            gh release download "$VERSION_TAG" --pattern "$name" --dir release
+          done
+          jq -r '.artifacts[].path' release/release-manifest.json | while IFS= read -r path; do
+            mkdir -p "release/$(dirname "$path")"
+            gh release download "$VERSION_TAG" --pattern "$(basename "$path")" --dir "release/$(dirname "$path")"
+          done
+      - name: verify SHA/signature/SBOM/provenance/platform/version/published hashes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WOWAPI_RELEASE_DIR: ${{ github.workspace }}/release
+          VERSION: ${{ needs.publish.outputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh attestation verify release/release-manifest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          ./verifier/verify_release.sh "$VERSION" "$SOURCE_SHA"
+          jq -r '.artifacts[] | select(.kind=="archive" or .kind=="image") | .path' release/release-manifest.json |
+            while IFS= read -r path; do
+              gh attestation verify "release/$path" \
+                --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+            done
+          gh attestation verify release/dist/wowapi-image.oci.tar \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type https://spdx.dev/Document/v2.3
+          docker buildx imagetools inspect "$IMAGE:$GITHUB_REF_NAME" --format '{{json .Manifest}}' > image-manifest.json
+          test "$(jq -r '.digest' image-manifest.json)" = "${{ needs.publish.outputs.image_digest }}"
+          test "$(jq -r '[.manifests[].platform | .os + \"/\" + .architecture] | sort | join(\",\")' image-manifest.json)" = "linux/amd64,linux/arm64"
+          ./verifier/smoke_candidate_arch.sh "$IMAGE@${{ needs.publish.outputs.image_digest }}" amd64
+          ./verifier/smoke_candidate_arch.sh "$IMAGE@${{ needs.publish.outputs.image_digest }}" arm64
+
+  promote-aliases:
+    name: promote verified digest to mutable aliases
+    needs: [publish, verify-published]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: install pinned ORAS
+        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        with:
+          version: ${{ env.ORAS_VERSION }}
+      - name: copy the verified immutable digest to semantic aliases
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf %s "$GHCR_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          source="$IMAGE@${{ needs.publish.outputs.image_digest }}"
+          oras cp "$source" "$IMAGE:${VERSION%.*}"
+          if ! printf %s "$VERSION" | grep -q -- '-'; then
+            oras cp "$source" "$IMAGE:latest"
+          fi
+          release_options=(--draft=false)
+          if ! printf %s "$VERSION" | grep -q -- '-'; then
+            release_options+=(--latest)
+          fi
+          gh release edit "$GITHUB_REF_NAME" "${release_options[@]}"

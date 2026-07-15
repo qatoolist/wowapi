@@ -1,0 +1,4 @@
+=== RUN   TestScannerGateNegativeFixture
+--- PASS: TestScannerGateNegativeFixture (0.33s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/tenantfk	0.574s

@@ -29,6 +29,7 @@ type engine struct {
 	now           func() time.Time
 	strongFactors map[string]bool
 	defaultChal   string
+	stepUpMaxAge  time.Duration
 }
 
 // Options configures New. Store, Registry, and PolicyEngine are required;
@@ -52,6 +53,12 @@ type Options struct {
 	// permission using the default strong-factor set (no per-permission
 	// StepUpPolicy.Challenge). Empty defaults to "mfa".
 	DefaultChallenge string
+	// StepUpMaxAge is the deployment default freshness requirement applied to
+	// permissions that use the plain `step_up: true` shorthand. When non-zero,
+	// an actor's AuthTime must be within this duration of now. Per-permission
+	// StepUpPolicy.MaxAge overrides this default. Zero means no default
+	// freshness enforcement for the shorthand (SEC-01 T6).
+	StepUpMaxAge time.Duration
 }
 
 // DefaultStrongFactors is the out-of-the-box default strong-factor AMR set:
@@ -87,7 +94,7 @@ func New(o Options) Evaluator {
 	return &engine{
 		store: o.Store, rels: o.Relationships, registry: o.Registry,
 		policies: o.Policies, audit: o.Audit, now: now,
-		strongFactors: sf, defaultChal: chal,
+		strongFactors: sf, defaultChal: chal, stepUpMaxAge: o.StepUpMaxAge,
 	}
 }
 
@@ -103,6 +110,28 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 	}
 
 	now := e.now()
+
+	// --- Credential scheme scoping (SEC-01 T7): a permission may restrict
+	// which credential schemes can satisfy it. This gate runs early so a
+	// mismatched scheme is rejected regardless of grants, matching the
+	// acceptance criterion that a CredentialUser-scoped permission rejects a
+	// valid API-key actor. ---
+	if len(pdef.AllowedSchemes) > 0 {
+		scheme := defaultCredentialScheme(a)
+		allowed := false
+		for _, s := range pdef.AllowedSchemes {
+			if s == scheme {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			decision := Decision{Allowed: false, Reason: "credential_scheme_mismatch"}
+			e.maybeAudit(ctx, a, perm, t, pdef, decision)
+			return decision, nil
+		}
+	}
+
 	decision := Decision{Allowed: false, Reason: "default_deny"}
 
 	// --- RBAC: any active assignment whose role grants perm and whose scope
@@ -221,25 +250,50 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 	// REPLACES the default-set behavior with its own RequiredAMR ("any of"
 	// semantics — the actor needs a single matching factor, not all of them) and
 	// Challenge hint. A plain `step_up: true` (StepUpPolicy nil) falls back to
-	// the engine's configured default strong-factor set and default challenge. ---
+	// the engine's configured default strong-factor set and default challenge.
+	//
+	// Freshness (SEC-01 T6): when a MaxAge is configured (per-policy or as the
+	// deployment default for the shorthand), the actor's AuthTime must be within
+	// MaxAge of now. A stale AuthTime fails step-up even with a valid AMR.
 	if decision.Allowed {
 		if pol := pdef.StepUpPolicy; pol != nil {
-			if !e.satisfiesAMR(a.AMR, pol.RequiredAMR) {
+			if pol.MaxAge > 0 && !e.authTimeFresh(a.AuthTime, pol.MaxAge, now) {
+				decision.Allowed = false
+				decision.StepUpRequired = true
+				decision.StepUpChallenge = e.challengeFor(pol)
+				decision.Reason = "step_up_freshness_required"
+			} else if !e.satisfiesAMR(a.AMR, pol.RequiredAMR) {
 				decision.Allowed = false
 				decision.StepUpRequired = true
 				decision.StepUpChallenge = e.challengeFor(pol)
 				decision.Reason = "step_up_required"
 			}
-		} else if pdef.StepUp && !e.hasStrongFactor(a.AMR) {
-			decision.Allowed = false
-			decision.StepUpRequired = true
-			decision.StepUpChallenge = e.defaultChal
-			decision.Reason = "step_up_required"
+		} else if pdef.StepUp {
+			if e.stepUpMaxAge > 0 && !e.authTimeFresh(a.AuthTime, e.stepUpMaxAge, now) {
+				decision.Allowed = false
+				decision.StepUpRequired = true
+				decision.StepUpChallenge = e.defaultChal
+				decision.Reason = "step_up_freshness_required"
+			} else if !e.hasStrongFactor(a.AMR) {
+				decision.Allowed = false
+				decision.StepUpRequired = true
+				decision.StepUpChallenge = e.defaultChal
+				decision.Reason = "step_up_required"
+			}
 		}
 	}
 
 	e.maybeAudit(ctx, a, perm, t, pdef, decision)
 	return decision, nil
+}
+
+// authTimeFresh reports whether authTime is within maxAge of now. A zero
+// authTime is treated as stale because freshness cannot be verified.
+func (e *engine) authTimeFresh(authTime time.Time, maxAge time.Duration, now time.Time) bool {
+	if authTime.IsZero() {
+		return false
+	}
+	return now.Sub(authTime) <= maxAge
 }
 
 // satisfiesAMR reports whether amr contains at least one value from required

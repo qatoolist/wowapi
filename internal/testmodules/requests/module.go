@@ -7,6 +7,8 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/resource/aggregate"
 	"github.com/qatoolist/wowapi/module"
 )
 
@@ -42,10 +44,11 @@ func (m *Module) Register(mc module.Context) error {
 	mc.OpenAPI(openapiFragment)
 
 	h := &Handlers{
-		tx:    mc.Tx(),
-		authz: mc.Authz(),
-		val:   mc.Validator(),
-		idgen: mc.IDGen(),
+		tx:     mc.Tx(),
+		writer: aggregate.New(mc.Tx(), resource.NewRegistrar(), mc.Audit(), mc.Outbox()),
+		authz:  mc.Authz(),
+		val:    mc.Validator(),
+		idgen:  mc.IDGen(),
 	}
 
 	r := mc.Routes()

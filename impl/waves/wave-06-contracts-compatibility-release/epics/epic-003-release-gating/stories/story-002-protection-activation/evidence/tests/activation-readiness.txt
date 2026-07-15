@@ -1,0 +1,49 @@
+UTC: 2026-07-13T17:16:15.420640+00:00
+Revision: 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Read-only DEC-Q10 readiness probe; no admin mutation performed.
+
+Command: gh api repos/qatoolist/wowapi/branches/main/protection
+Exit: 1
+STDOUT:
+{"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-branch-protection","status":"404"}
+STDERR:
+gh: Branch not protected (HTTP 404)
+
+
+Command: gh api repos/qatoolist/wowapi/environments/release
+Exit: 1
+STDOUT:
+{"message":"Not Found","documentation_url":"https://docs.github.com/rest/deployments/environments#get-an-environment","status":"404"}
+STDERR:
+gh: Not Found (HTTP 404)
+
+
+Command: gh api repos/qatoolist/wowapi/rulesets
+Exit: 0
+STDOUT:
+[]
+STDERR:
+
+Retest UTC: 2026-07-13T18:44:35Z
+Revision: 733ef3e930cbb3f89f5bbc53d8f562c60e426513
+Read-only DEC-Q10 readiness retest; no admin mutation performed.
+
+Command: gh api repos/qatoolist/wowapi/branches/main/protection
+Exit: 1
+STDOUT:
+{"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-branch-protection","status":"404"}
+STDERR:
+gh: Branch not protected (HTTP 404)
+
+Command: gh api repos/qatoolist/wowapi/environments/release
+Exit: 1
+STDOUT:
+{"message":"Not Found","documentation_url":"https://docs.github.com/rest/deployments/environments#get-an-environment","status":"404"}
+STDERR:
+gh: Not Found (HTTP 404)
+
+Command: gh api repos/qatoolist/wowapi/rulesets
+Exit: 0
+STDOUT:
+[]
+STDERR:

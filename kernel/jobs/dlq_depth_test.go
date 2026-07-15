@@ -15,6 +15,7 @@ type depthMetrics struct{ gauges map[string]float64 }
 
 func (m *depthMetrics) ObserveRequest(_, _ string, _ int, _ time.Duration, _ int) {}
 func (m *depthMetrics) IncCounter(_ string, _ float64, _ map[string]string)       {}
+func (m *depthMetrics) ObserveHistogram(_ string, _ float64, _ map[string]string) {}
 func (m *depthMetrics) SetGauge(name string, v float64, labels map[string]string) {
 	key := name
 	if q := labels["queue"]; q != "" {

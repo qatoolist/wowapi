@@ -277,10 +277,11 @@ func (a *Authenticator) Authenticate(r *http.Request) (authz.Actor, error) {
 		return authz.Actor{}, err
 	}
 	return authz.Actor{
-		Kind:     authz.ActorSystem,
-		System:   "apikey:" + p.Name,
-		TenantID: p.TenantID,
-		Scopes:   p.Scopes,
+		Kind:             authz.ActorSystem,
+		System:           "apikey:" + p.Name,
+		TenantID:         p.TenantID,
+		CredentialScheme: authz.CredentialAPIKey,
+		Scopes:           p.Scopes,
 	}, nil
 }
 

@@ -251,6 +251,8 @@ notification digest — each tenant-iterating, each idempotent.
    and dependencies point one way.
 
 ### Future extraction path (strangler, later only)
+
+> **Target, not implemented.**
 A module becomes a service when: its write load needs independent scaling, or team ownership demands it.
 Mechanics: its tables move behind its ports; sync calls become HTTP/gRPC on the same port interfaces;
 async stays on events (outbox already in place); an anti-corruption layer wraps the remote calls.

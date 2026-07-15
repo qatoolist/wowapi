@@ -1,0 +1,20 @@
+{
+  "story": "W07-E01-S003",
+  "code_revision": "working tree based on entry SHA 733ef3e",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T22:20:48Z",
+  "reviewer": "W07-Scoping-Dispatch.W07E01S003ReviewR",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S003-003",
+  "evidence_type": "real PostgreSQL EXPLAIN plan report",
+  "task": "W07-E01-S003-T003",
+  "acceptance_criteria_proven": ["AC-W07-E01-S003-03"],
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres-16.9> go test ./kernel/workflow -run '^TestIntegrationSweepSLARemindAfterIndexPlan$' -count=1 -v",
+  "execution_environment": {"database": "PostgreSQL 16.9; migrated exclusive DB; tenant RLS transaction", "planner_overrides": "none"},
+  "result": "PASS: Index Scan using wft_remind_after on workflow_tasks, tenant_id and remind_after in Index Cond.",
+  "file_or_uri": "perf/results/perf-04-reminder-explain.txt",
+  "checksum_sha256": "044fc8d1f6b20c5252f55d390aff0f11baf2844dad22a27c405a38586062750c",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS: independent review found no open issues"
+}

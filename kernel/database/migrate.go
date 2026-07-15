@@ -57,6 +57,33 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, src fs.FS, source string) 
 	return MigrateResult{Version: v, Applied: len(applied)}, nil
 }
 
+// MigrateTo applies pending migrations only through targetVersion. It exists
+// for compatibility drills that must reconstruct a released schema before
+// exercising the normal forward migrator; production callers should use
+// Migrate so they cannot intentionally stop below head.
+func MigrateTo(ctx context.Context, pool *pgxpool.Pool, src fs.FS, source string, targetVersion int64) (MigrateResult, error) {
+	if source == "" {
+		return MigrateResult{}, fmt.Errorf("database: migrate source name is required")
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = db.Close() }()
+
+	p, err := goose.NewProvider(goose.DialectPostgres, db, src,
+		goose.WithTableName(versionTablePrefix+source))
+	if err != nil {
+		return MigrateResult{}, fmt.Errorf("database: migration provider (%s): %w", source, err)
+	}
+	applied, err := p.UpTo(ctx, targetVersion)
+	if err != nil {
+		return MigrateResult{}, fmt.Errorf("database: migrate up to %d (%s): %w", targetVersion, source, err)
+	}
+	v, err := p.GetDBVersion(ctx)
+	if err != nil {
+		return MigrateResult{}, fmt.Errorf("database: read migration version (%s): %w", source, err)
+	}
+	return MigrateResult{Version: v, Applied: len(applied)}, nil
+}
+
 // MigrateReset rolls every applied migration in src back to version 0 (goose
 // Down, newest-first). It is the mirror of Migrate for the migration
 // reversibility drill (roadmap O2) and for tearing a test database down; it must

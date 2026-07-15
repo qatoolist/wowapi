@@ -25,6 +25,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -87,6 +88,7 @@ func run(ctx context.Context) error {
 	pool, err := database.NewPool(ctx, dsn, cfg.DB,
 		database.WithSetRole("app_rt"),
 		database.WithConnRLSGuard(),
+		database.WithQueryTracer(tracer), // db.* query spans, parented per request (FBL-06 T3)
 	)
 	if err != nil {
 		return fmt.Errorf("db pool: %w", err)
@@ -185,8 +187,10 @@ func run(ctx context.Context) error {
 	var userAuth httpx.Authenticator = httpx.DenyAllAuthenticator{}
 	if cfg.Auth.OIDC.Issuer != "" {
 		jwks, jerr := kauth.NewJWKSKeySource(kauth.JWKSConfig{
-			Issuer:  cfg.Auth.OIDC.Issuer,
-			JWKSURI: cfg.Auth.OIDC.JWKSURI,
+			Issuer:         cfg.Auth.OIDC.Issuer,
+			JWKSURI:        cfg.Auth.OIDC.JWKSURI,
+			TrustedIssuers: cfg.Security.TrustedIssuers,
+			Env:            cfg.Environment,
 		})
 		if jerr != nil {
 			return fmt.Errorf("auth: jwks source: %w", jerr)
@@ -205,15 +209,12 @@ func run(ctx context.Context) error {
 	mux := booted.Router.SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
 
 	// Health endpoints are Public infrastructure, mounted directly.
-	health := app.Readiness(booted, fp, map[string]httpx.HealthCheck{
+	// ReadinessWithCatalogs registers the framework-level "seed_catalogs"
+	// and "migration_currency" checks, and reports migration version,
+	// seed/rule/model hashes in the payload details (FBL-02 / MATRIX CS-21,
+	// DX-07 T1-T3).
+	health := app.ReadinessWithCatalogs(booted, fp, platformPool, migrations.Kernel(), migrations.SourceName, map[string]httpx.HealthCheck{
 		"db": func(ctx context.Context) error { return pool.Ping(ctx) },
-		// GAP-003 clear-failure-mode check: fail /readyz loudly, naming the fix,
-		// if a module declares seeds but the deployed database's catalog tables
-		// are still empty — the generated cmd/migrate now runs seeds.Sync, but
-		// this check catches any deploy path that skipped it (e.g. migrate ran
-		// against the wrong database) BEFORE the pod takes traffic, instead of
-		// letting it surface only as scattered per-request 403s.
-		"seeds": func(ctx context.Context) error { return app.CatalogsSeeded(ctx, platformPool, booted.Seeds) },
 	})
 	mux.Handle("/healthz", health.Liveness())
 	mux.Handle("/readyz", health.Readiness())
@@ -311,10 +312,19 @@ func run(ctx context.Context) error {
 	mws = append(mws, httpx.SecurityChain(cfg.Security)...)
 	handler := httpx.Chain(mux, mws...)
 
+	// All four connection-level timeouts are set from config (FBL-09 / MATRIX
+	// CS-09) — Go's zero value for any of them means "no timeout", which lets a
+	// slow-reading, slow-writing, or idle client hold a connection forever
+	// (Slowloris-class exhaustion). httpx.Timeout above bounds HANDLER time
+	// only; these bound the underlying TCP connection. config.Validate refuses
+	// an explicit zero in prod.
 	srv := &http.Server{
 		Addr:              cfg.HTTP.Addr,
 		Handler:           handler,
 		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
 	return app.RunHooks(ctx, log, 30*time.Second,

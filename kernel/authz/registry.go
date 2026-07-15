@@ -3,6 +3,7 @@ package authz
 import (
 	"regexp"
 	"sort"
+	"time"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
@@ -25,6 +26,11 @@ type Permission struct {
 	Key        string
 	Sensitive  bool
 	GrantedVia string // relationship type key, or "" for none
+	// AllowedSchemes restricts which credential schemes may satisfy this
+	// permission. Empty/nil means all schemes are allowed (backward compatible).
+	// A permission scoped to CredentialUser rejects API-key, webhook, and
+	// internal actors even when they are otherwise authorized (SEC-01 T7).
+	AllowedSchemes []CredentialScheme
 	// StepUp requires the actor to have satisfied an elevated authentication
 	// factor (MFA) for this permission: an otherwise-allowed decision becomes a
 	// step-up challenge when the actor's AMR carries no strong factor (roadmap
@@ -34,7 +40,7 @@ type Permission struct {
 	StepUp bool
 	// StepUpPolicy, when non-nil, REPLACES the default-set behavior of StepUp
 	// with a permission-specific requirement (e.g. "require hwk specifically").
-	// It is declared by a seed's richer step_up form (kernel/seeds) and lives
+	// It is declared by a seed's richer seed form (kernel/seeds) and lives
 	// only in this in-memory, boot-populated registry — it is NOT persisted
 	// (permissions.step_up remains a plain bool; see kernel/seeds doc comment
 	// on PermissionSeed.StepUpAMR for the rationale). A permission with
@@ -45,20 +51,20 @@ type Permission struct {
 // StepUpPolicy is a permission-specific step-up requirement: the actor must
 // present at least one AMR value from RequiredAMR (any-of — the usual
 // step-up semantic: any single elevated factor satisfies the gate, factors
-// are not required in combination). Challenge names the factor/hint the HTTP
-// gate advertises in WWW-Authenticate (e.g. "hwk", "mfa").
-//
-// Scope (Decision 4, framework-engineering-backlog B8, archived to the wowapi2 doc archive): this is AMR-only. The
-// production IdP's ability to reliably emit `auth_time` could not be confirmed
-// from the codebase, so no MaxAge/freshness field exists here. The struct is
-// shaped so a MaxAge *time.Duration could be added later as an additive field
-// without breaking existing callers — but that is explicitly out of scope now.
+// are not required in combination) AND, when MaxAge is set, the actor's
+// AuthTime must be within MaxAge of the authorization decision. Challenge
+// names the factor/hint the HTTP gate advertises in WWW-Authenticate
+// (e.g. "hwk", "mfa").
 type StepUpPolicy struct {
 	// RequiredAMR is the set of AMR values that satisfy this permission's
 	// step-up gate; the actor needs ANY ONE of them. Empty means "fall back to
 	// the deployment's configured default strong-factor set" (the StepUp bool
 	// shorthand's behavior).
 	RequiredAMR []string
+	// MaxAge, when non-zero, requires the actor's AuthTime to be no older than
+	// this duration relative to now. A zero AuthTime or an AuthTime older than
+	// MaxAge fails step-up even when the AMR is otherwise valid (SEC-01 T6).
+	MaxAge time.Duration
 	// Challenge is the factor/hint advertised in the step-up challenge's
 	// WWW-Authenticate header (e.g. `step_up="hwk"`). Empty falls back to the
 	// deployment's default challenge hint.

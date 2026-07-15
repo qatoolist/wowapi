@@ -11,7 +11,24 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
+
+const sweepSLABatchSize = 100
+
+var workflowSLAMetricLabels = map[string]string{"worker": "workflow_sla"}
+
+type slaRef struct {
+	id       uuid.UUID
+	instance uuid.UUID
+	step     string
+	dueAt    time.Time
+}
+
+type slaState struct {
+	instance Instance
+	def      Definition
+}
 
 // SweepSLA processes SLA timers for open tasks in the caller's tenant tx and is
 // idempotent: reminders are guarded by last_reminded_at, escalations by the
@@ -25,117 +42,228 @@ import (
 //     workflow.<def>.escalated event is emitted, and if its step declares an
 //     escalate_to step an escalation task is created there.
 func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.Time) (reminders, escalations int, err error) {
+	started := time.Now()
+	maxLag := time.Duration(0)
+	defer func() {
+		rt.metrics.SetGauge("worker_queue_lag_seconds", maxLag.Seconds(), workflowSLAMetricLabels)
+		observability.ObserveHistogram(rt.metrics, "worker_batch_duration_seconds", time.Since(started).Seconds(), workflowSLAMetricLabels)
+	}()
 	now = now.UTC()
 
-	// --- Reminders. The last_reminded_at guard makes this idempotent: once set
-	// to >= remind_after, the row no longer qualifies. ---
-	remRows, err := db.Query(ctx,
-		`SELECT id, instance_id, step_key FROM workflow_tasks
-		  WHERE status = 'open' AND remind_after IS NOT NULL AND remind_after <= $1
-		    AND (last_reminded_at IS NULL OR last_reminded_at < remind_after)`, now)
+	// Claim and guard-flip one bounded reminder batch atomically. SKIP LOCKED
+	// lets another invocation make progress while preserving no-double-remind.
+	toRemind, err := claimReminderBatch(ctx, db, now)
 	if err != nil {
-		return 0, 0, kerr.Wrapf(err, "workflow.SweepSLA", "query reminders")
+		return 0, 0, err
 	}
-	type ref struct {
-		id       uuid.UUID
-		instance uuid.UUID
-		step     string
+	reminderState, err := rt.loadSLAState(ctx, db, toRemind)
+	if err != nil {
+		return 0, 0, err
 	}
-	var toRemind []ref
-	for remRows.Next() {
-		var r ref
-		if e := remRows.Scan(&r.id, &r.instance, &r.step); e != nil {
-			remRows.Close()
-			return 0, 0, kerr.Wrapf(e, "workflow.SweepSLA", "scan reminder")
+	for _, ref := range toRemind {
+		if lag := now.Sub(ref.dueAt); lag > maxLag {
+			maxLag = lag
 		}
-		toRemind = append(toRemind, r)
-	}
-	remRows.Close()
-	if e := remRows.Err(); e != nil {
-		return 0, 0, kerr.Wrapf(e, "workflow.SweepSLA", "iterate reminders")
-	}
-	for _, r := range toRemind {
-		tag, e := db.Exec(ctx,
-			`UPDATE workflow_tasks SET last_reminded_at = $2, updated_at = now()
-			  WHERE id = $1 AND status = 'open'
-			    AND remind_after <= $2 AND (last_reminded_at IS NULL OR last_reminded_at < remind_after)`,
-			r.id, now)
-		if e != nil {
-			return reminders, escalations, kerr.Wrapf(e, "workflow.SweepSLA", "mark reminded")
-		}
-		if tag.RowsAffected() == 0 {
-			continue // concurrent sweep already handled it — no double reminder
-		}
-		inst, def, e := rt.loadInstanceAndDef(ctx, db, r.instance)
-		if e != nil {
-			return reminders, escalations, e
-		}
-		if e := rt.emit(ctx, db, inst, def, "reminded", map[string]any{
-			"instance_id": r.instance.String(), "task_id": r.id.String(), "step": r.step,
-		}); e != nil {
-			return reminders, escalations, e
+		state := reminderState[ref.instance]
+		if err := rt.emit(ctx, db, state.instance, state.def, "reminded", map[string]any{
+			"instance_id": ref.instance.String(), "task_id": ref.id.String(), "step": ref.step,
+		}); err != nil {
+			return reminders, escalations, err
 		}
 		reminders++
 	}
 
-	// --- Escalations. Marking the task 'expired' removes it from the open set,
-	// so a re-run cannot escalate it twice. ---
-	escRows, err := db.Query(ctx,
-		`SELECT id, instance_id, step_key FROM workflow_tasks
-		  WHERE status = 'open' AND due_at IS NOT NULL AND due_at <= $1`, now)
+	// Expiry is the escalation guard. As above, the state transition and
+	// bounded claim are one statement, so concurrent invocations cannot emit
+	// the same escalation.
+	toEscalate, err := claimEscalationBatch(ctx, db, now)
 	if err != nil {
-		return reminders, escalations, kerr.Wrapf(err, "workflow.SweepSLA", "query escalations")
+		return reminders, escalations, err
 	}
-	var toEsc []ref
-	for escRows.Next() {
-		var r ref
-		if e := escRows.Scan(&r.id, &r.instance, &r.step); e != nil {
-			escRows.Close()
-			return reminders, escalations, kerr.Wrapf(e, "workflow.SweepSLA", "scan escalation")
-		}
-		toEsc = append(toEsc, r)
+	escalationState, err := rt.loadSLAState(ctx, db, toEscalate)
+	if err != nil {
+		return reminders, escalations, err
 	}
-	escRows.Close()
-	if e := escRows.Err(); e != nil {
-		return reminders, escalations, kerr.Wrapf(e, "workflow.SweepSLA", "iterate escalations")
-	}
-	for _, r := range toEsc {
-		tag, e := db.Exec(ctx,
-			`UPDATE workflow_tasks SET status = 'expired', version = version + 1, updated_at = now()
-			  WHERE id = $1 AND status = 'open'`, r.id)
-		if e != nil {
-			return reminders, escalations, kerr.Wrapf(e, "workflow.SweepSLA", "mark expired")
+	for _, ref := range toEscalate {
+		if lag := now.Sub(ref.dueAt); lag > maxLag {
+			maxLag = lag
 		}
-		if tag.RowsAffected() == 0 {
-			continue // already handled
+		state := escalationState[ref.instance]
+		inst, def := state.instance, state.def
+		if err := rt.emit(ctx, db, inst, def, "escalated", map[string]any{
+			"instance_id": ref.instance.String(), "task_id": ref.id.String(), "step": ref.step,
+		}); err != nil {
+			return reminders, escalations, err
 		}
-		inst, def, e := rt.loadInstanceAndDef(ctx, db, r.instance)
-		if e != nil {
-			return reminders, escalations, e
-		}
-		if e := rt.emit(ctx, db, inst, def, "escalated", map[string]any{
-			"instance_id": r.instance.String(), "task_id": r.id.String(), "step": r.step,
-		}); e != nil {
-			return reminders, escalations, e
-		}
-		// If the step declares an escalation target, create a task there and move
-		// the instance pointer to it.
-		step := def.Steps[r.step]
+		step := def.Steps[ref.step]
 		if step.SLA != nil && step.SLA.EscalateTo != "" {
 			target := stripStepPrefix(step.SLA.EscalateTo)
 			if _, ok := def.Steps[target]; ok {
-				if e := rt.setCurrentStep(ctx, db, &inst, target); e != nil {
-					return reminders, escalations, e
+				if err := rt.setCurrentStep(ctx, db, &inst, target); err != nil {
+					return reminders, escalations, err
 				}
-				if e := rt.enterStep(ctx, db, &inst, def, target, uuid.Nil); e != nil {
-					return reminders, escalations, e
+				if err := rt.enterStep(ctx, db, &inst, def, target, uuid.Nil); err != nil {
+					return reminders, escalations, err
 				}
 			}
 		}
 		escalations++
 	}
-
 	return reminders, escalations, nil
+}
+
+func claimReminderBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `WITH due AS (
+		SELECT id
+		  FROM workflow_tasks
+		 WHERE status = 'open'
+		   AND remind_after IS NOT NULL
+		   AND remind_after <= $1
+		   AND (last_reminded_at IS NULL OR last_reminded_at < remind_after)
+		 ORDER BY remind_after, id
+		 FOR UPDATE SKIP LOCKED
+		 LIMIT $2
+	)
+	UPDATE workflow_tasks AS task
+	   SET last_reminded_at = $1, updated_at = now()
+	  FROM due
+	 WHERE task.id = due.id
+	   AND task.status = 'open'
+	   AND task.remind_after <= $1
+	   AND (task.last_reminded_at IS NULL OR task.last_reminded_at < task.remind_after)
+	RETURNING task.id, task.instance_id, task.step_key, task.remind_after`, now, sweepSLABatchSize)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "claim reminders")
+	}
+	return scanSLARefs(rows, "reminders")
+}
+
+func claimEscalationBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `WITH due AS (
+		SELECT id
+		  FROM workflow_tasks
+		 WHERE status = 'open' AND due_at IS NOT NULL AND due_at <= $1
+		 ORDER BY due_at, id
+		 FOR UPDATE SKIP LOCKED
+		 LIMIT $2
+	)
+	UPDATE workflow_tasks AS task
+	   SET status = 'expired', version = version + 1, updated_at = now()
+	  FROM due
+	 WHERE task.id = due.id AND task.status = 'open'
+	RETURNING task.id, task.instance_id, task.step_key, task.due_at`, now, sweepSLABatchSize)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "claim escalations")
+	}
+	return scanSLARefs(rows, "escalations")
+}
+
+func scanSLARefs(rows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+	Close()
+}, operation string,
+) ([]slaRef, error) {
+	refs := make([]slaRef, 0, sweepSLABatchSize)
+	for rows.Next() {
+		var ref slaRef
+		if err := rows.Scan(&ref.id, &ref.instance, &ref.step, &ref.dueAt); err != nil {
+			rows.Close()
+			return nil, kerr.Wrapf(err, "workflow.SweepSLA", "scan %s", operation)
+		}
+		refs = append(refs, ref)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "iterate %s", operation)
+	}
+	return refs, nil
+}
+
+func (rt *Runtime) loadSLAState(ctx context.Context, db database.TenantDB, refs []slaRef) (map[uuid.UUID]slaState, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	instanceIDs := make([]uuid.UUID, 0, len(refs))
+	seenInstances := make(map[uuid.UUID]struct{}, len(refs))
+	for _, ref := range refs {
+		if _, ok := seenInstances[ref.instance]; ok {
+			continue
+		}
+		seenInstances[ref.instance] = struct{}{}
+		instanceIDs = append(instanceIDs, ref.instance)
+	}
+	rows, err := db.Query(ctx, `SELECT id, definition_id, resource_type, resource_id, current_step, status, context, version
+		FROM workflow_instances WHERE id = ANY($1::uuid[])`, instanceIDs)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "batch load instances")
+	}
+	instances := make(map[uuid.UUID]Instance, len(instanceIDs))
+	definitionIDs := make([]uuid.UUID, 0, len(instanceIDs))
+	seenDefinitions := make(map[uuid.UUID]struct{}, len(instanceIDs))
+	for rows.Next() {
+		var inst Instance
+		var rawContext []byte
+		if err := rows.Scan(&inst.ID, &inst.DefinitionID, &inst.Resource.Type, &inst.Resource.ID,
+			&inst.CurrentStep, &inst.Status, &rawContext, &inst.Version); err != nil {
+			rows.Close()
+			return nil, kerr.Wrapf(err, "workflow.SweepSLA", "scan instance")
+		}
+		inst.Context = decodeJSONMap(rawContext)
+		instances[inst.ID] = inst
+		if _, ok := seenDefinitions[inst.DefinitionID]; !ok {
+			seenDefinitions[inst.DefinitionID] = struct{}{}
+			definitionIDs = append(definitionIDs, inst.DefinitionID)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "iterate instances")
+	}
+	if len(instances) != len(instanceIDs) {
+		return nil, kerr.E(kerr.KindNotFound, "workflow_instance_not_found", "workflow instance not found during SLA sweep")
+	}
+
+	defRows, err := db.Query(ctx, `SELECT id, key, version, definition
+		FROM workflow_definitions WHERE id = ANY($1::uuid[])`, definitionIDs)
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "batch load definitions")
+	}
+	definitions := make(map[uuid.UUID]Definition, len(definitionIDs))
+	for defRows.Next() {
+		var id uuid.UUID
+		var key string
+		var version int
+		var raw []byte
+		if err := defRows.Scan(&id, &key, &version, &raw); err != nil {
+			defRows.Close()
+			return nil, kerr.Wrapf(err, "workflow.SweepSLA", "scan definition")
+		}
+		def, ok := rt.registry.definition(key, version)
+		if !ok {
+			var err error
+			def, err = ParseDefinition(raw)
+			if err != nil {
+				defRows.Close()
+				return nil, err
+			}
+		}
+		definitions[id] = def
+	}
+	defRows.Close()
+	if err := defRows.Err(); err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "iterate definitions")
+	}
+	if len(definitions) != len(definitionIDs) {
+		return nil, kerr.E(kerr.KindNotFound, "workflow_definition_not_found", "workflow definition not found during SLA sweep")
+	}
+
+	state := make(map[uuid.UUID]slaState, len(instances))
+	for id, inst := range instances {
+		state[id] = slaState{instance: inst, def: definitions[inst.DefinitionID]}
+	}
+	return state, nil
 }
 
 // parseISODuration parses the ISO-8601 duration subset the SLA fields use:

@@ -1,0 +1,11 @@
+=== RUN   FuzzParseSort
+fuzz: elapsed: 0s, gathering baseline coverage: 0/10 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 10/10 completed, now fuzzing with 16 workers
+fuzz: elapsed: 3s, execs: 590442 (196810/sec), new interesting: 169 (total: 179)
+fuzz: elapsed: 6s, execs: 1362406 (257258/sec), new interesting: 210 (total: 220)
+fuzz: elapsed: 9s, execs: 1970918 (202802/sec), new interesting: 244 (total: 254)
+fuzz: elapsed: 11s, execs: 2247498 (138226/sec), new interesting: 255 (total: 265)
+--- PASS: FuzzParseSort (11.01s)
+=== NAME  
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/filtering	11.192s

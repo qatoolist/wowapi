@@ -1,0 +1,6 @@
+=== RUN   TestNewJWKSKeySource_ProdCustomClientRequiresTrustedIssuers
+--- PASS: TestNewJWKSKeySource_ProdCustomClientRequiresTrustedIssuers (0.00s)
+=== RUN   TestNewJWKSKeySource_ProdCustomClientWithTrustedIssuersAllowed
+--- PASS: TestNewJWKSKeySource_ProdCustomClientWithTrustedIssuersAllowed (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/auth	0.214s

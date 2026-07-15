@@ -2,9 +2,12 @@
 package cli
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	goformat "go/format"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -13,7 +16,16 @@ func genUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: wowapi gen <subcommand> [flags]
 
 Subcommands:
-  crud   Generate CRUD scaffolding for a named resource inside a module directory
+  crud           Generate CRUD scaffolding for a named resource
+  rule           Generate a rule-point declaration
+  workflow       Generate a workflow definition
+  event-handler  Generate an outbox event handler
+  recurring-job  Generate a leader-safe recurring job
+  document-flow  Generate a document-class flow
+  notification   Generate a notification template declaration
+  webhook        Generate an inbound webhook handler
+All subcommands accept --module. Non-CRUD subcommands also accept --name and
+--force.
 
 wowapi gen crud flags:
   --module     Module directory (required, e.g. "internal/modules/widgets")
@@ -42,6 +54,14 @@ type crudData struct {
 	PermPrefix    string // permission key prefix, e.g. "widgets.widget"
 }
 
+type subsystemData struct {
+	Package    string
+	ModuleName string
+	Kind       string
+	Name       string
+	Title      string
+}
+
 // runGen dispatches `wowapi gen <subcommand>`.
 func runGen(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -51,6 +71,8 @@ func runGen(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "crud":
 		return runGenCRUD(args[1:], stdout, stderr)
+	case "rule", "workflow", "event-handler", "recurring-job", "document-flow", "notification", "webhook":
+		return runGenSubsystem(args[0], args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "wowapi gen: unknown subcommand %q\n", args[0])
 		genUsage(stderr)
@@ -122,6 +144,14 @@ func runGenCRUD(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "wowapi gen crud: --module last path segment %q is not a valid Go package name ([a-z][a-z0-9_]*)\n", moduleName)
 		return 1
 	}
+	if err := ensureGeneratedRegistrationSupport(*modDir); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen crud: upgrade module registration: %v\n", err)
+		return 1
+	}
+	if err := wireGeneratedModule(*modDir, moduleName); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen crud: wire module: %v\n", err)
+		return 1
+	}
 	data := crudData{
 		Package:       moduleName,
 		ModuleName:    moduleName,
@@ -132,12 +162,26 @@ func runGenCRUD(args []string, stdout, stderr io.Writer) int {
 		PermPrefix:    moduleName + "." + *resource,
 	}
 
-	migNum, err := nextMigrationNumber(filepath.Join(*modDir, "migrations"))
-	if err != nil {
-		fmt.Fprintf(stderr, "wowapi gen crud: %v\n", err)
-		return 1
+	migrationDir := filepath.Join(*modDir, "migrations")
+	var migName string
+	if *force {
+		matches, err := filepath.Glob(filepath.Join(migrationDir, "*_"+*resource+".sql"))
+		if err != nil {
+			fmt.Fprintf(stderr, "wowapi gen crud: find existing migration: %v\n", err)
+			return 1
+		}
+		if len(matches) > 0 {
+			migName = filepath.Base(matches[len(matches)-1])
+		}
 	}
-	migName := fmt.Sprintf("%05d_%s.sql", migNum, *resource)
+	if migName == "" {
+		migNum, err := nextMigrationNumber(migrationDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "wowapi gen crud: %v\n", err)
+			return 1
+		}
+		migName = fmt.Sprintf("%05d_%s.sql", migNum, *resource)
+	}
 
 	type fileSpec struct {
 		dest string
@@ -156,6 +200,132 @@ func runGenCRUD(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, spec.dest)
 	}
 
+	if err := addCRUDPermissions(filepath.Join(*modDir, "seeds", "permissions.yaml"), data); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen crud: seed permissions: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+func ensureGeneratedRegistrationSupport(modDir string) error {
+	modulePath := filepath.Join(modDir, "module.go")
+	src, err := os.ReadFile(modulePath) // #nosec G304 -- generator intentionally reads the selected module file
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if bytes.Contains(src, []byte("generatedRegistrations")) {
+		return nil
+	}
+	const moduleMarker = "// Module implements"
+	const openAPILine = "\tmc.OpenAPI(openapiFragment)\n"
+	if !bytes.Contains(src, []byte(moduleMarker)) || !bytes.Contains(src, []byte(openAPILine)) {
+		return fmt.Errorf("%s is missing supported wowapi module markers", modulePath)
+	}
+	declarations := "type generatedRegistration func(module.Context) error\n\n" +
+		"var generatedRegistrations []generatedRegistration\n\n" +
+		"func registerGenerated(fn generatedRegistration) {\n" +
+		"\tgeneratedRegistrations = append(generatedRegistrations, fn)\n" +
+		"}\n\n"
+	updated := bytes.Replace(src, []byte(moduleMarker), []byte(declarations+moduleMarker), 1)
+	loop := openAPILine +
+		"\tfor _, register := range generatedRegistrations {\n" +
+		"\t\tif err := register(mc); err != nil {\n" +
+		"\t\t\treturn err\n" +
+		"\t\t}\n" +
+		"\t}\n"
+	updated = bytes.Replace(updated, []byte(openAPILine), []byte(loop), 1)
+	formatted, err := goformat.Source(updated)
+	if err != nil {
+		return fmt.Errorf("format upgraded module: %w", err)
+	}
+	return os.WriteFile(modulePath, formatted, 0o600) // #nosec G703 -- generator intentionally updates the selected module file
+}
+
+func addCRUDPermissions(seedPath string, data crudData) error {
+	src, err := os.ReadFile(seedPath) // #nosec G304 -- generator intentionally reads the selected seed file
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var entries strings.Builder
+	for _, verb := range []string{"create", "read", "list", "update", "deactivate"} {
+		key := data.PermPrefix + "." + verb
+		if strings.Contains(string(src), "key: "+key) {
+			continue
+		}
+		fmt.Fprintf(&entries, "  - key: %s\n    description: Generated %s %s permission\n",
+			key, data.Resource, verb)
+	}
+	if entries.Len() == 0 {
+		return nil
+	}
+	updated := string(src)
+	if strings.Contains(updated, "permissions: []") {
+		updated = strings.Replace(updated, "permissions: []", "permissions:\n"+entries.String(), 1)
+	} else {
+		const nextSection = "\nresource_types:"
+		if !strings.Contains(updated, nextSection) {
+			return fmt.Errorf("%s has no resource_types section", seedPath)
+		}
+		updated = strings.Replace(updated, nextSection, entries.String()+nextSection, 1)
+	}
+	return os.WriteFile(seedPath, []byte(updated), 0o600) // #nosec G703 -- generator intentionally updates the selected seed file
+}
+
+func runGenSubsystem(kind string, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("wowapi gen "+kind, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	modDir := fs.String("module", "", "module directory (required)")
+	name := fs.String("name", "", "generated declaration name (required)")
+	force := fs.Bool("force", false, "overwrite existing file")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *modDir == "" {
+		fmt.Fprintf(stderr, "wowapi gen %s: --module is required\n", kind)
+		return 2
+	}
+	if *name == "" {
+		fmt.Fprintf(stderr, "wowapi gen %s: --name is required\n", kind)
+		return 2
+	}
+	if !identRE.MatchString(*name) {
+		fmt.Fprintf(stderr, "wowapi gen %s: --name %q must match ^[a-z][a-z0-9_]*$\n", kind, *name)
+		return 1
+	}
+	moduleName := filepath.Base(*modDir)
+	if !identRE.MatchString(moduleName) {
+		fmt.Fprintf(stderr, "wowapi gen %s: --module last path segment %q is not a valid Go package name ([a-z][a-z0-9_]*)\n", kind, moduleName)
+		return 1
+	}
+
+	if err := ensureGeneratedRegistrationSupport(*modDir); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen %s: upgrade module registration: %v\n", kind, err)
+		return 1
+	}
+	if err := wireGeneratedModule(*modDir, moduleName); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen %s: wire module: %v\n", kind, err)
+		return 1
+	}
+	data := subsystemData{
+		Package:    moduleName,
+		ModuleName: moduleName,
+		Kind:       kind,
+		Name:       *name,
+		Title:      toCamel(*name),
+	}
+	dest := filepath.Join(*modDir, *name+"_"+strings.ReplaceAll(kind, "-", "_")+".go")
+	if err := renderToFile(dest, "templates/subsystem/subsystem.go.tmpl", data, *force); err != nil {
+		fmt.Fprintf(stderr, "wowapi gen %s: %v\n", kind, err)
+		return 1
+	}
+	fmt.Fprintln(stdout, dest)
 	return 0
 }
 

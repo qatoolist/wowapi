@@ -1,0 +1,16 @@
+=== RUN   TestLogRecordInsideActiveSpanCarriesTraceAndSpanIDs
+    correlation_test.go:67: trace_id = <nil> (present=false), want "d991c0bfc3778881a853390e15005832"
+    correlation_test.go:70: span_id = <nil> (present=false), want "9468f29cdeb69fc8"
+--- FAIL: TestLogRecordInsideActiveSpanCarriesTraceAndSpanIDs (0.00s)
+=== RUN   TestLogRecordWithoutSpanOmitsCorrelationKeys
+=== RUN   TestLogRecordWithoutSpanOmitsCorrelationKeys/background_context,_no_span
+=== RUN   TestLogRecordWithoutSpanOmitsCorrelationKeys/NoOpTracer_span
+--- PASS: TestLogRecordWithoutSpanOmitsCorrelationKeys (0.00s)
+    --- PASS: TestLogRecordWithoutSpanOmitsCorrelationKeys/background_context,_no_span (0.00s)
+    --- PASS: TestLogRecordWithoutSpanOmitsCorrelationKeys/NoOpTracer_span (0.00s)
+=== RUN   TestCorrelationCoexistsWithSecretRedaction
+    correlation_test.go:126: trace_id = <nil>, want "148423c2d2bbcb562fc915b7ea6fb550" alongside redaction
+--- FAIL: TestCorrelationCoexistsWithSecretRedaction (0.00s)
+FAIL
+FAIL	github.com/qatoolist/wowapi/kernel/logging	0.267s
+FAIL

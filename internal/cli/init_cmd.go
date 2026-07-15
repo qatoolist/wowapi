@@ -29,10 +29,12 @@ Arguments:
              product inside it; also the default product name.
 
 Flags:
-  --module   Go module path for the product (required, e.g. "github.com/acme/app")
-  --name     Product name (default: <name>, else the last segment of --module)
-  --dir      Base directory (default "."); with <name>, the product goes in <dir>/<name>
-  --force    Overwrite existing files and scaffold into non-empty directories
+  --module              Go module path for the product (required, e.g. "github.com/acme/app")
+  --name                Product name (default: <name>, else the last segment of --module)
+  --dir                 Base directory (default "."); with <name>, the product goes in <dir>/<name>
+  --force               Overwrite existing files and scaffold into non-empty directories
+  --framework-version   Exact wowapi version to require (verified via go list -m before any write)
+  --local-framework     Absolute path to a local wowapi checkout; emits a replace directive (dev mode)
 `)
 }
 
@@ -43,6 +45,7 @@ type initData struct {
 	DBName           string // snake_case version of Name for SQL identifiers
 	FrameworkModule  string
 	FrameworkVersion string
+	LocalFramework   string // non-empty => go.mod gets a replace directive to this path
 }
 
 // runInit implements `wowapi init`.
@@ -50,10 +53,12 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("wowapi init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var (
-		dir    = fs.String("dir", ".", "target directory")
-		module = fs.String("module", "", "Go module path (required)")
-		name   = fs.String("name", "", "product name (default: last segment of --module)")
-		force  = fs.Bool("force", false, "overwrite existing files")
+		dir       = fs.String("dir", ".", "target directory")
+		module    = fs.String("module", "", "Go module path (required)")
+		name      = fs.String("name", "", "product name (default: last segment of --module)")
+		force     = fs.Bool("force", false, "overwrite existing files")
+		fwVersion = fs.String("framework-version", "", "exact wowapi version to require (verified before any write)")
+		localFW   = fs.String("local-framework", "", "absolute path to a local wowapi checkout (dev mode; emits a replace directive)")
 	)
 	// Extract a leading positional <name> BEFORE flag parsing: Go's flag package
 	// stops at the first non-flag arg, so `wowapi init myapp --module x` would
@@ -118,9 +123,15 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	fwVer := buildinfo.Version()
-	if fwVer == "devel" {
-		fwVer = "v0.0.0"
+	// DX-01: resolve (and verify) the framework version BEFORE any file is
+	// written — on failure, fail closed with a remediation command.
+	res, err := resolveFrameworkVersion(*fwVersion, *localFW)
+	if err != nil {
+		fmt.Fprintf(stderr, "wowapi init: %v\n", err)
+		return 1
+	}
+	if res.Warning != "" {
+		fmt.Fprintln(stderr, res.Warning)
 	}
 
 	data := initData{
@@ -128,7 +139,8 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 		Name:             productName,
 		DBName:           strings.ReplaceAll(productName, "-", "_"),
 		FrameworkModule:  buildinfo.ModulePath,
-		FrameworkVersion: fwVer,
+		FrameworkVersion: res.Version,
+		LocalFramework:   res.LocalFramework,
 	}
 
 	type fileSpec struct {

@@ -1,0 +1,18 @@
+---
+id: W00-RISKS
+type: wave-risks
+wave: W00
+status: planned
+created_at: 2026-07-12
+updated_at: 2026-07-12
+---
+
+# W00 — Risks
+
+| Risk ID | Description | Likelihood | Impact | Severity | Affected items | Mitigation | Contingency | Owner | Status | Residual risk |
+|---|---|---|---|---|---|---|---|---|---|---|
+| RISK-W00-001 | A finding-slice claimed EXECUTED in PLAN §8/§9 / REVIEW §D fails to re-verify at current HEAD (regression since the reviewed SHA `345e4ce`) | Low-medium | High — blocks downstream waves that assume the slice is intact (see `dependencies.md`) | High | W00-E01-S001/S002/S003; transitively all waves depending on the affected finding | Re-run the exact named test files/commands from PLAN §5/§8/§9, not a paraphrase; register failing evidence per mandate §10 rather than silently re-trying until green | If a regression is found, open a new task under the owning story to fix it before the story can move to `verified`; do not mark the story `accepted` with a known regression | unassigned | open | Some — even after mitigation, a slice could be flaky under CI conditions not reproduced locally |
+| RISK-W00-002 | Test infrastructure (Postgres via testkit, MinIO for S3-gated tests) unavailable or misconfigured in the execution environment, producing false-negative "fail" results that look like real regressions | Medium | Medium — wastes investigation time, risks a false regression finding being escalated | Medium | W00-E01-S003 (DATA-08 fault injection, REL-04 S3/TOTP) | Confirm `make ci-container` / `docker compose` health before treating any failure as a genuine regression; capture environment state (compose config, container health) as part of the evidence record | Re-run in a known-good environment (e.g., CI itself) before concluding a genuine regression | unassigned | open | Low once mitigated |
+| RISK-W00-003 | Bench-budget baseline captured against stale budgets if the #25 sweep-bench recalibration (SD-03) is not correctly reflected at the commit this wave runs against | Low | Medium — later waves' "improvement over baseline" perf claims would be measured against the wrong starting point | Medium | W00-E01-S002, W00-E02-S001 | Explicitly confirm `bench-budgets.txt` entry count and values match the post-#25 state (43 budgeted entries per MATRIX CS-16) before capturing the baseline artifact | Re-capture the baseline once confirmed correct; mark the earlier capture superseded, not deleted (mandate §10) | unassigned | open | Low |
+| RISK-W00-004 | ADR-ification (W00-E02-S003) inadvertently introduces new design content beyond what D-01..D-09 already state in REVIEW §F/§U, silently resolving an ambiguity the mandate requires to stay explicit | Low | Medium — would violate mandate §18 ("do not silently resolve ambiguous architecture decisions") | Medium | W00-E02-S003 | Each ADR must cite its REVIEW §F/§U source verbatim for recommendation/safe-default/owner; any elaboration beyond the source must be flagged as a Wave-00-added clarification, not folded in as if it were the original decision | Independent review checks each ADR against its REVIEW §F/§U source line | unassigned | open | Low |
+| RISK-W00-005 | CI wall-clock / coverage baseline captured before SD-01/SD-02's parallelized-gate changes (#23/#24) are correctly accounted for, producing a baseline that doesn't reflect the actual current CI shape | Low | Low-medium — affects only the descriptive accuracy of the baseline, not correctness of later waves' work | Low | W00-E02-S001 | Capture baseline against the current `.github/workflows/ci.yml` (3-leg parallelized, docs-only skip) explicitly, note the SD-01/SD-02 session-delta facts in the evidence record | Re-capture if a discrepancy is found | unassigned | open | Low |

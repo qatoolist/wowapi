@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -131,7 +132,7 @@ func TestIntegrationJobsWorkerSucceeds(t *testing.T) {
 	}
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
 		// The worker must see exactly tenant A's seeded row (RLS scoped).
 		var seen int
 		if err := db.QueryRow(ctx, `SELECT count(*) FROM events_outbox WHERE event_type = 'seed.for.tenant'`).Scan(&seen); err != nil {
@@ -145,7 +146,7 @@ func TestIntegrationJobsWorkerSucceeds(t *testing.T) {
 			`INSERT INTO events_outbox (id, tenant_id, event_type, created_by) VALUES ($1, app_tenant_id(), 'job.ran.marker', $2)`,
 			uuid.New(), uuid.Nil)
 		return err
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -189,9 +190,9 @@ func TestIntegrationJobsRetryToDLQ(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("always fails")
-	}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 0 }})
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 3, Backoff: func(int) time.Duration { return 0 }})
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -250,9 +251,9 @@ func TestIntegrationJobsBackoffReschedules(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return errors.New("transient")
-	}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{MaxAttempts: 5, Backoff: func(int) time.Duration { return 30 * time.Second }})
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -343,12 +344,12 @@ func TestIntegrationJobsTenantIsolation(t *testing.T) {
 	tenantB := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
 		_, err := db.Exec(ctx,
 			`INSERT INTO events_outbox (id, tenant_id, event_type, created_by) VALUES ($1, app_tenant_id(), 'isolation.marker', $2)`,
 			uuid.New(), uuid.Nil)
 		return err
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}
@@ -369,5 +370,274 @@ func TestIntegrationJobsTenantIsolation(t *testing.T) {
 	}
 	if c := countOutbox(t, h, tenantB.ID, "isolation.marker"); c != 0 {
 		t.Fatalf("tenant B sees %d marker rows, want 0 (job ran under wrong tenant)", c)
+	}
+}
+
+// TestIntegrationJobsClaimAssignsLease proves claim SQL writes a fresh lease
+// token, generation 1, and a future expiry into jobs_queue (DATA-02 T2).
+func TestIntegrationJobsClaimAssignsLease(t *testing.T) {
+	h := testkit.NewDB(t)
+	tenant := testkit.CreateTenant(t, h)
+
+	// Block the worker so the lease row stays in 'running' while we inspect it.
+	claimed := make(chan struct{})
+	release := make(chan struct{})
+	reg := jobs.NewRegistry()
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
+		close(claimed)
+		<-release
+		return nil
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
+	if err := reg.Err(); err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+
+	if err := h.TxM.WithTenant(testkit.TenantCtx(tenant.ID), func(ctx context.Context, db database.TenantDB) error {
+		return jobs.Enqueue(ctx, db, testJob{N: "lease-check"})
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	id := singleJobID(t, h)
+
+	r := jobs.NewRunner(h.Platform, h.TxM, reg)
+	go func() {
+		if _, err := r.ClaimOnce(context.Background()); err != nil {
+			t.Errorf("ClaimOnce: %v", err)
+		}
+	}()
+
+	<-claimed
+	var token string
+	var gen int64
+	var expires time.Time
+	if err := h.Platform.QueryRow(context.Background(),
+		`SELECT lease_token, lease_generation, lease_expires_at FROM jobs_queue WHERE id = $1`, id).
+		Scan(&token, &gen, &expires); err != nil {
+		t.Fatalf("read lease: %v", err)
+	}
+	close(release)
+	if token == "" {
+		t.Fatal("lease_token is empty")
+	}
+	if gen != 1 {
+		t.Fatalf("lease_generation = %d, want 1", gen)
+	}
+	if !expires.After(time.Now()) {
+		t.Fatalf("lease_expires_at = %v, want future", expires)
+	}
+}
+
+// TestIntegrationJobsStaleFinalizeRejectedAndReclaimBumpsGeneration proves the
+// fenced finalize path rejects a superseded lease epoch and that ReclaimStalled
+// bumps lease_generation, producing a new epoch (DATA-02 T3/T4).
+func TestIntegrationJobsStaleFinalizeRejectedAndReclaimBumpsGeneration(t *testing.T) {
+	h := testkit.NewDB(t)
+	tenant := testkit.CreateTenant(t, h)
+
+	// Worker A blocks until we release it, simulating a stalled worker.
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	var closeBlocked sync.Once
+	reg := jobs.NewRegistry()
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
+		closeBlocked.Do(func() { close(blocked) })
+		<-release
+		return nil
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
+	if err := reg.Err(); err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+
+	if err := h.TxM.WithTenant(testkit.TenantCtx(tenant.ID), func(ctx context.Context, db database.TenantDB) error {
+		return jobs.Enqueue(ctx, db, testJob{N: "stale"})
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	id := singleJobID(t, h)
+
+	r := jobs.NewRunner(h.Platform, h.TxM, reg, jobs.WithReclaimTimeout(time.Minute))
+	go func() {
+		if _, err := r.ClaimOnce(context.Background()); err != nil {
+			t.Errorf("ClaimOnce: %v", err)
+		}
+	}()
+
+	<-blocked // A is now running and holding the lease.
+
+	var staleToken string
+	var staleGen int64
+	if err := h.Platform.QueryRow(context.Background(),
+		`SELECT lease_token, lease_generation FROM jobs_queue WHERE id = $1`, id).
+		Scan(&staleToken, &staleGen); err != nil {
+		t.Fatalf("read stale lease: %v", err)
+	}
+
+	// Force the lease to expire and reclaim the job while A is still blocked.
+	if _, err := h.Admin.Exec(context.Background(),
+		`UPDATE jobs_queue SET locked_at = now() - interval '10 minutes', lease_expires_at = now() - interval '5 minutes' WHERE id = $1`, id); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+	reclaimed, err := r.ReclaimStalled(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("ReclaimStalled: %v", err)
+	}
+	if reclaimed != 1 {
+		t.Fatalf("reclaimed %d, want 1", reclaimed)
+	}
+
+	var newGen int64
+	var newToken *string
+	if err := h.Platform.QueryRow(context.Background(),
+		`SELECT lease_token, lease_generation FROM jobs_queue WHERE id = $1`, id).
+		Scan(&newToken, &newGen); err != nil {
+		t.Fatalf("read reclaimed lease: %v", err)
+	}
+	if newToken != nil {
+		t.Fatal("reclaimed row should have NULL lease_token")
+	}
+	if newGen != staleGen+1 {
+		t.Fatalf("lease_generation after reclaim = %d, want %d", newGen, staleGen+1)
+	}
+
+	// Directly attempt A's stale finalize: it must affect 0 rows because the
+	// lease token/generation no longer match (observable rejection).
+	tag, err := h.Platform.Exec(context.Background(),
+		`UPDATE jobs_queue
+			   SET status = 'completed', finished_at = now(), locked_at = NULL
+			 WHERE id = $1
+			   AND lease_token = $2
+			   AND lease_generation = $3
+			   AND lease_expires_at > now()`,
+		id, staleToken, staleGen)
+	if err != nil {
+		t.Fatalf("stale finalize exec: %v", err)
+	}
+	if tag.RowsAffected() != 0 {
+		t.Fatalf("stale finalize affected %d rows, want 0", tag.RowsAffected())
+	}
+
+	close(release) // let A finish; its finalize should be fenced.
+
+	// Wait for A's goroutine to finish finalizing. The runner's recordSuccess
+	// will see the stale lease and log a conflict, leaving the row available.
+	time.Sleep(200 * time.Millisecond)
+
+	// Claim again (as B) and complete normally.
+	if n, err := r.ClaimOnce(context.Background()); err != nil || n != 1 {
+		t.Fatalf("second ClaimOnce = (%d, %v), want (1, nil)", n, err)
+	}
+
+	if s := jobStatus(t, h, id); s != "completed" {
+		t.Fatalf("job status = %q, want completed", s)
+	}
+	var finalGen int64
+	var finalToken *string
+	if err := h.Platform.QueryRow(context.Background(),
+		`SELECT lease_token, lease_generation FROM jobs_queue WHERE id = $1`, id).
+		Scan(&finalToken, &finalGen); err != nil {
+		t.Fatalf("read final lease: %v", err)
+	}
+	if finalToken != nil {
+		t.Fatal("completed row should have NULL lease_token")
+	}
+	if finalGen <= staleGen {
+		t.Fatalf("final generation %d should exceed stale generation %d", finalGen, staleGen)
+	}
+}
+
+// TestIntegrationJobsEffectLedgerCatchesIdempotencyIgnoringWorker proves that
+// fencing the queue row does not undo an already-committed stale-worker domain
+// transaction. The effect ledger (unique on (job_id, effect_name)) is what
+// catches an idempotency-ignoring worker, not the jobs_queue row (DATA-02 T6).
+func TestIntegrationJobsEffectLedgerCatchesIdempotencyIgnoringWorker(t *testing.T) {
+	h := testkit.NewDB(t)
+	tenant := testkit.CreateTenant(t, h)
+
+	const effectName = "test.effect"
+	if _, err := h.Admin.Exec(context.Background(),
+		`CREATE TABLE test_effect_ledger (
+			job_id bigint NOT NULL,
+			effect_name text NOT NULL,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			PRIMARY KEY (job_id, effect_name)
+		)`); err != nil {
+		t.Fatalf("create effect ledger: %v", err)
+	}
+	if _, err := h.Admin.Exec(context.Background(),
+		`GRANT ALL PRIVILEGES ON test_effect_ledger TO app_rt`); err != nil {
+		t.Fatalf("grant effect ledger: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.Admin.Exec(context.Background(), `DROP TABLE IF EXISTS test_effect_ledger`)
+	})
+
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	var closeBlocked sync.Once
+
+	reg := jobs.NewRegistry()
+	reg.RegisterKindWithIdempotency(jobKind, func(ctx context.Context, db database.TenantDB, payload []byte) error {
+		jobID := jobs.JobIDFromContext(ctx)
+		if jobID == 0 {
+			return fmt.Errorf("worker did not receive job id in context")
+		}
+		if _, err := db.Exec(ctx,
+			`INSERT INTO test_effect_ledger (job_id, effect_name) VALUES ($1, $2)
+				ON CONFLICT (job_id, effect_name) DO NOTHING`,
+			jobID, effectName); err != nil {
+			t.Logf("worker insert failed: %v", err)
+			return err
+		}
+		closeBlocked.Do(func() { close(blocked) })
+		<-release
+		return nil
+	}, jobs.Idempotency{Kind: jobs.IdempotencyEffectLedger, EffectName: effectName}, jobs.DefaultRetry())
+	if err := reg.Err(); err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+
+	if err := h.TxM.WithTenant(testkit.TenantCtx(tenant.ID), func(ctx context.Context, db database.TenantDB) error {
+		return jobs.Enqueue(ctx, db, testJob{N: "ledger"})
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	id := singleJobID(t, h)
+
+	r := jobs.NewRunner(h.Platform, h.TxM, reg, jobs.WithReclaimTimeout(time.Minute))
+	go func() {
+		if _, err := r.ClaimOnce(context.Background()); err != nil {
+			t.Errorf("A ClaimOnce: %v", err)
+		}
+	}()
+	<-blocked
+
+	// A's domain effect is committed; now expire its lease and reclaim.
+	if _, err := h.Admin.Exec(context.Background(),
+		`UPDATE jobs_queue SET locked_at = now() - interval '10 minutes', lease_expires_at = now() - interval '5 minutes' WHERE id = $1`, id); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+	if n, err := r.ReclaimStalled(context.Background(), time.Minute); err != nil || n != 1 {
+		t.Fatalf("ReclaimStalled = (%d, %v), want (1, nil)", n, err)
+	}
+
+	close(release)
+	time.Sleep(100 * time.Millisecond)
+
+	// B claims and completes; its ledger insert is a no-op because A already
+	// wrote the effect. The queue row is fenced against A's stale finalize.
+	if n, err := r.ClaimOnce(context.Background()); err != nil || n != 1 {
+		t.Fatalf("B ClaimOnce = (%d, %v), want (1, nil)", n, err)
+	}
+
+	var ledgerCount int
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT count(*) FROM test_effect_ledger WHERE job_id = $1`, id).Scan(&ledgerCount); err != nil {
+		t.Fatalf("count ledger: %v", err)
+	}
+	if ledgerCount != 1 {
+		t.Fatalf("effect ledger rows = %d, want 1", ledgerCount)
+	}
+	if s := jobStatus(t, h, id); s != "completed" {
+		t.Fatalf("job status = %q, want completed", s)
 	}
 }

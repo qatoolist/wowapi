@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "story": "W07-E01-S004",
+  "captured_at": "2026-07-14",
+  "upload_path_audit": {
+    "production_entry_points": [
+      {
+        "path": "foundation/document/service.go",
+        "symbol": "Service.InitiateUploadChecksum",
+        "checksum_contract": "requires lowercase-hex SHA-256 before issuing a presigned PUT"
+      },
+      {
+        "path": "foundation/document/service.go",
+        "symbol": "Service.InitiateUpload",
+        "checksum_contract": "fails closed; retained only as an explicit unsupported entry point"
+      }
+    ],
+    "storage_capabilities": [
+      "kernel/storage.ChecksumUploader",
+      "kernel/storage.Memory.PresignPutChecksum",
+      "adapters/storage/s3.Adapter.PresignPutChecksum"
+    ],
+    "direct_framework_s3_upload_paths": 0,
+    "canonical_metadata": "lowercase hexadecimal SHA-256 stored as x-amz-checksum-sha256 by S3 and as the pending session checksum_sha256 in PostgreSQL"
+  },
+  "normal_stat_contract": {
+    "body_downloads": 0,
+    "proof": "TestS3CanonicalUploadStatNeverDownloadsBody counts GET requests across a real MinIO presigned upload and Stat"
+  },
+  "legacy_inventory": {
+    "mechanism": "S3 ListObjects with StartAfter cursor; Stat classifies metadata without downloading object bodies",
+    "real_provider_proof": "TestS3ChecksumBackfillInterruptResumeNoDuplicates inventories and repairs three real legacy MinIO objects",
+    "observed_fixture_objects": 3,
+    "production_inventory_count": null,
+    "production_inventory_status": "not measured; no production S3 credentials were available in this run"
+  }
+}

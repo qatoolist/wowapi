@@ -50,6 +50,28 @@ func (s dbPrincipalStore) UserIDBySubject(ctx context.Context, subject string) (
 	return id, nil
 }
 
+func (s dbPrincipalStore) ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error {
+	var ok bool
+	err := s.platform.Platform(ctx, func(ctx context.Context, db database.DB) error {
+		return db.QueryRow(
+			ctx,
+			`SELECT EXISTS (
+			   SELECT 1 FROM user_tenant_access
+			    WHERE user_id = $1 AND tenant_id = $2
+			      AND status = 'active' AND valid_to IS NULL
+			 )`, userID, tenantID,
+		).Scan(&ok)
+	})
+	if err != nil {
+		return kerr.Wrapf(err, "dbPrincipalStore.ActiveTenantAccess", "load tenant access")
+	}
+	if !ok {
+		return kerr.E(kerr.KindForbidden, "permission_denied",
+			"tenant access not permitted", kerr.Op("dbPrincipalStore.ActiveTenantAccess"))
+	}
+	return nil
+}
+
 func (s dbPrincipalStore) ValidateCapacity(ctx context.Context, userID, tenantID, capacityID uuid.UUID) error {
 	ctx = database.WithTenantID(ctx, tenantID)
 	var ok bool
@@ -72,6 +94,36 @@ func (s dbPrincipalStore) ValidateCapacity(ctx context.Context, userID, tenantID
 	return nil
 }
 
+// ActiveCapacityCount returns the number of active capacities for the user in
+// the tenant. This test store does not currently seed multiple capacities, so
+// returning zero avoids triggering T4 capacity-selection enforcement.
+func (s dbPrincipalStore) ActiveCapacityCount(ctx context.Context, userID, tenantID uuid.UUID) (int, error) {
+	ctx = database.WithTenantID(ctx, tenantID)
+	var count int
+	err := s.runtime.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+		return db.QueryRow(
+			ctx,
+			`SELECT count(*) FROM acting_capacities
+			  WHERE user_id = $1 AND status = 'active' AND valid_to IS NULL`, userID,
+		).Scan(&count)
+	})
+	if err != nil {
+		return 0, kerr.Wrapf(err, "dbPrincipalStore.ActiveCapacityCount", "load capacity count")
+	}
+	return count, nil
+}
+
+// ResolveGrant looks up a privileged-session grant by ID. The step-up e2e tests
+// do not exercise privileged sessions, so any grant ID is treated as not found.
+func (s dbPrincipalStore) ResolveGrant(ctx context.Context, userID, tenantID, grantID uuid.UUID) (*auth.ResolvedGrant, error) {
+	_ = ctx
+	_ = userID
+	_ = tenantID
+	_ = grantID
+	return nil, kerr.E(kerr.KindForbidden, string(auth.GrantRejectionNotFound),
+		"grant not found", kerr.Op("dbPrincipalStore.ResolveGrant"))
+}
+
 // seedUserWithSubject inserts a global user with a known idp_subject via the
 // owner pool, so a test can mint a JWT whose sub the real auth.Verifier/
 // PrincipalStore round-trip resolves to a known user (testkit.CreateUser
@@ -85,6 +137,18 @@ func seedUserWithSubject(t *testing.T, h *testkit.DBHandle, subject string) uuid
 		t.Fatalf("seed user: %v", err)
 	}
 	return id
+}
+
+// seedUserTenantAccess inserts a live membership row so the real auth.Verifier
+// can pass the unconditional ActiveTenantAccess check introduced in W03-E01-S001.
+func seedUserTenantAccess(t *testing.T, h *testkit.DBHandle, userID, tenantID uuid.UUID) {
+	t.Helper()
+	if _, err := h.Admin.Exec(context.Background(),
+		`INSERT INTO user_tenant_access (id, user_id, tenant_id, status, created_by)
+		 VALUES ($1, $2, $3, 'active', $4)`,
+		uuid.New(), userID, tenantID, uuid.Nil); err != nil {
+		t.Fatalf("seed user_tenant_access: %v", err)
+	}
 }
 
 // TestIntegrationStepUpEndToEnd is the GAP-004 end-to-end proof: a permission
@@ -104,6 +168,7 @@ func TestIntegrationStepUpEndToEnd(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 	subject := "idp|stepup-" + uuid.NewString()[:8]
 	userID := seedUserWithSubject(t, h, subject)
+	seedUserTenantAccess(t, h, userID, tenant.ID)
 	capID := testkit.CreateCapacity(t, h, tenant.ID, userID)
 
 	const perm = "identity.impersonation.assign"
@@ -204,6 +269,7 @@ func TestIntegrationStepUpPolicyEndToEnd(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 	subject := "idp|stepup-hwk-" + uuid.NewString()[:8]
 	userID := seedUserWithSubject(t, h, subject)
+	seedUserTenantAccess(t, h, userID, tenant.ID)
 	capID := testkit.CreateCapacity(t, h, tenant.ID, userID)
 
 	const perm = "vault.secret.export"

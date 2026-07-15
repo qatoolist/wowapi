@@ -1,0 +1,4 @@
+=== RUN   TestIntegrationAggregateWriteCommitsAllFourStages
+--- PASS: TestIntegrationAggregateWriteCommitsAllFourStages (0.23s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/resource/aggregate	0.744s

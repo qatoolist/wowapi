@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "artifact_id": "ART-W07-E01-S002-006",
+  "evidence_id": "EV-W07-E01-S002-007",
+  "source_requirement": "PERF-03",
+  "generated_at": "2026-07-14",
+  "source_revision": {
+    "base_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+    "working_tree_measurement": true
+  },
+  "reference": {
+    "path": "perf/reference-v1.json",
+    "sha256": "ff77a888a9fcd8e0b20e8b51d8709e3c5c4d651651bf14cc9de32379bf17fbe1",
+    "policy_status": "provisional-advisory",
+    "comparison_mode": "relative/container until DEC-Q9 resolves",
+    "relevant_relative_ceiling": {
+      "sql_statement_count_increase": 0
+    }
+  },
+  "measurement_environment": {
+    "host": "darwin/arm64",
+    "go": "go1.26.5",
+    "postgres": "16.14",
+    "postgres_container": "postgres:16-alpine",
+    "dataset": "exclusive testkit databases; real PostgreSQL; tenant fallback at ancestry depths 3, 10, and 50",
+    "query_count_includes": "read-only transaction setup, one PostgreSQL ancestry statement, and rules-resolution statements"
+  },
+  "sql_statement_comparison": [
+    {
+      "ancestry_depth": 3,
+      "legacy_statements": 11,
+      "set_based_statements": 8,
+      "statement_reduction": 3,
+      "reduction_percent": 27.27
+    },
+    {
+      "ancestry_depth": 10,
+      "legacy_statements": 18,
+      "set_based_statements": 8,
+      "statement_reduction": 10,
+      "reduction_percent": 55.56
+    },
+    {
+      "ancestry_depth": 50,
+      "legacy_statements": 58,
+      "set_based_statements": 8,
+      "statement_reduction": 50,
+      "reduction_percent": 86.21
+    }
+  ],
+  "constant_count_result": {
+    "set_based_statements_at_depths_3_10_50": [8, 8, 8],
+    "rules_resolution_statements_per_request": 1,
+    "relative_ceiling_result": "pass: no statement-count increase at any measured depth"
+  },
+  "explain_observations": [
+    {
+      "fixture": "perf/results/perf-03-explain-shallow-low.json",
+      "ancestry_depth": 3,
+      "versions_per_scope": 4,
+      "historical_execution_ms": 0.099,
+      "historical_index": "rule_versions_history_resolution_idx",
+      "current_execution_ms": 0.331,
+      "current_index": "active-only exclusion index from migrations/00008_rules.sql"
+    },
+    {
+      "fixture": "perf/results/perf-03-explain-shallow-high.json",
+      "ancestry_depth": 3,
+      "versions_per_scope": 1000,
+      "historical_execution_ms": 0.668,
+      "historical_index": "rule_versions_history_resolution_idx",
+      "current_execution_ms": 0.313,
+      "current_index": "active-only exclusion index from migrations/00008_rules.sql"
+    },
+    {
+      "fixture": "perf/results/perf-03-explain-deep-low.json",
+      "ancestry_depth": 50,
+      "versions_per_scope": 4,
+      "historical_execution_ms": 0.342,
+      "historical_index": "rule_versions_history_resolution_idx",
+      "current_execution_ms": 0.299,
+      "current_index": "active-only exclusion index from migrations/00008_rules.sql"
+    },
+    {
+      "fixture": "perf/results/perf-03-explain-deep-high.json",
+      "ancestry_depth": 50,
+      "versions_per_scope": 1000,
+      "historical_execution_ms": 6.752,
+      "historical_index": "rule_versions_history_resolution_idx",
+      "current_execution_ms": 0.331,
+      "current_index": "active-only exclusion index from migrations/00008_rules.sql"
+    }
+  ],
+  "verification": {
+    "query_count_command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -run TestIntegrationResolverQueryCountConstantWithDepth -count=1 -v",
+    "parity_command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -run TestIntegrationResolverSetBasedParity -count=1 -v",
+    "explain_command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 WOWAPI_UPDATE_EXPLAIN_FIXTURES=1 go test ./kernel/rules -run TestIntegrationResolverExplainFixtures -count=1 -v",
+    "live_update_command": "DATABASE_URL=<local-postgres> WOWAPI_REQUIRE_DB=1 go test ./kernel/rules -count=1 -v"
+  },
+  "claim_boundary": {
+    "dec_q9": "open",
+    "absolute_slo_status": "conditional-on-DEC-Q9",
+    "statement": "These are real relative measurements from a local PostgreSQL container. They are not measurements from the accepted linux/amd64 reference runner and make no absolute latency, throughput, or SLO claim. The committed reference is used for its provisional comparison policy and zero SQL-count-increase ceiling; absolute acceptance remains conditional on DEC-Q9."
+  }
+}

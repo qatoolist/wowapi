@@ -1,0 +1,28 @@
+=== RUN   FuzzFilterParse
+fuzz: elapsed: 0s, gathering baseline coverage: 0/179 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 179/179 completed, now fuzzing with 16 workers
+fuzz: elapsed: 3s, execs: 650402 (216528/sec), new interesting: 11 (total: 190)
+fuzz: elapsed: 6s, execs: 1375632 (242036/sec), new interesting: 18 (total: 197)
+fuzz: elapsed: 9s, execs: 2107859 (244047/sec), new interesting: 27 (total: 206)
+fuzz: elapsed: 12s, execs: 2960165 (284144/sec), new interesting: 32 (total: 211)
+fuzz: elapsed: 15s, execs: 3799378 (279653/sec), new interesting: 36 (total: 215)
+fuzz: elapsed: 18s, execs: 4678875 (293092/sec), new interesting: 38 (total: 217)
+fuzz: elapsed: 21s, execs: 5454306 (258572/sec), new interesting: 40 (total: 219)
+fuzz: elapsed: 24s, execs: 6231255 (258915/sec), new interesting: 42 (total: 221)
+fuzz: elapsed: 27s, execs: 6957983 (242311/sec), new interesting: 42 (total: 221)
+fuzz: elapsed: 30s, execs: 7642770 (228271/sec), new interesting: 43 (total: 222)
+fuzz: elapsed: 33s, execs: 8455749 (270965/sec), new interesting: 45 (total: 224)
+fuzz: elapsed: 36s, execs: 9255377 (266571/sec), new interesting: 48 (total: 227)
+fuzz: elapsed: 39s, execs: 10136736 (293728/sec), new interesting: 50 (total: 229)
+fuzz: elapsed: 42s, execs: 11015302 (292907/sec), new interesting: 51 (total: 230)
+fuzz: elapsed: 45s, execs: 11772313 (252335/sec), new interesting: 52 (total: 231)
+fuzz: elapsed: 48s, execs: 12594398 (274071/sec), new interesting: 52 (total: 231)
+fuzz: elapsed: 51s, execs: 13271612 (225719/sec), new interesting: 52 (total: 231)
+fuzz: elapsed: 54s, execs: 13999731 (242472/sec), new interesting: 54 (total: 233)
+fuzz: elapsed: 57s, execs: 14680541 (227178/sec), new interesting: 54 (total: 233)
+fuzz: elapsed: 1m0s, execs: 15235878 (185061/sec), new interesting: 54 (total: 233)
+fuzz: elapsed: 1m0s, execs: 15235878 (0/sec), new interesting: 54 (total: 233)
+--- PASS: FuzzFilterParse (60.16s)
+=== NAME  
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/filtering	60.344s

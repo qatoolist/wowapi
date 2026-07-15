@@ -227,9 +227,33 @@ See the `kernel/mfa` package doc for the exact API (`GenerateTOTPSecret`, `TOTPC
 ti := testkit.NewTokenIssuer()                 // local RSA keypair
 ks := ti.KeySource()                           // wire into your verifier
 tok := ti.Issue(subjectID, tenantID, capacityID,
-    testkit.WithAudience("myapp"), testkit.WithBreakGlass(true)) // options: WithIssuer/WithAudience/WithExpiry/WithImpersonator/WithBreakGlass(bool)/WithAMR(...string)
+    testkit.WithAudience("myapp"),
+    testkit.WithAuthTime(time.Now()),          // OIDC auth_time; drives step-up freshness
+    testkit.WithACR("silver"),                  // OIDC acr
+    testkit.WithGrantID(grantID))              // options: WithIssuer/WithAudience/WithExpiry/WithAMR(...string)
 req.Header.Set("Authorization", "Bearer "+tok)
 ```
+
+**Privileged sessions.** `ImpersonatorUserID` and `BreakGlass` on `authz.Actor` are populated only
+from a verified `identity_grant` row looked up by the token's `grant_id` claim (SEC-01 T5). The
+legacy `impersonator_user_id` and `break_glass` claims are ignored when `grant_id` is absent, so
+`WithImpersonator`/`WithBreakGlass` are no longer sufficient to exercise those paths in new code.
+Use `WithGrantID` and seed the matching grant row instead.
+
+**Assurance freshness (SEC-01 T6).** `auth_time`, `acr`, and `amr` are bound into the framework's
+assurance model. A permission's `StepUpPolicy.MaxAge` (or `Options.StepUpMaxAge` for the plain
+`step_up: true` shorthand) requires the actor's `AuthTime` to be within the configured duration of
+now. A stale `auth_time` with an otherwise-valid `amr` still fails step-up. A zero/unset
+`AuthTime` is treated as stale when freshness is required.
+
+**Credential schemes (SEC-01 T7).** Permissions can restrict which credential schemes they accept
+via `AllowedSchemes`: `user`, `api_key`, `webhook`, or `internal`. A permission scoped to
+`CredentialUser` rejects a valid API-key actor even when the key carries the required scope. The
+authenticators set the actor's `CredentialScheme` explicitly (`auth.Verifier.Actor` for JWT users,
+`apikey.Authenticator` for API keys). Actors constructed without an explicit scheme have one
+derived from `ActorKind`/`Scopes` for backward compatibility. This mechanism is a candidate for
+reconciliation with the future DX-03 module-DSL `CredentialScheme` design (W06-E01-S001); treat it
+as provisional until that design lands.
 
 See [Testing](testing.md) for the full harness.
 

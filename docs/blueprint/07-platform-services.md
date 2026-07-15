@@ -36,6 +36,7 @@ allocs in framework code; authz evaluate (cached assignments) < 1ms; middleware 
 
 ## 3. Concurrency & async primitives (`kernel/jobs`, `kernel/outbox`)
 
+<!-- doc-example: illustrative -->
 ```go
 type Job interface { Kind() string }                       // payload struct implements
 type Worker[T Job] interface { Work(ctx context.Context, j T) error }

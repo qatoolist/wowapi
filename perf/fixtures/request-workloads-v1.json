@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "seed": {
+    "value": 70701001,
+    "tenants": 100,
+    "users_per_tenant": 1,
+    "capacities_per_tenant": 1,
+    "organizations_per_tenant": 1,
+    "resources_per_tenant": 10,
+    "historical_rows_per_tenant": 25,
+    "distribution": "uniform round-robin"
+  },
+  "profiles": [
+    "public",
+    "authenticated-read",
+    "authenticated-write",
+    "resource-authz",
+    "idempotent-write",
+    "async-enqueue"
+  ],
+  "cache_states": ["cold", "warm"],
+  "concurrent_tenants": [1, 10, 100],
+  "semantics": {
+    "public": "Public HTTP route performing a real PostgreSQL readiness query without tenant scope.",
+    "authenticated-read": "Authenticated and tenant-authorized route reading a tenant-owned row through RLS.",
+    "authenticated-write": "Authenticated and tenant-authorized route inserting a tenant-owned row through RLS.",
+    "resource-authz": "Authenticated route performing tenant authorization plus a real resource-scoped authorization decision before an RLS read.",
+    "idempotent-write": "Authenticated route claiming and completing a PostgreSQL idempotency key in the business transaction.",
+    "async-enqueue": "Authenticated route writing a transactional outbox event in the business transaction."
+  },
+  "cache_definition": {
+    "cold": "Raw PostgreSQL authz store; every authorization decision executes store queries.",
+    "warm": "Framework CachingStore primed once for every selected tenant before timing. PostgreSQL transaction and RLS setup remain enabled."
+  },
+  "request": {
+    "body_bytes": 256,
+    "response_bytes_target": 128
+  }
+}

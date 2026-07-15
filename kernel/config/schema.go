@@ -92,6 +92,10 @@ func fieldSchema(t reflect.Type) map[string]any {
 	case reflect.TypeFor[time.Time]():
 		return map[string]any{"type": "string", "format": "date-time"}
 	}
+	// Fail-closed by construction: any Kind without an arm falls through to the
+	// empty-schema return below (renders as an unconstrained node rather than
+	// inventing a wrong type) — full reflect.Kind enumeration adds no safety.
+	//exhaustive:ignore
 	switch t.Kind() {
 	case reflect.Struct:
 		return structSchema(t)

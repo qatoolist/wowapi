@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash"
 	"strconv"
 	"strings"
@@ -61,7 +62,9 @@ type Log struct {
 	OldValue       string
 	NewValue       string
 	Reason         string
+	Metadata       map[string]any
 	TxID           string // database transaction id (forensic correlation; roadmap CA-11)
+	HashVersion    int16  // 1 = historical 15-field scheme, 2 = widened scheme incl. metadata + tx_id
 }
 
 // Redactor may mutate an Entry before it is written — e.g. mask the values of
@@ -100,9 +103,9 @@ func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) erro
 	if meta == nil {
 		meta = map[string]any{}
 	}
-	metaJSON, err := json.Marshal(meta)
+	metaBytes, err := canonicalizeMetadata(meta)
 	if err != nil {
-		return kerr.Wrapf(err, "audit.Record", "marshal metadata")
+		return kerr.Wrapf(err, "audit.Record", "canonicalize metadata")
 	}
 
 	// Microsecond precision: Postgres timestamptz stores micros, so truncating
@@ -127,20 +130,26 @@ func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) erro
 		return kerr.Wrapf(err, "audit.Record", "lock chain head")
 	}
 
-	rowHash := chainHash(prevHash, seq, id, occurredAt, actorStr, e.ActorKind,
-		uuidStr(e.ImpersonatorID), requestID, e.Action, e.EntityType, uuidStr(e.EntityID),
-		e.Field, e.OldValue, e.NewValue, e.Reason)
+	// tx_id is part of the widened hash (hash_version=2). Read it from the
+	// current transaction so the hash input is deterministic and reproducible.
+	var txID string
+	if err := db.QueryRow(ctx, `SELECT pg_current_xact_id()::text`).Scan(&txID); err != nil {
+		return kerr.Wrapf(err, "audit.Record", "read tx_id")
+	}
+
+	rowHash := chainHash(hashVersion2, prevHash, seq, id, occurredAt, txID, metaBytes,
+		actorStr, e.ActorKind, uuidStr(e.ImpersonatorID), requestID, e.Action,
+		e.EntityType, uuidStr(e.EntityID), e.Field, e.OldValue, e.NewValue, e.Reason)
 
 	if _, err := db.Exec(ctx,
 		`INSERT INTO audit_logs
 		    (id, tenant_id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
 		     action, entity_type, entity_id, field, old_value, new_value, reason, metadata,
-		     seq, row_hash, prev_hash, tx_id)
-		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-		         pg_current_xact_id()::text)`,
+		     seq, row_hash, prev_hash, tx_id, hash_version)
+		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 		id, occurredAt, actorArg, nullStr(e.ActorKind), nullUUID(e.ImpersonatorID), nullStr(requestID),
 		e.Action, nullStr(e.EntityType), nullUUID(e.EntityID), nullStr(e.Field), nullStr(e.OldValue),
-		nullStr(e.NewValue), nullStr(e.Reason), metaJSON, seq, rowHash, prevHash); err != nil {
+		nullStr(e.NewValue), nullStr(e.Reason), metaBytes, seq, rowHash, prevHash, txID, hashVersion2); err != nil {
 		return kerr.Wrapf(err, "audit.Record", "insert audit row")
 	}
 
@@ -152,19 +161,42 @@ func (w *Writer) Record(ctx context.Context, db database.TenantDB, e Entry) erro
 	return nil
 }
 
-// chainHash computes row_hash = sha256(lp(prev) || lp(fields…)). Each field is
-// length-prefixed so no combination of values can collide with a different one.
-// metadata is intentionally NOT chained: it is stored as jsonb, which reformats
-// on round-trip and so cannot be hashed reproducibly — the audited change
-// (entity/field/before/after/actor/action) is what the chain protects.
-func chainHash(prev string, seq int64, id uuid.UUID, occurredAt time.Time, fields ...string) string {
+const (
+	hashVersion1 int16 = 1 // historical 15-field scheme (metadata and tx_id excluded)
+	hashVersion2 int16 = 2 // widened scheme: canonicalized metadata + tx_id included
+)
+
+// canonicalizeMetadata returns a deterministic JSON representation of m suitable
+// for hashing. It relies on encoding/json's default map-key sorting and stable
+// encoding of scalar values; the hash never uses the stored jsonb bytes directly
+// because Postgres jsonb does not preserve formatting or key order. The returned
+// bytes are also the canonical form stored in the metadata column.
+func canonicalizeMetadata(m map[string]any) ([]byte, error) {
+	if m == nil {
+		m = map[string]any{}
+	}
+	return json.Marshal(m)
+}
+
+// chainHash computes row_hash = sha256(lp(prev) || lp(seq) || lp(id) || lp(occurredAt)
+// || [v2: lp(txID) || lp(metadata)] || lp(fields…)). Each field is length-prefixed
+// so no combination of values can collide with a different one.
+//
+// version selects the scheme: v1 is the historical 15-field scheme; v2 widens the
+// input set to include canonicalized metadata and tx_id. Historical rows
+// (hash_version=1) continue to verify under v1; new rows are written as v2.
+func chainHash(version int16, prev string, seq int64, id uuid.UUID, occurredAt time.Time, txID string, metadata []byte, fields ...string) string {
 	h := sha256.New()
 	lp(h, prev)
 	var seqb [8]byte
-	binary.BigEndian.PutUint64(seqb[:], uint64(seq))
+	binary.BigEndian.PutUint64(seqb[:], uint64(seq)) // #nosec G115 -- bijective int64→uint64 reinterpretation for hash-input encoding; seq is a monotonically advanced chain sequence (never negative)
 	h.Write(seqb[:])
 	lp(h, id.String())
 	lp(h, occurredAt.UTC().Format(time.RFC3339Nano))
+	if version >= hashVersion2 {
+		lp(h, txID)
+		lp(h, string(metadata))
+	}
 	for _, f := range fields {
 		lp(h, f)
 	}
@@ -173,7 +205,7 @@ func chainHash(prev string, seq int64, id uuid.UUID, occurredAt time.Time, field
 
 func lp(h hash.Hash, s string) {
 	var b [4]byte
-	binary.BigEndian.PutUint32(b[:], uint32(len(s)))
+	binary.BigEndian.PutUint32(b[:], uint32(len(s))) // #nosec G115 -- audit field values are single Postgres row fields, bounded far below 4 GiB, so the length prefix cannot truncate
 	_, _ = h.Write(b[:])
 	_, _ = h.Write([]byte(s))
 }
@@ -195,7 +227,8 @@ type VerifyResult struct {
 func (w *Writer) Verify(ctx context.Context, db database.TenantDB) (VerifyResult, error) {
 	rows, err := db.Query(ctx,
 		`SELECT seq, id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
-		        action, entity_type, entity_id, field, old_value, new_value, reason, row_hash, prev_hash
+		        action, entity_type, entity_id, field, old_value, new_value, reason,
+		        metadata, tx_id, hash_version, row_hash, prev_hash
 		   FROM audit_logs WHERE tenant_id = app_tenant_id() ORDER BY seq`)
 	if err != nil {
 		return VerifyResult{}, kerr.Wrapf(err, "audit.Verify", "read chain")
@@ -213,11 +246,14 @@ func (w *Writer) Verify(ctx context.Context, db database.TenantDB) (VerifyResult
 			actorID, impersonator, entityID                             *uuid.UUID
 			action                                                      string
 			actorKind, requestID, entityType, field, oldV, newV, reason *string
+			metadata                                                    map[string]any
+			txID                                                        *string
+			hashVersion                                                 int16
 			rowHash, prevHash                                           string
 		)
 		if err := rows.Scan(&seq, &id, &occurredAt, &actorID, &actorKind, &impersonator, &requestID,
 			&action, &entityType, &entityID, &field, &oldV, &newV, &reason,
-			&rowHash, &prevHash); err != nil {
+			&metadata, &txID, &hashVersion, &rowHash, &prevHash); err != nil {
 			return VerifyResult{}, kerr.Wrapf(err, "audit.Verify", "scan row")
 		}
 		res.Count++
@@ -230,11 +266,16 @@ func (w *Writer) Verify(ctx context.Context, db database.TenantDB) (VerifyResult
 			res.BrokenSeq, res.Reason = seq, "prev_hash does not link to the previous row"
 			return res, nil
 		}
-		want := chainHash(prev, seq, id, occurredAt, uuidStr(ptrUUID(actorID)), deref(actorKind),
-			uuidStr(ptrUUID(impersonator)), deref(requestID), action, deref(entityType),
-			uuidStr(ptrUUID(entityID)), deref(field), deref(oldV), deref(newV), deref(reason))
+		want, err := recomputeRowHash(prev, seq, id, occurredAt, hashVersion, deref(txID), metadata,
+			uuidStr(ptrUUID(actorID)), deref(actorKind), uuidStr(ptrUUID(impersonator)),
+			deref(requestID), action, deref(entityType), uuidStr(ptrUUID(entityID)),
+			deref(field), deref(oldV), deref(newV), deref(reason))
+		if err != nil {
+			res.BrokenSeq, res.Reason = seq, fmt.Sprintf("row hash recompute failed (hash_version=%d): %v", hashVersion, err)
+			return res, nil
+		}
 		if want != rowHash {
-			res.BrokenSeq, res.Reason = seq, "row_hash does not match (row was modified)"
+			res.BrokenSeq, res.Reason = seq, fmt.Sprintf("row_hash does not match (hash_version=%d)", hashVersion)
 			return res, nil
 		}
 		prev = rowHash
@@ -245,6 +286,24 @@ func (w *Writer) Verify(ctx context.Context, db database.TenantDB) (VerifyResult
 	}
 	res.OK = true
 	return res, nil
+}
+
+// recomputeRowHash rebuilds the expected row_hash for a row under its recorded
+// hash_version. v1 preserves the historical 15-field scheme; v2 includes the
+// canonicalized metadata and tx_id. An unknown version fails closed.
+func recomputeRowHash(prev string, seq int64, id uuid.UUID, occurredAt time.Time, hashVersion int16, txID string, metadata map[string]any, fields ...string) (string, error) {
+	switch hashVersion {
+	case hashVersion1:
+		return chainHash(hashVersion1, prev, seq, id, occurredAt, "", nil, fields...), nil
+	case hashVersion2:
+		metaBytes, err := canonicalizeMetadata(metadata)
+		if err != nil {
+			return "", err
+		}
+		return chainHash(hashVersion2, prev, seq, id, occurredAt, txID, metaBytes, fields...), nil
+	default:
+		return "", fmt.Errorf("unknown hash_version %d", hashVersion)
+	}
 }
 
 // Anchor returns the tenant's current chain head — the last seq and its hash.
@@ -346,7 +405,8 @@ func (w *Writer) Query(ctx context.Context, db database.TenantDB, f Filter) ([]L
 	}
 	args = append(args, limit)
 	sql := `SELECT id, occurred_at, actor_id, actor_kind, impersonator_id, request_id,
-	               action, entity_type, entity_id, field, old_value, new_value, reason, tx_id
+	               action, entity_type, entity_id, field, old_value, new_value, reason,
+	               metadata, tx_id, hash_version
 	          FROM audit_logs
 	         WHERE ` + strings.Join(conds, " AND ") +
 		// id (UUIDv7) is a creation-ordered tiebreaker so rows written in the same
@@ -363,7 +423,8 @@ func (w *Writer) Query(ctx context.Context, db database.TenantDB, f Filter) ([]L
 		var l Log
 		var actorKind, requestID, entityType, field, oldV, newV, reason, txID *string
 		if err := rows.Scan(&l.ID, &l.OccurredAt, &l.ActorID, &actorKind, &l.ImpersonatorID,
-			&requestID, &l.Action, &entityType, &l.EntityID, &field, &oldV, &newV, &reason, &txID); err != nil {
+			&requestID, &l.Action, &entityType, &l.EntityID, &field, &oldV, &newV, &reason,
+			&l.Metadata, &txID, &l.HashVersion); err != nil {
 			return nil, kerr.Wrapf(err, "audit.Query", "scan audit row")
 		}
 		l.TxID = deref(txID)
@@ -374,6 +435,9 @@ func (w *Writer) Query(ctx context.Context, db database.TenantDB, f Filter) ([]L
 		l.OldValue = deref(oldV)
 		l.NewValue = deref(newV)
 		l.Reason = deref(reason)
+		if l.Metadata == nil {
+			l.Metadata = map[string]any{}
+		}
 		out = append(out, l)
 	}
 	if err := rows.Err(); err != nil {

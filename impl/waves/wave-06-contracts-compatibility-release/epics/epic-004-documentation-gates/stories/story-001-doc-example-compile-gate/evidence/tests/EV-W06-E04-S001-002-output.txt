@@ -1,0 +1,2 @@
+go run ./internal/tools/docexamples -root .
+docs-check: compiled 1 tagged examples; linted 15 future-state documents; generated reference byte-match ok

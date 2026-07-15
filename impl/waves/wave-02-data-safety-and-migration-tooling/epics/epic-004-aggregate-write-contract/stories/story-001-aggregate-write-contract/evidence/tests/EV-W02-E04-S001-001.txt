@@ -1,0 +1,12 @@
+=== RUN   TestIntegrationAggregateWriteFaultInjection
+=== RUN   TestIntegrationAggregateWriteFaultInjection/stage1-business-write
+=== RUN   TestIntegrationAggregateWriteFaultInjection/stage2-mirror-upsert
+=== RUN   TestIntegrationAggregateWriteFaultInjection/stage3-audit-row
+=== RUN   TestIntegrationAggregateWriteFaultInjection/stage4-outbox-event
+--- PASS: TestIntegrationAggregateWriteFaultInjection (0.24s)
+    --- PASS: TestIntegrationAggregateWriteFaultInjection/stage1-business-write (0.01s)
+    --- PASS: TestIntegrationAggregateWriteFaultInjection/stage2-mirror-upsert (0.00s)
+    --- PASS: TestIntegrationAggregateWriteFaultInjection/stage3-audit-row (0.01s)
+    --- PASS: TestIntegrationAggregateWriteFaultInjection/stage4-outbox-event (0.01s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/resource/aggregate	0.483s

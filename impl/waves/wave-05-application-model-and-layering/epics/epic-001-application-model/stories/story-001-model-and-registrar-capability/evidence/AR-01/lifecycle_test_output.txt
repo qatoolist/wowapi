@@ -1,0 +1,24 @@
+=== RUN   TestStateTransitions
+--- PASS: TestStateTransitions (0.00s)
+=== RUN   TestValidationRules
+--- PASS: TestValidationRules (0.00s)
+=== RUN   TestPostSealMutation
+--- PASS: TestPostSealMutation (0.00s)
+=== RUN   TestTypeConflictEnforcement
+--- PASS: TestTypeConflictEnforcement (0.00s)
+=== RUN   TestZeroValueRegistrar
+--- PASS: TestZeroValueRegistrar (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/appmodel	(cached)
+=== RUN   TestStateTransitions
+--- PASS: TestStateTransitions (0.00s)
+=== RUN   TestValidationRules
+--- PASS: TestValidationRules (0.00s)
+=== RUN   TestPostSealMutation
+--- PASS: TestPostSealMutation (0.00s)
+=== RUN   TestTypeConflictEnforcement
+--- PASS: TestTypeConflictEnforcement (0.00s)
+=== RUN   TestZeroValueRegistrar
+--- PASS: TestZeroValueRegistrar (0.00s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/appmodel	(cached)

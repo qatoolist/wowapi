@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
+
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Memory is an in-process Adapter for tests and local dev. Presigned URLs are
@@ -41,6 +43,13 @@ func (m *Memory) Has(key string) bool {
 }
 
 func (m *Memory) PresignPut(_ context.Context, key string, ttl time.Duration) (PresignedURL, error) {
+	return PresignedURL{URL: "mem://" + key + "?m=put", Method: "PUT", ExpiresAt: m.now().Add(ttl)}, nil
+}
+
+func (m *Memory) PresignPutChecksum(_ context.Context, key, checksumSHA256 string, ttl time.Duration) (PresignedURL, error) {
+	if raw, err := hex.DecodeString(checksumSHA256); err != nil || len(raw) != sha256.Size {
+		return PresignedURL{}, kerr.E(kerr.KindValidation, "invalid_upload_checksum", "upload checksum must be lowercase-hex SHA-256")
+	}
 	return PresignedURL{URL: "mem://" + key + "?m=put", Method: "PUT", ExpiresAt: m.now().Add(ttl)}, nil
 }
 

@@ -1,0 +1,28 @@
+=== RUN   FuzzParseSort
+fuzz: elapsed: 0s, gathering baseline coverage: 0/265 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 265/265 completed, now fuzzing with 16 workers
+fuzz: elapsed: 3s, execs: 553696 (184529/sec), new interesting: 10 (total: 275)
+fuzz: elapsed: 6s, execs: 1337005 (261124/sec), new interesting: 19 (total: 284)
+fuzz: elapsed: 9s, execs: 2075521 (246192/sec), new interesting: 26 (total: 291)
+fuzz: elapsed: 12s, execs: 2848856 (257719/sec), new interesting: 32 (total: 297)
+fuzz: elapsed: 15s, execs: 3580991 (244089/sec), new interesting: 35 (total: 300)
+fuzz: elapsed: 18s, execs: 4277102 (231949/sec), new interesting: 39 (total: 304)
+fuzz: elapsed: 21s, execs: 4956604 (226598/sec), new interesting: 40 (total: 305)
+fuzz: elapsed: 24s, execs: 5705431 (249578/sec), new interesting: 41 (total: 306)
+fuzz: elapsed: 27s, execs: 6439936 (244786/sec), new interesting: 46 (total: 311)
+fuzz: elapsed: 30s, execs: 7109755 (223333/sec), new interesting: 48 (total: 313)
+fuzz: elapsed: 33s, execs: 7871018 (253773/sec), new interesting: 48 (total: 313)
+fuzz: elapsed: 36s, execs: 8549731 (226194/sec), new interesting: 52 (total: 317)
+fuzz: elapsed: 39s, execs: 9305064 (251705/sec), new interesting: 53 (total: 318)
+fuzz: elapsed: 42s, execs: 10103451 (266155/sec), new interesting: 57 (total: 322)
+fuzz: elapsed: 45s, execs: 10681525 (192758/sec), new interesting: 59 (total: 324)
+fuzz: elapsed: 48s, execs: 11380442 (232965/sec), new interesting: 63 (total: 328)
+fuzz: elapsed: 51s, execs: 12169116 (262857/sec), new interesting: 63 (total: 328)
+fuzz: elapsed: 54s, execs: 13054120 (295043/sec), new interesting: 64 (total: 329)
+fuzz: elapsed: 57s, execs: 13893029 (279633/sec), new interesting: 69 (total: 334)
+fuzz: elapsed: 1m0s, execs: 14691156 (266061/sec), new interesting: 72 (total: 337)
+fuzz: elapsed: 1m0s, execs: 14691156 (0/sec), new interesting: 72 (total: 337)
+--- PASS: FuzzParseSort (60.22s)
+=== NAME  
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/filtering	60.426s

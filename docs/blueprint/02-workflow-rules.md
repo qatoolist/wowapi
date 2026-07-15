@@ -70,6 +70,7 @@ steps:
 
 ### 1.4 Kernel interfaces
 
+<!-- doc-example: illustrative -->
 ```go
 type Runtime interface {
     Start(ctx context.Context, defKey string, res resource.Ref, input map[string]any) (InstanceID, error)
@@ -142,6 +143,7 @@ Resolve(key, tenant, org?, at time.Time):
 
 ### 2.4 Interfaces
 
+<!-- doc-example: illustrative -->
 ```go
 type Registry interface {                        // module-facing
     RegisterPoint(p Point) error                 // key, schema, default, scopes, requiresApproval

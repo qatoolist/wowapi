@@ -74,7 +74,7 @@ func TestResolve_EmptyVar(t *testing.T) {
 // TestResolve_ErrorMessagesContainNoSecretValue verifies that error paths
 // never leak a resolved secret value into the error string (SEC-2).
 func TestResolve_ErrorMessagesContainNoSecretValue(t *testing.T) {
-	const secretValue = "topsecret_abc123"
+	const secretValue = "REDACTED_BY_PROGRAMME_AUDIT"
 
 	// Wrong-provider path: lookup is never reached, but if it were,
 	// the value must not appear in the error.

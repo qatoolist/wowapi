@@ -3,11 +3,36 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultsValidate(t *testing.T) {
 	if err := Defaults().Validate(); err != nil {
 		t.Fatalf("Defaults() must validate: %v", err)
+	}
+}
+
+// TestPoolLifetimeKeysValidate pins the W01-E01-S001 contract for the
+// MaxConnLifetime/MaxConnIdleTime pool keys: the defaults are pgx v5's own
+// internal defaults (1h / 30m), explicit pgx-default values are accepted, and
+// zero (an omitted key on a hand-built Pool literal) is accepted so that
+// pre-existing configurations keep pre-story pool behavior (pgx defaults).
+func TestPoolLifetimeKeysValidate(t *testing.T) {
+	f := Defaults()
+	if f.DB.MaxConnLifetime != time.Hour || f.DB.MaxConnIdleTime != 30*time.Minute {
+		t.Fatalf("Defaults() pool lifetimes = (%v, %v), want pgx defaults (1h, 30m)",
+			f.DB.MaxConnLifetime, f.DB.MaxConnIdleTime)
+	}
+	if err := f.Validate(); err != nil {
+		t.Fatalf("pgx-default lifetime values must validate: %v", err)
+	}
+
+	// Omitted (zero) values = "use the pgx default" — must stay valid so
+	// existing Pool literals that never set the keys keep working unchanged.
+	f.DB.MaxConnLifetime = 0
+	f.DB.MaxConnIdleTime = 0
+	if err := f.Validate(); err != nil {
+		t.Fatalf("zero lifetime values (pgx-default sentinel) must validate: %v", err)
 	}
 }
 

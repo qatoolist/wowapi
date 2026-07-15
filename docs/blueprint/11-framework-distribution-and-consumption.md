@@ -63,14 +63,18 @@ product package (structurally impossible: separate repositories, dependency poin
 ### Usage flow for a new product backend
 
 1. `go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`
-2. `wowapi init --module example.com/acme-ops --wowapi-version vX.Y.Z` — scaffolds the repo
+2. `wowapi init --module example.com/acme-ops` — scaffolds the repo
    above (go.mod with pinned wowapi, mains, compose, Makefile wrappers, CI stub). The command may
    offer prompts, but all inputs must also have flags so CI/bootstrap scripts are repeatable.
-3. `wowapi new-module requests` — scaffolds `/internal/modules/requests` (template in [06-module-sdk.md](06-module-sdk.md)).
+   A released CLI pins its own version in the scaffolded go.mod; to override, pass
+   `--framework-version vX.Y.Z` (verified via `go list -m`), or `--local-framework /path/to/wowapi`
+   for a dev-mode scaffold against a local checkout (emits a `replace` directive).
+3. `wowapi new-module --name requests` — scaffolds `/internal/modules/requests` (template in [06-module-sdk.md](06-module-sdk.md)).
 4. Implement domain/service/store code; embed assets (migrations, seeds, OpenAPI fragment) via
    `embed.FS` handed to `module.Context` in `Register` — the embedded-asset methods are public contracts.
 5. Wire the mains:
 
+<!-- doc-example: illustrative -->
 ```go
 package main
 
@@ -103,8 +107,36 @@ func main() {
 }
 ```
 
-6. Configure per environment: `wowapi init` seeds `configs/{base,local,dev,stage,prod}.yaml`
-   (secret references only — never raw secrets); `wowapi config validate --env prod` runs in CI
+The marker directly above each Go fence states its contract. A
+`<!-- doc-example: compile -->` fence is normative current API and must be complete, standalone Go
+source; `<!-- doc-example: illustrative -->` identifies signatures or product-specific pseudo-code
+that is intentionally not compiled.
+
+Run `make docs-check` before submitting documentation changes. When the authoritative AR-03
+ApplicationModel projection changes intentionally, regenerate
+`docs/reference/application-model.md` with
+`go run ./internal/tools/docexamples -write-reference`, then run `make docs-check` to prove the
+generated table byte-matches the export.
+
+This minimal framework-only example is compile-checked:
+
+<!-- doc-example: compile -->
+```go
+package main
+
+import "github.com/qatoolist/wowapi/app"
+
+func main() {
+    application := app.New()
+    if err := application.Validate(); err != nil {
+        panic(err)
+    }
+}
+```
+
+6. Configure per environment: `wowapi init` seeds `configs/{base,local}.yaml`; add further
+   overlays (`dev`/`stage`/`prod`.yaml) per environment (secret references only — never raw
+   secrets); `wowapi config validate --env prod` runs in CI
    ([12-configuration-and-deployment.md](12-configuration-and-deployment.md)).
 7. `go build ./...`, run `cmd/migrate`, start `cmd/api`/`cmd/worker`. A future society product is
    just another such repo registering `society.Module{}` — the framework is untouched.
@@ -130,18 +162,15 @@ any module migration that might depend on them.
 ```text
 go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z
 
-wowapi init --module example.com/acme-ops --wowapi-version vX.Y.Z
-                                                   # scaffold a product repo; flags make it repeatable
-wowapi new-module requests                         # scaffold a module
-wowapi gen crud --module requests --resource request
-wowapi gen                                         # sqlc + mocks + mappers (idempotent)
-wowapi migrate create --module requests --name create_requests
-wowapi seed validate
+wowapi init --module example.com/acme-ops          # scaffold a product repo; flags make it repeatable
+wowapi new-module --name requests                  # scaffold a module
+wowapi gen crud --module internal/modules/requests --resource request
+wowapi migrate create --dir internal/modules/requests/migrations --name create_requests
+wowapi seed validate --module requests --dir internal/modules/requests/seeds
 wowapi openapi merge
 wowapi lint boundaries
 wowapi version
 
-wowapi config init
 wowapi config validate --env prod
 wowapi config doctor
 wowapi config print --redacted
@@ -158,7 +187,7 @@ wowapi deploy render --env prod                    # see 12-configuration-and-de
   its own build version, and warns on mismatch (`wowapi version` prints both). Keep them equal so
   generated code matches the imported API.
 - **Release binaries** (goreleaser) are published per tag for teams that don't build from source.
-- **CI usage:** `wowapi seed validate`, `wowapi openapi merge --check`, `wowapi lint boundaries`
+- **CI usage:** `wowapi seed validate`, `wowapi openapi merge`, `wowapi lint boundaries`
   run in product CI. For tightly pinned CI jobs — or as a no-install fallback —
   `go run github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z <cmd>` works, but it is not the primary
   developer experience.

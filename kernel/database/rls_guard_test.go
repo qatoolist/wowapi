@@ -23,6 +23,9 @@ func guardTestDSN(t *testing.T) string {
 		dsn = os.Getenv("WOWAPI_TEST_DSN")
 	}
 	if dsn == "" {
+		if os.Getenv("WOWAPI_REQUIRE_DB") != "" {
+			t.Fatal("WOWAPI_REQUIRE_DB is set but neither DATABASE_URL nor WOWAPI_TEST_DSN is available for the RLS guard integration test")
+		}
 		t.Skip("RLS-guard test needs DATABASE_URL (a migrated DB with the app_rt role)")
 	}
 	return dsn

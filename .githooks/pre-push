@@ -18,8 +18,30 @@ else
 	echo "pre-push: golangci-lint not found — run 'make tools'. Skipping lint."
 fi
 
-echo "pre-push: go test ./... (unit; DB tests skip without a DSN)"
-go test ./...
+# DB-gated tests must RUN here, not silently self-skip (W01-E01-S003 / FBL-07):
+# a green hook that never exercised the DB-backed tests is a misleading signal.
+# The DSN falls back to the compose-stack default (mirrors the Makefile's
+# TEST_DSN); WOWAPI_REQUIRE_DB=1 turns a missing/unreachable DB into a loud
+# test FAILURE (testkit.RequireDB) instead of a silent skip.
+# Explicit, visible opt-out for machines without a local DB:
+#   WOWAPI_PREPUSH_SKIP_DB=1 git push   (DB tests skip — loudly announced)
+if [ -n "${WOWAPI_PREPUSH_SKIP_DB:-}" ]; then
+	echo "pre-push: WARNING — WOWAPI_PREPUSH_SKIP_DB is set: DB-gated tests will SKIP, not run."
+	echo "pre-push: go test ./... (unit only — DB-gated tests skipped by explicit opt-out)"
+	go test ./...
+else
+	echo "pre-push: go test ./... (DB-gated tests REQUIRED — no silent skip)"
+	if ! DATABASE_URL="${DATABASE_URL:-postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable}" \
+		WOWAPI_REQUIRE_DB=1 go test ./...; then
+		echo ""
+		echo "pre-push: FAIL — tests failed, or DB-gated tests could not run."
+		echo "  This hook requires the DB-backed tests to actually run (no silent skip)."
+		echo "    - start the local database:  make up   (or export DATABASE_URL)"
+		echo "    - knowingly skip DB tests:   WOWAPI_PREPUSH_SKIP_DB=1 git push"
+		echo "    - bypass every hook check:   git push --no-verify"
+		exit 1
+	fi
+fi
 
 echo "pre-push: go.mod/go.sum tidy check"
 cp go.mod go.mod.hook.bak; cp go.sum go.sum.hook.bak

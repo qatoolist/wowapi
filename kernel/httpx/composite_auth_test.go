@@ -21,7 +21,7 @@ type cAuth struct {
 func (f cAuth) Authenticate(*http.Request) (authz.Actor, error) { return f.actor, f.err }
 
 func TestCompositeAuthenticator(t *testing.T) {
-	req := httptest.NewRequest("GET", "/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	unauth := kerr.E(kerr.KindUnauthenticated, "unauthenticated", "nope")
 	good := authz.Actor{Kind: authz.ActorSystem, System: "apikey:svc", TenantID: uuid.New()}
 

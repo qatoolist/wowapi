@@ -1,0 +1,19 @@
+# Per-linter enablement runs — W01Lint Phase 2, 2026-07-13
+# Base commit: 0a31186cada5c275a588c74081cf977adf346e61 + W01 wave working diff ( 152 files changed, 3426 insertions(+), 2986 deletions(-))
+# Tool: golangci-lint v2.11.4; committed .golangci.yml (all sets enabled)
+# Command per linter: golangci-lint run --enable-only=<linter> ./...
+# NOTE: --enable-only still honors the committed exclusions block (the
+# documented _test.go rules), so these runs prove the ENFORCED config state.
+# Fail-before state per linter: see the triage enumerations
+# (zero-cost-and-nearzero-enumeration.txt / judged-set-enumeration.txt at HEAD,
+# and triage-fresh-run-phase2-before below for the enablement-commit state).
+
+== sqlclosecheck: PASS (0 hits)
+== rowserrcheck: PASS (0 hits)
+== bodyclose: PASS (0 hits)
+== wastedassign: PASS (0 hits)
+== makezero: PASS (0 hits)
+== musttag: PASS (0 hits)
+== testifylint: PASS (0 hits)
+== noctx: PASS (0 hits)
+== copyloopvar: PASS (0 hits)

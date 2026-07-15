@@ -334,7 +334,7 @@ func TestOpenAPIMergeDuplicateSchema(t *testing.T) {
 	if code := runOpenAPI([]string{"merge", "--dir", dir}, &out, &errb); code != 1 {
 		t.Fatalf("duplicate schema should exit 1, got %d", code)
 	}
-	if !strings.Contains(errb.String(), "duplicate component schema") {
+	if !strings.Contains(errb.String(), "duplicate components.schemas.Dup") {
 		t.Fatalf("expected duplicate-schema error, got %q", errb.String())
 	}
 }

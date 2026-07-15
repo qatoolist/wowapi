@@ -1,0 +1,20 @@
+{
+  "story": "W07-E01-S003",
+  "code_revision": "working tree based on entry SHA 733ef3e",
+  "branch_or_tag": "current working tree (uncommitted concurrent wave execution)",
+  "date_time": "2026-07-13T22:35:38Z",
+  "reviewer": "W07-Scoping-Dispatch.W07E01S003ReviewR",
+  "superseded_evidence": null,
+  "evidence_id": "EV-W07-E01-S003-001",
+  "evidence_type": "cardinality test report",
+  "task": "W07-E01-S003-T001",
+  "acceptance_criteria_proven": ["AC-W07-E01-S003-01"],
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres-16.9> go test ./kernel/workflow -count=1",
+  "execution_environment": {"os": "darwin", "arch": "arm64", "database": "PostgreSQL 16.9 Docker service", "go": "go1.26.5"},
+  "result": "PASS: due-row tiers 10/1,000/100,000 each process at most 100 rows; both guard-flip statements remain fixed; instance and definition loads are batched; re-invocation drains 100/100/1/0 without duplicate reminders.",
+  "file_or_uri": "perf/results/perf-04-focused-verification.txt",
+  "checksum_sha256": "ca4e5ba9feee0e555f12ff3844c94c016c77d4c8f32da285feff86132bbb3867",
+  "known_skips": [],
+  "findings_or_waivers": [],
+  "review_result": "PASS: independent review found no open issues"
+}

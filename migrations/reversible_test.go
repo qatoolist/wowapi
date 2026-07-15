@@ -9,15 +9,17 @@ import (
 	"github.com/qatoolist/wowapi/testkit"
 )
 
-// TestIntegrationMigrationsReversible is the O2 forward/down drill: on an
-// isolated database already at head, roll every migration back to 0 and forward
-// again, proving each migration's `-- +goose Down` block is present and correct
-// and that a full re-apply reproduces the head version. Safe for concurrent
-// tests: rollback of 00001 keeps the cluster-scoped roles and only revokes
-// schema-public usage (a per-database object).
+// TestIntegrationMigrationsReversible is the REL-03 oldest-supported upgrade
+// and reversibility drill. It rebuilds the isolated database at the v1.0.0
+// migration head, seeds disposable v1 data, upgrades it to the current head,
+// proves the data survived, then rolls all migrations down and forward again.
+// Rollback of 00001 keeps cluster-scoped roles and only revokes schema-public
+// usage, so the drill remains isolated to the per-test database.
 func TestIntegrationMigrationsReversible(t *testing.T) {
 	h := testkit.NewDB(t) // isolated per-test DB, already migrated to head
 	ctx := context.Background()
+
+	const oldestSupportedVersion = 28 // v1.0.0 migration head; v1 is N/N-1 minor compatible.
 
 	// Read the current head version (idempotent Up is a no-op here).
 	head, err := database.Migrate(ctx, h.Admin, migrations.Kernel(), migrations.SourceName)
@@ -31,25 +33,56 @@ func TestIntegrationMigrationsReversible(t *testing.T) {
 		t.Fatal("head schema should contain idempotency_keys")
 	}
 
-	// Roll everything back.
+	// Rebuild at the oldest supported release and seed disposable data there.
 	v, err := database.MigrateReset(ctx, h.Admin, migrations.Kernel(), migrations.SourceName)
 	if err != nil {
-		t.Fatalf("migrate down: %v", err)
+		t.Fatalf("migrate down before oldest-supported seed: %v", err)
 	}
 	if v != 0 {
 		t.Fatalf("after full rollback version = %d, want 0", v)
 	}
-	if tableExists(t, h, "idempotency_keys") {
-		t.Fatal("down migrations should have dropped idempotency_keys")
+	oldest, err := database.MigrateTo(ctx, h.Admin, migrations.Kernel(), migrations.SourceName, oldestSupportedVersion)
+	if err != nil {
+		t.Fatalf("migrate to oldest supported version: %v", err)
+	}
+	if oldest.Version != oldestSupportedVersion {
+		t.Fatalf("oldest-supported version = %d, want %d", oldest.Version, oldestSupportedVersion)
+	}
+	const tenantID = "10000000-0000-0000-0000-000000000001"
+	if _, err := h.Admin.Exec(ctx, `INSERT INTO tenants (id, slug, display_name, created_by) VALUES ($1, 'compat-drill', 'Compatibility Drill', $1)`, tenantID); err != nil {
+		t.Fatalf("seed oldest-supported data: %v", err)
 	}
 
-	// Roll forward again — must return to the same head version.
+	// Upgrade the oldest supported schema and prove its data survives.
 	reup, err := database.Migrate(ctx, h.Admin, migrations.Kernel(), migrations.SourceName)
 	if err != nil {
 		t.Fatalf("re-up: %v", err)
 	}
 	if reup.Version != head.Version {
 		t.Fatalf("re-up version = %d, want head %d", reup.Version, head.Version)
+	}
+	var displayName string
+	if err := h.Admin.QueryRow(ctx, `SELECT display_name FROM tenants WHERE id = $1`, tenantID).Scan(&displayName); err != nil {
+		t.Fatalf("read upgraded oldest-supported data: %v", err)
+	}
+	if displayName != "Compatibility Drill" {
+		t.Fatalf("upgraded tenant display_name = %q", displayName)
+	}
+
+	// Reverse on disposable data, then prove a clean forward reconstruction.
+	v, err = database.MigrateReset(ctx, h.Admin, migrations.Kernel(), migrations.SourceName)
+	if err != nil {
+		t.Fatalf("migrate down after upgrade: %v", err)
+	}
+	if v != 0 {
+		t.Fatalf("after upgraded rollback version = %d, want 0", v)
+	}
+	reup, err = database.Migrate(ctx, h.Admin, migrations.Kernel(), migrations.SourceName)
+	if err != nil {
+		t.Fatalf("re-up after upgraded rollback: %v", err)
+	}
+	if reup.Version != head.Version {
+		t.Fatalf("re-up after upgraded rollback version = %d, want head %d", reup.Version, head.Version)
 	}
 	if !tableExists(t, h, "idempotency_keys") {
 		t.Fatal("re-up should have recreated idempotency_keys")

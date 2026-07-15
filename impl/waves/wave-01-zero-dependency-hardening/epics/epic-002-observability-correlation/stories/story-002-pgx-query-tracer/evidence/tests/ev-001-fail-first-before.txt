@@ -1,0 +1,20 @@
+=== RUN   TestIntegrationQueryTracerChildSpanInTraceTree
+    query_tracer_test.go:78: no query span parented under "5ed83fce32cc48bb" in exported trace tree (1 spans exported)
+--- FAIL: TestIntegrationQueryTracerChildSpanInTraceTree (0.01s)
+=== RUN   TestIntegrationQueryTracerStatementAndRowsAffectedAttrs
+    query_tracer_test.go:105: no query span exported
+--- FAIL: TestIntegrationQueryTracerStatementAndRowsAffectedAttrs (0.00s)
+=== RUN   TestIntegrationQueryTracerMarksFailedQueryErrored
+    query_tracer_test.go:131: failed query produced no span
+--- FAIL: TestIntegrationQueryTracerMarksFailedQueryErrored (0.01s)
+=== RUN   TestIntegrationQueryTracerDoesNotLeakBoundParameterLiterals
+    query_tracer_test.go:172: no query span exported
+--- FAIL: TestIntegrationQueryTracerDoesNotLeakBoundParameterLiterals (0.01s)
+=== RUN   TestIntegrationQueryTracerRootSpanWithoutParent
+    query_tracer_test.go:198: no root db.SELECT span exported for a parentless query
+--- FAIL: TestIntegrationQueryTracerRootSpanWithoutParent (0.00s)
+=== RUN   TestIntegrationQueryTracerInheritsParentSamplingDecision
+--- PASS: TestIntegrationQueryTracerInheritsParentSamplingDecision (0.00s)
+FAIL
+FAIL	github.com/qatoolist/wowapi/kernel/database	0.761s
+FAIL

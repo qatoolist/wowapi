@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
@@ -15,11 +14,45 @@ import (
 
 // ---------- test helpers ----------
 
+// callInit invokes runInit. DX-01 (W01-E04-S001-T001): a devel test binary has
+// no VCS stamp, so a flag-less `init` now fails closed pre-write (see
+// init_version_test.go). Tests that are NOT about version resolution pin the
+// framework at THIS checkout via --local-framework; tests that ARE about it
+// pass their own version flag (respected below) or call runInit directly.
 func callInit(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
+	hasVersionFlag := false
+	for _, a := range args {
+		trimmed := strings.TrimLeft(a, "-")
+		if strings.HasPrefix(trimmed, "framework-version") || strings.HasPrefix(trimmed, "local-framework") {
+			hasVersionFlag = true
+			break
+		}
+	}
+	if !hasVersionFlag {
+		args = append(args, "--local-framework", wowapiCheckoutRoot(t))
+	}
 	var out, errBuf bytes.Buffer
 	code = runInit(args, &out, &errBuf)
 	return code, out.String(), errBuf.String()
+}
+
+// wowapiCheckoutRoot returns the absolute root of THIS wowapi checkout (the
+// directory holding its go.mod). Test packages run with cwd = internal/cli.
+func wowapiCheckoutRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.Abs(filepath.Join(wd, "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("could not locate wowapi module root at %s: %v", root, err)
+	}
+	return root
 }
 
 func callNewModule(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -313,7 +346,7 @@ func TestInitMigrateMainSyncsSeeds(t *testing.T) {
 	}
 	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
 	assertFileContains(t, migratePath, "kernel/seeds")
-	assertFileContains(t, migratePath, "seeds.Sync(ctx, pool, booted.Seeds)")
+	assertFileContains(t, migratePath, "seeds.Apply(ctx, pool, booted.Seeds")
 	assertParseGo(t, migratePath)
 }
 
@@ -342,18 +375,18 @@ func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedIdx := strings.Index(string(content), "seeds.Sync(ctx, pool, booted.Seeds)")
+	seedIdx := strings.Index(string(content), "seeds.Apply(ctx, pool, booted.Seeds")
 	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
 	if seedIdx == -1 || ruleIdx == -1 || ruleIdx < seedIdx {
 		t.Fatalf("rule-definition sync must appear AFTER seed sync in generated migrate main (seedIdx=%d ruleIdx=%d)", seedIdx, ruleIdx)
 	}
 }
 
-// TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003 "clear failure
-// mode" acceptance criterion: the generated api main must wire
-// app.CatalogsSeeded into /readyz so a pod whose migrate step skipped seed
-// sync reports NOT ready with an actionable message, instead of only
-// surfacing as scattered per-request 403s.
+// TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003/FBL-02 "clear
+// failure mode" acceptance criterion: the generated api main must use
+// app.ReadinessWithCatalogs so that a pod whose migrate step skipped seed sync
+// reports NOT ready with an actionable message, and so the readiness payload
+// reports the seed/catalog hash (MATRIX CS-21).
 func TestInitAPIMainWiresSeedCatalogsReadinessCheck(t *testing.T) {
 	dir := t.TempDir()
 	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
@@ -361,7 +394,9 @@ func TestInitAPIMainWiresSeedCatalogsReadinessCheck(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
 	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
-	assertFileContains(t, apiPath, "app.CatalogsSeeded")
+	assertFileContains(t, apiPath, "app.ReadinessWithCatalogs")
+	assertFileContains(t, apiPath, "seed_catalogs")
+	assertFileContains(t, apiPath, "migration_currency")
 	assertParseGo(t, apiPath)
 }
 
@@ -500,6 +535,54 @@ func TestInitAPIMainWiresBackpressureMiddleware(t *testing.T) {
 	}
 }
 
+// TestInitAPIMainConfiguresAllServerTimeouts (FBL-09 / MATRIX CS-09): the
+// generated cmd/api/main.go must set ALL FOUR http.Server connection-level
+// timeouts from config — ReadHeaderTimeout, ReadTimeout, WriteTimeout,
+// IdleTimeout — not just ReadHeaderTimeout. Go's zero value for the missing
+// three means "no timeout": a client that reads its response arbitrarily
+// slowly, sends its body arbitrarily slowly, or parks an idle keep-alive
+// connection is never disconnected (a Slowloris-class resource-exhaustion
+// surface). The per-request httpx.Timeout middleware does NOT cover this —
+// it bounds handler execution, not connection read/write/idle time.
+func TestInitAPIMainConfiguresAllServerTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
+	assertParseGo(t, apiPath)
+	for _, want := range []string{
+		`ReadHeaderTimeout:\s+cfg\.HTTP\.ReadHeaderTimeout`,
+		`ReadTimeout:\s+cfg\.HTTP\.ReadTimeout`,
+		`WriteTimeout:\s+cfg\.HTTP\.WriteTimeout`,
+		`IdleTimeout:\s+cfg\.HTTP\.IdleTimeout`,
+	} {
+		assertFileMatches(t, apiPath, want)
+	}
+}
+
+// TestInitConfigsBaseDocumentsServerTimeouts: the generated configs/base.yaml
+// must enumerate the four connection-level timeout keys with the MATRIX CS-09
+// safe defaults (header 5s / read 30s / write 60s / idle 120s), matching how
+// it already documents read_header_timeout/request_timeout/max_body_bytes.
+func TestInitConfigsBaseDocumentsServerTimeouts(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	basePath := filepath.Join(dir, "configs", "base.yaml")
+	for _, want := range []string{
+		"read_header_timeout: 5s",
+		"read_timeout: 30s",
+		"write_timeout: 60s",
+		"idle_timeout: 120s",
+	} {
+		assertFileContains(t, basePath, want)
+	}
+}
+
 // TestInitAPIMainWiresSecurityChain proves the generated cmd/api/main.go
 // actually calls httpx.SecurityChain(cfg.Security) (backlog B7's "wire it
 // into the scaffold" half) — the library primitive existed and was fully
@@ -561,40 +644,20 @@ func TestInitConfigsBaseDocumentsConcurrency(t *testing.T) {
 }
 
 // buildRenderedProduct scaffolds a product into a fresh temp dir, points its
-// go.mod at THIS wowapi checkout via a replace directive (so the compile test
-// runs entirely offline against the framework under development, never a
-// published version), and runs `go mod tidy`. It returns the product dir.
-// Callers then run `go build ./...` (and any other go tool) inside it.
+// go.mod at THIS wowapi checkout via `init --local-framework` (a replace
+// directive, so the compile test runs entirely offline against the framework
+// under development, never a published version), and runs `go mod tidy`. It
+// returns the product dir. Callers then run `go build ./...` (and any other
+// go tool) inside it.
 func buildRenderedProduct(t *testing.T, extraInitArgs ...string) string {
 	t.Helper()
-	wowapiDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// scaffold_test.go lives in internal/cli; the module root is two levels up.
-	wowapiRoot, err := filepath.Abs(filepath.Join(wowapiDir, "..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(wowapiRoot, "go.mod")); err != nil {
-		t.Fatalf("could not locate wowapi module root at %s: %v", wowapiRoot, err)
-	}
-
 	dir := t.TempDir()
+	// callInit pins --local-framework to this checkout unless the caller
+	// passed a version flag of their own.
 	args := append([]string{"--module", "github.com/acme/compiletest", "--dir", dir}, extraInitArgs...)
 	code, _, errOut := callInit(t, args...)
 	if code != 0 {
 		t.Fatalf("init exit %d: %s", code, errOut)
-	}
-
-	gomodPath := filepath.Join(dir, "go.mod")
-	gomod, err := os.ReadFile(gomodPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replaced := string(gomod) + fmt.Sprintf("\nreplace github.com/qatoolist/wowapi => %s\n", wowapiRoot)
-	if err := os.WriteFile(gomodPath, []byte(replaced), 0o644); err != nil {
-		t.Fatal(err)
 	}
 
 	tidy := exec.Command("go", "mod", "tidy")
@@ -934,6 +997,37 @@ func TestGenCRUDWithFields(t *testing.T) {
 	assertFileMatches(t, goFile, `Active\s+bool`)
 }
 
+// TestGenCRUDMutatingRoutesDeclareContractsAndUseValidatedHandler (FBL-08 /
+// MATRIX CS-08): the generated CRUD module must declare a request contract on
+// every mutating route's RouteMeta and wire the handler through
+// httpx.ValidatedHandler — the generated code can no longer silently skip
+// validation the way the previous TODO-stub handlers did.
+func TestGenCRUDMutatingRoutesDeclareContractsAndUseValidatedHandler(t *testing.T) {
+	modDir := scaffoldModuleDir(t, "orders")
+	code, _, errOut := callGenCRUD(t,
+		"--module", modDir,
+		"--resource", "order",
+		"--fields", "title:string",
+	)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr: %s", code, errOut)
+	}
+	goFile := filepath.Join(modDir, "order.go")
+	assertParseGo(t, goFile)
+	for _, want := range []string{
+		"type CreateOrderRequest struct",
+		"type UpdateOrderRequest struct",
+		"Request:    CreateOrderRequest{}",
+		"Request:    UpdateOrderRequest{}",
+		"httpx.ValidatedHandler(v, 1<<20, h.create)",
+		"httpx.ValidatedHandler(v, 1<<20, h.update)",
+		"v := mc.Validator()",
+	} {
+		assertFileContains(t, goFile, want)
+	}
+	assertFileMatches(t, goFile, `Title\s+string\s+`+"`"+`json:"title" validate:"required"`+"`")
+}
+
 func TestGenCRUDPermissionKeys(t *testing.T) {
 	modDir := scaffoldModuleDir(t, "widgets")
 	code, _, errOut := callGenCRUD(t, "--module", modDir, "--resource", "widget")
@@ -946,7 +1040,7 @@ func TestGenCRUDPermissionKeys(t *testing.T) {
 		"widgets.widget.read",
 		"widgets.widget.list",
 		"widgets.widget.update",
-		"widgets.widget.delete",
+		"widgets.widget.deactivate",
 	} {
 		assertFileContains(t, goFile, perm)
 	}

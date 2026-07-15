@@ -16,7 +16,10 @@ import (
 // consume it destructively for unknown-key detection.
 
 func parseYAMLFile(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+	// Reading operator-configured YAML paths is this loader's purpose; the
+	// paths come from boot wiring (configs/<env>.yaml + explicit overrides),
+	// not from request-time user input.
+	data, err := os.ReadFile(path) // #nosec G304 -- boot-time config loader reads the configured file path by design
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}

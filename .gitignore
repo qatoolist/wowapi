@@ -62,6 +62,7 @@ visuals/
 
 # stray root build artifact from `go build ./cmd/wowapi`
 /wowapi
+/migrate
 /benchbudget
 
 # AI-prompt / conversation working files that seeded this project. Their durable
@@ -86,3 +87,12 @@ visuals/
 .mcp.json
 CLAUDE.md
 .cicache/
+.fuzzcache/
+/fuzz-report*/
+# Allure report results
+/allure-results/
+/allure-report/
+
+# HTML test reports
+full_test_report.html
+functional_fix_report.log

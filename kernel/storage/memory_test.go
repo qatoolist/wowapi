@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"testing"
 	"time"
 
@@ -49,7 +50,7 @@ func TestMemoryPresignAndDelete(t *testing.T) {
 	m := storage.NewMemory()
 	ctx := context.Background()
 	put, err := m.PresignPut(ctx, "k", time.Minute)
-	if err != nil || put.Method != "PUT" || put.URL == "" {
+	if err != nil || put.Method != http.MethodPut || put.URL == "" {
 		t.Fatalf("presign put: %+v %v", put, err)
 	}
 	m.Put("k", []byte("x"))

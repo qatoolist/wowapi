@@ -63,7 +63,6 @@ func TestIntegrationJobsGrantOnlyIsolation(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 
 	for _, table := range []string{"jobs_queue", "job_runs"} {
-		table := table
 		t.Run(table, func(t *testing.T) {
 			err := h.TxM.WithTenantRO(testkit.TenantCtx(tenant.ID), func(ctx context.Context, db database.TenantDB) error {
 				var n int
@@ -91,9 +90,9 @@ func TestIntegrationJobsRunnerCrossTenantAfterRLS(t *testing.T) {
 	tenantB := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil // trivially succeeds; we only care the runner processes both tenants
-	}, jobs.DefaultRetry())
+	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry: %v", err)
 	}

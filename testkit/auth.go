@@ -57,8 +57,11 @@ type tokenConfig struct {
 	issuer       string
 	audience     string
 	expiry       time.Duration
+	grantID      uuid.UUID
 	impersonator uuid.UUID
 	breakGlass   bool
+	authTime     *time.Time
+	acr          string
 	amr          []string
 }
 
@@ -87,9 +90,30 @@ func WithImpersonator(id uuid.UUID) TokenOption {
 	return func(c *tokenConfig) { c.impersonator = id }
 }
 
+// WithGrantID sets the grant_id claim used by the privileged-session resolver
+// (SEC-01 T5). The framework resolves the grant row server-side; the
+// impersonator_user_id and break_glass claims are ignored when grant_id is set.
+func WithGrantID(id uuid.UUID) TokenOption {
+	return func(c *tokenConfig) { c.grantID = id }
+}
+
 // WithBreakGlass sets the break_glass claim.
 func WithBreakGlass(on bool) TokenOption {
 	return func(c *tokenConfig) { c.breakGlass = on }
+}
+
+// WithAuthTime sets the standard auth_time claim (OIDC Core §2). When not
+// used, auth_time is omitted from the token, so freshness enforcement sees a
+// zero AuthTime. Pass a pointer so nil/unset is distinguishable from the
+// zero instant.
+func WithAuthTime(at time.Time) TokenOption {
+	return func(c *tokenConfig) { c.authTime = &at }
+}
+
+// WithACR sets the standard acr (authentication-context-class-reference)
+// claim (OIDC Core §2), propagated to authz.Actor.ACR.
+func WithACR(acr string) TokenOption {
+	return func(c *tokenConfig) { c.acr = acr }
 }
 
 // WithAMR sets the standard amr (authentication-methods-references) claim
@@ -125,9 +149,14 @@ func (ti *TokenIssuer) Issue(subject string, tenantID, capacityID uuid.UUID, opt
 		},
 		TenantID:           tenantID,
 		CapacityID:         capacityID,
+		GrantID:            cfg.grantID,
 		ImpersonatorUserID: cfg.impersonator,
 		BreakGlass:         cfg.breakGlass,
+		ACR:                cfg.acr,
 		AMR:                cfg.amr,
+	}
+	if cfg.authTime != nil {
+		claims.AuthTime = jwt.NewNumericDate(*cfg.authTime)
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

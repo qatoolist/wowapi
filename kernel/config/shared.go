@@ -10,16 +10,26 @@ import "fmt"
 // are excluded, so a difference there is expected, not drift.
 
 // SharedSection is the config subset that must match across every process of one
-// deployment.
+// deployment. The outbound allowlist and JWKS trusted-issuer config are
+// included so that a change to any egress escape hatch is reflected in the
+// shared fingerprint used for cross-process drift detection (SEC-06 T1/T4).
 type SharedSection struct {
-	Environment   Env `json:"environment"`
-	SchemaVersion int `json:"schema_version"`
-	DB            DB  `json:"db"`
+	Environment   Env      `json:"environment"`
+	SchemaVersion int      `json:"schema_version"`
+	DB            DB       `json:"db"`
+	Security      Security `json:"security"`
+	Webhook       Webhook  `json:"webhook"`
 }
 
 // SharedSection extracts the cross-process-shared configuration.
 func (f Framework) SharedSection() SharedSection {
-	return SharedSection{Environment: f.Environment, SchemaVersion: f.SchemaVersion, DB: f.DB}
+	return SharedSection{
+		Environment:   f.Environment,
+		SchemaVersion: f.SchemaVersion,
+		DB:            f.DB,
+		Security:      f.Security,
+		Webhook:       f.Webhook,
+	}
 }
 
 // SharedFingerprint is the fingerprint of the shared section only — the value

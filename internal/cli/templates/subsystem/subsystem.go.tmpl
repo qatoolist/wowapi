@@ -1,0 +1,98 @@
+// {{.Title}} is generated {{.Kind}} wiring for the {{.ModuleName}} module.
+package {{.Package}}
+
+import (
+{{- if eq .Kind "rule"}}
+	"encoding/json"
+
+	"github.com/qatoolist/wowapi/kernel/rules"
+{{- else if eq .Kind "workflow"}}
+	"github.com/qatoolist/wowapi/kernel/workflow"
+{{- else if eq .Kind "event-handler"}}
+	"context"
+
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+{{- else if eq .Kind "recurring-job"}}
+	"context"
+	"time"
+
+	"github.com/qatoolist/wowapi/kernel/database"
+{{- else if eq .Kind "document-flow"}}
+	"github.com/qatoolist/wowapi/foundation/document"
+{{- else if eq .Kind "notification"}}
+	"github.com/qatoolist/wowapi/foundation/notify"
+{{- else if eq .Kind "webhook"}}
+	"context"
+
+	"github.com/qatoolist/wowapi/foundation/webhook"
+	"github.com/qatoolist/wowapi/kernel/database"
+{{- end}}
+	"github.com/qatoolist/wowapi/module"
+)
+
+func init() {
+	registerGenerated(func(mc module.Context) error {
+{{- if eq .Kind "rule"}}
+		mc.Rules().Register("{{.ModuleName}}", rules.Point{
+			Key:           "{{.ModuleName}}.generated.{{.Name}}",
+			Module:        "{{.ModuleName}}",
+			ValueSchema:   json.RawMessage(`{"type":"boolean"}`),
+			Default:       json.RawMessage(`false`),
+			AllowedScopes: []rules.ScopeKind{rules.ScopeTenant},
+			Description:   "Generated {{.Title}} rule point.",
+		})
+		return nil
+{{- else if eq .Kind "workflow"}}
+		return mc.Workflows().RegisterDefinition(workflow.Definition{
+			Key:         "{{.ModuleName}}.{{.Name}}",
+			Version:     1,
+			AppliesTo:   "{{.ModuleName}}.resource",
+			InitialStep: "complete",
+			Steps: map[string]workflow.Step{
+				"complete": {Type: workflow.StepTerminal, Outcome: "completed"},
+			},
+		})
+{{- else if eq .Kind "event-handler"}}
+		mc.Events().Subscribe("{{.ModuleName}}.{{.Name}}", "{{.ModuleName}}.{{.Name}}", handle{{.Title}}Event)
+		return nil
+{{- else if eq .Kind "recurring-job"}}
+		mc.RecurringJob("{{.Name}}", time.Hour, run{{.Title}}RecurringJob)
+		return nil
+{{- else if eq .Kind "document-flow"}}
+		mc.DocumentClasses().Register("{{.ModuleName}}", document.Class{
+			Key:                "{{.ModuleName}}.{{.Name}}",
+			DefaultSensitivity: document.SensitivityInternal,
+			MaxBytes:           10 << 20,
+			AllowedMIME:        []string{"application/pdf", "text/plain"},
+		})
+		return nil
+{{- else if eq .Kind "notification"}}
+		mc.NotifyTemplates().Register("{{.ModuleName}}", notify.TemplateSpec{
+			Key:      "{{.ModuleName}}.generated.{{.Name}}",
+			Vars:     []string{"RecipientName"},
+			Channels: []string{string(notify.ChannelEmail), string(notify.ChannelInApp)},
+		})
+		return nil
+{{- else if eq .Kind "webhook"}}
+		mc.Webhooks().RegisterHandler("{{.ModuleName}}.{{.Name}}", handle{{.Title}}Webhook)
+		return nil
+{{- end}}
+	})
+}
+{{- if eq .Kind "event-handler"}}
+
+func handle{{.Title}}Event(context.Context, database.TenantDB, outbox.DispatchedEvent) error {
+	return nil
+}
+{{- else if eq .Kind "recurring-job"}}
+
+func run{{.Title}}RecurringJob(context.Context, database.TenantDB) error {
+	return nil
+}
+{{- else if eq .Kind "webhook"}}
+
+func handle{{.Title}}Webhook(context.Context, database.TenantDB, webhook.Event) error {
+	return nil
+}
+{{- end}}

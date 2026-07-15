@@ -18,13 +18,14 @@ type WorkerConfigOpts struct {
 	JobPoolSize   int
 	ShutdownDrain time.Duration
 	// Scheduler (leader-safe kernel maintenance sweeps). Zero values use defaults.
-	SchedulerPoll        time.Duration // how often to check for due tasks (default 30s)
-	SLAInterval          time.Duration // workflow SLA sweep interval (default 1m)
-	IdempotencyInterval  time.Duration // idempotency-key expiry sweep interval (default 1h)
-	DLQDepthInterval     time.Duration // dlq_depth gauge refresh interval (default 1m)
-	AuditAnchorInterval  time.Duration // audit-chain anchor-export interval (default 1h)
-	NotifySendInterval   time.Duration // notify send/retry poll interval (default 1m)
-	WebhookRetryInterval time.Duration // webhook retry + inbound poll interval (default 1m)
+	SchedulerPoll         time.Duration // how often to check for due tasks (default 30s)
+	SLAInterval           time.Duration // workflow SLA sweep interval (default 1m)
+	IdempotencyInterval   time.Duration // idempotency-key expiry sweep interval (default 1h)
+	DLQDepthInterval      time.Duration // dlq_depth gauge refresh interval (default 1m)
+	AuditAnchorInterval   time.Duration // audit-chain anchor-export interval (default 1h)
+	NotifySendInterval    time.Duration // notify send/retry poll interval (default 1m)
+	WebhookRetryInterval  time.Duration // webhook retry + inbound poll interval (default 1m)
+	UploadSessionInterval time.Duration // document upload session GC interval (default 1h)
 }
 
 // StartWorker runs the background worker process for a booted app: the outbox
@@ -75,8 +76,12 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if opts.WebhookRetryInterval <= 0 {
 		opts.WebhookRetryInterval = time.Minute
 	}
+	if opts.UploadSessionInterval <= 0 {
+		opts.UploadSessionInterval = time.Hour
+	}
 
-	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch, outbox.WithRelayTracer(k.Tracer))
+	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch,
+		outbox.WithRelayTracer(k.Tracer), outbox.WithRelayMetrics(k.Metrics))
 	var runnerOpts []jobs.RunnerOpt
 	if opts.JobPoolSize > 0 {
 		runnerOpts = append(runnerOpts, jobs.WithPoolSize(opts.JobPoolSize))
@@ -102,7 +107,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 				map[string]string{"task": name})
 		}
 	})
-	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval, opts.AuditAnchorInterval, opts.NotifySendInterval, opts.WebhookRetryInterval)
+	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval, opts.AuditAnchorInterval, opts.NotifySendInterval, opts.WebhookRetryInterval, opts.UploadSessionInterval)
 	registerModuleRecurring(sched, k, b.Recurring)
 
 	// Both loops respect ctx cancellation and drain in-flight work themselves.

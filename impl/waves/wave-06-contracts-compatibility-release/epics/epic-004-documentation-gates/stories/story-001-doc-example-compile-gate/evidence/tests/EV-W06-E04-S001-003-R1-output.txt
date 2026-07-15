@@ -1,0 +1,8 @@
+=== RUN   TestRemovedSymbolFixtureFailsAtDocumentationLocation
+    main_test.go:87: expected compile failure:
+        internal/tools/docexamples/testdata/stale-example.md:4: example does not compile: exit status 1
+        # github.com/qatoolist/wowapi/.docexamples/example-001
+        internal/tools/docexamples/testdata/stale-example.md:7: undefined: app.RunAPI
+--- PASS: TestRemovedSymbolFixtureFailsAtDocumentationLocation (0.29s)
+PASS
+ok  	github.com/qatoolist/wowapi/internal/tools/docexamples	0.738s

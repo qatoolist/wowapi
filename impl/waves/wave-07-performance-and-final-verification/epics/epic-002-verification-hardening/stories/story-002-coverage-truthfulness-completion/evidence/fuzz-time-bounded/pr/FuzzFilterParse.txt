@@ -1,0 +1,11 @@
+=== RUN   FuzzFilterParse
+fuzz: elapsed: 0s, gathering baseline coverage: 0/12 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 12/12 completed, now fuzzing with 16 workers
+fuzz: elapsed: 3s, execs: 530608 (176748/sec), new interesting: 128 (total: 140)
+fuzz: elapsed: 6s, execs: 1211339 (227009/sec), new interesting: 159 (total: 171)
+fuzz: elapsed: 9s, execs: 1633315 (140687/sec), new interesting: 167 (total: 179)
+fuzz: elapsed: 11s, execs: 1967002 (166169/sec), new interesting: 167 (total: 179)
+--- PASS: FuzzFilterParse (11.01s)
+=== NAME  
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/filtering	11.431s

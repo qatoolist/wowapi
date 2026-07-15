@@ -132,7 +132,17 @@ func NewPool(ctx context.Context, dsn string, cfg config.DB, opts ...Option) (*p
 		// propagate that text.
 		return nil, fmt.Errorf("database: invalid DSN (parse failed)")
 	}
-	pc.MaxConns = int32(cfg.MaxConns)
+	pc.MaxConns = int32(cfg.MaxConns) // #nosec G115 -- bounded by prior validation: config.Validate rejects Pool.MaxConns outside [2,200] before boot reaches pool construction
+	// Connection-age hygiene (W01-E01-S001 / FBL-05): cap total and idle
+	// connection age so rotated credentials / drained LB backends take effect
+	// within a bounded window. Zero keeps pgx's own defaults (1h / 30m) — the
+	// config defaults reproduce them, so unset deployments see no change.
+	if cfg.MaxConnLifetime > 0 {
+		pc.MaxConnLifetime = cfg.MaxConnLifetime
+	}
+	if cfg.MaxConnIdleTime > 0 {
+		pc.MaxConnIdleTime = cfg.MaxConnIdleTime
+	}
 	for _, o := range opts {
 		o(pc)
 	}

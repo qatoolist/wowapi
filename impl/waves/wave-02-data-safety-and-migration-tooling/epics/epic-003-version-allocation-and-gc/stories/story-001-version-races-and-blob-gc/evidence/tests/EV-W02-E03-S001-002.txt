@@ -1,0 +1,5 @@
+=== RUN   TestIntegrationInitiateUploadConcurrentVersionAllocation
+    upload_race_test.go:108: lock-wait under 24 concurrent callers: max=92.7125ms avg=57.668902ms
+--- PASS: TestIntegrationInitiateUploadConcurrentVersionAllocation (0.27s)
+PASS
+ok  	github.com/qatoolist/wowapi/kernel/document	0.755s

@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/lease"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 )
@@ -297,6 +299,7 @@ type claimedJob struct {
 	attempts    int
 	maxAttempts int
 	trace       *string // W3C traceparent captured at enqueue (CA-9); nil when absent
+	lease       lease.Lease
 }
 
 // claimSQL atomically selects up to $1 eligible jobs (available, run_at reached)
@@ -313,10 +316,15 @@ const claimSQL = `WITH claimed AS (
          LIMIT $1
     )
     UPDATE jobs_queue q
-       SET status = 'running', locked_at = now()
+       SET status = 'running',
+           locked_at = now(),
+           lease_token = $2,
+           lease_generation = lease_generation + 1,
+           lease_expires_at = now() + make_interval(secs => $3::double precision)
       FROM claimed
      WHERE q.id = claimed.id
-    RETURNING q.id, q.kind, q.tenant_id, q.payload, q.attempts, q.max_attempts, q.trace_context`
+    RETURNING q.id, q.kind, q.tenant_id, q.payload, q.attempts, q.max_attempts, q.trace_context,
+              q.lease_token, q.lease_generation, q.lease_expires_at`
 
 // ClaimOnce claims up to poolSize available jobs (marking each 'running' in a
 // committed statement), then executes them concurrently on the bounded worker
@@ -325,17 +333,20 @@ const claimSQL = `WITH claimed AS (
 // failure while writing an outcome is logged and leaves the job 'running' for
 // ReclaimStalled — ClaimOnce only returns an error for a failure to claim.
 func (r *Runner) ClaimOnce(ctx context.Context) (int, error) {
-	rows, err := r.pool.Query(ctx, claimSQL, r.poolSize)
+	leaseTTL := r.stalledTimeout.Seconds()
+	rows, err := r.pool.Query(ctx, claimSQL, r.poolSize, lease.New(r.stalledTimeout).Token, leaseTTL)
 	if err != nil {
 		return 0, kerr.Wrapf(err, "jobs.ClaimOnce", "claim jobs")
 	}
 	var batch []claimedJob
 	for rows.Next() {
 		var jb claimedJob
-		if err := rows.Scan(&jb.id, &jb.kind, &jb.tenant, &jb.payload, &jb.attempts, &jb.maxAttempts, &jb.trace); err != nil {
+		var expiresAt time.Time
+		if err := rows.Scan(&jb.id, &jb.kind, &jb.tenant, &jb.payload, &jb.attempts, &jb.maxAttempts, &jb.trace, &jb.lease.Token, &jb.lease.Generation, &expiresAt); err != nil {
 			rows.Close()
 			return 0, kerr.Wrapf(err, "jobs.ClaimOnce", "scan claimed job")
 		}
+		jb.lease.ExpiresAt = expiresAt
 		batch = append(batch, jb)
 	}
 	rows.Close()
@@ -402,6 +413,8 @@ func (r *Runner) execOne(ctx context.Context, jb claimedJob) {
 	// worker ctx expired can still record its status rather than being left
 	// 'running' until reclaim (review finding ARCH-56).
 	workerCtx, cancel := context.WithTimeout(ctx, r.jobTimeout)
+	idempKey := fmt.Sprintf("%s:%d", jb.kind, jb.id)
+	workerCtx = WithJobContext(workerCtx, jb.id, idempKey, jb.lease)
 	tctx := database.WithTenantID(workerCtx, tenant)
 	werr := r.txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
 		return e.worker(ctx, db, jb.payload)
@@ -422,12 +435,22 @@ func (r *Runner) execOne(ctx context.Context, jb claimedJob) {
 // a single app_platform transaction.
 func (r *Runner) recordSuccess(ctx context.Context, jb claimedJob) {
 	err := r.inPlatformTx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx,
-			`UPDATE jobs_queue SET status = 'completed', finished_at = now(), locked_at = NULL WHERE id = $1`,
-			jb.id); err != nil {
+		res, err := tx.Exec(ctx,
+			`UPDATE jobs_queue
+				   SET status = 'completed', finished_at = now(), locked_at = NULL,
+				       lease_token = NULL, lease_expires_at = NULL
+				 WHERE id = $1
+				   AND lease_token = $2
+				   AND lease_generation = $3
+				   AND lease_expires_at > now()`,
+			jb.id, jb.lease.Token, jb.lease.Generation)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx,
+		if res.RowsAffected() == 0 {
+			return kerr.E(kerr.KindConflict, "lease_mismatch", "stale finalize rejected")
+		}
+		_, err = tx.Exec(ctx,
 			`INSERT INTO job_runs (id, tenant_id, job_kind, job_id, status, finished_at)
              VALUES ($1, $2, $3, $4, 'succeeded', now())`,
 			r.idgen.New(), jb.tenant, jb.kind, jb.id)
@@ -451,15 +474,23 @@ func (r *Runner) recordFailure(ctx context.Context, jb claimedJob, cause error) 
 
 	err := r.inPlatformTx(ctx, func(tx pgx.Tx) error {
 		if dead {
-			if _, err := tx.Exec(ctx,
+			res, err := tx.Exec(ctx,
 				`UPDATE jobs_queue
                     SET status = 'discarded', attempts = $2, last_error = $3,
-                        finished_at = now(), locked_at = NULL
-                  WHERE id = $1`,
-				jb.id, attempts, msg); err != nil {
+                        finished_at = now(), locked_at = NULL,
+                        lease_token = NULL, lease_expires_at = NULL
+                  WHERE id = $1
+                    AND lease_token = $4
+                    AND lease_generation = $5
+                    AND lease_expires_at > now()`,
+				jb.id, attempts, msg, jb.lease.Token, jb.lease.Generation)
+			if err != nil {
 				return err
 			}
-			_, err := tx.Exec(ctx,
+			if res.RowsAffected() == 0 {
+				return kerr.E(kerr.KindConflict, "lease_mismatch", "stale finalize rejected")
+			}
+			_, err = tx.Exec(ctx,
 				`INSERT INTO job_runs (id, tenant_id, job_kind, job_id, status, finished_at, error)
                  VALUES ($1, $2, $3, $4, 'dead', now(), $5)`,
 				r.idgen.New(), jb.tenant, jb.kind, jb.id, msg)
@@ -469,16 +500,24 @@ func (r *Runner) recordFailure(ctx context.Context, jb claimedJob, cause error) 
 		// eligibility is consistent with the claim query's now() even under
 		// app/Postgres clock skew.
 		backoffSecs := r.backoffFor(jb.kind, attempts).Seconds()
-		if _, err := tx.Exec(ctx,
+		res, err := tx.Exec(ctx,
 			`UPDATE jobs_queue
                 SET status = 'available', attempts = $2,
                     run_at = now() + make_interval(secs => $3::double precision),
-                    last_error = $4, locked_at = NULL
-              WHERE id = $1`,
-			jb.id, attempts, backoffSecs, msg); err != nil {
+                    last_error = $4, locked_at = NULL,
+                    lease_token = NULL, lease_expires_at = NULL
+              WHERE id = $1
+                AND lease_token = $5
+                AND lease_generation = $6
+                AND lease_expires_at > now()`,
+			jb.id, attempts, backoffSecs, msg, jb.lease.Token, jb.lease.Generation)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx,
+		if res.RowsAffected() == 0 {
+			return kerr.E(kerr.KindConflict, "lease_mismatch", "stale finalize rejected")
+		}
+		_, err = tx.Exec(ctx,
 			`INSERT INTO job_runs (id, tenant_id, job_kind, job_id, status, finished_at, error)
              VALUES ($1, $2, $3, $4, 'failed', now(), $5)`,
 			r.idgen.New(), jb.tenant, jb.kind, jb.id, msg)
@@ -527,7 +566,11 @@ func (r *Runner) inPlatformTx(ctx context.Context, fn func(pgx.Tx) error) error 
 func (r *Runner) ReclaimStalled(ctx context.Context, olderThan time.Duration) (int, error) {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE jobs_queue
-            SET status = 'available', locked_at = NULL
+            SET status = 'available',
+                locked_at = NULL,
+                lease_token = NULL,
+                lease_generation = lease_generation + 1,
+                lease_expires_at = NULL
           WHERE status = 'running'
             AND locked_at < now() - make_interval(secs => $1::double precision)`,
 		olderThan.Seconds())

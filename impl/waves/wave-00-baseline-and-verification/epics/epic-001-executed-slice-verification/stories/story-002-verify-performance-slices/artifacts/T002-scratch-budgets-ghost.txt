@@ -1,0 +1,4 @@
+# Scratch copy for PERF-06 T1 fail-first revert-proof check (W00-E01-S002-T002).
+# One real benchmark present in stdin + one ghost benchmark absent from stdin.
+BenchmarkConfigDefaults  1000000  -1
+BenchmarkGhostMissingFromOutput  100  -1

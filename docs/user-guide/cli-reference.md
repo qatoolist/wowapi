@@ -23,6 +23,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi init` | `--module` **(req)**, `--name`, `--dir` (`.`), `--force` | Scaffold a product repository. |
 | `wowapi new-module` | `--name` **(req)**, `--dir` (`internal/modules`), `--force` | Scaffold a module package. |
 | `wowapi gen crud` | `--module` **(req)**, `--resource` **(req)**, `--fields` (`name:type,…`), `--force` | Generate CRUD scaffolding. |
+| `wowapi gen` subsystem commands | `rule`, `workflow`, `event-handler`, `recurring-job`, `document-flow`, `notification`, or `webhook`; each takes `--module`, `--name`, `--force` | Generate a boot-wired subsystem declaration. |
 
 ### Config
 
@@ -41,7 +42,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 |---|---|---|
 | `wowapi migrate create` | `--dir` (`migrations`), `--name` **(req)** | Scaffold the next-numbered goose migration. |
 | `wowapi seed validate` | `--dir` (`seeds`), `--module` **(req)** | Load + validate a module seed bundle (no database). |
-| `wowapi seed sync` | `--module name=dir` **(req, repeatable)** | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
+| `wowapi seed sync` | `--module name=dir` **(req, repeatable)**, `--dry-run` | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent; computes a content hash so re-runs with an unchanged manifest are true no-ops. `--dry-run` prints a change plan without writing. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
 | `wowapi i18n validate` | `--dir` (`locales`), `--default-locale` (`en`), `--supported` (`en`), `--strict` | Load + validate a product's locale catalogs (no database): coverage, `kernel.*` ownership, intra-layer duplicates, placeholder drift. Exit 0 OK / 1 with every problem listed. See [Validation & error handling § Localizing responses](validation-errors.md#localizing-responses-i18n). |
 | `wowapi openapi merge` | `--dir` (`.`), `--title` (`wowapi API`), `--version` (`0.0.0`), `--out` | Merge OpenAPI 3.1 fragments into one document. |
 
@@ -108,6 +109,7 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make test-security` | authz / RLS / secrets / redaction / unsafe-config. |
 | `make test-fuzz` | Fuzz the filter-DSL parser and cursor decoder. |
 | `make coverage` | Unit coverage report. |
+| `make golden-consumer` | Install a versioned CLI, generate/boot the two-module eight-subsystem consumer, replay tagged v1.1.0→local release candidate, and verify the RLS census. |
 
 ### Bench, gen, build, CI
 
@@ -129,7 +131,6 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 Documented honestly so you don't reach for something that isn't there:
 
 - **`wowapi deploy validate`** — does not exist; only `deploy render`.
-- **Top-level `wowapi gen`** — only the `gen crud` subcommand is implemented.
 - **`make seed`** (framework repo) — placeholder; seeding is driven through modules + the app at boot.
 
 Next: [Troubleshooting & FAQ](troubleshooting-faq.md).

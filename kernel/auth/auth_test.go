@@ -18,12 +18,18 @@ import (
 	"github.com/qatoolist/wowapi/testkit"
 )
 
-// fakePrincipalStore maps a fixed subject → user and validates capacities
-// against an allowlist, so Actor mapping is testable without a database.
+// fakePrincipalStore maps a fixed subject → user and validates tenant access
+// and capacities against allowlists, so Actor mapping is testable without a
+// database. It also stubs the T4/T5 extensions: ActiveCapacityCount and
+// ResolveGrant.
 type fakePrincipalStore struct {
-	userID  uuid.UUID
-	subject string
-	okCap   uuid.UUID // capacity that validates for userID
+	userID   uuid.UUID
+	subject  string
+	okTenant uuid.UUID           // tenant that userID has live access to
+	okCap    uuid.UUID           // capacity that validates for userID
+	capCount int                 // active capacity count returned by ActiveCapacityCount
+	grant    *auth.ResolvedGrant // resolved grant returned by ResolveGrant
+	grantErr error               // error returned by ResolveGrant
 }
 
 func (f fakePrincipalStore) UserIDBySubject(_ context.Context, subject string) (uuid.UUID, error) {
@@ -33,11 +39,38 @@ func (f fakePrincipalStore) UserIDBySubject(_ context.Context, subject string) (
 	return f.userID, nil
 }
 
+func (f fakePrincipalStore) ActiveTenantAccess(_ context.Context, userID, tenantID uuid.UUID) error {
+	if userID == f.userID && tenantID == f.okTenant {
+		return nil
+	}
+	return errors.E(errors.KindForbidden, "permission_denied", "tenant access not permitted")
+}
+
+func (f fakePrincipalStore) ActiveCapacityCount(_ context.Context, userID, tenantID uuid.UUID) (int, error) {
+	if userID == f.userID && tenantID == f.okTenant {
+		return f.capCount, nil
+	}
+	return 0, errors.E(errors.KindForbidden, "permission_denied", "tenant access not permitted")
+}
+
 func (f fakePrincipalStore) ValidateCapacity(_ context.Context, userID, _ uuid.UUID, capacityID uuid.UUID) error {
 	if userID == f.userID && capacityID == f.okCap {
 		return nil
 	}
 	return errors.E(errors.KindForbidden, "permission_denied", "capacity not yours")
+}
+
+func (f fakePrincipalStore) ResolveGrant(_ context.Context, userID, tenantID, grantID uuid.UUID) (*auth.ResolvedGrant, error) {
+	_ = userID
+	_ = tenantID
+	_ = grantID
+	if f.grantErr != nil {
+		return nil, f.grantErr
+	}
+	if f.grant == nil {
+		return nil, errors.E(errors.KindForbidden, string(auth.GrantRejectionNotFound), "grant not found")
+	}
+	return f.grant, nil
 }
 
 func newVerifier(ti *testkit.TokenIssuer) *auth.Verifier {
@@ -78,7 +111,7 @@ func TestVerify_ValidTokenMapsToActor(t *testing.T) {
 	userID := uuid.New()
 	tenantID := uuid.New()
 	capID := uuid.New()
-	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okCap: capID}
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, okCap: capID}
 
 	tok := ti.Issue("idp|alice", tenantID, capID)
 	claims, err := v.Verify(context.Background(), tok)
@@ -132,7 +165,7 @@ func TestActor_AMRPropagates(t *testing.T) {
 	userID := uuid.New()
 	tenantID := uuid.New()
 	capID := uuid.New()
-	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okCap: capID}
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, okCap: capID}
 
 	tok := ti.Issue("idp|alice", tenantID, capID, testkit.WithAMR("pwd", "mfa"))
 	claims, err := v.Verify(context.Background(), tok)
@@ -145,6 +178,62 @@ func TestActor_AMRPropagates(t *testing.T) {
 	}
 	if got := actor.AMR; len(got) != 2 || got[0] != "pwd" || got[1] != "mfa" {
 		t.Fatalf("Actor.AMR = %v, want [pwd mfa]", got)
+	}
+}
+
+// TestVerify_AuthTimeAndACRPropagatesToClaims proves the OIDC auth_time and
+// acr claims round-trip through Verify into Claims (SEC-01 T6).
+func TestVerify_AuthTimeAndACRPropagatesToClaims(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	tenantID := uuid.New()
+	capID := uuid.New()
+	authTime := time.Date(2026, 7, 3, 11, 30, 0, 0, time.UTC)
+	tok := ti.Issue("idp|alice", tenantID, capID, testkit.WithAuthTime(authTime), testkit.WithACR("urn:mace:incommon:iap:silver"))
+
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if claims.AuthTime == nil || !claims.AuthTime.Equal(authTime) {
+		t.Fatalf("Claims.AuthTime = %v, want %v", claims.AuthTime, authTime)
+	}
+	if claims.ACR != "urn:mace:incommon:iap:silver" {
+		t.Fatalf("Claims.ACR = %q, want silver ACR", claims.ACR)
+	}
+}
+
+// TestActor_AuthTimeACRAndCredentialSchemePropagates proves Verifier.Actor
+// carries AuthTime, ACR, and the CredentialUser scheme through to the
+// authz.Actor (SEC-01 T6/T7).
+func TestActor_AuthTimeACRAndCredentialSchemePropagates(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	capID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, okCap: capID}
+
+	authTime := time.Date(2026, 7, 3, 11, 30, 0, 0, time.UTC)
+	tok := ti.Issue("idp|alice", tenantID, capID, testkit.WithAuthTime(authTime), testkit.WithACR("silver"))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if !actor.AuthTime.Equal(authTime) {
+		t.Fatalf("Actor.AuthTime = %v, want %v", actor.AuthTime, authTime)
+	}
+	if actor.ACR != "silver" {
+		t.Fatalf("Actor.ACR = %q, want silver", actor.ACR)
+	}
+	if actor.CredentialScheme != authz.CredentialUser {
+		t.Fatalf("Actor.CredentialScheme = %q, want user", actor.CredentialScheme)
 	}
 }
 
@@ -206,34 +295,6 @@ func TestVerify_MalformedAMRNonStringElements(t *testing.T) {
 	assertUnauthenticated(t, err)
 }
 
-func TestActor_ImpersonationAndBreakGlassCarry(t *testing.T) {
-	ti := testkit.NewTokenIssuer()
-	v := newVerifier(ti)
-
-	userID := uuid.New()
-	tenantID := uuid.New()
-	imp := uuid.New()
-	ps := fakePrincipalStore{userID: userID, subject: "idp|bob"}
-
-	// No capacity claim → ValidateCapacity is skipped.
-	tok := ti.Issue("idp|bob", tenantID, uuid.Nil,
-		testkit.WithImpersonator(imp), testkit.WithBreakGlass(true))
-	claims, err := v.Verify(context.Background(), tok)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	actor, err := v.Actor(context.Background(), claims, ps)
-	if err != nil {
-		t.Fatalf("Actor: %v", err)
-	}
-	if actor.ImpersonatorUserID != imp || !actor.BreakGlass {
-		t.Fatalf("impersonation/break-glass not carried: %+v", actor)
-	}
-	if actor.CapacityID != uuid.Nil {
-		t.Fatalf("expected zero capacity, got %v", actor.CapacityID)
-	}
-}
-
 func TestActor_UnknownSubjectUnauthenticated(t *testing.T) {
 	ti := testkit.NewTokenIssuer()
 	v := newVerifier(ti)
@@ -251,9 +312,10 @@ func TestActor_UnknownSubjectUnauthenticated(t *testing.T) {
 func TestActor_CapacityNotYoursForbidden(t *testing.T) {
 	ti := testkit.NewTokenIssuer()
 	v := newVerifier(ti)
-	ps := fakePrincipalStore{userID: uuid.New(), subject: "idp|carol", okCap: uuid.New()}
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{userID: uuid.New(), subject: "idp|carol", okTenant: tenantID, okCap: uuid.New()}
 
-	tok := ti.Issue("idp|carol", uuid.New(), uuid.New()) // capacity not in allowlist
+	tok := ti.Issue("idp|carol", tenantID, uuid.New()) // capacity not in allowlist
 	claims, err := v.Verify(context.Background(), tok)
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -367,4 +429,341 @@ func TestVerify_MissingToken(t *testing.T) {
 	v := newVerifier(ti)
 	_, err := v.Verify(context.Background(), "")
 	assertUnauthenticated(t, err)
+}
+
+// TestActor_ZeroTenantRejected proves that a token carrying a zero TenantID is
+// rejected before any tenant-bound database work begins.
+func TestActor_ZeroTenantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+	ps := fakePrincipalStore{userID: uuid.New(), subject: "idp|alice"}
+
+	tok := ti.Issue("idp|alice", uuid.Nil, uuid.Nil)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if err == nil || errors.KindOf(err) != errors.KindValidation {
+		t.Fatalf("want KindValidation, got %v", err)
+	}
+}
+
+// TestActor_GarbageTenantRejected proves that a token carrying a non-existent
+// tenant UUID is rejected by the unconditional ActiveTenantAccess check, even
+// though the token is validly signed.
+func TestActor_GarbageTenantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: uuid.New()} // okTenant != tenantID
+
+	tok := ti.Issue("idp|alice", tenantID, uuid.Nil)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if err == nil || errors.KindOf(err) != errors.KindForbidden {
+		t.Fatalf("want KindForbidden, got %v", err)
+	}
+}
+
+// T4 — capacity-selection enforcement.
+
+// TestActor_NoCapacitySingleCapacityAllowed proves that a capacity-less token
+// is accepted when the actor holds exactly one active capacity: no ambiguous
+// choice exists.
+func TestActor_NoCapacitySingleCapacityAllowed(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, capCount: 1}
+
+	tok := ti.Issue("idp|alice", tenantID, uuid.Nil)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if actor.CapacityID != uuid.Nil {
+		t.Fatalf("expected zero capacity, got %v", actor.CapacityID)
+	}
+}
+
+// TestActor_NoCapacityMultipleCapacitiesRejected proves that a capacity-less
+// actor with more than one active capacity is rejected pending an explicit,
+// server-side-validated capacity choice (SEC-01 T4).
+func TestActor_NoCapacityMultipleCapacitiesRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, capCount: 2}
+
+	tok := ti.Issue("idp|alice", tenantID, uuid.Nil)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if err == nil || errors.KindOf(err) != errors.KindValidation {
+		t.Fatalf("want KindValidation, got %v", err)
+	}
+}
+
+// TestActor_ExplicitCapacityValidatedServerSide proves that a token carrying an
+// explicit CapacityID is validated against the principal store, not merely
+// accepted from the claim.
+func TestActor_ExplicitCapacityValidatedServerSide(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	capID := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|alice", okTenant: tenantID, okCap: capID}
+
+	tok := ti.Issue("idp|alice", tenantID, capID)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if actor.CapacityID != capID {
+		t.Fatalf("capacity: got %v want %v", actor.CapacityID, capID)
+	}
+}
+
+// T5 — privileged-session resolver.
+
+// TestActor_PrivilegedSessionResolvedFromGrant proves that
+// ImpersonatorUserID/BreakGlass are populated from a verified grant row when a
+// grant_id claim is present.
+func TestActor_PrivilegedSessionResolvedFromGrant(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	grantID := uuid.New()
+	imp := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grant:    &auth.ResolvedGrant{ImpersonatorUserID: imp, BreakGlass: true},
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(grantID))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if actor.ImpersonatorUserID != imp {
+		t.Fatalf("impersonator: got %v want %v", actor.ImpersonatorUserID, imp)
+	}
+	if !actor.BreakGlass {
+		t.Fatalf("expected break-glass true")
+	}
+}
+
+// TestActor_DirectImpersonationClaimIgnoredWithoutGrantID proves that a token
+// with legacy impersonator/break-glass claims but no grant_id does NOT populate
+// those Actor fields (T5 never trusts the claim directly).
+func TestActor_DirectImpersonationClaimIgnoredWithoutGrantID(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	imp := uuid.New()
+	ps := fakePrincipalStore{userID: userID, subject: "idp|bob", okTenant: tenantID}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil,
+		testkit.WithImpersonator(imp), testkit.WithBreakGlass(true))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	actor, err := v.Actor(context.Background(), claims, ps)
+	if err != nil {
+		t.Fatalf("Actor: %v", err)
+	}
+	if actor.ImpersonatorUserID != uuid.Nil {
+		t.Fatalf("impersonator must be ignored without grant_id, got %v", actor.ImpersonatorUserID)
+	}
+	if actor.BreakGlass {
+		t.Fatalf("break-glass must be ignored without grant_id")
+	}
+}
+
+// TestActor_ForgedGrantIDRejected proves that an unknown/forged grant ID is
+// rejected with GrantRejectionNotFound.
+func TestActor_ForgedGrantIDRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionNotFound), "grant not found"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionNotFound) {
+		t.Fatalf("want GrantRejectionNotFound, got %v", err)
+	}
+}
+
+// TestActor_ExpiredGrantRejected proves that an expired grant is rejected with
+// GrantRejectionExpired.
+func TestActor_ExpiredGrantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionExpired), "grant expired"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionExpired) {
+		t.Fatalf("want GrantRejectionExpired, got %v", err)
+	}
+}
+
+// TestActor_RevokedGrantRejected proves that a revoked grant is rejected with
+// GrantRejectionRevoked.
+func TestActor_RevokedGrantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionRevoked), "grant revoked"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionRevoked) {
+		t.Fatalf("want GrantRejectionRevoked, got %v", err)
+	}
+}
+
+// TestActor_WrongTenantGrantRejected proves that a grant from another tenant is
+// rejected with GrantRejectionWrongTenant.
+func TestActor_WrongTenantGrantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionWrongTenant), "grant wrong tenant"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionWrongTenant) {
+		t.Fatalf("want GrantRejectionWrongTenant, got %v", err)
+	}
+}
+
+// TestActor_WrongActorGrantRejected proves that a grant authorizing a different
+// actor is rejected with GrantRejectionWrongActor.
+func TestActor_WrongActorGrantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionWrongActor), "grant wrong actor"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionWrongActor) {
+		t.Fatalf("want GrantRejectionWrongActor, got %v", err)
+	}
+}
+
+// TestActor_UnauthorizedApproverGrantRejected proves that a grant with an
+// unauthorized approver is rejected with GrantRejectionUnauthorizedApprover.
+func TestActor_UnauthorizedApproverGrantRejected(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := fakePrincipalStore{
+		userID:   userID,
+		subject:  "idp|bob",
+		okTenant: tenantID,
+		grantErr: errors.E(errors.KindForbidden, string(auth.GrantRejectionUnauthorizedApprover), "grant unauthorized approver"),
+	}
+
+	tok := ti.Issue("idp|bob", tenantID, uuid.Nil, testkit.WithGrantID(uuid.New()))
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if !auth.IsGrantRejection(err, auth.GrantRejectionUnauthorizedApprover) {
+		t.Fatalf("want GrantRejectionUnauthorizedApprover, got %v", err)
+	}
 }

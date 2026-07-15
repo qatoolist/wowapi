@@ -30,6 +30,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/logging"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/storage"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/migrations"
 
@@ -100,7 +101,7 @@ func run(ctx context.Context, argv []string) error {
 	// (SkipRLSEnforcementCheck) — that check is for the tenant-serving api/worker
 	// runtime pool, which must be a non-privileged app_rt role.
 	txm := database.NewManager(pool, cfg.DB)
-	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm})
+	k, err := kernel.New(cfg.Framework, log, kernel.Deps{Pool: pool, Tx: txm, Storage: storage.NewMemory()})
 	if err != nil {
 		return fmt.Errorf("kernel: %w", err)
 	}
@@ -168,10 +169,14 @@ func run(ctx context.Context, argv []string) error {
 	// check denies and resource-mirror writes fail their FK (GAP-003). No
 	// invalidator is passed: this process holds no long-lived authz cache (it
 	// exits immediately after migrating), unlike the api/worker runtime.
-	if err := seeds.Sync(ctx, pool, booted.Seeds); err != nil {
+	seedReport, err := seeds.Apply(ctx, pool, booted.Seeds, seeds.ApplyOptions{Actor: "migrate"})
+	if err != nil {
 		return fmt.Errorf("seed sync: %w", err)
 	}
-	log.InfoContext(ctx, "seed catalogs synced", "modules", len(names))
+	log.InfoContext(ctx, "seed catalogs synced",
+		"modules", len(names),
+		"outcome", seedReport.Outcome,
+		"hash", seedReport.Hash)
 
 	// Rule-definition sync (GAP-007, mirrors seed sync's lifecycle position
 	// exactly): upsert every module-registered rule Point into rule_definitions
