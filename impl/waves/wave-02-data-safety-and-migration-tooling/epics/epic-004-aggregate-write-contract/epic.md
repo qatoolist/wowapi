@@ -153,3 +153,9 @@ above are all satisfied; `closure-report.md` for this epic is completed with rev
 acceptance date; RISK-W02-E04-001 is recorded (not resolved — its resolution depends on W05-E03's
 own AR-03 design, out of this epic's control) with a clear pointer for that future story to consult
 this epic's T1 design before finalizing AR-03's own mechanism.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed). Independently reviewed and accepted 2026-07-16.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

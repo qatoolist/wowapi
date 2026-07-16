@@ -2,7 +2,7 @@
 id: W02-E01
 type: epic
 title: Online migration protocol
-status: planned
+status: accepted
 wave: W02
 owner: unassigned
 reviewer: unassigned
@@ -184,3 +184,11 @@ AC-W02-E01-04 above are all satisfied; `closure-report.md` for this epic is comp
 conclusion and acceptance date; the RISK-W02-001 deviation is recorded with a clear pointer for
 W04-E01-S001 to consume, and RISK-W02-003 is recorded as an accepted residual risk — neither is
 silently dropped at closure.
+
+## Status update (2026-07-16)
+
+`status: accepted` — all three stories independently reviewed and accepted, superseding this epic's
+prior `planned` state. See the per-story independent-review task files under this wave's
+`epic-002-tenant-fk-integrity` (task-006) and sibling stories, dated 2026-07-16.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -2,11 +2,11 @@
 id: W02-E02-S001-T004
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W02-E02-S001
-owner: unassigned
+owner: Independent review agent (Claude Sonnet 4.5)
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E02-S001-T001
   - W02-E02-S001-T002
@@ -16,7 +16,8 @@ acceptance_criteria:
   - AC-W02-E02-S001-02
   - AC-W02-E02-S001-03
 artifacts: []
-evidence: []
+evidence:
+  - EV-W02-E02-S001-004
 ---
 
 # W02-E02-S001-T004 — Independent review
@@ -41,7 +42,7 @@ unassigned
 
 ### Status
 
-todo
+done (executed 2026-07-16 by Independent review agent, Claude Sonnet 4.5)
 
 ### Dependencies
 
@@ -186,43 +187,71 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+- AC-W02-E02-S001-01/02: re-ran `TestScannerEnumerateFixture` — PASS. Scanner enumeration is
+  fixture-driven off the RLS-tagged tenant-table matrix (`internal/tools/tenantfk/scanner.go`),
+  not a hand-maintained list; confirmed by inspecting `scanner_test.go`'s fixture wiring.
+  CONFIRMED.
+- AC-W02-E02-S001-03: re-ran `TestScannerGateNegativeFixture` — PASS, confirming the negative
+  fixture (a migration adding a single-column, non-composite tenant FK) genuinely fails the gate.
+  Also confirmed `.github/workflows/ci.yml` line ~361 wires a `tenantfk-gate` CI job that runs
+  `make tenantfk-gate`, so the gate is genuinely wired into CI, not merely present as a local tool.
+  CONFIRMED.
+- Did not independently re-run the raw `pg_indexes` query against a live schema in this pass
+  (spot-check scope); relied on `TestScannerEnumerateFixture`'s fixture-schema coverage as the
+  decisive proxy, consistent with the story's own T002 evidence.
+- Noted: `evidence/index.md`'s own metadata table (Execution command/Commit SHA/Result columns)
+  still says "TBD"/"not yet produced" for EV-001..003 despite the corresponding `.txt` files under
+  `evidence/tests/` containing genuine, dated PASS output — a metadata/reality mismatch (the
+  underlying tests are real; the index table describing them was simply never updated after they
+  were produced).
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass. AC-01 (via AC-02's fixture-schema proxy), AC-02, and AC-03 confirmed on fresh re-run,
+including confirming the CI wiring is real.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W02-E02-S001-004
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16 (internal/tools/tenantfk/* unmodified by the
+uncommitted remediation diff)
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin/arm64), go1.26.5, local PostgreSQL via
+`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3)
 
 ### Findings
 
-*Not yet executed.*
+1. No functional gap found; scanner and CI gate genuinely work as claimed.
+2. (Minor, non-blocking) `evidence/index.md`'s EV-001..003 rows say "TBD"/"not yet produced" though
+   the actual test-output files exist and pass — the index table itself was never updated to
+   reflect production; recommend a follow-up edit (out of this review's scope to silently rewrite
+   another task's evidence rows).
+3. (Wave-level, not story-specific) status-layer contradiction flagged separately; conductor to
+   adjudicate.
 
 ### Retest status
 
-*Not yet executed.*
+Retested 2026-07-16. All targeted tests PASS.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommendation: accept-with-conditions. Functionally sound and CI-wired. Condition: fix the
+stale "TBD"/"not yet produced" metadata in `evidence/index.md` for EV-001..003 (Finding 2) so the
+evidence index accurately reflects that these were, in fact, produced.
 
 ## Deviations Record
 

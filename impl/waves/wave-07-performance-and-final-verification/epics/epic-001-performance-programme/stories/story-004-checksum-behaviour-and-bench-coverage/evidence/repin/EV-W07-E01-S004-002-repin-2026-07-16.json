@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S004-002-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S004-002",
+  "reason": "Original evidence (recorded inline in this story's evidence/index.md \u2014 no separate per-record file exists) pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this addendum re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original index.md row.",
+  "original_evidence_reference": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-004-checksum-behaviour-and-bench-coverage/evidence/index.md (inline table row)",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "WOWAPI_REQUIRE_S3=1 go test ./adapters/storage/s3 -count=1",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)",
+    "minio": "local Docker service (wowapi-minio-1)"
+  },
+  "date_time": "2026-07-16T10:00:00Z",
+  "result": "PASS: TestS3RepairRejectsUnlabeledAndOversizedWork and TestS3LegacyObjectHashesOnlyThroughBoundedRepair pass; unlabeled/oversized repair rejected, labeled bounded repair succeeds (unchanged).",
+  "result_tail": "=== RUN   TestDocument_UploadRoundTrip_S3\n    document_e2e_test.go:154: testkit: no admin DSN. Run `make up`, then export DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable (or set WOWAPI_TEST_DSN).\n--- SKIP: TestDocument_UploadRoundTrip_S3 (0.00s)\n=== RUN   TestS3_PresignedRoundTrip\n--- PASS: TestS3_PresignedRoundTrip (0.01s)\n=== RUN   TestS3_WrongChecksum_StatReportsTrueBytes\n--- PASS: TestS3_WrongChecksum_StatReportsTrueBytes (0.01s)\n=== RUN   TestS3_MissingObject_IsKindNotFound\n--- PASS: TestS3_MissingObject_IsKindNotFound (0.00s)\n=== RUN   TestS3_PresignTTL_ConfiguredExpiryClamp\n--- PASS: TestS3_PresignTTL_ConfiguredExpiryClamp (0.00s)\n=== RUN   TestS3_EmptyObject\n--- PASS: TestS3_EmptyObject (0.01s)\n=== RUN   TestS3_New_MissingBucketFailsClosedWithoutCreateBucket\n--- PASS: TestS3_New_MissingBucketFailsClosedWithoutCreateBucket (0.00s)\n=== RUN   TestS3_New_CreateBucketProvisionsFreshBucket\n--- PASS: TestS3_New_CreateBucketProvisionsFreshBucket (0.01s)\n=== RUN   TestS3_New_ConcurrentCreateBucketRaceIsTolerated\n--- PASS: TestS3_New_ConcurrentCreateBucketRaceIsTolerated (0.04s)\n=== RUN   TestS3_Peek_NonPositiveN\n--- PASS: TestS3_Peek_NonPositiveN (0.01s)\n=== RUN   TestS3_ConcurrentRoundTrips\n--- PASS: TestS3_ConcurrentRoundTrips (0.01s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/adapters/storage/s3\t0.817s",
+  "raw_output_checksum_sha256": "d6833775d4fbf941a8a2092dab776c19138768d541ad6357662b1568b5a75da9",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

@@ -2,7 +2,7 @@
 id: W03-E01-S003-T003
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W03-E01-S003
 owner: unassigned
 created_at: 2026-07-12
@@ -41,7 +41,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -108,17 +108,23 @@ Not applicable — a review-only task has no code to roll back.
 
 ### What was actually implemented
 
-Independent review performed against the checklist in this task's "Detailed work":
+This entry previously recorded review prose without a filled Verification Record, reviewer
+identity, execution date, or `status: done` — i.e. drafted but never formally executed or closed
+out (matching the pattern flagged elsewhere in this wave). A genuine independent review is now
+completed and recorded below, superseding the prior draft prose. Checklist:
 
-1. Implementation matches `plan.md`; no deviations required.
+1. Implementation matches `plan.md`; no deviations found in `deviations.md`.
 2. Both acceptance criteria are backed by tests in `kernel/authz/assurance_freshness_test.go` and
-   `kernel/authz/credential_scheme_test.go`.
+   `kernel/authz/credential_scheme_test.go` — re-run below with a live DB (the prior draft review
+   explicitly noted it relied on non-DB tests only; this review closes that gap).
 3. The "expired step-up" required test class is exercised: stale `auth_time` + valid `amr` →
-   `step_up_freshness_required`.
+   `step_up_freshness_required` (`TestStepUpFreshnessStaleAuthTimeFails`).
 4. The credential-scheme test proves a `CredentialUser`-scoped permission rejects a valid API-key
-   actor, and the positive-path tests confirm correctly-scoped actors are not falsely rejected.
-5. The DX-03 cross-cut coordination note is recorded in `plan.md`, `story.md`, T002's
-   "Technical debt introduced", and this task's review findings.
+   actor (`TestCredentialSchemeUserPermissionRejectsAPIKey`), and the positive-path test
+   (`TestCredentialSchemeUserPermissionAllowsUser`) confirms correctly-scoped actors are not
+   falsely rejected.
+5. The DX-03 cross-cut coordination note is recorded in `plan.md`, `story.md`, and the story's
+   "Accepted risks" — not silently resolved.
 
 ### Components changed
 
@@ -189,43 +195,63 @@ Review confirms implementation matches `plan.md` with no deviations.
 
 ### Actual result
 
-*Not yet executed.*
+`go test ./kernel/authz/... -run 'TestStepUpFreshness|TestCredentialScheme' -count=1 -v` and
+`go test ./kernel/auth/... -run 'TestActorInternal_AssuranceFieldsPropagate' -count=1 -v` (DB up):
+all 11 named tests PASS. This closes the prior draft review's own noted limitation ("DB-backed
+tests are skipped without `DATABASE_URL`").
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W03-E01-S003-003 (this review report, superseding the prior unexecuted draft).
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD `43b6e12` + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+Local dev; DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable;
+WOWAPI_REQUIRE_DB=1; Go per repo `go.mod`.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3). This reviewer did not implement T001/T002.
 
 ### Findings
 
-*Not yet executed.*
+**Finding (Low, carried and now confirmed)**: `../closure.md`'s "Evidence completeness" section
+cites `tmp/s003_smoke.go` as evidence backing EV-W03-E01-S003-001/002. Confirmed by search
+(`find . -name s003_smoke.go`) that this file does not exist anywhere in the repository — a
+referenced-but-missing evidence artifact, a violation of `governance/evidence-policy.md`'s
+requirement that cited evidence be real/reproducible. This does not affect the AC verdict (the
+tests actually cited by `evidence/index.md`, which does NOT reference `tmp/s003_smoke.go`, are real
+and pass), but `closure.md` must be corrected to drop or replace that citation before this story is
+treated as fully closed. Separately, `closure.md`'s frontmatter `status: draft` contradicts its own
+prose `## Final status: accepted (pending formal product-security lead sign-off and DB-backed test
+re-run)` — an oxymoron per `governance/status-model.md`. This review's DB-backed re-run
+requirement is now satisfied (see "Actual result" above); the sign-off and status-field
+contradiction remain for the conductor/product-security lead to resolve.
 
 ### Retest status
 
-*Not yet executed.*
+Retested against current HEAD + working tree with a live DB (2026-07-16), closing the prior
+review's own noted DB-test gap.
 
 ### Final conclusion
 
-*Not yet executed.*
+Acceptance criteria AC-W03-E01-S003-01 and -02 satisfied by genuine, DB-backed test evidence. One
+Low-severity documentation defect remains open in `../closure.md` (missing evidence file citation +
+contradictory status field) — recommend `accept-with-conditions`: fix `closure.md` before the
+story is marked `accepted` outright.
 
 ## Deviations Record
 

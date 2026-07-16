@@ -1,0 +1,25 @@
+{
+  "evidence_id": "EV-W07-E01-S002-004-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S002-004",
+  "reason": "Original evidence pinned base commit SHA 733ef3e930cbb3f89f5bbc53d8f562c60e426513, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-002-rules-resolution-sql/evidence/explain/EV-W07-E01-S002-004.json",
+  "original_pinned_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "inspection of the four perf/results/perf-03-explain-*.json fixture files (no command re-executed; original record itself carries no base_commit/execution_command)",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.14 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:20:00Z",
+  "result": "PASS: all four cardinality fixtures (shallow-low, shallow-high, deep-low, deep-high) present at the paths recorded in the original evidence, each verified with a fresh SHA-256 checksum.",
+  "result_tail": "OK: perf/results/perf-03-explain-shallow-low.json (fdd16de5f1717381a39671783ec7c462be2c1726244db093076eccf147641aa7)\nOK: perf/results/perf-03-explain-shallow-high.json (b5f4f637af231c447f45a7641e24d8a674825d7e35fa58b548320442519630f9)\nOK: perf/results/perf-03-explain-deep-low.json (e82fd3d53bfe1bd89ac5f9f29b70ef80a15ef885ae36fdb2e6425a6a5b966c92)\nOK: perf/results/perf-03-explain-deep-high.json (c5a49ac7b23d76d86e32f67657ebf144029a300ec97581359c6e7188edde1f01)",
+  "raw_output_checksum_sha256": "dea15e022f728ea368d68b0eaea9a5535b6935c5f82abb8a3f37d677d493189d",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

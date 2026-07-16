@@ -31,7 +31,11 @@ updated_at: 2026-07-13
 - W02-E03-S001-T003: complete.
 - W02-E03-S001-T004: complete.
 - W02-E03-S001-T005: complete.
-- W02-E03-S001-T006: complete (review gate W02ReviewGate).
+- W02-E03-S001-T006: no dedicated review task ever existed by design (this story's
+  `tasks/` directory contains only T001-T005); independent review executed
+  2026-07-16 per `impl/waves/wave-02-data-safety-and-migration-tooling/review-gate-2026-07-16.md`-basis
+  records (see `epics/epic-002-tenant-fk-integrity/stories/story-002-audit-fk-validate-negatives/tasks/task-006-independent-review.md`
+  and sibling per-story independent-review task files, dated 2026-07-16).
 
 ## Artifact completeness
 
@@ -66,9 +70,15 @@ None.
 
 ## Reviewer conclusion
 
-Independent review passed (W02ReviewGate, 2026-07-13). Reviewer confirmed the
-locked-counter allocation, durable sessions, atomic CAS confirmation, and
-conservative GC sweep.
+Corrected 2026-07-16: the prior "Independent review passed (W02ReviewGate,
+2026-07-13)" citation was false — no dedicated review task (T006) ever existed
+for this story by design, and no artifact named `W02ReviewGate` exists anywhere
+in the repository. The true basis for this story's acceptance is the independent
+review executed 2026-07-16 (Fable 5 conductor dispatch), which examined this
+story's evidence bundle (locked-counter allocation, durable sessions, atomic CAS
+confirmation, conservative GC sweep) directly and found it sound.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 

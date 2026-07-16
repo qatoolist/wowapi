@@ -1,0 +1,25 @@
+{
+  "evidence_id": "EV-W07-E01-S002-002-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S002-002",
+  "reason": "Original evidence pinned base commit SHA 733ef3e930cbb3f89f5bbc53d8f562c60e426513, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-002-rules-resolution-sql/evidence/tests/EV-W07-E01-S002-002.json",
+  "original_pinned_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "go test ./kernel/rules -run 'TestIntegrationResolver(QueryCountConstantWithDepth|SetBasedParity)$' -count=1 -v",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.14 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:20:00Z",
+  "result": "PASS: six precedence/history parity cases pass; legacy depth 3/10/50 = 11/18/58 statements, set-based = 8/8/8 (unchanged).",
+  "result_tail": "--- PASS: TestIntegrationResolverQueryCountConstantWithDepth (0.51s)\n    --- PASS: TestIntegrationResolverQueryCountConstantWithDepth/depth_3 (0.19s)\n    --- PASS: TestIntegrationResolverQueryCountConstantWithDepth/depth_10 (0.13s)\n    --- PASS: TestIntegrationResolverQueryCountConstantWithDepth/depth_50 (0.18s)\n=== RUN   TestIntegrationResolverSetBasedParity\n=== RUN   TestIntegrationResolverSetBasedParity/nearest_org\n=== RUN   TestIntegrationResolverSetBasedParity/ancestor_org\n=== RUN   TestIntegrationResolverSetBasedParity/tenant\n=== RUN   TestIntegrationResolverSetBasedParity/platform\n=== RUN   TestIntegrationResolverSetBasedParity/code_default\n=== RUN   TestIntegrationResolverSetBasedParity/historical_superseded\n--- PASS: TestIntegrationResolverSetBasedParity (0.63s)\n    --- PASS: TestIntegrationResolverSetBasedParity/nearest_org (0.11s)\n    --- PASS: TestIntegrationResolverSetBasedParity/ancestor_org (0.11s)\n    --- PASS: TestIntegrationResolverSetBasedParity/tenant (0.10s)\n    --- PASS: TestIntegrationResolverSetBasedParity/platform (0.10s)\n    --- PASS: TestIntegrationResolverSetBasedParity/code_default (0.10s)\n    --- PASS: TestIntegrationResolverSetBasedParity/historical_superseded (0.11s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/rules\t1.761s",
+  "raw_output_checksum_sha256": "a777d5f80fcd4e89edd6479d89eb41bb7dcefe9a84c814064370694180ea8139",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

@@ -2,7 +2,7 @@
 id: W06-E03
 type: epic
 title: Release gating
-status: partially-verified
+status: in-progress
 wave: W06
 owner: W06E03Impl
 reviewer: W06-E01-E04-Execution.W06E03ReviewR
@@ -140,3 +140,13 @@ S001 and S003 reach `accepted`; S002 remains `planned`/`blocked` honestly until 
 epic may close with S002 in a documented blocked state, per `governance/definition-of-done.md`'s
 partially-accepted framing at epic scope, PROVIDED the blocked state is explicitly recorded with DEC-Q10
 restated as the exact unblocking condition, not silently presented as complete.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S001 (exact-commit release pipeline) and S003 (blocking security scans) both
+independently reviewed and accepted per `review-gate-2026-07-16.md` (artifact-presence level; full
+pipeline execution not independently re-run for S001; waiver mechanism not individually re-executed
+for S003). S002 (protection activation) remains genuinely `blocked` — confirmed a legitimate,
+well-documented human-gated block (DEC-Q10, repo-admin action), not a defect.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

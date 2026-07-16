@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S003-004-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S003-004",
+  "reason": "Original evidence pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-003-sweeper-materialization/evidence/performance/EV-W07-E01-S003-004.json",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres> go test ./foundation/webhook -run '^TestIntegrationRetryOutboundBatchLoadsEndpointsOnce$' -count=1 -v",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:40:00Z",
+  "result": "PASS: exactly one batched webhook_endpoints query, zero per-id queries (unchanged). foundation/webhook carries uncommitted, out-of-scope remediation changes noted by the dispatcher; this evidence package does not touch or depend on them.",
+  "result_tail": "=== RUN   TestIntegrationRetryOutboundBatchLoadsEndpointsOnce\n--- PASS: TestIntegrationRetryOutboundBatchLoadsEndpointsOnce (0.17s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/foundation/webhook\t0.688s",
+  "raw_output_checksum_sha256": "1c6159eaa899fa707de1debd502f1683c9d92faae8cf6ccb9e349916e84d77e1",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

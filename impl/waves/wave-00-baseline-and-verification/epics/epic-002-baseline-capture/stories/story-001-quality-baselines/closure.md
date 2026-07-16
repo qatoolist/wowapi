@@ -64,7 +64,11 @@ None deferred out of scope; the follow-up candidates above were never in scope.
 
 ## Reviewer conclusion
 
-Pending — conductor review gate.
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Baseline-capture work
+itself judged sound and honestly self-reported (18/25 analyzers positively matched, disclosed).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -72,9 +76,9 @@ Framework architecture lead, per `../../wave.md` (role-based; no named human DRI
 
 ## Closure date
 
-Execution closed 2026-07-13; acceptance date pending review.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Execution closed 2026-07-13.
 
 ## Final status
 
-`ready-for-review` (per `impl/governance/status-model.md` §7.2; `accepted` is the review gate's
-to grant, not this worker's).
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

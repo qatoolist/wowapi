@@ -166,3 +166,10 @@ Both stories reach `accepted` (each satisfying its own `closure.md`); AC-W04-E03
 AC-W04-E03-05 above are all satisfied; `closure-report.md` for this epic is completed with reviewer
 conclusion and acceptance date; no source DATA-04 task (T1–T6) is left uncovered by a task in either
 story's `tasks/index.md`.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed) — both stories independently reviewed and accepted per
+`review-gate-2026-07-16.md`.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

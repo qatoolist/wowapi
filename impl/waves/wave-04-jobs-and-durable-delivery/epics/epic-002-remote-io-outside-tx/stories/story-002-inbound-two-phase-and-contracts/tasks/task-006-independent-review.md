@@ -48,7 +48,8 @@ unassigned
 
 ### Status
 
-todo
+done (review outcome: story is unimplemented, not yet ready for the T001–T005 review this task
+describes — see Verification Record)
 
 ### Dependencies
 
@@ -201,41 +202,73 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+Confirmed the 2026-07-16 status-honesty remediation (autopsy R-1) accurately reverted this story:
+`story.md` frontmatter now reads `status: planned` (was falsely `accepted`); `closure.md` carries a
+correction note ("frontmatter `status: accepted` was false ... reverted to `planned`") and its body
+is unchanged, still reading "This story has not been implemented, verified, or closed." Confirmed no
+partial-claim regression: `find . -type d -iname chaos` shows only `kernel/jobs/chaos` and
+`foundation/bulk/chaos` — still no chaos test directory for notify or webhook anywhere in the repo,
+matching the prior adversarial finding. Read `foundation/webhook/service.go`'s `HandleInbound`
+(lines 34-127): it still runs signature verification, secret resolution, and event persistence
+entirely inside the caller's single open tenant transaction, by design and by its own doc comment —
+this is the pre-two-phase behavior; T001's claimed two-phase (short read-tx snapshot / verify outside
+tx / short write-tx re-check) protocol for inbound verification does not exist in the codebase.
+`grep`-style search found no adapter-contract idempotency-declaration mechanism (T003) and no
+explicit-status per-class DSR reporting tied to this story (that capability exists but lives in
+W04-E04-S002's `kernel/retention`, an unrelated story/epic). None of T001–T005 have real code; the
+task list itself (not independently re-read line-by-line here, but consistent with `story.md`'s
+`planned` status and `closure.md`'s unfilled sections) is consistent with "not started."
 
 ### Pass or fail
 
-*Not yet executed.*
+FAIL (as originally scoped) / status-honesty check PASSES. The story's four acceptance criteria
+(AC-W04-E02-S002-01 through -04) are not met by any code in the repository. Separately, the specific
+thing this re-review was asked to confirm — that the 2026-07-16 revert from `accepted` to `planned`
+is accurate and that nothing now partially claims completion — is CONFIRMED TRUE: `story.md`,
+`closure.md`, `verification.md`, and `evidence/index.md` are self-consistent in stating the story is
+not implemented, and `impl/tracking/status-register.md` line 96 correctly lists
+`W04-E02-S002 | story | ... | planned`.
 
 ### Evidence identifier
 
-*Not yet executed.*
+No new evidence produced (none exists to produce — the implementation does not exist). This record
+itself is the evidence for the status-honesty confirmation.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local repository inspection; no test execution required (no test code exists for
+this story's scope).
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+1. (Confirmed, not a new finding) AC-W04-E02-S002-01 through -04 are unmet — no two-phase inbound
+   verification, no adapter idempotency-safety contract, no chaos test for notify/webhook exists.
+2. (New, positive) The 2026-07-16 status revert is accurate and complete: no document in this
+   story's tree, nor `impl/tracking/status-register.md`, claims partial or full acceptance.
 
 ### Retest status
 
-*Not yet executed.*
+Not applicable — nothing to retest; the implementation has not been produced.
 
 ### Final conclusion
+
+Recommend: **not-ready**. This story is correctly labeled `planned` (future work) as of 2026-07-16;
+the revert from the prior false `accepted` claim is accurate and should be preserved. No part of
+this story should be counted toward W04 acceptance. Recommend the conductor keep `status: planned`
+and schedule this as a fresh, real implementation pass when prioritized.
 
 *Not yet executed.*
 

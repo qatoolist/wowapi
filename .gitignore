@@ -37,9 +37,11 @@ Desktop.ini
 /build/
 *.exe
 *.test
+testkit.test
 *.out
 coverage.out
 coverage.html
+coverage.db.out
 *.coverprofile
 
 # Generated / temporary files
@@ -47,6 +49,10 @@ coverage.html
 /var/
 *.log
 *.pid
+extraction.log
+full_*.log
+test_report.log
+functional_fix_report.log
 
 # Tool caches and generated reports
 graphify-out/
@@ -54,6 +60,7 @@ graphify-out/
 .graphify_*.txt
 .graphify_old.json
 visuals/
+.ruff_cache/
 
 # Local infra data
 .docker-data/

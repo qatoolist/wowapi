@@ -1,0 +1,25 @@
+{
+  "evidence_id": "EV-W07-E01-S002-003-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S002-003",
+  "reason": "Original evidence pinned base commit SHA 733ef3e930cbb3f89f5bbc53d8f562c60e426513, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-002-rules-resolution-sql/evidence/explain/EV-W07-E01-S002-003.json",
+  "original_pinned_commit": "733ef3e930cbb3f89f5bbc53d8f562c60e426513",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "go test ./kernel/rules -run TestIntegrationResolverExplainFixtures -count=1 -v",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.14 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:20:00Z",
+  "result": "PASS: current and historical predicates use index access across all 4 fixtures; zero rule_versions seq scans (unchanged). Re-run in read-only mode (no WOWAPI_UPDATE_EXPLAIN_FIXTURES=1) to avoid mutating checked-in fixture files, which are out of this remediation's evidence-files-only scope.",
+  "result_tail": "=== RUN   TestIntegrationResolverExplainFixtures\n=== RUN   TestIntegrationResolverExplainFixtures/shallow-low\n    resolver_perf_test.go:381: pool created: true, err: <nil>\n=== RUN   TestIntegrationResolverExplainFixtures/shallow-high\n    resolver_perf_test.go:381: pool created: true, err: <nil>\n=== RUN   TestIntegrationResolverExplainFixtures/deep-low\n    resolver_perf_test.go:381: pool created: true, err: <nil>\n=== RUN   TestIntegrationResolverExplainFixtures/deep-high\n    resolver_perf_test.go:381: pool created: true, err: <nil>\n--- PASS: TestIntegrationResolverExplainFixtures (1.70s)\n    --- PASS: TestIntegrationResolverExplainFixtures/shallow-low (0.07s)\n    --- PASS: TestIntegrationResolverExplainFixtures/shallow-high (0.15s)\n    --- PASS: TestIntegrationResolverExplainFixtures/deep-low (0.17s)\n    --- PASS: TestIntegrationResolverExplainFixtures/deep-high (0.99s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/rules\t1.920s",
+  "raw_output_checksum_sha256": "4090b9efefb9f52747d79ec311cb56d7b2f7d65bd690e99a4bf7de750c71cb86",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

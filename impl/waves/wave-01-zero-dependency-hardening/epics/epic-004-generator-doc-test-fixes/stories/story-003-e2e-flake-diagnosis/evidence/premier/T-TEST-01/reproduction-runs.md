@@ -53,3 +53,15 @@ Mandate §10 required fields:
 Failed-evidence preservation: the 16 failing executions in run-01..04 are retained verbatim in
 `logs/run-0{1..4}-count5-parallel4.log` per mandate §10 ("do not delete earlier failed
 verification merely because a later run passes").
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Spot-checked, not re-run. The flaky e2e suite itself was not re-executed in this pass (diagnosis/decision record, not a simple repro command, consistent with the autopsy's own scoping). Evidence bundle (diagnosis-note.md, reproduction-runs.md, logs/) confirmed present on disk.
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including the "framework architecture lead (pending story acceptance; conductor
+gate)" reviewer line) is left unmodified per the failed-evidence preservation convention — this
+is an appended addendum, not a rewrite.

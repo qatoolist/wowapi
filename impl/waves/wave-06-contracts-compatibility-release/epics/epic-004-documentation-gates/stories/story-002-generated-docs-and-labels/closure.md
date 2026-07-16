@@ -46,3 +46,19 @@ W06-E01-E04-Execution.W06E04ReviewR reported `overall_correctness=correct`, conf
 ## Closure date and final status
 
 Closed 2026-07-13. **Final status: accepted.**
+
+## Scoping note (2026-07-16)
+
+`review-gate-2026-07-16.md` found a conflict with this record's "no T4 blocker is claimed" line
+above (line 39-40): direct inspection of `wave-05.../epic-003-authoritative-declarations/
+stories/story-001-manifest-and-projections/story.md` confirms it is `status: verified`, not yet
+`accepted` (`closure.md` status: `draft`) — i.e. T4's unblocking condition (W05-E03 reaching
+`accepted`) genuinely remains unmet as of 2026-07-16, contrary to this record's earlier "no T4
+blocker" framing. The `accepted` status above is **not a false claim**: it covers only **T5's
+scope** (the labeling/lint half of the story, fully implemented/evidenced/reviewed with no W05
+dependency). **T4** ("Generate reference/API docs from AR-03's authoritative manifest") remains
+open/blocked pending W05-E03 reaching `accepted`; AC-01 should be read as scoped-to-T5, not
+full-AC-01 completion, until T4 lands. This is a genuine open cross-wave dependency, not a defect —
+flagged here per the conflict-report rule (report, don't improvise).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

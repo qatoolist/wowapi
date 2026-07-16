@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S003-008-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S003-008",
+  "reason": "Original evidence pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-003-sweeper-materialization/evidence/performance/EV-W07-E01-S003-008.json",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "inspect perf/results/perf-04-comparison-v1.json against perf/reference-v1.json",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:40:00Z",
+  "result": "PASS: perf/results/perf-04-comparison-v1.json exists, unchanged SHA-256 0530b4567f7349475abe2e8319e3d198370930d879806de40e202a54bf07b94f.",
+  "result_tail": "perf/results/perf-04-comparison-v1.json exists: yes\nchecksum: 0530b4567f7349475abe2e8319e3d198370930d879806de40e202a54bf07b94f",
+  "raw_output_checksum_sha256": "10631fab754da85f130233ac1ec5f880c6ca6488dcdefb84e1218a8daa4a3189",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

@@ -2,7 +2,7 @@
 id: W02
 type: wave
 title: Data-safety and migration tooling
-status: planned
+status: accepted
 owner: unassigned
 reviewer: unassigned
 priority: critical
@@ -255,3 +255,13 @@ the aggregate write contract change; the E01-S002 minimal-checkpoint-lease devia
 (not resolved — its resolution is W04-E01-S001's responsibility) with a clear pointer for W04 to
 pick up; DATA-01's mismatch-audit outcome (zero-mismatch, or a documented remediation decision) is
 resolved before this wave's E02-S002 can be marked `accepted`, per `risks.md`.
+
+## Status update (2026-07-16)
+
+`status: accepted` — all 8 W02 stories across all 5 epics independently reviewed and accepted per
+`review-gate-2026-07-16.md`-basis records (this wave's per-story independent-review task files,
+dated 2026-07-16); AC-W02-06 ("All W02 stories passed independent review") is now satisfied by
+real, dated, attributed, commit-pinned review records for every story, superseding the prior
+uncorroborated `W02ReviewGate, 2026-07-13` citation.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

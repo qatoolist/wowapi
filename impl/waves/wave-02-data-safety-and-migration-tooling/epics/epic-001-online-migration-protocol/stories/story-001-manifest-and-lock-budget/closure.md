@@ -14,7 +14,13 @@ updated_at: 2026-07-13
 - AC-W02-E01-S001-01: pass — manifest schema parser, positive/negative fixtures,
   and kernel ledger enforcement.
 - AC-W02-E01-S001-02: pass — external review record via
-  W02Proto.ManifestSchemaReview; schema locked in `artifacts/manifest-schema-design.md`.
+  W02Proto.ManifestSchemaReview; schema locked in `artifacts/manifest-schema-design.md`. **Note
+  (2026-07-16)**: the original `W02Proto.ManifestSchemaReview` external-review claim (EV-002) could
+  not be corroborated by any artifact when re-examined during the 2026-07-16 independent review gate.
+  The 2026-07-16 review record is now the operative AC-02 evidence — see
+  `tasks/task-003-independent-review.md` (todo → done) and `evidence/index.md` EV-W02-E01-S001-004.
+
+  — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 - AC-W02-E01-S001-03: pass — `TestExecDDLLockTimeoutAbortAndRetry` and
   `TestExecDDLLockTimeoutExhausted`.
 

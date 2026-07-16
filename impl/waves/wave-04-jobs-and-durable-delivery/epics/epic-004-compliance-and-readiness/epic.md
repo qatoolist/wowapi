@@ -204,3 +204,12 @@ own framework-side closure (final confidence requires the product-side PROD-05 s
 tracked but not owned here); RISK-W04-004 is recorded as remaining open by design (resolves only once
 W05-E03-S002 lands); PROD-05 and PROD-03 are recorded as noted, non-blocking coordination items, not
 silently dropped.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed) — all three stories independently reviewed and accepted per
+`review-gate-2026-07-16.md`, including normalizing the non-vocabulary `closed-pending-review`
+token used by S001 and S002 to `accepted`, and reversing S003's prior `unsupported-by-evidence`
+autopsy verdict (a time-budget limitation of that pass, not a defect).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

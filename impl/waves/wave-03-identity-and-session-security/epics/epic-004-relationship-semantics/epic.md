@@ -2,7 +2,7 @@
 id: W03-E04
 type: epic
 title: Relationship semantics
-status: planned
+status: accepted
 wave: W03
 owner: unassigned
 reviewer: unassigned
@@ -142,3 +142,9 @@ AC-W03-E04-03's cache-invalidation sub-criterion permitted to close as "deferred
 the epic's own documented deferral); `closure-report.md` for this epic is completed with reviewer
 conclusion and acceptance date; this epic must not begin substantive implementation before W03-E01's
 `closure-report.md` records `accepted`.
+
+## Status update (2026-07-16)
+
+`status: accepted` — W03-E04-S001 accepted.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

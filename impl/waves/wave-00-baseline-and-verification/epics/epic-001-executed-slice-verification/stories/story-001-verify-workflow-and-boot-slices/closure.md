@@ -67,9 +67,19 @@ if the conductor routes them as work).
 
 ## Reviewer conclusion
 
-Pending — conductor/independent review not yet run. Worker's summary for that review: 3/4 ACs
-pass with pinned evidence; 1 honest fail-as-worded with full adjudication material captured in
-`evidence/tests/ar05-doc-drift.log` and `deviations.md` DEV-02; no production file touched.
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). 3/4 ACs pass with pinned
+evidence; AC-04 fails as literally worded (7 blueprint hits reproduced byte-for-byte at HEAD
+`43b6e12`) but is re-scoped per the conductor adjudication below; no production file touched.
+
+## Conductor adjudication — AC-04 / DEV-02 (2026-07-16)
+
+AC-04's literal wording tested a repo-wide absence the executed T1/T2 slice never promised; the 7
+blueprint hits are pre-existing future-state prose scoped to AR-05 T5 (W06-E04-S002, where
+doc-example gates now exist). Re-scoping the AC to the executed slice is therefore sound; the
+failed literal grep is preserved as evidence per policy. Ratified.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -78,9 +88,9 @@ human DRI assigned yet, per `impl/index.md`'s scope-discipline note).
 
 ## Closure date
 
-Not yet — awaiting conductor review and AC-04 adjudication. Execution completed 2026-07-13.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Execution completed 2026-07-13.
 
 ## Final status
 
-`ready-for-review` (story front matter). Not `accepted`; per mandate §7 a story is not accepted
-solely because tasks are complete, and here AC-04 additionally requires adjudication.
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

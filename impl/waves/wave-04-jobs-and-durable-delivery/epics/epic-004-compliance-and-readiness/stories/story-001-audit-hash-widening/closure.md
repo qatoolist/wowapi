@@ -64,10 +64,14 @@ None.
 
 ## Reviewer conclusion
 
-PENDING. The reviewer must confirm:
-1. The per-field tamper test genuinely covers every declared field independently.
-2. D-04's version-branch design (`hash_version=1` historical, `hash_version=2` widened) was
-   implemented exactly as ratified.
+Accepted — per `impl/waves/wave-04-jobs-and-durable-delivery/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Confirmed:
+1. `TestIntegrationAuditChainDetectsPerFieldTampering` re-run PASS, 10 subtests, one per persisted
+   field, each independently catching tampering of that field.
+2. D-04's version-branch design (`hash_version=1` historical, `hash_version=2` widened) confirmed
+   implemented as ratified, with `hash_version` branching failing closed on an unrecognized version.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -75,9 +79,10 @@ Data/reliability lead, per epic-level `acceptance.md`.
 
 ## Closure date
 
-2026-07-13 (framework-side implementation and verification complete; pending independent review).
+2026-07-16 — accepted per review-gate-2026-07-16.md. Framework-side implementation and
+verification complete 2026-07-13.
 
 ## Final status
 
-`closed-pending-review` — implementation and evidence complete; awaiting mandatory independent
-review per mandate §14.
+accepted — normalized from the non-vocabulary `closed-pending-review` token per this gate's finding
+(that token is not a value in `impl/governance/status-model.md`'s documented status vocabulary).

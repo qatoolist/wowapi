@@ -2,10 +2,16 @@
 id: CLOSURE-W04-E02-S002
 type: closure-record
 parent_story: W04-E02-S002
-status: accepted
+status: planned
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 ---
+
+<!-- Correction note (autopsy remediation R-1, 2026-07-16): frontmatter `status: accepted` was
+false and contradicted this file's own body, which already honestly states the story has not
+been implemented, verified, or closed (autopsy finding C-2,
+impl/reports/implementation-autopsy-report-2026-07-16.md). Frontmatter status reverted to
+`planned` to match the body. No body content changed — it was already accurate. -->
 
 # Closure — W04-E02-S002
 

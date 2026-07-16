@@ -54,16 +54,28 @@ per definition-of-done).
 
 ## Reviewer conclusion
 
-Pending independent review (mandate §14).
+Accepted — per `impl/waves/wave-01-zero-dependency-hardening/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor).
+
+## Condition note — AC-W01-03 CI-execution leg outstanding (2026-07-16)
+
+Acceptance stands, with one condition: AC-W01-03's CI-execution leg is still unproven — only
+local-run + actionlint-syntax evidence (`gomodverify-and-actionlint.log`) exists, because the wave
+remains an uncommitted/unpushed working tree, so the `go mod verify` CI step and Trivy license
+scanner added by this story have never actually executed in CI. Registered as
+`TD-005` in `impl/tracking/technical-debt-register.md`.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
-Framework architecture lead, per epic-level `acceptance.md` — pending.
+Framework architecture lead, per epic-level `acceptance.md`.
 
 ## Closure date
 
-2026-07-13 (verification complete; acceptance pending).
+2026-07-16 — accepted per review-gate-2026-07-16.md, with the AC-W01-03 CI-execution condition
+noted above. Verification complete 2026-07-13.
 
 ## Final status
 
-verified
+accepted

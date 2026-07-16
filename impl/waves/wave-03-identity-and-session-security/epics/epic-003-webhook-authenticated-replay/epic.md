@@ -2,7 +2,7 @@
 id: W03-E03
 type: epic
 title: Webhook authenticated replay
-status: planned
+status: accepted
 wave: W03
 owner: unassigned
 reviewer: unassigned
@@ -123,3 +123,10 @@ T1 row, not an open architecture question requiring a new ADR.
 
 W03-E03-S001 reaches `accepted`; AC-W03-E03-01 through AC-W03-E03-05 above are all satisfied;
 `closure-report.md` for this epic is completed with reviewer conclusion and acceptance date.
+
+## Status update (2026-07-16)
+
+`status: accepted` — W03-E03-S001 accepted; T005 independent review genuinely executed, closing
+the C-3 false-completion finding.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -2,7 +2,7 @@
 id: W03-E05-S001-T003
 type: task
 title: Independent review
-status: pending
+status: done
 parent_story: W03-E05-S001
 owner: unassigned
 created_at: 2026-07-12
@@ -41,7 +41,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -180,23 +180,51 @@ above.*
 
 ### Actual result
 
-Implementation completed; independent review not yet performed in this session.
+`go test ./kernel/workflow/... -run 'TestRatifyByDefinitionRejected|TestOverrideAuditRowPresent|TestOverrideAuditFailureRollsBack|TestIntegrationWorkflowOverride|TestIntegrationOverrideAuthzGate|TestIntegrationOverrideFailsClosedWithoutPermission' -count=1 -v`
+(DB up): all 7 named tests/subtests PASS (`ok github.com/qatoolist/wowapi/kernel/workflow 4.540s`).
+Checklist:
+1. T001's reject-vs-implement decision: `TestRatifyByDefinitionRejected` (both `definition-level
+   ratify_by` and `step-level ratify_by` subtests) PASS — `ratify_by`-declaring definitions are
+   rejected at validation time, confirming the "reject" path was actually taken, not a broader
+   ratification framework silently implemented instead. The decision and its rationale are recorded
+   in `../story.md`/`../plan.md`.
+2. All three ACs backed by named, passing tests with evidence in `../evidence/index.md`: AC-01
+   (`TestRatifyByDefinitionRejected`), AC-02 (`TestOverrideAuditRowPresent`,
+   `TestOverrideAuditFailureRollsBack`), AC-03 (T1-T3 regression: `TestIntegrationWorkflowOverride`,
+   `TestIntegrationOverrideAuthzGate`, `TestIntegrationOverrideFailsClosedWithoutPermission`).
+   Confirmed.
+3. **T002 fault-injection genuineness**: read `kernel/workflow/override_audit_test.go:200-244`
+   (`TestOverrideAuditFailureRollsBack`). `failingAuditRedactor` mutates the audit `Entry.Metadata`
+   to include a `chan int` value, which is not JSON-serializable — this makes
+   `audit.Record`'s downstream canonicalization genuinely fail (a real code-path failure, not a
+   mocked/stubbed error return). The test then queries the DB directly
+   (`workflow_instances.status`/`current_step`, `workflow_tasks.status`, `count(audit_logs)`) and
+   asserts the instance remained `running`/`manager_review`, the open task was not mutated, and zero
+   audit rows were written — i.e. the override transaction genuinely rolled back with zero effect,
+   not merely that `Override` returned a non-nil error. This satisfies the "genuinely adversarial"
+   bar, not a happy-path test relabeled.
+4. T1-T3 fail-closed regression: `TestIntegrationOverrideAuthzGate` and
+   `TestIntegrationOverrideFailsClosedWithoutPermission` re-run and PASS — fail-closed behavior
+   confirmed intact by re-execution, not assumed unchanged.
+5. No source requirement (SEC-02 T4/T5) found silently narrowed — the state machine remains bounded
+   to the three named states per the "reject" decision; no broader ratification framework was
+   introduced.
 
 ### Pass or fail
 
-Pending review.
+Pass.
 
 ### Evidence identifier
 
-EV-W03-E05-S001-004 (T1–T3 regression confirmation) produced; review report pending.
+EV-W03-E05-S001-004 (this review report, extending the prior T1-T3 regression-confirmation entry).
 
 ### Execution date
 
-2026-07-13.
+2026-07-16.
 
 ### Commit or revision
 
-HEAD `733ef3e930cbb3f89f5bbc53d8f562c60e426513` (working tree).
+HEAD `43b6e12` + remediation working tree 2026-07-16.
 
 ### Environment
 
@@ -205,19 +233,22 @@ WOWAPI_REQUIRE_DB=1.
 
 ### Reviewer
 
-Unassigned.
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3). This reviewer did not implement T001-T002.
 
 ### Findings
 
-None yet — review pending.
+None open.
 
 ### Retest status
 
-Not yet required.
+Retested against current HEAD + working tree (2026-07-16); T1-T3's fail-closed behavior
+re-confirmed by execution, not assumed.
 
 ### Final conclusion
 
-Pending independent review.
+Acceptance criteria AC-W03-E05-S001-01 through -03 satisfied. No open finding. Recommend the story
+proceed toward `accepted` (conductor adjudicates final status).
 
 ## Deviations Record
 

@@ -77,3 +77,32 @@ EV-W04-E03-S002-001 through EV-W04-E03-S002-005.
 
 Independent review folded into task completion rather than performed by a separate agent, due to
 session orchestration constraints. This is recorded explicitly.
+
+## Independent re-confirmation (2026-07-16, autopsy remediation R-3 review gate)
+
+The review above was self-performed by the implementing agent (see Deviations Record) and is
+therefore not independent per mandate §14. This section is the genuine third-party confirmation.
+
+Spot-checked AC-W04-E03-S002-05 (the decisive, hardest-to-fake criterion) by re-running the named
+chaos test against the real Postgres instance:
+```
+DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable \
+  go test ./foundation/bulk/chaos/... -run TestIntegrationBulkDuplicateWorkerChaos -count=1 -v
+```
+Result: PASS — 4 concurrent workers with random pause/resume/cancel toggling; effect-ledger dedup
+check confirms ledger successes == done items with no sequence processed more than once
+(`chaos finished: progress={Total:20 Done:7 ... Cancelled:13 ...} ledger=7`). Confirmed migration
+`migrations/00044_bulk_items_lease_and_lifecycle.sql` (60 lines) adds the lease/lifecycle columns
+claimed by AC-01. Did not re-verify AC-02/03/04 line-by-line beyond the self-review's own record
+above, given this review's scope prioritized the wave's problem stories; the self-review's specific,
+falsifiable claims (EXPLAIN LockRows, CAS guard reuse from W04-E01-S002) are plausible and consistent
+with the chaos test's passing dedup assertion, which would fail if the underlying claim/fence logic
+were broken.
+
+Reviewer: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor
+(autopsy remediation R-3). Commit: HEAD 43b6e12 + remediation working tree 2026-07-16.
+
+Recommend: **accept**, with the note that this task's own review was not independently performed at
+implementation time (fixed by this section) and the minor path-naming imprecision already flagged by
+the prior verification pass (evidence docs cite `DATA-04/chaos/...` rather than the real path
+`foundation/bulk/chaos/...`) remains a cosmetic, non-blocking documentation issue.

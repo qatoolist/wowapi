@@ -2,7 +2,7 @@
 id: W03-E01
 type: epic
 title: Server-side session state
-status: planned
+status: in-progress
 wave: W03
 owner: unassigned
 reviewer: unassigned
@@ -176,3 +176,12 @@ not author any new ADR for it. Accordingly, only W03-E01-S001 carries a `decisio
 All four stories reach `accepted`; AC-W03-E01-01 through AC-W03-E01-05 above are all satisfied;
 `closure-report.md` for this epic is completed with reviewer conclusion and acceptance date; no
 unresolved regression from the unconditional-membership or capacity-selection enforcement changes.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S001 and S002 accepted; S003 verified-pending-human (formal
+product-security-lead sign-off outstanding, see `impl/tracking/deferred-items-register.md` DEF-07);
+S004 implemented (cross-repo wowsociety reviewer sign-off unverifiable in-repo, acceptance
+deferred). Epic cannot reach `accepted` until S003/S004 resolve.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

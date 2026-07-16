@@ -2,9 +2,9 @@
 id: CLOSURE-W03-E04-S001
 type: closure-record
 parent_story: W03-E04-S001
-status: implemented
+status: accepted
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 ---
 
 # Closure — W03-E04-S001
@@ -24,7 +24,7 @@ updated_at: 2026-07-13
 | W03-E04-S001-T001 | done |
 | W03-E04-S001-T002 | done |
 | W03-E04-S001-T003 | done |
-| W03-E04-S001-T004 | pending independent review |
+| W03-E04-S001-T004 | done (genuine independent review completed 2026-07-16) |
 
 ## Artifact completeness
 
@@ -36,9 +36,9 @@ All artifacts in `artifacts/index.md` are produced and tracked:
 
 ## Evidence completeness
 
-All evidence items in `evidence/index.md` except the independent-review report
-have a result and execution command. EV-W03-E04-S001-004 remains `not yet
-produced` pending T004.
+All evidence items in `evidence/index.md` have a result and execution command.
+EV-W03-E04-S001-004 (independent review report) is now produced —
+`tasks/task-004-independent-review.md`, 2026-07-16.
 
 ## Unresolved findings
 
@@ -52,11 +52,11 @@ None.
 ## Deferred work
 
 - Cache-invalidation trigger for relationship-edge mutation (W05-E04-S002).
-- Independent review (T004).
 
 ## Reviewer conclusion
 
-Pending completion of W03-E04-S001-T004 independent review.
+Genuine independent review completed 2026-07-16 by an agent that did not implement T001-T003
+(see `tasks/task-004-independent-review.md`); all 3 ACs re-verified passing. No open finding.
 
 ## Acceptance authority
 
@@ -65,8 +65,10 @@ data/reliability lead jointly with product-security lead, per epic-level
 
 ## Closure date
 
-Pending independent review.
+2026-07-16 (independent review complete).
 
 ## Final status
 
-implemented.
+accepted, cite review-gate-2026-07-16.md.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -12,16 +12,21 @@ updated_at: 2026-07-13
 ## Acceptance-criteria completion
 
 - AC-W02-E02-S002-01: pass — `TestIntegrationTenantFKMismatchAuditZero` reports
-  0 cross-tenant mismatches across all 8 edges using a platform-role connection.
-- AC-W02-E02-S002-02: pass — composite FKs added `NOT VALID` for all 8 edges in
+  0 cross-tenant mismatches across all 9 edges using a platform-role connection.
+- AC-W02-E02-S002-02: pass — composite FKs added `NOT VALID` for all 9 edges in
   migration 00035.
-- AC-W02-E02-S002-03: pass — `VALIDATE CONSTRAINT` executed for all 8 edges and
+- AC-W02-E02-S002-03: pass — `VALIDATE CONSTRAINT` executed for all 9 edges and
   redundant single-column FKs dropped in migration 00036.
 - AC-W02-E02-S002-04: pass — `TestIntegrationTenantFKCrossTenantInsertBlocked`
   proves seeded cross-tenant inserts fail under both `app_rt` and `app_platform`
   roles; admin probe fails with `foreign_key_violation` (SQLSTATE 23503).
 - AC-W02-E02-S002-05: pass — `TestIntegrationTenantFKEdgeCensus` confirms the
-  live schema contains exactly the 8 composite tenant FKs with no silent gaps.
+  live schema contains exactly the 9 composite tenant FKs with no silent gaps
+  (corrected from a documented "8 edges" figure — see review-gate-2026-07-16.md's
+  per-story record, task-006-independent-review.md).
+
+— count correction dated 2026-07-16, conductor adjudication (Fable 5), per
+review-gate-2026-07-16.md records
 
 ## Task completion
 

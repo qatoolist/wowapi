@@ -180,3 +180,11 @@ AC-W04-E01-04 above are all satisfied; `closure-report.md` for this epic is comp
 conclusion and acceptance date; RISK-W04-001's checkpoint-migration step is confirmed executed and
 evidenced (not silently skipped) before this epic can close; RISK-W04-003's coordination note is
 recorded as an accepted, tracked-forward item, not silently dropped.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed) — all three stories independently reviewed and accepted per
+`review-gate-2026-07-16.md`; each story's previously-unfilled `closure.md` "Final status" template
+now filled in.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -31,3 +31,14 @@ workers do not self-accept. Independent review should specifically re-confirm no
 `kernel/database`'s import graph (RISK-W01-E02-003) — checked at implementation time:
 `grep -rn 'go.opentelemetry' kernel/database/*.go kernel/tracing/*.go` (excluding _test files)
 returns nothing.
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Wave-level reviewer field for this story's evidence set filled per the addenda on the individual EV-*.md records in tests/ above. Story-level disposition: verified (real-DB integration suite reproduced green in this review pass, resolving the autopsy's tooling gap).
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

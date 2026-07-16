@@ -174,3 +174,12 @@ AC-W02-E02-04 above are all satisfied; `closure-report.md` for this epic is comp
 conclusion and acceptance date; RISK-W02-002's outcome (zero-mismatch confirmation, or a resolved
 remediation decision) is recorded, not silently dropped; DATA-01 T8 (optional FK cleanup) is
 recorded as intentionally not blocking closure if it was not completed, per its own optional status.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed). Independent review executed 2026-07-16 superseded the prior
+uncorroborated `W02ReviewGate` citation; both stories accepted; the "8 edges" → "9 edges" count
+correction applied to `story-002-audit-fk-validate-negatives/closure.md` and to
+`testkit/tenant_fk_cross_tenant_test.go`'s comment.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

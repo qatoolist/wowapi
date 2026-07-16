@@ -2,7 +2,7 @@
 id: W03-E05-S001
 type: story
 title: Workflow privileged completion — ratification and durable override audit
-status: ready
+status: accepted
 wave: W03
 epic: W03-E05
 owner: unassigned

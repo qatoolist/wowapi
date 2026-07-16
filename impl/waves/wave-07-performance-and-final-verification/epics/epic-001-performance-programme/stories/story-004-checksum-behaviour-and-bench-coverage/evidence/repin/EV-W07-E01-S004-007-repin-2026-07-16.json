@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S004-007-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S004-007",
+  "reason": "Original evidence (recorded inline in this story's evidence/index.md \u2014 no separate per-record file exists) pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this addendum re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original index.md row.",
+  "original_evidence_reference": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-004-checksum-behaviour-and-bench-coverage/evidence/index.md (inline table row)",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "DATABASE_URL=<local> WOWAPI_REQUIRE_DB=1 make bench-budget",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)",
+    "minio": "local Docker service (wowapi-minio-1)"
+  },
+  "date_time": "2026-07-16T10:00:00Z",
+  "result": "PASS: all budgeted benchmarks pass (53 OK, 0 FAIL), including all seven CS-16 additions (unchanged).",
+  "result_tail": "OK    BenchmarkEvaluateRBACTenantAllow                         69.3 ns/op  1 allocs/op\nOK    BenchmarkCachingStoreHit                                 172.8 ns/op  4 allocs/op\nOK    BenchmarkDispatch/2000routes                             924.1 ns/op  14 allocs/op\nOK    BenchmarkDispatchParallel/500routes                      685.1 ns/op  14 allocs/op\nOK    BenchmarkKeysetClause                                    432.2 ns/op  13 allocs/op\nOK    BenchmarkAuditRecord                                     2690698.0 ns/op  181 allocs/op\nOK    BenchmarkTenantTransactionOpenCommit                     736105.0 ns/op  33 allocs/op\nOK    BenchmarkGuardedDial                                     147.2 ns/op  3 allocs/op\nOK    BenchmarkPolicyMatchesEq                                 184.9 ns/op  4 allocs/op\nOK    BenchmarkRouterRoutes                                    554.6 ns/op  4 allocs/op\nOK    BenchmarkFilteringParseMulti                             901.7 ns/op  24 allocs/op\nOK    BenchmarkDispatch/500routes                              788.4 ns/op  14 allocs/op\nOK    BenchmarkDispatchParallel/2000routes                     592.5 ns/op  14 allocs/op\nOK    BenchmarkDefinitionValidate                              1095.0 ns/op  14 allocs/op\nOK    BenchmarkSweepSLABatch/due_10                            4342962.0 ns/op  899 allocs/op\nOK    BenchmarkCovers                                          67.9 ns/op  1 allocs/op\nOK    BenchmarkDecodeJSONOversizedRejected                     555.2 ns/op  9 allocs/op\nOK    BenchmarkConfigFieldReadMaxBodyBytes                     0.3 ns/op  0 allocs/op\nOK    BenchmarkConfigFieldReadQueryTimeout                     0.3 ns/op  0 allocs/op\nOK    BenchmarkSortParseAndSQL                                 169.0 ns/op  5 allocs/op\nOK    BenchmarkCursorDecode                                    1048.0 ns/op  18 allocs/op\nOK    BenchmarkCursorRoundTrip                                 1923.0 ns/op  32 allocs/op\nOK    BenchmarkTokenVerify                                     32974.0 ns/op  74 allocs/op\nOK    BenchmarkBindAndValidateTypical                          3458.0 ns/op  22 allocs/op\nOK    BenchmarkPolicyMatchesGte                                148.2 ns/op  3 allocs/op",
+  "raw_output_checksum_sha256": "4add46a520bbf3f1c3efd007490f08e89ca0ade33d4f05c053fed5481bc3741c",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

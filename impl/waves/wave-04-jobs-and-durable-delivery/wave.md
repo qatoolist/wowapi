@@ -2,7 +2,7 @@
 id: W04
 type: wave
 title: Jobs and durable delivery
-status: accepted
+status: in-progress
 owner: unassigned
 reviewer: unassigned
 priority: critical
@@ -285,3 +285,14 @@ W02-E01-S002's interim lease) before this wave can close; DATA-08 W6-T1's PROD-0
 coordination note is recorded (not resolved — PROD-05 is product-level, outside this wave's
 framework-side closure) with a clear pointer for the eventual product-side drill; DX-07 T4's
 deferred-link to W05-E03-S002's AR-04 T5 waiver mechanism is recorded, not silently dropped.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — corrected from the prior unsound `accepted` claim. Independent review
+(`review-gate-2026-07-16.md`) accepted E01 (all 3 stories), E03 (both stories), and E04 (all 3
+stories, including normalizing the non-vocabulary `closed-pending-review` token). E02 remains
+`in-progress`: S001/S003 accepted, S002 genuinely `planned` (not started) — no false completion
+claim survives. Wave cannot reach `accepted` until E02-S002 is either implemented or formally
+excluded from this wave's acceptance scope.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

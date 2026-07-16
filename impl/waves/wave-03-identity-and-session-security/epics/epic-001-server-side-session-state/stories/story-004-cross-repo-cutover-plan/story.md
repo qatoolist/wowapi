@@ -2,7 +2,7 @@
 id: W03-E01-S004
 type: story
 title: Cross-repo cutover plan for the wowsociety impersonation-flow breaking change
-status: accepted
+status: implemented
 wave: W03
 epic: W03-E01
 owner: unassigned

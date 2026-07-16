@@ -2,7 +2,7 @@
 id: W06-E01
 type: epic
 title: Consumer and DSL
-status: planned
+status: in-progress
 wave: W06
 owner: unassigned
 reviewer: unassigned
@@ -147,3 +147,12 @@ AC-W06-E01-04 above are all satisfied; `closure-report.md` for this epic is comp
 conclusion and acceptance date; DX-03's design record is confirmed to introduce no implementation code,
 and DX-04's upgrade-replay evidence is confirmed to be a genuine two-pass integration test, not a
 single-pass assertion dressed up as a replay.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S002 (golden consumer) accepted; the previously-unreproduced upgrade-replay
+leg (M-3) resolved via `make golden-consumer`, all 5 test legs PASS. S001 (module DSL design)
+verified-not-accepted: content is honest and sound, but the entry-gate dependency (W05 AR-01/AR-02
+stories reaching `accepted`) is confirmed still unmet as of this review.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

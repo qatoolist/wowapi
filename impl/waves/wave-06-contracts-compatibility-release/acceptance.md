@@ -2,9 +2,9 @@
 id: W06-ACCEPTANCE
 type: wave-acceptance
 wave: W06
-status: planned
+status: in-progress
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 ---
 
 # W06 — Wave-level acceptance
@@ -71,3 +71,12 @@ recorded, not silently resolved with an invented unblocking date.
 
 Release/security-engineering lead for W06-E02/E03; developer-experience lead for W06-E01/E04 — see
 `wave.md` "Acceptance authority" for the full rationale.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — honest summary: 8/10 stories independently reviewed 2026-07-16 per
+`review-gate-2026-07-16.md`; AC-W06-08 (independent review passed) is satisfied for those 8;
+E02-S003 and E03-S002 remain blocked (W05 deps / human DEC-Q10); E01-S001 verified-not-accepted
+pending W05 AR-01/AR-02; E04-S002 accepted scoped to T5 only (T4 blocked on W05-E03).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

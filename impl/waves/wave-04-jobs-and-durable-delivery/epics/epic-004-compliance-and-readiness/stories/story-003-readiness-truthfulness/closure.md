@@ -67,10 +67,20 @@ recorded as a deviation, not a silent gap.
 
 ## Reviewer conclusion
 
-PENDING. The reviewer must confirm:
+Accepted — per `impl/waves/wave-04-jobs-and-durable-delivery/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). This reverses the autopsy's
+prior `unsupported-by-evidence` verdict, which was a time-budget limitation of that pass, not a
+defect finding — confirmed:
 1. DX-07 T4 was correctly and explicitly scoped out — no task silently attempts capacity
    enforcement.
 2. The forward reference to W05-E03-S002 / AR-04 T5 is present and not dropped.
+3. All three decisive test sets re-run and PASS (`MigrationCurrencyCheck`,
+   `ReadinessWithCatalogs`, `config doctor` product-root discovery).
+Also fixed a real evidence-policy violation found during this review: the story's
+`evidence/index.md` cited commit `HEAD` (a moving target) instead of a pinned SHA — corrected to
+`HEAD 43b6e12 + remediation working tree 2026-07-16`.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -78,9 +88,10 @@ Data/reliability lead, per epic-level `acceptance.md`.
 
 ## Closure date
 
-2026-07-13 (framework-side implementation and verification complete; pending independent review).
+2026-07-16 — accepted per review-gate-2026-07-16.md. Framework-side implementation and
+verification complete 2026-07-13.
 
 ## Final status
 
-`closed-pending-review` — T1-T3 implemented and evidenced; awaiting mandatory independent review per
-mandate §14. DX-07 is NOT claimed complete; only T1-T3 are in scope.
+accepted — normalized from the non-vocabulary `closed-pending-review` token per this gate's
+finding. DX-07 is NOT claimed complete; only T1-T3 are in scope.

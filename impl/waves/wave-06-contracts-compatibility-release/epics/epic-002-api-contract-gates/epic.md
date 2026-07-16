@@ -2,7 +2,7 @@
 id: W06-E02
 type: epic
 title: API contract gates
-status: planned
+status: in-progress
 wave: W06
 owner: unassigned
 reviewer: unassigned
@@ -147,3 +147,13 @@ partially-accepted status; AC-W06-E02-01 through AC-W06-E02-04 above are satisfi
 story's own status allows; `closure-report.md` for this epic is completed with reviewer conclusion and
 acceptance date; any still-blocked REL-03b leg is recorded with its exact unblocking condition restated,
 not silently dropped.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S001 (OpenAPI merge complete-or-loud) and S002 (compat gates buildable now)
+both independently reviewed and accepted per `review-gate-2026-07-16.md`. S003 (compat gates
+unblocked) remains genuinely `blocked` — its blocking dependencies (E02-S001, E01-S001 + W05-E03,
+E01-S002) are confirmed genuine and unresolved as of this review; the `blocked` classification is
+accurate, not a defect.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

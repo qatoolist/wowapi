@@ -2,10 +2,10 @@
 id: W06-PROGRESS
 type: wave-progress
 wave: W06
-status: planned
+status: in-progress
 derived: false
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 ---
 
 # W06 progress (initial state)
@@ -80,4 +80,17 @@ Not yet reviewed.
 
 ## Exit-gate readiness
 
-Not ready. 0 of 10 stories accepted.
+Not ready. 0 of 10 stories accepted (pre-2026-07-16 snapshot above; see status update below for
+current state).
+
+## Status update (2026-07-16)
+
+`status: in-progress` — honest summary per `review-gate-2026-07-16.md`: 8/10 stories independently
+reviewed 2026-07-16 (E01-S002 accepted; E02-S001/S002 accepted; E03-S001/S003 accepted; E04-S001
+accepted; E01-S001 accept-with-conditions/verified-not-accepted; E04-S002 accept-with-conditions,
+scoped to T5). E02-S003 and E03-S002 remain blocked (W05 deps / human DEC-Q10) — this is an
+honest, correctly-reasoned block, not a defect. This table is not rewritten row-by-row here; see
+each story's own `story.md`/`closure.md` for the canonical per-story status per
+`impl/governance/status-model.md`'s "canonical source of truth" rule.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

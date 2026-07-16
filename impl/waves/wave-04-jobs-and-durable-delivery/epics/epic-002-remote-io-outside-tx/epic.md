@@ -2,7 +2,7 @@
 id: W04-E02
 type: epic
 title: Remote I/O outside transactions
-status: accepted
+status: in-progress
 wave: W04
 owner: unassigned
 reviewer: unassigned
@@ -191,3 +191,13 @@ conclusion and acceptance date; RISK-W04-E02-001 (T4's breaking-change note) is 
 explicit compatibility consideration at closure, not silently dropped; RISK-W04-E02-002 (the
 W04-E01 dependency) is confirmed resolved (W04-E01-S001 and W04-E01-S003 both accepted) before this
 epic itself can close.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S001 accepted (C-1 out-of-tx defect remediated and independently
+re-verified) and S003 accepted; S002 (inbound two-phase verification) remains genuinely `planned`
+— no chaos-test directory exists for notify/webhook and `HandleInbound` still runs entirely inside
+the caller's open transaction, by design, per `review-gate-2026-07-16.md`. Epic cannot reach
+`accepted` until S002 is implemented or formally excluded from this epic's acceptance scope.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

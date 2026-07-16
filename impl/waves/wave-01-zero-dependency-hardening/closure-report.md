@@ -86,3 +86,16 @@ recorded; T-TEST-01 bounded refutation (29/29 clean) with monitoring protocol.
   push (wave uncommitted at review time); register that CI run as retested evidence at next wave
   gate (W01-E01-S003).
 - PROD-03 wowsociety backport coordination.
+
+## Evidence gap acknowledged (autopsy remediation R-1, 2026-07-16)
+
+This report's "Reviewer conclusion" above claims acceptance by W01ReviewGate, but the
+implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, finding **H-4**) found that all of
+W01-E02-S001's evidence records carry `Reviewer: Pending — conductor acceptance gate` on every
+record — per `governance/evidence-policy.md`, such records "must not be cited as proof." The
+reviewer field is unfilled, not merely informal. This note acknowledges the gap rather than
+fabricating a filled reviewer field. Re-review is scheduled 2026-07-16. Status is left `accepted`
+pending that re-review — this is a documentation gap, not a reversal of the underlying W01
+findings, which the autopsy independently verified as substantively real (7 of 10 stories
+`verified`). — autopsy remediation R-1, 2026-07-16.

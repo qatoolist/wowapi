@@ -57,7 +57,12 @@ evaluations DEF-02/DEF-03; Trivy scan-policy changes → W06-E03 if ever needed)
 
 ## Reviewer conclusion
 
-Pending — independent review not yet run; story submitted `ready-for-review`.
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Evidence bundle (`go
+list`/`go mod graph` logs, dependency-crosscheck.md) confirmed real; 13/13 approved-dependency
+cross-check verified.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -66,8 +71,9 @@ named human DRI assigned yet).
 
 ## Closure date
 
-Worker completion 2026-07-13; closure date to be set at acceptance.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Worker completion 2026-07-13.
 
 ## Final status
 
-`ready-for-review` — awaiting conductor's independent-review/acceptance gate.
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

@@ -220,3 +220,14 @@ independently re-run by this story's own review task.
 ## Plan
 
 See `plan.md`.
+
+## Note (autopsy remediation R-1, 2026-07-16)
+
+Status is unchanged — this story remains genuinely unexecuted as tracked (`planned`, all tasks
+`todo`). However, the implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, §4 row W05-E03-S001, independent
+verdict **contradictory**) found a repo-root `./AR-03/` directory (package `ar03_test`) already
+exists, containing exactly the four test files this story's claimed artifacts name, while tracking
+still says `planned`/`todo`. This is code landed outside this story's execution (autopsy H-6/H-7).
+See deviation **DEV-PROG-002** in `impl/tracking/programme-deviations.md` for the full record.
+— autopsy remediation R-1, 2026-07-16.

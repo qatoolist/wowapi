@@ -2,7 +2,7 @@
 id: W03-E02-S001
 type: story
 title: Outbound-security escape-hatch governance
-status: ready
+status: accepted
 wave: W03
 epic: W03-E02
 owner: unassigned

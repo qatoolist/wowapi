@@ -51,12 +51,31 @@ not the developer-experience lead).
 
 | AC | Status | Evidence | Notes |
 |---|---|---|---|
-| AC-W01-E02-01 | not started | — | — |
-| AC-W01-E02-02 | not started | — | — |
-| AC-W01-E02-03 | not started | — | — |
-| AC-W01-E02-04 | not started | — | — |
+| AC-W01-E02-01 | met | EV-W01-E02-S001-001, EV-W01-E02-S001-002 | Re-verified 2026-07-16: `go test ./kernel/logging/... -run 'TestLogRecordInsideActiveSpanCarriesTraceAndSpanIDs\|TestLogRecordWithoutSpanOmitsCorrelationKeys' -v -count=1` PASS. |
+| AC-W01-E02-02 | met (spot-checked, not re-run) | EV-W01-E02-S001-003 | Benchmark not re-executed in the 2026-07-16 gate (out of decisive-command budget); code path corroborated by inspection. Recommend a fresh `go test -bench` at the next full quality gate. |
+| AC-W01-E02-03 | met | EV-W01-E02-S002-001, -002, -003 | Re-verified 2026-07-16 against a real DB: `DATABASE_URL=... WOWAPI_REQUIRE_DB=1 go test ./kernel/database/... -run TestIntegrationQueryTracerChildSpanInTraceTree -v -count=1` PASS. This resolves the 2026-07-13 autopsy's verification-tooling gap (wrong test-name pattern, no DATABASE_URL). |
+| AC-W01-E02-04 | met | code review (port signature grep) | `observability.Span` port confirmed free of OTel SDK types; only `adapters/tracing/otel` references them. |
 
-## Acceptance record — 2026-07-13
+## Acceptance record — 2026-07-13 (original, unmodified)
 
 Satisfied 2026-07-13. All acceptance criteria for W01-E02 are met; independent review passed
 (W01ReviewGate); accepted by conductor.
+
+**Historical accuracy note (added 2026-07-16, not a rewrite of the above):** this narrative record
+was written the same day the underlying evidence records' `Reviewer` fields were left as
+"Pending — conductor acceptance gate", and this table's own AC rows read "not started" — i.e. the
+2026-07-13 assertion of a passed "W01ReviewGate" was not substantiated by any linked artifact
+(transcript, checklist, or reviewer identity) anywhere in this epic or its stories. See
+`impl/reports/implementation-autopsy-report-2026-07-16.md` finding H-4 and
+`impl/waves/wave-01-zero-dependency-hardening/review-gate-2026-07-16.md` for the independent
+review that actually closes this gap.
+
+## Acceptance record — 2026-07-16 (independent review gate re-run)
+
+Reviewed 2026-07-16 by Independent review agent (Claude Sonnet 4.5), dispatched by Fable 5
+conductor (autopsy remediation R-3), against `HEAD 43b6e12 + remediation working tree 2026-07-16`.
+Both W01-E02 stories (S001, S002) re-verified with decisive command re-runs (see AC table above
+and `review-gate-2026-07-16.md`). Recommendation: **accept**, with AC-W01-E02-02 noted as
+spot-checked rather than freshly re-run. This record supersedes the unsubstantiated portion of the
+2026-07-13 acceptance record above; both are retained per the evidence-policy failed-evidence
+preservation convention.
