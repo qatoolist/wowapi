@@ -144,6 +144,160 @@ defer with records), then finish W05 per plan — tracked via **DEC-PROG-002**.
 
 ---
 
+## DEV-PROG-005 — W02-E02-S002 acceptance rolled back (proof artifacts never built)
+
+### Deviation ID
+
+DEV-PROG-005
+
+### Approved plan
+
+W02-E02-S002 was approved for acceptance 2026-07-13 (closure.md dated 2026-07-13, status: `accepted`).
+The acceptance criteria AC-01 through AC-04 are listed as `pass`, and the five task rows (T001–T005)
+plus the independent-review task (T006) are all listed as `complete` in closure.md.
+
+### Actual implementation
+
+The 2026-07-16 findings-remediation verification pass discovered that three tasks' completion
+criteria's named proof artifacts were never built, despite being explicitly called for in the
+acceptance criteria:
+- **T001 (Mismatch audit):** AC-W02-E02-S002-01 requires "an integration test that seeds a
+  deliberate cross-tenant mismatch" (EV-W02-E02-S002-002). This seeded-mismatch integration test
+  artifact was never constructed.
+- **T002 (Composite FK `NOT VALID` add):** AC-W02-E02-S002-02 requires "a migration lock-duration
+  test" (EV-W02-E02-S002-003). This lock-duration test artifact was never constructed.
+- **T003 (`VALIDATE CONSTRAINT`):** AC-W02-E02-S002-03 requires "a load test under concurrent writer
+  load" (EV-W02-E02-S002-004). This concurrent-writer-load test artifact was never constructed.
+
+The schema deliverables themselves (mismatch audit schema query, composite FK migrations, validation
+schema work) were applied and independently re-verified live on 2026-07-16, so the safety properties
+are confirmed. The three tasks are re-classified as `implemented` (schema deliverable applied and
+verified) rather than `done` (completion criteria fully satisfied with all named proof artifacts).
+
+### Reason
+
+Not recorded at the time (2026-07-13). The closure.md acceptance claim was made without a final
+cross-check against the completion criteria's explicit artifact requirements, per mandate §2.6
+(truthful-status reporting). The autopsy (2026-07-16) detected the discrepancy during a sample
+verification of closure evidence against front-matter acceptance-criteria language.
+
+### Impact
+
+Story W02-E02-S002 acceptance status rolled back from `accepted` to `implemented`. Parent epic
+W02-E02 rolled back to `partially-accepted` (5 stories total: 4 fully accepted, 1 implemented).
+Parent wave W02 rolled back to `partially-accepted` (8 stories total: 7 fully accepted, 1
+implemented). The safety properties themselves remain confirmed and live on 2026-07-16, so the
+data-integrity guarantees are not in doubt — this is a completion-criterion formality, not a
+safety regression.
+
+### Risks
+
+The three deferred proof artifacts (seeded-mismatch test, lock-duration test, concurrent-writer-load
+test) could become stale or bit-rot if not built soon, so future readers would lose the ability to
+re-verify the specific acceptance criteria independently. Residual risk: low if the three artifacts
+are built and evidence is recorded within the next maintenance cycle; medium if they remain deferred
+for longer than one quarter.
+
+### Approval
+
+Not originally approved by any recorded decision. The acceptance rollback (this deviation) was
+adjudicated 2026-07-16 as part of the findings-remediation pass (autopsy remediation R-1 +
+conductor adjudication per review-gate-2026-07-16.md). The disposition — build the three proof
+artifacts and re-accept, or formally descope them and lower the acceptance criteria — is recorded
+as an open item in **DEC-PROG-003** (status: proposed, human ratification pending).
+
+### Compensating controls
+
+The story.md status note (2026-07-16) and closure.md correction note (2026-07-16) both record the
+discovery and the status change, along with references to this deviation record. The safety
+properties remain independently verified live (EV-008, DB-backed tests re-run 2026-07-16). If the
+three proof artifacts are built, the closure.md will be re-opened, the three tasks reclassified
+back to `done`, the story re-accepted, and this deviation superseded.
+
+### Follow-up work
+
+Autopsy remediation R-2 (frame the options for W02-E02-S002 completion): either (a) build the three
+proof artifacts and re-accept the story, or (b) formally descope the three artifacts via a ratified
+decision record (DEC-PROG-003, currently `proposed`). The choice depends on the W02 execution
+owner's assessment of the cost/value tradeoff; both paths are valid. Until one is chosen and
+executed, W02-E02-S002 remains `implemented` and the parent wave W02 remains `partially-accepted`.
+
+---
+
+## DEV-PROG-006 — W01 wave acceptance rolled back; W00 epic front matter reconciled (epic closure reports never completed)
+
+### Deviation ID
+
+DEV-PROG-006
+
+### Approved plan
+
+Wave acceptance requires each contained epic's `closure-report.md` to be completed and accepted
+(each wave's own "Closure conditions" section; mandate §8.10). Epic front matter carries the
+canonical epic status (mandate §6).
+
+### Actual implementation
+
+Waves W00 and W01 were set `accepted` on 2026-07-13 while all six contained epics' front matter
+stayed `planned` — detected 2026-07-16 by the hierarchy roll-up check added to
+`miscellaneous/regen_status_register.py`. Adjudication against each epic's own closure evidence
+split the two waves:
+
+- **W00 (epics E01, E02): front matter reconciled to `accepted`.** Both epics' closure reports
+  are genuinely completed — acceptance-criteria, task/story-completion, artifact- and
+  evidence-completeness sections filled, reviewer conclusion and acceptance date 2026-07-13,
+  all six stories `accepted`. The `planned` front matter was a status-maintenance omission, not
+  a false acceptance; W00's `accepted` wave status stands.
+- **W01 (epics E01–E04): wave rolled back `accepted` → `verification`; epics set `planned` →
+  `verification`.** All four epic closure-report bodies are unpopulated skeletons — their
+  acceptance-criteria/story-completion tables still read "not started"/"planned", with E01/E03's
+  own preambles stating the epic "has not been closed" — yet each carries an appended 2026-07-13
+  reviewer-conclusion/final-status section claiming acceptance. These internally contradictory
+  records cannot support epic acceptance, so W01's closure conditions ("all four epics'
+  `closure-report.md` accepted") were not met at acceptance time. All 10 W01 stories remain
+  `accepted` with story-level evidence; the delivered hardening itself is not in doubt.
+
+### Reason
+
+Not recorded at the time (2026-07-13). Wave-level review (W01ReviewGate) verified stories but the
+epic-level closure reports were flipped to `accepted` (front matter + appended conclusion) without
+their completion sections being populated — the same green-but-hollow pattern as DEV-PROG-005, one
+level up.
+
+### Impact
+
+W01 wave status is `verification` until the four epic closure reports are completed honestly and
+the epics re-accepted. Downstream waves that depended on W01 acceptance are unaffected in
+substance (story-level evidence stands) but inherit a traceability caveat until re-acceptance.
+
+### Risks
+
+If the epic closure reports are not completed soon, the story-level evidence they must aggregate
+could drift from HEAD, making honest epic closure progressively more expensive. Residual risk:
+low — the underlying stories are accepted and evidence-pinned.
+
+### Approval
+
+Not originally approved. This rollback/reconciliation was directed by the human reviewer on
+2026-07-16 during the findings-remediation review ("epics should only be promoted if their own
+closure evidence supports acceptance; otherwise the parent wave must be downgraded").
+
+### Compensating controls
+
+Dated status-update notes added 2026-07-16 to W01's `wave.md` and all four `epic.md` files;
+dated correction notes appended to the four contradictory `closure-report.md` files. The
+hierarchy roll-up check in `miscellaneous/regen_status_register.py` (wired into the hosted CI
+unit job and `miscellaneous/review_gate.sh`) now fails on any accepted wave/epic with
+non-accepted children, preventing recurrence.
+
+### Follow-up work
+
+Complete W01-E01..E04's closure reports against their acceptance criteria (the story-level
+evidence already exists), re-accept each epic, then restore W01 to `accepted`. No new decision
+record is needed — the path is unambiguous; this deviation tracks it.
+
+---
+
 ## DEV-PROG-003 — Sequencing-gate bypasses across W02/W03/W04/W05
 
 ### Deviation ID

@@ -2,11 +2,11 @@
 id: W06-E03-S001-T006
 type: task
 title: build-candidate split via GoReleaser --skip=publish
-status: done-with-deviation
+status: done
 parent_story: W06-E03-S001
 owner: W06E03Impl
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W06-E03-S001-T005
 acceptance_criteria:
@@ -37,7 +37,7 @@ unassigned
 
 ### Status
 
-todo
+done (mechanism deviation DEV-W06-E03-S001-001 recorded in closure.md — GoReleaser OSS has no publish command; gh/ORAS exact-byte publication authorized instead)
 
 ### Dependencies
 

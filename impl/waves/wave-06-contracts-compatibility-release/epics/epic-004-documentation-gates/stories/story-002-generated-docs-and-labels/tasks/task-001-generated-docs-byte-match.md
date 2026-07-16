@@ -2,11 +2,11 @@
 id: W06-E04-S002-T001
 type: task
 title: Generated reference docs byte-matching AR-03's model export (blocked on W05-E03)
-status: complete
+status: done
 parent_story: W06-E04-S002
 owner: W06E04Impl
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on:
   - W05-E03
 acceptance_criteria:

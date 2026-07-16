@@ -2,11 +2,11 @@
 id: W02-E01-S002-T003
 type: task
 title: Validation-phase tooling
-status: todo
+status: done
 parent_story: W02-E01-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E01-S002-T002
 acceptance_criteria:

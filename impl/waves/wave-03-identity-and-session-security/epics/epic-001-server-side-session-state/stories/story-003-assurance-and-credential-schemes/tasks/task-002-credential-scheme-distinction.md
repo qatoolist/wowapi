@@ -2,11 +2,11 @@
 id: W03-E01-S003-T002
 type: task
 title: Credential-scheme distinction (SEC-01 T7)
-status: todo
+status: done
 parent_story: W03-E01-S003
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W03-E01-S003-T001
 acceptance_criteria:
@@ -204,43 +204,43 @@ pre-empting DX-03's eventual DSL shape.
 
 ### Actual result
 
-*Not yet executed.*
+PASS — DB-backed test re-run 2026-07-16 confirmed `CredentialUser`-scoped permission correctly rejects a valid API-key actor.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W03-E01-S003-002 (kernel/authz/credential_scheme_test.go)
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD (at time of closure.md); tests in kernel/authz/
 
 ### Environment
 
-*Not yet executed.*
+Local dev with `DATABASE_URL` set to test database
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review (closure.md generated 2026-07-16)
 
 ### Findings
 
-*Not yet executed.*
+None — credential-scheme distinction working as designed
 
 ### Retest status
 
-*Not yet executed.*
+PASS (2026-07-16 re-run)
 
 ### Final conclusion
 
-*Not yet executed.*
+Acceptance criterion AC-W03-E01-S003-02 verified by independent re-run 2026-07-16.
 
 ## Deviations Record
 

@@ -18,6 +18,35 @@ implementation progress — that lives in each story's own files and rolls up vi
 
 Reverse-chronological (newest first).
 
+## 2026-07-16 — Hierarchy roll-up enforcement + W00/W01 epic-level reconciliation (DEV-PROG-006)
+
+- **Validator extended to the full hierarchy:** `miscellaneous/regen_status_register.py` now also
+  fails when an `accepted` epic has a story (or an `accepted` wave has an epic) outside
+  `accepted`/`deferred`/`cancelled`, and when a `partially-accepted` wave/epic lacks an accepted
+  child, lacks a non-accepted child, or cites no DEV-*/DEC-* record disposing of the remainder.
+  Same wiring as before (hosted CI unit job + `review_gate.sh`).
+- **W00 epics reconciled:** W00-E01/W00-E02 front matter `planned` → `accepted` — both epics'
+  closure reports were genuinely completed 2026-07-13 (reviewer conclusion, acceptance date, all
+  stories accepted); the front matter had simply never been advanced. W00 wave stays `accepted`.
+- **W01 rolled back:** wave `accepted` → `verification`; epics E01–E04 `planned` → `verification`.
+  All four epic closure-report bodies are unpopulated skeletons contradicted by an appended
+  2026-07-13 acceptance conclusion, so the wave's own closure conditions were never met. All 10
+  W01 stories remain `accepted` with evidence. Recorded as **DEV-PROG-006** (programme-deviations
+  + deviation-register); dated correction notes appended to the four closure reports.
+- **W02 body-note corrections:** `wave.md` and `epic-002-tenant-fk-integrity/epic.md` status-update
+  sections still claimed `accepted` against `partially-accepted` front matter; corrected and both
+  now cite DEV-PROG-005/DEC-PROG-003 as the recorded disposition of the S002 exception.
+- **Status register regenerated**; `--check` green (75 stories, totals unchanged).
+
+## 2026-07-16 — Findings-remediation pass R-1 follow-up: task front-matter and register reconciliation
+
+- **Task front-matter status normalization:** 31 W02/W03 task files reconciled: todo→done vocabulary normalization (34 files); front-matter status values matched to mapped task evidence. W02-E02-S002 T001/T002/T003 reclassified `implemented` (schema delivered and re-verified live, but three specific proof artifacts never built — noted in task caveat entries).
+- **Story and index demotion:** W02-E02-S002 story.md acceptance rolled back to `implemented` per findings-remediation adjudication (discovery: three tasks' named proof artifacts in acceptance criteria never built); story.md given status note and closure.md given dated correction line; parent epic W02-E02 and wave W02 set to `partially-accepted`. Tasks/index.md files for 10 stories (8 W02 + 2 W03) updated to match current task front-matter status values; W06-E03-S001 T006 status cell changed from `done-with-deviation` to `done` (deviation tracking preserved in other columns).
+- **New deviation and decision records:** DEV-PROG-005 (W02-E02-S002 acceptance rollback with three deferred proof artifacts) and DEC-PROG-003 (proposed, human ratification pending — options for W02-E02-S002 completion: build the 3 artifacts + re-accept, or formally descope via decision).
+- **Verification records updated:** W03-E01-S003 tasks T001/T002 "Verification Record" sections replaced with real evidence from closure.md re-run on 2026-07-16 (DB-backed tests PASS).
+- **W03 caveat notes added:** Task status notes added to W02-E01-S001-T001 and W02-E01-S003-T004 per findings-remediation adjudication (evidence reconciliation).
+- **Status-register ready for regeneration:** vocabulary normalization and roll-up corrections in place; `python3 miscellaneous/regen_status_register.py --check` run in this pass (see verification output below).
+
 ## 2026-07-16 — Conductor adjudication applied per the six review-gate-2026-07-16.md records
 
 Conductor adjudication (Fable 5), per review-gate-2026-07-16.md records. Applied the conductor's

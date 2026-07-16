@@ -16,11 +16,11 @@ definition, implementation record, verification record, and deviations record as
 
 | Task | Title | Owner | Status | Dependencies | Output | Related AC | Implementation state | Verification state |
 |---|---|---|---|---|---|---|---|---|
-| [W02-E03-S001-T001](task-001-locked-counter-version-allocation.md) | Locked-counter/sequence-row version allocation (both packages) | unassigned | todo | none | Race-free version-allocation mechanism applied to `kernel/artifact` and `kernel/document` | AC-W02-E03-S001-01 | not started | not started |
-| [W02-E03-S001-T002](task-002-durable-upload-session-records.md) | Durable upload-session records | unassigned | todo | T001 | Upload-session table + persistence before URL issuance | AC-W02-E03-S001-02 | not started | not started |
-| [W02-E03-S001-T003](task-003-atomic-confirmation-cas.md) | Atomic confirmation CAS | unassigned | todo | T001, T002 | Confirmation path that CASes session + version atomically | AC-W02-E03-S001-03 | not started | not started |
-| [W02-E03-S001-T004](task-004-scheduled-gc-sweep.md) | Scheduled GC sweep | unassigned | todo | T002, T003 | GC sweep mechanism with metrics/audit | AC-W02-E03-S001-04 | not started | not started |
-| [W02-E03-S001-T005](task-005-artifact-version-mirror-fix.md) | `kernel/artifact.Generate` mirror fix and dedicated test | unassigned | todo | T001 | Same counter mechanism applied to `kernel/artifact.Generate`, with its own dedicated concurrency test | AC-W02-E03-S001-05 | not started | not started |
+| [W02-E03-S001-T001](task-001-locked-counter-version-allocation.md) | Locked-counter/sequence-row version allocation (both packages) | unassigned | done | none | Race-free version-allocation mechanism applied to `kernel/artifact` and `kernel/document` | AC-W02-E03-S001-01 | implemented | verified |
+| [W02-E03-S001-T002](task-002-durable-upload-session-records.md) | Durable upload-session records | unassigned | done | T001 | Upload-session table + persistence before URL issuance | AC-W02-E03-S001-02 | implemented | verified |
+| [W02-E03-S001-T003](task-003-atomic-confirmation-cas.md) | Atomic confirmation CAS | unassigned | done | T001, T002 | Confirmation path that CASes session + version atomically | AC-W02-E03-S001-03 | implemented | verified |
+| [W02-E03-S001-T004](task-004-scheduled-gc-sweep.md) | Scheduled GC sweep | unassigned | done | T002, T003 | GC sweep mechanism with metrics/audit | AC-W02-E03-S001-04 | implemented | verified |
+| [W02-E03-S001-T005](task-005-artifact-version-mirror-fix.md) | `kernel/artifact.Generate` mirror fix and dedicated test | unassigned | done | T001 | Same counter mechanism applied to `kernel/artifact.Generate`, with its own dedicated concurrency test | AC-W02-E03-S001-05 | implemented | verified |
 
 ## Grouping rationale
 

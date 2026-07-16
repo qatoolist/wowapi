@@ -2,11 +2,11 @@
 id: W02-E02-S002-T005
 type: task
 title: Optional redundant single-column FK cleanup (DATA-01 T8)
-status: todo
+status: done
 parent_story: W02-E02-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E02-S002-T003
   - W02-E02-S002-T004

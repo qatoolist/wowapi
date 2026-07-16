@@ -181,8 +181,12 @@ hooks: ## Install the versioned git hooks (pre-commit + pre-push)
 ##@ Tests
 
 .PHONY: ensure-infra
-ensure-infra: ## Ensure infra is healthy
-	@$(COMPOSE) ps --format '{{.Name}} {{.Status}}' | grep -q "Up.*(healthy)" || $(COMPOSE) up -d --wait
+ensure-infra: ## Ensure infra is healthy (no-op inside the toolbox container, where compose provides it and no docker CLI exists)
+	@if [ -n "$$WOWAPI_IN_TOOLBOX" ]; then \
+		echo "ensure-infra: inside toolbox (infra provided by compose) — skipping"; \
+	else \
+		$(COMPOSE) ps --format '{{.Name}} {{.Status}}' | grep -q "Up.*(healthy)" || $(COMPOSE) up -d --wait; \
+	fi
 
 .PHONY: test
 test: test-unit ## All currently available test suites

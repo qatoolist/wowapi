@@ -2,11 +2,11 @@
 id: W02-E01-S003-T002
 type: task
 title: Switch-phase tooling
-status: todo
+status: done
 parent_story: W02-E01-S003
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E01-S003-T001
 acceptance_criteria:

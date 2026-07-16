@@ -2,11 +2,11 @@
 id: W02-E02-S002-T001
 type: task
 title: Mismatch audit (DATA-01 T3)
-status: todo
+status: implemented
 parent_story: W02-E02-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W02-E02-S002-01
@@ -39,6 +39,8 @@ unassigned
 ### Status
 
 todo
+
+> **Status note (2026-07-16):** marked implemented (schema deliverable applied and independently verified live 2026-07-16), but the completion criterion's named proof artifact (seeded-mismatch detection test) was never built — evidence index row remains "not yet produced".
 
 ### Dependencies
 

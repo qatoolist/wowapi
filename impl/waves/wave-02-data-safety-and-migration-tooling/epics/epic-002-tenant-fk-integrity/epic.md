@@ -2,13 +2,13 @@
 id: W02-E02
 type: epic
 title: Tenant foreign-key integrity
-status: accepted
+status: partially-accepted
 wave: W02
 owner: W02FKVerAgg
 reviewer: W02ReviewGate
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 source_requirements:
   - DATA-01
   - CS-18
@@ -177,9 +177,12 @@ recorded as intentionally not blocking closure if it was not completed, per its 
 
 ## Status update (2026-07-16)
 
-`status: accepted` (reconfirmed). Independent review executed 2026-07-16 superseded the prior
-uncorroborated `W02ReviewGate` citation; both stories accepted; the "8 edges" → "9 edges" count
-correction applied to `story-002-audit-fk-validate-negatives/closure.md` and to
-`testkit/tenant_fk_cross_tenant_test.go`'s comment.
+`status: partially-accepted`. Independent review executed 2026-07-16 superseded the prior
+uncorroborated `W02ReviewGate` citation; the "8 edges" → "9 edges" count correction applied to
+`story-002-audit-fk-validate-negatives/closure.md` and to
+`testkit/tenant_fk_cross_tenant_test.go`'s comment. Story S001 is `accepted`; story S002 was
+rolled back to `implemented` because three of its named proof artifacts were never built
+(**DEV-PROG-005**) — disposition pending via **DEC-PROG-003**. The epic re-accepts when that
+decision is executed.
 
 — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -2,11 +2,11 @@
 id: W02-E03-S001-T002
 type: task
 title: Durable upload-session records
-status: todo
+status: done
 parent_story: W02-E03-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E03-S001-T001
 acceptance_criteria:

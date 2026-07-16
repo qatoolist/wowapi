@@ -2,11 +2,11 @@
 id: W07-E01-S004-T002
 type: task
 title: Bounded repair path
-status: complete
+status: done
 parent_story: W07-E01-S004
 owner: W07-Scoping-Dispatch.W07E01S004
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on:
   - W07-E01-S004-T001
 acceptance_criteria:

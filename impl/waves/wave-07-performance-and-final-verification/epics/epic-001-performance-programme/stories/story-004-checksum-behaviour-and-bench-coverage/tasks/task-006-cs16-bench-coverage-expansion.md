@@ -2,11 +2,11 @@
 id: W07-E01-S004-T006
 type: task
 title: CS-16 bench-coverage expansion (7 packages)
-status: complete
+status: done
 parent_story: W07-E01-S004
 owner: W07-Scoping-Dispatch.W07E01S004
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W07-E01-S004-06

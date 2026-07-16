@@ -19,35 +19,35 @@ hand-edit this file; regenerate it after any canonical status change.
 
 | Item | Level | Title | Status |
 |---|---|---|---|
-| W00-E01 | epic | Executed-slice verification | planned |
+| W00-E01 | epic | Executed-slice verification | accepted |
 | W00-E01-S001 | story | Verify workflow and boot composition slices at current HEAD | accepted |
 | W00-E01-S002 | story | Verify performance and benchmark-budget-gate slices at current HEAD | accepted |
 | W00-E01-S003 | story | Verify data-durability and CI-integration slices at current HEAD | accepted |
-| W00-E02 | epic | Baseline capture | planned |
+| W00-E02 | epic | Baseline capture | accepted |
 | W00-E02-S001 | story | Quality baselines | accepted |
 | W00-E02-S002 | story | Dependency and toolchain inventory | accepted |
 | W00-E02-S003 | story | ADR-ification of D-01 through D-09 | accepted |
 
-## wave-01-zero-dependency-hardening — wave status: `accepted`
+## wave-01-zero-dependency-hardening — wave status: `verification`
 
 | Item | Level | Title | Status |
 |---|---|---|---|
-| W01-E01 | epic | Static-analysis utilisation | planned |
+| W01-E01 | epic | Static-analysis utilisation | verification |
 | W01-E01-S001 | story | Enable the zero-cost leak-detection linter set | accepted |
 | W01-E01-S002 | story | Enable and triage the judged linter set | accepted |
 | W01-E01-S003 | story | Close supply-chain and pre-push hook hygiene gaps | accepted |
-| W01-E02 | epic | Observability correlation | planned |
+| W01-E02 | epic | Observability correlation | verification |
 | W01-E02-S001 | story | Trace/log correlation | accepted |
 | W01-E02-S002 | story | Pgx query tracer | accepted |
-| W01-E03 | epic | HTTP hardening | planned |
+| W01-E03 | epic | HTTP hardening | verification |
 | W01-E03-S001 | story | Server timeouts and body bounds | accepted |
 | W01-E03-S002 | story | Central validation enforcement | accepted |
-| W01-E04 | epic | Generator, documentation, and test-diagnosis fixes | planned |
+| W01-E04 | epic | Generator, documentation, and test-diagnosis fixes | verification |
 | W01-E04-S001 | story | Generator correctness — source-built CLI path validity and boot-safe CRUD generation | accepted |
 | W01-E04-S002 | story | Documentation reconciliation — plan traceability fix, DX-05 residual, wowsociety upstream register | accepted |
 | W01-E04-S003 | story | E2E flake diagnosis — reproduction-first investigation of the intermittent internal/e2e full-suite failure | accepted |
 
-## wave-02-data-safety-and-migration-tooling — wave status: `accepted`
+## wave-02-data-safety-and-migration-tooling — wave status: `partially-accepted`
 
 | Item | Level | Title | Status |
 |---|---|---|---|
@@ -55,9 +55,9 @@ hand-edit this file; regenerate it after any canonical status change.
 | W02-E01-S001 | story | Migration manifest schema and online-DDL lock budget | accepted |
 | W02-E01-S002 | story | Expand-phase tooling, resumable backfill harness, and validation-phase tooling | accepted |
 | W02-E01-S003 | story | Canary, switch, and contract-phase tooling with the full CI drill pipeline | accepted |
-| W02-E02 | epic | Tenant foreign-key integrity | accepted |
+| W02-E02 | epic | Tenant foreign-key integrity | partially-accepted |
 | W02-E02-S001 | story | Parent tenant-scoped unique indexes, FK catalog scanner, and CI gate | accepted |
-| W02-E02-S002 | story | Cross-tenant mismatch audit, composite FK validation, and negative tests | accepted |
+| W02-E02-S002 | story | Cross-tenant mismatch audit, composite FK validation, and negative tests | implemented |
 | W02-E03 | epic | Version allocation and GC | accepted |
 | W02-E03-S001 | story | Version-allocation races and upload-blob GC | accepted |
 | W02-E04 | epic | Aggregate write contract | accepted |
@@ -120,7 +120,7 @@ hand-edit this file; regenerate it after any canonical status change.
 | W05-E03-S001 | story | Manifest schema and derived-projection tooling | planned |
 | W05-E03-S002 | story | Boot-time strictness and the shared no-op-adapter waiver mechanism | planned |
 | W05-E04 | epic | Wiring and cache hygiene | planned |
-| W05-E04-S001 | story | Constructor-boundary lint and kernel.go audit | ready-for-review |
+| W05-E04-S001 | story | Constructor-boundary lint and kernel.go audit | implemented |
 | W05-E04-S002 | story | Bounded, epoch-invalidated authorization cache | planned |
 | W05-E05 | epic | Kernel re-home | planned |
 | W05-E05-S001 | story | Foundation tree, package moves, and mfa forwarding shim | planned |
@@ -165,9 +165,8 @@ hand-edit this file; regenerate it after any canonical status change.
 
 ## Story status totals
 
-- `accepted`: 49
+- `accepted`: 48
 - `blocked`: 4
-- `implemented`: 1
+- `implemented`: 3
 - `planned`: 15
-- `ready-for-review`: 1
 - `verified`: 5

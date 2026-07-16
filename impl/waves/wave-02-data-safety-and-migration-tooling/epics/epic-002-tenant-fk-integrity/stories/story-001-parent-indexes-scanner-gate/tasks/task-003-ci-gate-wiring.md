@@ -2,11 +2,11 @@
 id: W02-E02-S001-T003
 type: task
 title: CI gate wiring
-status: todo
+status: done
 parent_story: W02-E02-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E02-S001-T002
 acceptance_criteria:

@@ -65,17 +65,18 @@ programme is building against today.
 Status `proposed`: recorded per mandate §11.8 ("record ... decisions, including unresolved
 decisions... do not bury decisions only in prose") by autopsy remediation R-1, following
 `impl/reports/implementation-autopsy-report-2026-07-16.md`. Full records in
-`impl/tracking/programme-decisions.md`. Human/acceptance-authority ratification pending for both.
+`impl/tracking/programme-decisions.md`. Human/acceptance-authority ratification pending for all three.
 
 | Decision ID | One-line description | Status | Owner | Target |
 |---|---|---|---|---|
 | DEC-PROG-001 | Interim coverage floor (84.0%, down from 90.0%) acknowledged as a regression, not ratified as a new target; ratchet plan back to 90.0% (autopsy H-1, DEV-PROG-001) | proposed | conductor (autopsy remediation R-1); pending human ratification | W00 baseline / R-4 |
 | DEC-PROG-002 | Disposition of built-but-not-wired AR-01/AR-02 and unimplemented SEC-04 (wire-in-W05 vs. formal deferral) — unresolved, deferred to the Wave 05 execution owner (autopsy H-6/H-7, DEV-PROG-002) | proposed | Wave 05 execution owner (assignment pending human ratification) | W05 / R-7 |
+| DEC-PROG-003 | Disposition of W02-E02-S002's three unbuilt proof artifacts (build-and-re-accept vs. formal descope; DEV-PROG-005) — unresolved, deferred to the W02 execution owner | proposed | W02 execution owner / acceptance authority (pending human ratification) | W02-E02-S002 |
 
 ## Summary
 
 9 ratified decisions (D-01..D-09) + 3 open human decisions (DEC-Q1/Q9/Q10) + 3 provisional
-planning assumptions (PA-01..PA-03) + 2 programme-level proposed decisions (DEC-PROG-001/002,
-2026-07-16 autopsy remediation) = **17 decision-register rows**. All nine D-01..D-09 rows
+planning assumptions (PA-01..PA-03) + 3 programme-level proposed decisions (DEC-PROG-001/002/003,
+2026-07-16 autopsy remediation + findings-remediation) = **18 decision-register rows**. All nine D-01..D-09 rows
 share the same target story (W00-E02-S003, ADR-ification) per `requirement-inventory.md`'s own
 "D-01..D-09" row.

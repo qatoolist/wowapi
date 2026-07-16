@@ -2,11 +2,11 @@
 id: W07-E01-S001-T006
 type: task
 title: Independent review
-status: complete
+status: done
 parent_story: W07-E01-S001
 owner: W05ReviewGateFinal
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on:
   - W07-E01-S001-T001
   - W07-E01-S001-T002

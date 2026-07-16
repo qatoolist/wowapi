@@ -2,11 +2,11 @@
 id: W02-E04-S001-T001
 type: task
 title: Typed aggregate repository/unit-of-work helper
-status: todo
+status: done
 parent_story: W02-E04-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W02-E04-S001-01

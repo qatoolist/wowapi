@@ -2,11 +2,11 @@
 id: W06-E04-S001-T001
 type: task
 title: Build the docexamples extractor tool and tag existing normative examples
-status: complete
+status: done
 parent_story: W06-E04-S001
 owner: W06E04Impl
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W06-E04-S001-01

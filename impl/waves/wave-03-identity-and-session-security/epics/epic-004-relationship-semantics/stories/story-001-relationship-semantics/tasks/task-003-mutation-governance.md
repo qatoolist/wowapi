@@ -2,11 +2,11 @@
 id: W03-E04-S001-T003
 type: task
 title: Mutation governance - ownership, attribution, audit, versioning (DATA-07 T4)
-status: todo
+status: done
 parent_story: W03-E04-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W03-E04-S001-T001
   - W03-E04-S001-T002

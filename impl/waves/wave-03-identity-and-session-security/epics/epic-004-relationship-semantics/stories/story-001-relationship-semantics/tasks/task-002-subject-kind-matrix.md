@@ -2,11 +2,11 @@
 id: W03-E04-S001-T002
 type: task
 title: Checker.Has full subject-kind matrix (DATA-07 T2)
-status: todo
+status: done
 parent_story: W03-E04-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W03-E04-S001-T001
 acceptance_criteria:

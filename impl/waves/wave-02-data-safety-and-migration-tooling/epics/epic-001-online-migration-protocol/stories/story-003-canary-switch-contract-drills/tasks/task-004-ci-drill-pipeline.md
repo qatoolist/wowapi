@@ -2,11 +2,11 @@
 id: W02-E01-S003-T004
 type: task
 title: CI drill pipeline
-status: todo
+status: done
 parent_story: W02-E01-S003
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E01-S003-T001
   - W02-E01-S003-T002
@@ -41,6 +41,8 @@ unassigned
 ### Status
 
 todo
+
+> **Status note (2026-07-16):** marked done on the pipeline definition (.github/workflows/migration-drills.yml) + local full-drill pass (EV-004); a GitHub-Actions end-to-end run artifact was not independently re-executed (EV-006 records this limitation).
 
 ### Dependencies
 

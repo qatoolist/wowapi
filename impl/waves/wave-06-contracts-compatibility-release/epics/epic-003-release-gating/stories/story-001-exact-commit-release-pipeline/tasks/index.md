@@ -21,7 +21,7 @@ definition, implementation record, verification record, and deviations record as
 | [W06-E03-S001-T003](task-003-required-gates-workflow.md) | reusable required gates | W06E03Impl | done | T002 | SHA-bound attested results | AC-03 | implemented | verified |
 | [W06-E03-S001-T004](task-004-ci-yml-wiring.md) | CI wiring | W06E03Impl | done | T003 | shared caller path | AC-04 | implemented | verified |
 | [W06-E03-S001-T005](task-005-release-verify-job.md) | release verification | W06E03Impl | done | T004 | failed gate blocks build | AC-05 | implemented | verified |
-| [W06-E03-S001-T006](task-006-build-candidate-split.md) | immutable candidate | W06E03Impl | done-with-deviation | T005 | no-publish build | AC-06 | implemented | verified |
+| [W06-E03-S001-T006](task-006-build-candidate-split.md) | immutable candidate | W06E03Impl | done | T005 | no-publish build | AC-06 | implemented | verified |
 | [W06-E03-S001-T007](task-007-publish-job-scaffolding.md) | exact-byte protected publisher | W06E03Impl | done | T006 | draft `gh`/ORAS publisher | AC-07 | implemented | verified |
 | [W06-E03-S001-T008](task-008-verify-release-script.md) | clean release verifier | W06E03Impl | done | T007 | golden failures + clean job | AC-08 | implemented | verified |
 | [W06-E03-S001-T009](task-009-independent-review.md) | Independent review | W06-E01-E04-Execution.W06E03ReviewR | done | T001-T008 | review-only, no-open-issues | AC-01..AC-08 | complete | passed |

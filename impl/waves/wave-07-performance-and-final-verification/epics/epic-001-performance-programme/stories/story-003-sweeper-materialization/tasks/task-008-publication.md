@@ -2,11 +2,11 @@
 id: W07-E01-S003-T008
 type: task
 title: Publication against perf/reference-v1.json
-status: complete
+status: done
 parent_story: W07-E01-S003
 owner: W07-Scoping-Dispatch.W07E01S003
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on:
   - W07-E01-S003-T006
   - W07-E01-S003-T007

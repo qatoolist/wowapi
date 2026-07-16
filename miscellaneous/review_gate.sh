@@ -32,6 +32,9 @@ if sh scripts/lint_boundaries.sh >/tmp/rg_bl.log 2>&1; then tail -1 /tmp/rg_bl.l
 step "migration ledger"
 sh "$here/check_migrations.sh" || rc=1
 
+step "impl status vocabulary + roll-up consistency"
+if python3 "$here/regen_status_register.py" --check; then :; else rc=1; fi
+
 step "test skips (green-but-hollow guard)"
 sh "$here/check_test_skips.sh" || true
 

@@ -2,13 +2,13 @@
 id: W01-E03
 type: epic
 title: HTTP hardening
-status: planned
+status: verification
 wave: W01
 owner: unassigned
 reviewer: unassigned
 priority: high
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 source_requirements:
   - FBL-09
   - FBL-08
@@ -194,3 +194,13 @@ as an unresolved question in that story's plan, not a required ADR blocking this
 Both stories reach `accepted` (each satisfying its own `closure.md`); AC-W01-E03-01 through
 AC-W01-E03-03 above are all satisfied; `closure-report.md` for this epic is completed with reviewer
 conclusion and acceptance date; no unresolved regression against either story.
+
+## Status update (2026-07-16)
+
+`status: verification` (was `planned`; the parent wave claimed `accepted`) — set by the
+2026-07-16 hierarchy reconciliation (**DEV-PROG-006**). All of this epic's stories are
+`accepted` with story-level evidence, but this epic's own `closure-report.md` body was never
+populated: its acceptance-criteria/story-completion tables still read "not started"/"planned"
+while a reviewer-conclusion section appended 2026-07-13 claims acceptance. Until the closure
+report is completed honestly against the epic's acceptance criteria, the epic sits in
+`verification`; see DEV-PROG-006 in `impl/tracking/programme-deviations.md` for the disposition.

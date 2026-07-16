@@ -16,11 +16,11 @@ definition, implementation record, verification record, and deviations record as
 
 | Task | Title | Owner | Status | Dependencies | Output | Related AC | Implementation state | Verification state |
 |---|---|---|---|---|---|---|---|---|
-| [W02-E04-S001-T001](task-001-aggregate-repository-helper.md) | Typed aggregate repository/unit-of-work helper | unassigned | todo | none | Helper bundling write+mirror+audit+outbox atomically; fault-injection test suite | AC-W02-E04-S001-01 | not started | not started |
-| [W02-E04-S001-T002](task-002-actor-attribution.md) | Actor-attribution fix (single owner, shared with DATA-07 T3) | unassigned | todo | T001 | `registrar_pg.go` fix sourcing `created_by` from context; actor-attribution test | AC-W02-E04-S001-02 | not started | not started |
-| [W02-E04-S001-T003](task-003-reference-handler-migration.md) | Reference-handler migration | unassigned | todo | T001, T002 | Reference handler migrated onto the new helper | AC-W02-E04-S001-03 | not started | not started |
-| [W02-E04-S001-T004](task-004-kernel-resource-docs-update.md) | `kernel/resource` documentation update | unassigned | todo | T001 | Updated package documentation | AC-W02-E04-S001-04 | not started | not started |
-| [W02-E04-S001-T005](task-005-independent-review.md) | Independent review | unassigned | todo | T001, T002, T003, T004 | Independent-review record per mandate §14 | AC-W02-E04-S001-01, AC-W02-E04-S001-02, AC-W02-E04-S001-03, AC-W02-E04-S001-04 | not started | not started |
+| [W02-E04-S001-T001](task-001-aggregate-repository-helper.md) | Typed aggregate repository/unit-of-work helper | unassigned | done | none | Helper bundling write+mirror+audit+outbox atomically; fault-injection test suite | AC-W02-E04-S001-01 | implemented | verified |
+| [W02-E04-S001-T002](task-002-actor-attribution.md) | Actor-attribution fix (single owner, shared with DATA-07 T3) | unassigned | done | T001 | `registrar_pg.go` fix sourcing `created_by` from context; actor-attribution test | AC-W02-E04-S001-02 | implemented | verified |
+| [W02-E04-S001-T003](task-003-reference-handler-migration.md) | Reference-handler migration | unassigned | done | T001, T002 | Reference handler migrated onto the new helper | AC-W02-E04-S001-03 | implemented | verified |
+| [W02-E04-S001-T004](task-004-kernel-resource-docs-update.md) | `kernel/resource` documentation update | unassigned | done | T001 | Updated package documentation | AC-W02-E04-S001-04 | implemented | verified |
+| [W02-E04-S001-T005](task-005-independent-review.md) | Independent review | unassigned | done | T001, T002, T003, T004 | Independent-review record per mandate §14 | AC-W02-E04-S001-01, AC-W02-E04-S001-02, AC-W02-E04-S001-03, AC-W02-E04-S001-04 | reviewed | verified |
 
 ## Grouping rationale
 

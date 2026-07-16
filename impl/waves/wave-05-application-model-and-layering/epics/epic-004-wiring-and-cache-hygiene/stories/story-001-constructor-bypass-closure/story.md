@@ -2,14 +2,14 @@
 id: W05-E04-S001
 type: story
 title: Constructor-boundary lint and kernel.go audit
-status: ready-for-review
+status: implemented
 wave: W05
 epic: W05-E04
 owner: task
 reviewer: unassigned
 priority: medium
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 source_requirements:
   - AR-06
 depends_on: []
