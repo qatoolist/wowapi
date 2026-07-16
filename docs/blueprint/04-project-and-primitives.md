@@ -67,13 +67,15 @@ This direction keeps the public package graph acyclic: `kernel` at the base, `mo
 ## 2. Kernel package map
 
 All paths below are **public** packages under `github.com/qatoolist/wowapi/` — importable by
-product modules. Where a package has heavyweight implementation (pg stores, engine internals), the
-public package holds the types/interfaces/constructors and the guts live in `internal/`, wired by `app`.
+product modules. Several heavyweight packages have been refactored into a `foundation/` layer with
+thin v1 API stability shims in `kernel/` for backward compatibility (e.g., `kernel/webhook` re-exports
+`foundation/webhook`). Where a package has implementation in `internal/`, it is wired by `app` and not
+directly public to product modules.
 
 | Package | Responsibility / key exports | Must not import | Modules may import |
 |---|---|---|---|
 | `kernel/model` | base embedded structs (below), `ID`, `Money`, `TimeRange`, `Ref` types | anything but stdlib+uuid | ✅ |
-| `kernel/tenant` | `Context`, `FromContext`, resolver middleware, tenant service | modules | ✅ (read ctx) |
+| `kernel/database` | `TxManager`, `TenantDB`, RLS helpers, `IdemStore`, batch helpers, tenant context binding via `SET LOCAL app.tenant_id` | modules | ✅ (read ctx) |
 | `kernel/auth` | OIDC/JWT verification middleware, `Principal` | authz | ✅ (read ctx) |
 | `kernel/authz` | `Evaluator`, `Actor`, `Decision`, assignment store, capacity resolution | modules | ✅ (interfaces) |
 | `kernel/policy` | condition model + evaluation (used by authz) | http | ✅ read-only |
@@ -84,20 +86,34 @@ public package holds the types/interfaces/constructors and the guts live in `int
 | `kernel/audit` | `Writer` iface + pg impl, audit middleware helpers | — | ✅ (Writer) |
 | `kernel/outbox` | `Writer`, relay, dispatcher, `processed_events` inbox helper | — | ✅ (Writer) |
 | `kernel/jobs` | `Runner`, `Registry`, worker pool wrapper over River, retry/backoff/DLQ | — | ✅ (register kinds) |
-| `kernel/document` | document/file service, presign, scan hooks, grants | — | ✅ |
-| `kernel/notify` | templates, dispatcher, channel adapters iface, preferences | — | ✅ (send API) |
-| `kernel/webhook` | inbound verify/ingest, outbound deliver, replay protection | — | ✅ |
-| `kernel/integration` | provider registry, credential refs, circuit breaker | — | ✅ |
+| `foundation/document` | document/file service, presign, scan hooks, grants (via `kernel/document` compat shim) | — | ✅ |
+| `foundation/notify` | templates, dispatcher, channel adapters iface, preferences (via `kernel/notify` compat shim) | — | ✅ (send API) |
+| `foundation/webhook` | inbound verify/ingest, outbound deliver, replay protection (via `kernel/webhook` compat shim) | — | ✅ |
+| `foundation/integration` | provider registry, credential refs, circuit breaker (via `kernel/integration` compat shim) | — | ✅ |
 | `kernel/httpx` | handler helpers, middleware chain, route metadata, server | modules | ✅ |
 | `kernel/errors` | error taxonomy, codes, wrapping, HTTP mapping | http types beyond status codes | ✅ |
 | `kernel/validation` | validator wrapper, field errors | — | ✅ |
 | `kernel/pagination` | page/cursor types, keyset encoding | — | ✅ |
 | `kernel/filtering` | allowlist filter/sort builders | — | ✅ |
-| `kernel/database` | `TxManager`, `TenantDB`, RLS helpers, `IdemStore`, batch helpers | modules | ✅ |
 | `kernel/secrets` | `Provider` port (env/cloud managers), `Ref` (`secretref://<provider>/<path>`) parsing/validation | everything (graph base: stdlib only) | ✅ (types; resolution happens at boot in `app`) |
 | `kernel/config` | typed `Framework` config structs, layered loader, precedence, `Secret` redaction, `ModuleView` — see [12](12-configuration-and-deployment.md) | everything except `kernel/secrets` (near-base of the graph) | types only — *values* reach modules solely via `module.Context.Config()` |
 | `kernel/logging` / `kernel/observability` | slog setup, otel, metrics, health registry | — | ✅ |
 | `kernel/seeds` | seed schema parsing + sync engine | modules | via module SDK |
+| `kernel/apikey` | API key provisioning, validation, revocation | — | ✅ |
+| `kernel/appmodel` | request reference declarations, domain model bindings | — | ✅ |
+| `kernel/httpclient` | SSRF-safe HTTP client, dial guard, allowlist escapes | — | ✅ |
+| `kernel/i18n` | localization support | — | ✅ |
+| `kernel/lease` | distributed lease/fencing mechanism | — | ✅ |
+| `kernel/lifecycle` | module/provider lifecycle hooks | — | ✅ |
+| `kernel/mfa` | multi-factor auth (TOTP, SMS, etc.) | — | ✅ |
+| `kernel/migration` | database migration runner, goose integration | — | ✅ |
+| `kernel/port` | service boundary definitions (pluggable adapters) | — | internal |
+| `kernel/privileged` | privileged operation markers (audit, taints) | — | ✅ |
+| `kernel/retry` | retry/backoff strategies | — | ✅ |
+| `kernel/safety` | atomic/idempotent write guards | — | ✅ |
+| `kernel/sequence` | sequential ID generation | — | ✅ |
+| `kernel/storage` | object store port + presign API | — | ✅ |
+| `kernel/tracing` | distributed tracing setup (OpenTelemetry) | — | ✅ |
 
 ## 3. Base model primitives (`kernel/model`) — composition, no god BaseModel
 

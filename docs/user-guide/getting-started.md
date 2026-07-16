@@ -112,6 +112,10 @@ can also point all three DSNs at a single dev superuser; production must use the
 [Database & migrations](database-migrations.md) and the
 [deployment checklist](../operations/deployment-checklist.md)).
 
+> **One-time role provisioning:** the bootstrap migration creates `app_rt`/`app_platform` as `NOLOGIN` —
+> ops must grant a login out-of-band before the DSNs above will connect: `ALTER ROLE app_rt LOGIN PASSWORD
+> '…';` (same for `app_platform`). See `scripts/product-dev.sh` for the automated version of this step.
+
 > Tip: the **framework** repo ships a ready local stack (`make up` starts PostgreSQL etc.). In your
 > product repo you bring your own database or reuse that compose file as a starting point.
 

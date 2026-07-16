@@ -5,9 +5,9 @@ This repository is expected to grow as implementation starts. Keep a Graphify kn
 ## Current Setup
 
 - Graphify Codex integration is installed.
-- Git hooks are installed:
-  - `.git/hooks/post-commit`
-  - `.git/hooks/post-checkout`
+- Git hooks are installed (via `core.hooksPath = .githooks`):
+  - `.githooks/pre-commit` (gitleaks secret scan, fmt/lint of staged Go changes, `code-review-graph update`)
+  - `.githooks/pre-push` (gitleaks secret scan, vet, lint, tests, tidy check — no graphify step)
 - The current corpus is documentation-only: 17 supported document files, about 35k words.
 - Full semantic extraction currently requires an LLM backend key for Graphify.
 

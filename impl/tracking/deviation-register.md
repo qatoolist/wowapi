@@ -4,7 +4,7 @@ type: register
 title: Deviation register — plan-versus-actual deviations
 status: active
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 derived: true
 ---
 

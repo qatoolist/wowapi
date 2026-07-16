@@ -4,7 +4,7 @@ type: register
 title: Decision register — ratified architecture decisions, open human decisions, provisional assumptions
 status: active
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 derived: true
 ---
 

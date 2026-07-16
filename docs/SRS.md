@@ -361,12 +361,20 @@ named in this document's provenance notes live in the same archive — see GOALS
 
 > **Programme execution and verification (Waves 00–07, 2026-07-16).** The `impl/` directory contains the execution
 > ledger for the Waves 00–07 programme (mandate, 8 waves, 75 stories, ~370 tasks, registers). An independent
-> third-party audit (`impl/reports/implementation-autopsy-report-2026-07-16.md`, Fable 5) found **25 of 75 stories
-> (33%) fully verified; the remaining 50 are incomplete, unreviewed, incorrectly implemented, or have contradictory
-> status records.** The framework code that exists is largely good (lease/fencing, audit chain, release gating,
-> online migration verified clean); the failure is one of **governance and truthfulness of completion claims**
-> (statuses advanced without mandatory reviews, evidence records left unfilled or mis-pinned, a quality gate
-> silently lowered). **Production-readiness claim rejected.** Remediation plan in `implementation-autopsy-report-2026-07-16.md`
-> §13 (R-1 truth reconciliation is the gate for all else). Until W05–W07 genuinely close and the final gate runs,
-> no production-readiness claim should be made. The SRS requirements themselves remain architecturally sound; the
-> gap is execution and verification discipline, not the specification.
+> third-party audit (`impl/reports/implementation-autopsy-report-2026-07-16.md`, Fable 5) originally found **25 of
+> 75 stories (33%) fully verified; the remaining 50 are incomplete, unreviewed, incorrectly implemented, or have
+> contradictory status records.** The framework code that exists is largely good (lease/fencing, audit chain,
+> release gating, online migration verified clean); the failure was one of **governance and truthfulness of
+> completion claims** (statuses advanced without mandatory reviews, evidence records left unfilled or mis-pinned,
+> a quality gate silently lowered). **Production-readiness claim rejected** at that point.
+>
+> **§16 remediation addendum (same day).** Most cited defects were fixed the same day under Fable supervision
+> (fixes → ledger truth-reconciliation → independent re-review → conductor adjudication), including the C-1
+> webhook-in-open-transaction code defect and the W02 false-review-gate claim (W02 now legitimately accepted).
+> The post-remediation ledger (script-generated) stands at **49 accepted · 5 verified · 1 implemented · 15
+> planned · 4 blocked · 1 ready-for-review**. Two limitations remain disclosed rather than claimed away: the
+> re-reviews were AI-agent-executed by the same conductor that supervised the fixes (human ratification
+> recommended), and DEC-PROG-001 (interim coverage floor) is still `proposed`. Remediation plan detail in
+> `implementation-autopsy-report-2026-07-16.md` §13; disposition table in §16. Until W05–W07 genuinely close and
+> the final gate runs, no unqualified production-readiness claim should be made. The SRS requirements themselves
+> remain architecturally sound; the gap is execution and verification discipline, not the specification.
