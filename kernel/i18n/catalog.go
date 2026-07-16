@@ -17,7 +17,7 @@
 //     kernel/notify and kernel/seeds accumulate module contributions and surface
 //     ownership errors at boot via Err().
 //   - Negotiate: RFC 9110 §12.5.4 Accept-Language q-value content negotiation,
-//     ported from the battle-tested wowsociety implementation.
+//     ported from a battle-tested product implementation.
 //   - Well-known keys (KeyProblemTitle / KeyValidationMessage): the stable keys
 //     the framework's own English messages are stored under, so kernel/httpx and
 //     kernel/validation can localize their output while keeping machine Codes

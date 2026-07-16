@@ -237,7 +237,7 @@ func NewTokenBucketWithClock(ratePerSec float64, burst int, now func() time.Time
 // NewTokenBucketWithOptions is NewTokenBucketWithClock plus TokenBucketOptions
 // (hard capacity, sweep threshold, stats callback). Kept as a separate
 // constructor rather than changing NewTokenBucket/NewTokenBucketWithClock's
-// signatures, which existing callers (including wowsociety) depend on.
+// signatures, which existing downstream callers depend on.
 func NewTokenBucketWithOptions(ratePerSec float64, burst int, now func() time.Time, opts ...TokenBucketOption) *TokenBucket {
 	if ratePerSec <= 0 {
 		ratePerSec = 1

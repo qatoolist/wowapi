@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 	"unicode/utf8"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/lease"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/retry"
@@ -30,6 +32,13 @@ var webhookBackoff = retry.NewSchedule(retry.NewSequenceBackOff(
 ))
 
 var webhookRetryMetricLabels = map[string]string{"worker": "webhook_retry"}
+
+// leaseTTL is the duration a claimed outbound webhook delivery row is fenced
+// from concurrent re-claim (C-1 / W04-E02-S001 AC-02/03, DATA-03 T1). It must
+// cover the effect stage (secret resolve + Sender.Post, bounded by
+// OutboundTimeout) plus the finalize round-trip; mirrors foundation/notify's
+// leaseTTL.
+const leaseTTL = 5 * time.Minute
 
 // HandleInbound verifies, replay-checks, and persists an inbound webhook event.
 // Runs inside the caller's app_rt tenant transaction (db). On success returns
@@ -214,10 +223,26 @@ func (s *Service) ProcessInbound(ctx context.Context, plat database.TxManager, t
 }
 
 // DispatchOutbound fans ev to all active (or degraded) outbound endpoints for
-// the event's tenant whose subscribed_events contain ev.Type. For each matching
-// endpoint it upserts a delivery row, checks the circuit breaker, signs the body,
-// POSTs via Sender, then records the outcome. Open-circuit endpoints are skipped
-// silently (their delivery rows stay pending). Runs as app_platform.
+// the event's tenant whose subscribed_events contain ev.Type. It runs a
+// three-stage claim/effect/finalize protocol (C-1 / W04-E02-S001 AC-02/03,
+// mirroring foundation/notify's SendPending):
+//
+//  1. Claim-tx: upserts a pending delivery row per matching endpoint, checks
+//     the circuit breaker and terminal/backoff state, and assigns a fresh
+//     lease from kernel/lease to every row eligible for delivery this cycle.
+//     Commits.
+//  2. Effect stage: for each claimed row, resolves the endpoint secret and
+//     signs + POSTs the body via Sender — entirely OUTSIDE any database
+//     transaction.
+//  3. Finalize-tx: per delivery, updates status only if the lease token and
+//     generation still match and the lease has not expired (a mismatch means
+//     the row was reclaimed by another worker; the effect result is
+//     discarded).
+//
+// Open-circuit endpoints are skipped silently (their delivery rows stay
+// pending, no lease assigned). One endpoint's delivery/finalize failure does
+// not block the others — each is finalized independently. Runs as
+// app_platform.
 //
 // SEC/H2: the delivery tenant is authoritative from ev.TenantID, never the
 // decoupled tenantID param. Without this, a caller passing B's id with A's event
@@ -234,68 +259,117 @@ func (s *Service) DispatchOutbound(ctx context.Context, plat database.TxManager,
 		}
 		tenantID = ev.TenantID
 	}
-	return plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
+
+	body, err := marshalOutboundBody(ev, tenantID)
+	if err != nil {
+		return kerr.Wrapf(err, "webhook.DispatchOutbound", "marshal body")
+	}
+
+	claimed, err := s.claimDispatch(ctx, plat, tenantID, ev, body, now)
+	if err != nil {
+		return err
+	}
+	s.deliverClaimed(ctx, plat, tenantID, claimed, now)
+	return nil
+}
+
+// claimDispatch is DispatchOutbound's claim stage: it loads the matching
+// outbound endpoints and, for each, claims a delivery row (see
+// claimDeliveryRow) inside a single tenant transaction. A per-endpoint claim
+// error is logged and skipped rather than aborting the whole batch, matching
+// the pre-existing per-endpoint isolation contract.
+func (s *Service) claimDispatch(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, ev outbox.Event, body []byte, now time.Time) ([]claimedOutboundDelivery, error) {
+	var out []claimedOutboundDelivery
+	err := plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
 		eps, err := s.loadOutboundEndpoints(ctx, db, ev.Type)
 		if err != nil {
 			return err
 		}
-		body, err := marshalOutboundBody(ev, tenantID)
-		if err != nil {
-			return kerr.Wrapf(err, "webhook.DispatchOutbound", "marshal body")
-		}
 		for _, ep := range eps {
-			// Ignore per-endpoint delivery errors: one failure must not block others.
-			_ = s.deliverToEndpoint(ctx, db, ep, ev, body, now)
+			cd, cerr := s.claimDeliveryRow(ctx, db, ep, ev, body, now)
+			if cerr != nil {
+				slog.ErrorContext(ctx, "webhook.claim_error", "endpoint_id", ep.ID, "err", cerr)
+				continue
+			}
+			if cd != nil {
+				out = append(out, *cd)
+			}
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // RetryOutbound re-delivers previously-failed outbound webhook events for
-// tenantID whose backoff has elapsed. Runs as app_platform (plat is a TxManager
-// over the platform pool), mirroring ProcessInbound. Without this, DispatchOutbound
-// would leave a 'failed' row untouched and the outbox relay — having marked its
-// source event dispatched — would never re-drive delivery (ARCH-70). It claims
-// failed rows FOR UPDATE SKIP LOCKED, re-runs deliverToEndpoint for each, and
-// advances status to delivered / failed+backoff / dead at the ceiling.
+// tenantID whose backoff has elapsed. Runs as app_platform (plat is a
+// TxManager over the platform pool), mirroring ProcessInbound and sharing
+// DispatchOutbound's claim/effect/finalize protocol (C-1 / W04-E02-S001
+// AC-02/03). Without this, DispatchOutbound would leave a 'failed' row
+// untouched and the outbox relay — having marked its source event dispatched
+// — would never re-drive delivery (ARCH-70). It claims failed, due,
+// unleased rows FOR UPDATE SKIP LOCKED, assigns each a fresh lease, then
+// delivers/finalizes exactly like DispatchOutbound.
 func (s *Service) RetryOutbound(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, now time.Time) error {
 	started := time.Now()
 	defer func() {
 		observability.ObserveHistogram(s.metrics, "worker_batch_duration_seconds", time.Since(started).Seconds(), webhookRetryMetricLabels)
 	}()
-	return plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
+
+	claimed, err := s.claimRetry(ctx, plat, tenantID, now)
+	if err != nil {
+		return err
+	}
+	s.deliverClaimed(ctx, plat, tenantID, claimed, now)
+	return nil
+}
+
+// claimRetry is RetryOutbound's claim stage.
+func (s *Service) claimRetry(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, now time.Time) ([]claimedOutboundDelivery, error) {
+	var out []claimedOutboundDelivery
+	err := plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
 		rows, err := db.Query(ctx,
-			`SELECT id, endpoint_id, external_event_id, event_type, payload, received_at
+			`SELECT id, endpoint_id, external_event_id, event_type, payload, attempts, received_at,
+			        lease_token, lease_generation, lease_expires_at
 			   FROM webhook_events
 			  WHERE direction = 'outbound'
 			    AND delivery_status = 'failed'
 			    AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+			    AND (lease_expires_at IS NULL OR lease_expires_at <= $1)
 			  ORDER BY received_at
 			  LIMIT 10
 			    FOR UPDATE SKIP LOCKED`,
 			now)
 		if err != nil {
-			return kerr.Wrapf(err, "webhook.RetryOutbound", "claim events")
+			return kerr.Wrapf(err, "webhook.claimRetry", "claim events")
 		}
-		type claimedRow struct {
-			id         uuid.UUID
-			endpointID uuid.UUID
-			extID      string
-			eventType  string
-			payload    json.RawMessage
-			receivedAt time.Time
+		type scannedRow struct {
+			id              uuid.UUID
+			endpointID      uuid.UUID
+			extID           string
+			eventType       string
+			payload         json.RawMessage
+			attempts        int
+			receivedAt      time.Time
+			leaseToken      *string
+			leaseGeneration *int64
+			leaseExpiresAt  *time.Time
 		}
-		claimed := make([]claimedRow, 0, 10)
+		var scanned []scannedRow
 		endpointIDs := make([]uuid.UUID, 0, 10)
 		seenEndpoints := make(map[uuid.UUID]struct{}, 10)
 		maxLag := time.Duration(0)
 		for rows.Next() {
-			var r claimedRow
-			if err := rows.Scan(&r.id, &r.endpointID, &r.extID, &r.eventType, &r.payload, &r.receivedAt); err != nil {
+			var r scannedRow
+			if err := rows.Scan(&r.id, &r.endpointID, &r.extID, &r.eventType, &r.payload,
+				&r.attempts, &r.receivedAt,
+				&r.leaseToken, &r.leaseGeneration, &r.leaseExpiresAt); err != nil {
 				rows.Close()
-				return kerr.Wrapf(err, "webhook.RetryOutbound", "scan event")
+				return kerr.Wrapf(err, "webhook.claimRetry", "scan event")
 			}
-			claimed = append(claimed, r)
+			scanned = append(scanned, r)
 			if _, seen := seenEndpoints[r.endpointID]; !seen {
 				seenEndpoints[r.endpointID] = struct{}{}
 				endpointIDs = append(endpointIDs, r.endpointID)
@@ -306,7 +380,7 @@ func (s *Service) RetryOutbound(ctx context.Context, plat database.TxManager, te
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
-			return kerr.Wrapf(err, "webhook.RetryOutbound", "iterate events")
+			return kerr.Wrapf(err, "webhook.claimRetry", "iterate events")
 		}
 		s.metrics.SetGauge("worker_queue_lag_seconds", maxLag.Seconds(), webhookRetryMetricLabels)
 
@@ -314,7 +388,11 @@ func (s *Service) RetryOutbound(ctx context.Context, plat database.TxManager, te
 		if err != nil {
 			return err
 		}
-		for _, r := range claimed {
+
+		// Assign leases after closing the cursor so we don't try to run UPDATE
+		// while the SELECT cursor is still active on the same connection
+		// (mirrors notify.claimPending).
+		for _, r := range scanned {
 			ep, ok := endpoints[r.endpointID]
 			if !ok {
 				return kerr.E(kerr.KindNotFound, "not_found", "webhook endpoint not found")
@@ -325,12 +403,36 @@ func (s *Service) RetryOutbound(ctx context.Context, plat database.TxManager, te
 				// (they key on the outbox event UUID); skip rather than crash.
 				continue
 			}
-			ev := outbox.Event{ID: evID, Type: r.eventType}
-			// One failure must not block the rest of the batch.
-			_ = s.deliverToEndpoint(ctx, db, ep, ev, r.payload, now)
+
+			br := s.breaker.get(ep.ID)
+			if !br.allow(s.now()) {
+				continue // open — leave row failed, no lease assigned
+			}
+
+			lse := nextLease(r.leaseToken, r.leaseGeneration, r.leaseExpiresAt, now)
+			if _, err := db.Exec(ctx,
+				`UPDATE webhook_events
+				    SET lease_token = $2, lease_generation = $3, lease_expires_at = $4
+				  WHERE id = $1`,
+				r.id, lse.Token, lse.Generation, lse.ExpiresAt); err != nil {
+				return kerr.Wrapf(err, "webhook.claimRetry", "assign lease %s", r.id)
+			}
+
+			out = append(out, claimedOutboundDelivery{
+				rowID:    r.id,
+				ep:       ep,
+				ev:       outbox.Event{ID: evID, Type: r.eventType},
+				body:     r.payload,
+				attempts: r.attempts,
+				lease:    lse,
+			})
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // --- internal ---
@@ -343,19 +445,65 @@ func (s *Service) runInboundHandler(ctx context.Context, db database.TenantDB, e
 	return h(ctx, db, ev)
 }
 
-func (s *Service) deliverToEndpoint(
-	ctx context.Context,
-	db database.TenantDB,
-	ep Endpoint,
-	ev outbox.Event,
-	body []byte,
-	now time.Time,
-) error {
+// claimedOutboundDelivery is a webhook_events outbound row that has been
+// assigned a lease in the claim stage and is ready for the effect/finalize
+// stages (C-1 / W04-E02-S001 AC-02/03).
+type claimedOutboundDelivery struct {
+	rowID    uuid.UUID
+	ep       Endpoint
+	ev       outbox.Event
+	body     []byte
+	attempts int
+	lease    lease.Lease
+}
+
+// deliveryResult is the outcome of the effect stage for one claimed delivery.
+// secretErr is set when the endpoint secret itself could not be resolved —
+// distinct from ok/err/statusCode, which describe the outcome of an actual
+// POST attempt. No POST is attempted when secretErr is set.
+type deliveryResult struct {
+	ok         bool
+	statusCode int
+	err        error
+	secretErr  error
+}
+
+// nextLease assigns a fresh lease for a row, reusing the row's current lease
+// generation (bumping it) when one already exists, or starting at generation
+// zero otherwise. now backs ExpiresAt so tests with a fake clock fence leases
+// correctly (mirrors notify.claimPending).
+func nextLease(token *string, generation *int64, expiresAt *time.Time, now time.Time) lease.Lease {
+	var existing lease.Lease
+	if token != nil {
+		existing.Token = *token
+		existing.Generation = *generation
+		existing.ExpiresAt = *expiresAt
+	}
+	var l lease.Lease
+	if existing.Zero() {
+		l = lease.New(leaseTTL)
+	} else {
+		l = existing.NextEpoch(leaseTTL)
+	}
+	l.ExpiresAt = now.Add(leaseTTL)
+	return l
+}
+
+// claimDeliveryRow upserts the (idempotent) pending delivery row for ep/ev,
+// evaluates eligibility — terminal status, backoff window, an already-live
+// lease held by another worker, and the circuit breaker — and, when
+// eligible, assigns a fresh lease inside the same transaction. Returns
+// (nil, nil) when the row is not eligible for delivery this cycle: it stays
+// pending/failed in the DB with no lease assigned, no secret resolved, and
+// no network call made. MUST be called from inside an open tenant
+// transaction; MUST NOT itself perform any remote I/O (C-1 / W04-E02-S001
+// AC-02/03).
+func (s *Service) claimDeliveryRow(ctx context.Context, db database.TenantDB, ep Endpoint, ev outbox.Event, body []byte, now time.Time) (*claimedOutboundDelivery, error) {
 	extID := ev.ID.String() // outbox event id is the outbound idempotency key
 	extIDPtr := &extID
 
 	// Upsert a pending delivery row (idempotent on the outbox event id).
-	_, err := s.insertEventOnConflictIgnore(ctx, db, insertEventParams{
+	if _, err := s.insertEventOnConflictIgnore(ctx, db, insertEventParams{
 		endpointID:      ep.ID,
 		direction:       DirectionOutbound,
 		externalEventID: extIDPtr,
@@ -364,125 +512,232 @@ func (s *Service) deliverToEndpoint(
 		signatureOk:     nil,
 		deliveryStatus:  StatusPending,
 		receivedAt:      now,
-	})
-	if err != nil {
-		return kerr.Wrapf(err, "webhook.deliverToEndpoint", "upsert delivery row")
+	}); err != nil {
+		return nil, kerr.Wrapf(err, "webhook.claimDeliveryRow", "upsert delivery row")
 	}
 
-	// Load the current row state.
+	// Load the current row state, locking it against a concurrent claimer.
 	var (
-		rowID         uuid.UUID
-		attempts      int
-		status        string
-		nextAttemptAt *time.Time
+		rowID           uuid.UUID
+		attempts        int
+		status          string
+		nextAttemptAt   *time.Time
+		leaseToken      *string
+		leaseGeneration *int64
+		leaseExpiresAt  *time.Time
 	)
-	if err := db.QueryRow(ctx,
-		`SELECT id, attempts, delivery_status, next_attempt_at
+	err := db.QueryRow(ctx,
+		`SELECT id, attempts, delivery_status, next_attempt_at,
+		        lease_token, lease_generation, lease_expires_at
 		   FROM webhook_events
-		  WHERE endpoint_id = $1 AND external_event_id = $2`,
-		ep.ID, extID).Scan(&rowID, &attempts, &status, &nextAttemptAt); err != nil {
-		return kerr.Wrapf(err, "webhook.deliverToEndpoint", "load delivery row")
+		  WHERE endpoint_id = $1 AND external_event_id = $2
+		    FOR UPDATE SKIP LOCKED`,
+		ep.ID, extID).Scan(&rowID, &attempts, &status, &nextAttemptAt,
+		&leaseToken, &leaseGeneration, &leaseExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Locked by a concurrent claimer (SKIP LOCKED) — leave it for that
+		// worker; not an error.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, kerr.Wrapf(err, "webhook.claimDeliveryRow", "load delivery row")
 	}
 
 	// Skip terminal or not-yet-due rows.
 	if status == StatusDelivered || status == StatusDead {
-		return nil
+		return nil, nil
 	}
 	if status == StatusFailed && nextAttemptAt != nil && nextAttemptAt.After(now) {
-		return nil
+		return nil, nil
+	}
+	// Already leased by a live worker — the row was committed by a prior
+	// claim-tx and is mid effect/finalize.
+	if leaseExpiresAt != nil && leaseExpiresAt.After(now) {
+		return nil, nil
 	}
 
 	// Circuit breaker.
 	br := s.breaker.get(ep.ID)
 	if !br.allow(s.now()) {
-		return nil // open — leave row pending
+		return nil, nil // open — leave row pending, no lease assigned
 	}
 
-	secret, err := s.secrets.Resolve(ctx, ep.SecretRef)
+	lse := nextLease(leaseToken, leaseGeneration, leaseExpiresAt, now)
+	if _, err := db.Exec(ctx,
+		`UPDATE webhook_events
+		    SET lease_token = $2, lease_generation = $3, lease_expires_at = $4
+		  WHERE id = $1`,
+		rowID, lse.Token, lse.Generation, lse.ExpiresAt); err != nil {
+		return nil, kerr.Wrapf(err, "webhook.claimDeliveryRow", "assign lease")
+	}
+
+	return &claimedOutboundDelivery{
+		rowID:    rowID,
+		ep:       ep,
+		ev:       ev,
+		body:     body,
+		attempts: attempts,
+		lease:    lse,
+	}, nil
+}
+
+// deliverClaimed runs the effect stage (secret resolve + signed POST) for
+// each claimed delivery entirely OUTSIDE any database transaction, then
+// finalizes the outcome in its own short, lease-fenced transaction. A
+// finalize error for one delivery is logged and does not stop the batch —
+// one endpoint's failure must not block delivery to the others (C-1 /
+// W04-E02-S001 AC-02/03).
+func (s *Service) deliverClaimed(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, claimed []claimedOutboundDelivery, now time.Time) {
+	for _, cd := range claimed {
+		res := s.effectDeliver(ctx, cd, now)
+		if _, err := s.finalizeOutboundDelivery(ctx, plat, tenantID, cd, res, now); err != nil {
+			slog.ErrorContext(ctx, "webhook.finalize_error", "delivery_id", cd.rowID, "endpoint_id", cd.ep.ID, "err", err)
+		}
+	}
+}
+
+// effectDeliver resolves the endpoint secret and performs the signed HTTP
+// POST for a claimed delivery. It MUST NOT run inside a database transaction
+// (C-1 / W04-E02-S001 AC-02/03).
+func (s *Service) effectDeliver(ctx context.Context, cd claimedOutboundDelivery, now time.Time) deliveryResult {
+	secret, err := s.secrets.Resolve(ctx, cd.ep.SecretRef)
 	if err != nil {
-		return kerr.Wrapf(err, "webhook.deliverToEndpoint", "resolve secret")
+		return deliveryResult{secretErr: kerr.Wrapf(err, "webhook.effectDeliver", "resolve secret")}
 	}
 
 	ts := fmt.Sprintf("%d", now.Unix())
 	// SEC-52: sign "<timestamp>.<body>" (Stripe/GitHub style) so X-Timestamp is
 	// covered by the MAC and cannot be replayed with a forged timestamp.
-	sig := signPayload(secret, ts, body)
+	sig := signPayload(secret, ts, cd.body)
 	headers := map[string]string{
 		"Content-Type":    "application/json",
 		"X-Signature":     "sha256=" + sig,
 		"X-Timestamp":     ts,
-		"X-Event-Id":      ev.ID.String(),
-		"Idempotency-Key": ev.ID.String(),
+		"X-Event-Id":      cd.ev.ID.String(),
+		"Idempotency-Key": cd.ev.ID.String(),
 	}
 
 	url := ""
-	if ep.URL != nil {
-		url = *ep.URL
+	if cd.ep.URL != nil {
+		url = *cd.ep.URL
 	}
 	dctx, cancel := context.WithTimeout(ctx, OutboundTimeout)
 	defer cancel()
-	statusCode, postErr := s.sender.Post(dctx, url, body, headers)
+	statusCode, postErr := s.sender.Post(dctx, url, cd.body, headers)
+	return deliveryResult{
+		ok:         postErr == nil && statusCode >= 200 && statusCode < 300,
+		statusCode: statusCode,
+		err:        postErr,
+	}
+}
 
-	next := attempts + 1
-	sigTrue := true
-
-	if postErr == nil && statusCode >= 200 && statusCode < 300 {
-		br.recordSuccess()
-		s.emitBreakerState(ep.ID, br)
-		// ARCH-72: a recovered endpoint must return to 'active' — otherwise it
-		// stays 'degraded' forever after the breaker closes.
-		if _, cerr := db.Exec(ctx,
-			`UPDATE webhook_endpoints
-			    SET status = 'active', updated_at = $2, updated_by = $3
-			  WHERE id = $1 AND status = 'degraded'`,
-			ep.ID, s.now(), uuid.Nil); cerr != nil {
-			return kerr.Wrapf(cerr, "webhook.deliverToEndpoint", "clear degraded status")
+// finalizeOutboundDelivery writes the outcome of the effect stage in a short,
+// lease-fenced transaction: circuit-breaker bookkeeping, endpoint
+// active/degraded transitions, and the webhook_events status update. It
+// returns (true, nil) when the update was applied, (false, nil) when the
+// lease was stale/expired and the result was discarded, and (false, err) on
+// a database error.
+func (s *Service) finalizeOutboundDelivery(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, cd claimedOutboundDelivery, res deliveryResult, now time.Time) (bool, error) {
+	br := s.breaker.get(cd.ep.ID)
+	next := cd.attempts + 1
+	var applied bool
+	err := plat.WithTenant(database.WithTenantID(ctx, tenantID), func(ctx context.Context, db database.TenantDB) error {
+		if res.secretErr != nil {
+			// Matches the pre-staging behavior: a secret-resolution failure never
+			// reached the POST or any webhook_events/breaker mutation, so the row
+			// stays exactly as claimed (status/attempts untouched). Release the
+			// lease so the row is immediately reclaimable rather than fenced for
+			// leaseTTL.
+			ct, uerr := db.Exec(ctx,
+				`UPDATE webhook_events
+				    SET lease_token = NULL, lease_generation = 0, lease_expires_at = NULL
+				  WHERE id = $1
+				    AND lease_token = $2 AND lease_generation = $3 AND lease_expires_at > $4`,
+				cd.rowID, cd.lease.Token, cd.lease.Generation, now)
+			if uerr != nil {
+				return kerr.Wrapf(uerr, "webhook.finalizeOutboundDelivery", "release lease after secret error")
+			}
+			applied = ct.RowsAffected() > 0
+			return nil
 		}
-		_, uerr := db.Exec(ctx,
+
+		if res.ok {
+			br.recordSuccess()
+			s.emitBreakerState(cd.ep.ID, br)
+			// ARCH-72: a recovered endpoint must return to 'active' — otherwise it
+			// stays 'degraded' forever after the breaker closes.
+			if _, cerr := db.Exec(ctx,
+				`UPDATE webhook_endpoints
+				    SET status = 'active', updated_at = $2, updated_by = $3
+				  WHERE id = $1 AND status = 'degraded'`,
+				cd.ep.ID, s.now(), uuid.Nil); cerr != nil {
+				return kerr.Wrapf(cerr, "webhook.finalizeOutboundDelivery", "clear degraded status")
+			}
+			sigTrue := true
+			ct, uerr := db.Exec(ctx,
+				`UPDATE webhook_events
+				    SET delivery_status = 'delivered', attempts = $2,
+				        signature_ok = $3, last_error = NULL
+				  WHERE id = $1
+				    AND lease_token = $4 AND lease_generation = $5 AND lease_expires_at > $6`,
+				cd.rowID, next, sigTrue, cd.lease.Token, cd.lease.Generation, now)
+			if uerr != nil {
+				return kerr.Wrapf(uerr, "webhook.finalizeOutboundDelivery", "mark delivered")
+			}
+			applied = ct.RowsAffected() > 0
+			return nil
+		}
+
+		br.recordFailure(s.now())
+		s.emitBreakerState(cd.ep.ID, br)
+
+		// Persist endpoint status='degraded' when the breaker just opened.
+		if br.isOpen(s.now()) {
+			if _, derr := db.Exec(ctx,
+				`UPDATE webhook_endpoints
+				    SET status = 'degraded', updated_at = $2, updated_by = $3
+				  WHERE id = $1`,
+				cd.ep.ID, s.now(), uuid.Nil); derr != nil {
+				return kerr.Wrapf(derr, "webhook.finalizeOutboundDelivery", "mark endpoint degraded")
+			}
+		}
+
+		var errMsg string
+		if res.err != nil {
+			errMsg = truncate(res.err.Error())
+		} else {
+			errMsg = fmt.Sprintf("non-2xx status: %d", res.statusCode)
+		}
+
+		if next >= MaxAttempts {
+			ct, uerr := db.Exec(ctx,
+				`UPDATE webhook_events
+				    SET delivery_status = 'dead', attempts = $2, last_error = $3
+				  WHERE id = $1
+				    AND lease_token = $4 AND lease_generation = $5 AND lease_expires_at > $6`,
+				cd.rowID, next, errMsg, cd.lease.Token, cd.lease.Generation, now)
+			if uerr != nil {
+				return kerr.Wrapf(uerr, "webhook.finalizeOutboundDelivery", "dead-letter delivery")
+			}
+			applied = ct.RowsAffected() > 0
+			return nil
+		}
+
+		nextAt := now.Add(webhookBackoff.Next(next))
+		ct, uerr := db.Exec(ctx,
 			`UPDATE webhook_events
-			    SET delivery_status = 'delivered', attempts = $2,
-			        signature_ok = $3, last_error = NULL
-			  WHERE id = $1`,
-			rowID, next, sigTrue)
-		return kerr.Wrapf(uerr, "webhook.deliverToEndpoint", "mark delivered")
-	}
-
-	br.recordFailure(s.now())
-	s.emitBreakerState(ep.ID, br)
-
-	// Persist endpoint status='degraded' when the breaker just opened.
-	if br.isOpen(s.now()) {
-		_, _ = db.Exec(ctx,
-			`UPDATE webhook_endpoints
-			    SET status = 'degraded', updated_at = $2, updated_by = $3
-			  WHERE id = $1`,
-			ep.ID, s.now(), uuid.Nil)
-	}
-
-	var errMsg string
-	if postErr != nil {
-		errMsg = truncate(postErr.Error())
-	} else {
-		errMsg = fmt.Sprintf("non-2xx status: %d", statusCode)
-	}
-
-	if next >= MaxAttempts {
-		_, uerr := db.Exec(ctx,
-			`UPDATE webhook_events
-			    SET delivery_status = 'dead', attempts = $2, last_error = $3
-			  WHERE id = $1`,
-			rowID, next, errMsg)
-		return kerr.Wrapf(uerr, "webhook.deliverToEndpoint", "dead-letter delivery")
-	}
-
-	nextAt := now.Add(webhookBackoff.Next(next))
-	_, uerr := db.Exec(ctx,
-		`UPDATE webhook_events
-		    SET delivery_status = 'failed', attempts = $2,
-		        next_attempt_at = $3, last_error = $4
-		  WHERE id = $1`,
-		rowID, next, nextAt, errMsg)
-	return kerr.Wrapf(uerr, "webhook.deliverToEndpoint", "mark failed delivery")
+			    SET delivery_status = 'failed', attempts = $2,
+			        next_attempt_at = $3, last_error = $4
+			  WHERE id = $1
+			    AND lease_token = $5 AND lease_generation = $6 AND lease_expires_at > $7`,
+			cd.rowID, next, nextAt, errMsg, cd.lease.Token, cd.lease.Generation, now)
+		if uerr != nil {
+			return kerr.Wrapf(uerr, "webhook.finalizeOutboundDelivery", "mark failed delivery")
+		}
+		applied = ct.RowsAffected() > 0
+		return nil
+	})
+	return applied, err
 }
 
 // --- database helpers ---
@@ -545,7 +800,8 @@ func (s *Service) loadEndpoint(ctx context.Context, db database.TenantDB, id uui
 		   FROM webhook_endpoints WHERE id = $1`,
 		id).Scan(
 		&ep.ID, &ep.TenantID, &ep.Direction, &ep.ProviderID, &ep.URL,
-		&ep.SecretRef, &ep.SignatureScheme, &ep.SubscribedEvents, &ep.Status)
+		&ep.SecretRef, &ep.SignatureScheme, &ep.SubscribedEvents, &ep.Status,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Endpoint{}, kerr.E(kerr.KindNotFound, "not_found", "webhook endpoint not found")
 	}
