@@ -1,0 +1,9 @@
+# Generated Graphify outputs must not become input to the next graph build.
+/graphify-out/
+
+# Generated test and coverage reports duplicate source/test evidence and churn often.
+/allure-results/
+/allure-report/
+/coverage.html
+/full_test_report.html
+

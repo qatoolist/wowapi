@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/qatoolist/wowapi/foundation/artifact"
@@ -23,6 +25,7 @@ import (
 	"github.com/qatoolist/wowapi/foundation/integration"
 	"github.com/qatoolist/wowapi/foundation/notify"
 	"github.com/qatoolist/wowapi/foundation/webhook"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 	kaudit "github.com/qatoolist/wowapi/kernel/audit"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -53,6 +56,16 @@ type bootState struct {
 	health     map[string]func(context.Context) error
 	ports      map[string]any
 	recurring  []RecurringJob
+	// compiler is the ownership-bound extension compiler (kernel/appmodel):
+	// every runtime ProvidePort routes through it so owner-prefix, duplicate,
+	// nil/type, and post-seal violations are enforced at boot (adversarial
+	// review 2026-07-17, F-10 — the raw map alone accepted all of them).
+	compiler *appmodel.Compiler
+	// portErrs accumulates extension-contract violations; Boot fails on any.
+	portErrs []error
+	// sealed flips after Boot compiles the model: a retained module context
+	// must not mutate extensions post-boot.
+	sealed bool
 	// i18n aggregates the framework's English catalog plus every module's
 	// localized bundles (GAP-001). Shared across module contexts; ownership
 	// (module-prefixed keys) is enforced per Register and surfaced at boot.
@@ -61,6 +74,7 @@ type bootState struct {
 
 func newBootState() *bootState {
 	return &bootState{
+		compiler:   appmodel.NewCompiler(),
 		migrations: map[string]fs.FS{},
 		seeds:      map[string]fs.FS{},
 		openapi:    map[string][]byte{},
@@ -73,6 +87,8 @@ func newBootState() *bootState {
 // moduleContext implements module.Context. Unexported; callers receive the
 // interface value.
 type moduleContext struct {
+	registrar appmodel.Registrar[any]
+	depSet    map[string]struct{}
 	name      string
 	logger    *slog.Logger
 	view      config.ModuleView
@@ -123,6 +139,7 @@ type moduleContext struct {
 // moduleDeps bundles the shared registries/services the app injects into every
 // module context, keeping the constructor signature stable as capabilities grow.
 type moduleDeps struct {
+	dependsOn []string
 	router    *httpx.Router
 	val       *validation.Validator
 	perms     *authz.Registry
@@ -167,7 +184,17 @@ func newModuleContext(name string, logger *slog.Logger, view config.ModuleView, 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if deps.boot == nil {
+		// Direct constructions (unit tests, tools) get a self-contained boot
+		// state; App.Boot always supplies the shared one.
+		deps.boot = newBootState()
+	}
+	depSet := make(map[string]struct{}, len(deps.dependsOn))
+	for _, d := range deps.dependsOn {
+		depSet[d] = struct{}{}
+	}
 	return &moduleContext{
+		registrar: deps.boot.compiler.GetRegistrar(name), depSet: depSet,
 		name: name, logger: logger.With("module", name), view: view,
 		router: deps.router, val: deps.val, perms: deps.perms, rtypes: deps.rtypes,
 		eval: deps.eval, tx: deps.tx, idgen: deps.idgen,
@@ -335,18 +362,57 @@ func (c *moduleContext) Health(name string, check func(context.Context) error) {
 }
 
 // ProvidePort registers an impl under a module-prefixed name so dependents can
-// fetch it. A name must be prefixed with the providing module's name.
+// fetch it. A name must be prefixed with the providing module's name; ownership,
+// duplicates, nil implementations, and post-boot mutation are enforced through
+// the appmodel compiler and fail Boot (F-10) — never silently overwritten.
 func (c *moduleContext) ProvidePort(name string, impl any) {
+	if c.boot.sealed {
+		panic(fmt.Sprintf("module %q: ProvidePort(%q) after boot: the extension model is sealed", c.name, name))
+	}
+	if !strings.HasPrefix(name, c.name+".") {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: ProvidePort(%q): a port must be prefixed with its providing module's name", c.name, name))
+		return
+	}
+	if impl == nil {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: ProvidePort(%q): nil implementation", c.name, name))
+		return
+	}
+	t := reflect.TypeOf(impl)
+	if err := c.registrar.DefinePort(name, t); err != nil {
+		c.boot.portErrs = append(c.boot.portErrs, fmt.Errorf("module %q: ProvidePort(%q): %w", c.name, name, err))
+		return
+	}
+	if err := c.registrar.ProvidePort(name, impl, t); err != nil {
+		c.boot.portErrs = append(c.boot.portErrs, fmt.Errorf("module %q: ProvidePort(%q): %w", c.name, name, err))
+		return
+	}
 	c.boot.ports[name] = impl
 }
 
 // Port fetches a previously-provided port. Because Register runs in dependency
-// order, a dependency's ports are available to its dependents; a missing port
-// is an error the module surfaces (and Validate re-checks declared needs).
+// order, a dependency's ports are available to its dependents. The provider
+// (the port name's module prefix) must be this module or one of its DECLARED
+// dependencies (F-10) — resolution is not a global grab-bag — and each resolve
+// is recorded as a requirement the compiled model re-validates at boot.
 func (c *moduleContext) Port(name string) (any, error) {
+	if c.boot.sealed {
+		return nil, fmt.Errorf("module %q: Port(%q) after boot: the extension model is sealed", c.name, name)
+	}
+	provider, _, ok := strings.Cut(name, ".")
+	if !ok {
+		return nil, fmt.Errorf("module %q: port %q is not module-prefixed", c.name, name)
+	}
+	if provider != c.name {
+		if _, declared := c.depSet[provider]; !declared {
+			return nil, fmt.Errorf("module %q: port %q belongs to module %q, which is not a declared dependency", c.name, name, provider)
+		}
+	}
 	p, ok := c.boot.ports[name]
 	if !ok {
 		return nil, fmt.Errorf("module %q: port %q is not provided by any registered dependency", c.name, name)
 	}
+	_ = c.registrar.RequirePort(name, reflect.TypeOf(p))
 	return p, nil
 }

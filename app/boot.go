@@ -151,7 +151,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		}
 		knownModules[m.Name()] = struct{}{}
 		mc := newModuleContext(m.Name(), k.Log, view, moduleDeps{
-			router: router, val: val, perms: k.Perms, rtypes: k.Resources,
+			dependsOn: m.DependsOn(),
+			router:    router, val: val, perms: k.Perms, rtypes: k.Resources,
 			eval: k.Authz, tx: k.Tx, idgen: idgen,
 			events: events, writer: writer, jobs: jobReg,
 			rules: k.Rules, resolver: k.RulesResolver, wfReg: k.Workflows, wfRT: k.WorkflowRuntime,
@@ -168,6 +169,16 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			regErrs = append(regErrs, fmt.Errorf("module %q: Register: %w", m.Name(), err))
 		}
 	}
+
+	// Compile and seal the extension model (F-10): ownership, duplicate, type,
+	// and requirement violations collected through the appmodel compiler fail
+	// boot here, and the sealed flag makes retained module contexts immutable —
+	// runtime extensions go through the ownership-bound compiler, not bare maps.
+	regErrs = append(regErrs, boot.portErrs...)
+	if _, err := boot.compiler.Compile(); err != nil {
+		regErrs = append(regErrs, fmt.Errorf("extension model: %w", err))
+	}
+	boot.sealed = true
 
 	// Reject unknown module namespaces (AR-04 T1): a config `modules.<name>`
 	// namespace with no corresponding registered module is otherwise retained as
