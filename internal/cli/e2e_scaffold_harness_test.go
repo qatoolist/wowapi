@@ -34,6 +34,7 @@ package cli
 
 import (
 	"archive/zip"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -131,14 +132,17 @@ func primeReleasedModuleCacheProxy(t *testing.T, version string) {
 // inside a file:// GOPROXY directory (list, .info, .mod, .zip), so a
 // released-CLI scaffold's `go mod download github.com/qatoolist/wowapi@version`
 // succeeds hermetically. Only the files a consumer build needs are zipped.
-// purgeCachedFrameworkVersion removes any previously downloaded/extracted copy
-// of the synthetic framework version from the shared GOMODCACHE. The proxy zips
-// the CURRENT checkout under a CONSTANT version string, so a cached copy from
-// an earlier run can silently serve stale framework code to consumer builds —
-// masking working-tree changes with bogus compile errors (observed during the
-// 2026-07-17 adversarial-review remediation, on both the host cache and the
-// toolbox container's gomod volume).
-func purgeCachedFrameworkVersion(t *testing.T, version string) {
+// purgeStaleFrameworkVersion removes a previously downloaded/extracted copy of
+// the synthetic framework version from the shared GOMODCACHE — but ONLY when
+// the freshly built proxy zip's content differs from the cached copy. The
+// proxy zips the CURRENT checkout under a CONSTANT version string, so a stale
+// cached copy silently serves old framework code to consumer builds (masking
+// working-tree changes as bogus compile errors — observed 2026-07-17 on both
+// the host cache and the toolbox container's gomod volume). The hash guard
+// keeps the purge a no-op for unchanged checkouts, so concurrently running
+// test packages (internal/cli and testkit both build golden consumers) do not
+// yank the module out from under each other's in-flight builds.
+func purgeStaleFrameworkVersion(t *testing.T, version, freshZip string) {
 	t.Helper()
 	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
 	if err != nil {
@@ -147,6 +151,17 @@ func purgeCachedFrameworkVersion(t *testing.T, version string) {
 	gmc := strings.TrimSpace(string(out))
 	if gmc == "" {
 		return
+	}
+	cachedZip := filepath.Join(gmc, "cache", "download", "github.com", "qatoolist", "wowapi", "@v", version+".zip")
+	if cached, err := os.ReadFile(cachedZip); err == nil {
+		fresh, err := os.ReadFile(freshZip)
+		if err != nil {
+			t.Fatalf("read fresh proxy zip: %v", err)
+		}
+		if sha256.Sum256(cached) == sha256.Sum256(fresh) {
+			return // cache is current — do not disturb concurrent builds
+		}
+		t.Logf("framework proxy: cached %s is stale (checkout changed); purging module cache copies", version)
 	}
 	targets := []string{
 		filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version),
@@ -179,7 +194,6 @@ func purgeCachedFrameworkVersion(t *testing.T, version string) {
 
 func buildFrameworkProxy(t *testing.T, version string) string {
 	t.Helper()
-	purgeCachedFrameworkVersion(t, version)
 	root := wowapiCheckoutRoot(t)
 	proxy := t.TempDir()
 	vdir := filepath.Join(proxy, filepath.FromSlash("github.com/qatoolist/wowapi/@v"))
@@ -262,6 +276,7 @@ func buildFrameworkProxy(t *testing.T, version string) string {
 	if err := zf.Close(); err != nil {
 		t.Fatal(err)
 	}
+	purgeStaleFrameworkVersion(t, version, zf.Name())
 	return "file://" + filepath.ToSlash(proxy)
 }
 
