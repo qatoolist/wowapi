@@ -19,7 +19,7 @@ func goldenConsumerScaffold(t *testing.T) string {
 
 	gobin := t.TempDir()
 	proxy := buildFrameworkProxy(t, goldenConsumerFrameworkVersion)
-	goEnv := hermeticGoEnv(t, proxy+","+modCacheProxyURL(t))
+	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
 	install := exec.Command(
 		"go", "install", "-buildvcs=false",
 		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion,
@@ -184,7 +184,7 @@ func installGoldenConsumerCandidateCLI(t *testing.T, version string) (string, []
 	t.Helper()
 	gobin := t.TempDir()
 	proxy := buildFrameworkProxy(t, version)
-	goEnv := hermeticGoEnv(t, proxy+","+modCacheProxyURL(t))
+	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
 	install := exec.Command("go", "install", "-buildvcs=false",
 		"github.com/qatoolist/wowapi/cmd/wowapi@"+version)
 	install.Dir = wowapiCheckoutRoot(t)
