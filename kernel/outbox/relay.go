@@ -47,11 +47,17 @@ type Relay struct {
 	leaseTTL time.Duration
 	tracer   observability.Tracer
 	metrics  observability.Metrics
-	// requeue and dispatch override RequeueFailed/DispatchOnce in tests (fault
-	// injection for the F-07 recovery-observability regression); nil means the
-	// real implementation.
-	requeue    func(ctx context.Context, cooldown time.Duration) error
-	dispatchFn func(ctx context.Context) (int, error)
+	// hooks overrides RequeueFailed/DispatchOnce in tests (fault injection for
+	// the F-07 recovery-observability regression); nil means the real
+	// implementations. A pointer (not func fields) so Relay stays comparable —
+	// the Go API compatibility gate guards that property of the v1 surface.
+	hooks *relayTestHooks
+}
+
+// relayTestHooks carries test-only fault-injection seams for Relay.Run.
+type relayTestHooks struct {
+	requeue  func(ctx context.Context, cooldown time.Duration) error
+	dispatch func(ctx context.Context) (int, error)
 }
 
 // RelayOption customizes the relay.
@@ -374,13 +380,14 @@ func (r *Relay) Run(ctx context.Context, poll time.Duration) error {
 	if poll <= 0 {
 		poll = time.Second
 	}
-	requeue := r.requeue
-	if requeue == nil {
-		requeue = r.RequeueFailed
-	}
-	dispatchOnce := r.dispatchFn
-	if dispatchOnce == nil {
-		dispatchOnce = r.DispatchOnce
+	requeue, dispatchOnce := r.RequeueFailed, r.DispatchOnce
+	if r.hooks != nil {
+		if r.hooks.requeue != nil {
+			requeue = r.hooks.requeue
+		}
+		if r.hooks.dispatch != nil {
+			dispatchOnce = r.hooks.dispatch
+		}
 	}
 	var (
 		nextRequeue     time.Time // zero: due immediately

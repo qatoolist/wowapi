@@ -38,13 +38,14 @@ func (m *requeueMetrics) counter(name string) float64 {
 func TestRelayRunSurfacesRequeueFailures(t *testing.T) {
 	metrics := &requeueMetrics{}
 	relay := NewRelay(nil, nil, NewHandlerRegistry(), 10, WithRelayMetrics(metrics))
-	relay.dispatchFn = func(context.Context) (int, error) { return 0, nil }
-
 	sentinel := errors.New("requeue permission denied")
 	var calls atomic.Int64
-	relay.requeue = func(ctx context.Context, cooldown time.Duration) error {
-		calls.Add(1)
-		return sentinel
+	relay.hooks = &relayTestHooks{
+		dispatch: func(context.Context) (int, error) { return 0, nil },
+		requeue: func(ctx context.Context, cooldown time.Duration) error {
+			calls.Add(1)
+			return sentinel
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -69,14 +70,15 @@ func TestRelayRunSurfacesRequeueFailures(t *testing.T) {
 func TestRelayRunRequeueRecoversAfterTransientFailure(t *testing.T) {
 	metrics := &requeueMetrics{}
 	relay := NewRelay(nil, nil, NewHandlerRegistry(), 10, WithRelayMetrics(metrics))
-	relay.dispatchFn = func(context.Context) (int, error) { return 0, nil }
-
 	var calls atomic.Int64
-	relay.requeue = func(ctx context.Context, cooldown time.Duration) error {
-		if calls.Add(1)%2 == 1 {
-			return errors.New("transient")
-		}
-		return nil
+	relay.hooks = &relayTestHooks{
+		dispatch: func(context.Context) (int, error) { return 0, nil },
+		requeue: func(ctx context.Context, cooldown time.Duration) error {
+			if calls.Add(1)%2 == 1 {
+				return errors.New("transient")
+			}
+			return nil
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
