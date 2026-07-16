@@ -10,7 +10,12 @@ Canonical status lives in each wave.md / epic.md / story.md / task-*.md front ma
 Validation (mandate §6/§7, status-model.md — added by the 2026-07-16 findings
 remediation, preventing recurrence of vocabulary drift and false acceptance roll-ups):
   - every wave/epic/story/task front-matter status must be a permitted token for its level;
-  - a story `accepted` or `verified` must have every task `done` or `cancelled`.
+  - a story `accepted` or `verified` must have every task `done` or `cancelled`;
+  - an epic `accepted` must have every story `accepted`, `deferred`, or `cancelled`;
+  - a wave `accepted` must have every epic `accepted`, `deferred`, or `cancelled`;
+  - a wave/epic `partially-accepted` must have at least one accepted child, at least one
+    non-accepted/non-cancelled child (otherwise the token is wrong), and its own file text
+    must cite the deviation/decision record (DEV-*/DEC-*) disposing of the exceptions.
 Violations exit non-zero. Evidence/artifact records keep their own vocabulary (mandate
 §10) and are deliberately NOT scanned here.
 
@@ -82,6 +87,12 @@ TASK_STATUSES = {
 # definition-of-done.md "Story-level done").
 STORY_COMPLETE = {"accepted", "verified"}
 TASK_FINISHED = {"done", "cancelled"}
+# A parent claiming full acceptance must have no child outside these tokens
+# (status-model.md §7.1: `partially-accepted` exists precisely for the mixed case).
+CHILD_ACCEPTED_OK = {"accepted", "deferred", "cancelled"}
+# Deviation/decision citation required in a partially-accepted item's own text (mandate
+# §1.2/§1.4: exceptions carry a recorded disposition, never a silent remainder).
+DISPOSITION_REF = re.compile(r"\bDE[VC]-[A-Z0-9][A-Z0-9-]*\b")
 
 
 def validate() -> list[str]:
@@ -97,14 +108,55 @@ def validate() -> list[str]:
             )
         return status
 
+    def check_rollup(
+        path: pathlib.Path, level: str, status: str, children: list[str]
+    ) -> None:
+        """Enforce accepted/partially-accepted roll-up consistency for a wave or epic."""
+        child_level = "epic" if level == "wave" else "story"
+        exceptions = [
+            c for c in children if c.split(":", 1)[1] not in CHILD_ACCEPTED_OK
+        ]
+        if status == "accepted" and exceptions:
+            violations.append(
+                f"{path.relative_to(ROOT)}: {level} is `accepted` but {len(exceptions)}"
+                f" {child_level}(s) are not accepted/deferred/cancelled: {', '.join(exceptions)}"
+            )
+        if status == "partially-accepted":
+            accepted = [c for c in children if c.split(":", 1)[1] == "accepted"]
+            open_children = [
+                c
+                for c in children
+                if c.split(":", 1)[1] not in {"accepted", "cancelled"}
+            ]
+            if not accepted:
+                violations.append(
+                    f"{path.relative_to(ROOT)}: {level} is `partially-accepted` but no"
+                    f" {child_level} is accepted"
+                )
+            if not open_children:
+                violations.append(
+                    f"{path.relative_to(ROOT)}: {level} is `partially-accepted` but every"
+                    f" {child_level} is accepted/cancelled — should be `accepted`"
+                )
+            if not DISPOSITION_REF.search(path.read_text(encoding="utf-8")):
+                violations.append(
+                    f"{path.relative_to(ROOT)}: {level} is `partially-accepted` but cites no"
+                    " DEV-*/DEC-* record disposing of the non-accepted remainder"
+                )
+
     for wave_dir in sorted(WAVES.iterdir()):
         wave_md = wave_dir / "wave.md"
         if not wave_md.is_file():
             continue
-        check(wave_md, "wave", WAVE_EPIC_STATUSES)
+        wave_status = check(wave_md, "wave", WAVE_EPIC_STATUSES)
+        epic_children: list[str] = []
         for epic_dir in sorted((wave_dir / "epics").glob("epic-*")):
-            if (epic_dir / "epic.md").is_file():
-                check(epic_dir / "epic.md", "epic", WAVE_EPIC_STATUSES)
+            epic_md = epic_dir / "epic.md"
+            epic_status = ""
+            if epic_md.is_file():
+                epic_status = check(epic_md, "epic", WAVE_EPIC_STATUSES)
+                epic_children.append(f"{epic_dir.name}:{epic_status}")
+            story_children: list[str] = []
             for story_dir in sorted(epic_dir.glob("stories/story-*")):
                 story_md = story_dir / "story.md"
                 if not story_md.is_file():
@@ -120,6 +172,10 @@ def validate() -> list[str]:
                         f"{story_md.relative_to(ROOT)}: story is `{story_status}` but"
                         f" {len(unfinished)} task(s) are not done/cancelled: {', '.join(unfinished)}"
                     )
+                story_children.append(f"{story_dir.name}:{story_status}")
+            if epic_md.is_file():
+                check_rollup(epic_md, "epic", epic_status, story_children)
+        check_rollup(wave_md, "wave", wave_status, epic_children)
     return violations
 
 

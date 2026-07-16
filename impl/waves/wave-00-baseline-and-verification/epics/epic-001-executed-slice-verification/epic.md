@@ -2,13 +2,13 @@
 id: W00-E01
 type: epic
 title: Executed-slice verification
-status: planned
+status: accepted
 wave: W00
 owner: unassigned
 reviewer: unassigned
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 source_requirements:
   - SEC-02
   - AR-04
@@ -168,3 +168,10 @@ All three stories reach `accepted` (each satisfying its own `closure.md`); AC-W0
 AC-W00-E01-04 above are all satisfied; `closure-report.md` for this epic is completed with reviewer
 conclusion and acceptance date; no evidence gap or unresolved regression remains open against any of
 the nine tasks.
+
+## Status update (2026-07-16)
+
+`status: accepted` — front matter reconciled with this epic's own completed `closure-report.md`
+(reviewer conclusion and acceptance date 2026-07-13; all stories `accepted`). The epic front
+matter had been left at `planned` when the wave was accepted — a status-maintenance omission
+found by the 2026-07-16 hierarchy roll-up check, not a change in the acceptance itself.

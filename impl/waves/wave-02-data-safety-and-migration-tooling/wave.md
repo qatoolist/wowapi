@@ -258,10 +258,12 @@ resolved before this wave's E02-S002 can be marked `accepted`, per `risks.md`.
 
 ## Status update (2026-07-16)
 
-`status: accepted` — all 8 W02 stories across all 5 epics independently reviewed and accepted per
-`review-gate-2026-07-16.md`-basis records (this wave's per-story independent-review task files,
-dated 2026-07-16); AC-W02-06 ("All W02 stories passed independent review") is now satisfied by
-real, dated, attributed, commit-pinned review records for every story, superseding the prior
-uncorroborated `W02ReviewGate, 2026-07-13` citation.
+`status: partially-accepted` — 7 of 8 W02 stories across the 5 epics independently reviewed and
+accepted per `review-gate-2026-07-16.md`-basis records (this wave's per-story independent-review
+task files, dated 2026-07-16), superseding the prior uncorroborated `W02ReviewGate, 2026-07-13`
+citation. The exception is W02-E02-S002, rolled back from `accepted` to `implemented` because
+three of its named proof artifacts were never built (**DEV-PROG-005**); its disposition —
+build-and-re-accept vs. formal descope — is the open decision **DEC-PROG-003**. The wave returns
+to `accepted` when that decision is executed and E02 re-accepts.
 
 — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

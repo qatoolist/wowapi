@@ -2,12 +2,12 @@
 id: W01
 type: wave
 title: Zero-dependency hardening
-status: accepted
+status: verification
 owner: unassigned
 reviewer: unassigned
 priority: high
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 included_epics:
   - W01-E01
   - W01-E02
@@ -192,3 +192,14 @@ generator/doc work vs. the ARCH-adjacent linter/observability/HTTP work).
 All exit criteria satisfied; all four epics' `closure-report.md` accepted; `waves/index.md`'s W01 row
 updated to reflect `accepted` status; no unresolved regression from the judged-linter or FBL-08/09
 enforcement work.
+
+## Status update (2026-07-16)
+
+`status: verification` (was `accepted`, set 2026-07-13) — rolled back by the 2026-07-16
+hierarchy reconciliation (**DEV-PROG-006**). The wave's own closure conditions require "all
+four epics' `closure-report.md` accepted", but all four epic closure-report bodies are
+unpopulated skeletons whose acceptance-criteria tables read "not started" while carrying an
+appended 2026-07-13 acceptance conclusion — internally contradictory records that cannot
+support epic (and therefore wave) acceptance. All 10 W01 stories remain `accepted` with
+story-level evidence; the delivered hardening is not in doubt. Completing the four epic
+closure reports and re-accepting is the follow-up tracked in DEV-PROG-006.

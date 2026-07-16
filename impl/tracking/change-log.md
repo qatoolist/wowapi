@@ -18,6 +18,26 @@ implementation progress — that lives in each story's own files and rolls up vi
 
 Reverse-chronological (newest first).
 
+## 2026-07-16 — Hierarchy roll-up enforcement + W00/W01 epic-level reconciliation (DEV-PROG-006)
+
+- **Validator extended to the full hierarchy:** `miscellaneous/regen_status_register.py` now also
+  fails when an `accepted` epic has a story (or an `accepted` wave has an epic) outside
+  `accepted`/`deferred`/`cancelled`, and when a `partially-accepted` wave/epic lacks an accepted
+  child, lacks a non-accepted child, or cites no DEV-*/DEC-* record disposing of the remainder.
+  Same wiring as before (hosted CI unit job + `review_gate.sh`).
+- **W00 epics reconciled:** W00-E01/W00-E02 front matter `planned` → `accepted` — both epics'
+  closure reports were genuinely completed 2026-07-13 (reviewer conclusion, acceptance date, all
+  stories accepted); the front matter had simply never been advanced. W00 wave stays `accepted`.
+- **W01 rolled back:** wave `accepted` → `verification`; epics E01–E04 `planned` → `verification`.
+  All four epic closure-report bodies are unpopulated skeletons contradicted by an appended
+  2026-07-13 acceptance conclusion, so the wave's own closure conditions were never met. All 10
+  W01 stories remain `accepted` with evidence. Recorded as **DEV-PROG-006** (programme-deviations
+  + deviation-register); dated correction notes appended to the four closure reports.
+- **W02 body-note corrections:** `wave.md` and `epic-002-tenant-fk-integrity/epic.md` status-update
+  sections still claimed `accepted` against `partially-accepted` front matter; corrected and both
+  now cite DEV-PROG-005/DEC-PROG-003 as the recorded disposition of the S002 exception.
+- **Status register regenerated**; `--check` green (75 stories, totals unchanged).
+
 ## 2026-07-16 — Findings-remediation pass R-1 follow-up: task front-matter and register reconciliation
 
 - **Task front-matter status normalization:** 31 W02/W03 task files reconciled: todo→done vocabulary normalization (34 files); front-matter status values matched to mapped task evidence. W02-E02-S002 T001/T002/T003 reclassified `implemented` (schema delivered and re-verified live, but three specific proof artifacts never built — noted in task caveat entries).

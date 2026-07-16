@@ -64,3 +64,11 @@ Conductor (Main), on the recommendation of W01ReviewGate (independent reviewer a
 ## Final status
 
 `accepted` (2026-07-13). All 2 stories under W01-E02 are `accepted`; see each story's closure.md, verification.md, and evidence/index.md for the completed records.
+
+## Correction note (2026-07-16)
+
+This closure report is internally contradictory: the body above is an unpopulated skeleton
+(acceptance-criteria/story-completion sections not filled) while an appended reviewer-conclusion
+section claims acceptance on 2026-07-13. Per DEV-PROG-006 (`impl/tracking/programme-deviations.md`),
+the epic's canonical status was set to `verification` on 2026-07-16; the 2026-07-13 acceptance
+conclusion is not operative until this report's completion sections are populated honestly.

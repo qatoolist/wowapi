@@ -19,30 +19,30 @@ hand-edit this file; regenerate it after any canonical status change.
 
 | Item | Level | Title | Status |
 |---|---|---|---|
-| W00-E01 | epic | Executed-slice verification | planned |
+| W00-E01 | epic | Executed-slice verification | accepted |
 | W00-E01-S001 | story | Verify workflow and boot composition slices at current HEAD | accepted |
 | W00-E01-S002 | story | Verify performance and benchmark-budget-gate slices at current HEAD | accepted |
 | W00-E01-S003 | story | Verify data-durability and CI-integration slices at current HEAD | accepted |
-| W00-E02 | epic | Baseline capture | planned |
+| W00-E02 | epic | Baseline capture | accepted |
 | W00-E02-S001 | story | Quality baselines | accepted |
 | W00-E02-S002 | story | Dependency and toolchain inventory | accepted |
 | W00-E02-S003 | story | ADR-ification of D-01 through D-09 | accepted |
 
-## wave-01-zero-dependency-hardening — wave status: `accepted`
+## wave-01-zero-dependency-hardening — wave status: `verification`
 
 | Item | Level | Title | Status |
 |---|---|---|---|
-| W01-E01 | epic | Static-analysis utilisation | planned |
+| W01-E01 | epic | Static-analysis utilisation | verification |
 | W01-E01-S001 | story | Enable the zero-cost leak-detection linter set | accepted |
 | W01-E01-S002 | story | Enable and triage the judged linter set | accepted |
 | W01-E01-S003 | story | Close supply-chain and pre-push hook hygiene gaps | accepted |
-| W01-E02 | epic | Observability correlation | planned |
+| W01-E02 | epic | Observability correlation | verification |
 | W01-E02-S001 | story | Trace/log correlation | accepted |
 | W01-E02-S002 | story | Pgx query tracer | accepted |
-| W01-E03 | epic | HTTP hardening | planned |
+| W01-E03 | epic | HTTP hardening | verification |
 | W01-E03-S001 | story | Server timeouts and body bounds | accepted |
 | W01-E03-S002 | story | Central validation enforcement | accepted |
-| W01-E04 | epic | Generator, documentation, and test-diagnosis fixes | planned |
+| W01-E04 | epic | Generator, documentation, and test-diagnosis fixes | verification |
 | W01-E04-S001 | story | Generator correctness — source-built CLI path validity and boot-safe CRUD generation | accepted |
 | W01-E04-S002 | story | Documentation reconciliation — plan traceability fix, DX-05 residual, wowsociety upstream register | accepted |
 | W01-E04-S003 | story | E2E flake diagnosis — reproduction-first investigation of the intermittent internal/e2e full-suite failure | accepted |

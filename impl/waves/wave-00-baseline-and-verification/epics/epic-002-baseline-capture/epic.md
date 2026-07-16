@@ -2,13 +2,13 @@
 id: W00-E02
 type: epic
 title: Baseline capture
-status: planned
+status: accepted
 wave: W00
 owner: unassigned
 reviewer: unassigned
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 source_requirements:
   - D-01
   - D-02
@@ -173,3 +173,10 @@ See `acceptance.md` for the full numbered list. Summary:
   beyond its REVIEW §F/§U source (RISK-W00-004 resolved or explicitly accepted).
 - The nine downstream epic dependencies listed in `dependencies.md` are confirmed unblocked (each
   ADR is in `ratified` status, not merely `proposed`).
+
+## Status update (2026-07-16)
+
+`status: accepted` — front matter reconciled with this epic's own completed `closure-report.md`
+(reviewer conclusion and acceptance date 2026-07-13; all stories `accepted`). The epic front
+matter had been left at `planned` when the wave was accepted — a status-maintenance omission
+found by the 2026-07-16 hierarchy roll-up check, not a change in the acceptance itself.
