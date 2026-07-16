@@ -2,9 +2,9 @@
 id: CLOSURE-W03-E01-S002
 type: closure-record
 parent_story: W03-E01-S002
-status: verified
+status: accepted
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 ---
 
 # Closure — W03-E01-S002
@@ -53,7 +53,12 @@ None against the implementation. EV-W03-E01-S002-003 independent review is outst
 
 ## Reviewer conclusion
 
-Pending T003 independent review.
+Accepted — T003 independent review executed 2026-07-16 per
+`impl/waves/wave-03-identity-and-session-security/review-gate-2026-07-16.md`: all 9 named
+adversarial tests re-run and passing, both ACs confirmed satisfied, capacity-selection mechanism
+documented, `Actor` struct shape preserved.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -61,8 +66,8 @@ Product-security lead, per epic-level `acceptance.md`.
 
 ## Closure date
 
-2026-07-13 (verification complete); final `accepted` date subject to T003 review.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Verification complete 2026-07-13.
 
 ## Final status
 
-verified
+accepted

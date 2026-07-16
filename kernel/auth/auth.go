@@ -236,6 +236,12 @@ func IsGrantRejection(err error, r GrantRejection) bool {
 // PrincipalStore resolves the framework user id from the IdP subject and
 // confirms the capacity belongs to that user in the tenant. Implemented in the
 // app/adapters DB layer (kernel/auth may not import a database).
+//
+// A PrincipalStore that does not additionally implement AssurancePrincipalStore
+// cannot satisfy the SEC-01 unconditional tenant-membership check: Verifier.Actor
+// fails closed with KindForbidden for any token carrying a TenantID when the
+// configured store lacks that interface. Production stores must implement
+// AssurancePrincipalStore.
 type PrincipalStore interface {
 	// UserIDBySubject returns the framework user id for an IdP subject.
 	UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error)
@@ -246,8 +252,11 @@ type PrincipalStore interface {
 
 // AssurancePrincipalStore is the additive v1 extension used for live tenant
 // membership, capacity-count, and privileged-session checks. Legacy
-// PrincipalStore implementations remain source-compatible; production stores
-// should implement this interface to enable the stricter assurance posture.
+// PrincipalStore implementations remain source-compatible, but Verifier.Actor
+// requires this interface whenever a token carries a TenantID (SEC-01
+// unconditional membership verification) and fails closed with KindForbidden
+// if the configured store does not implement it. Production stores must
+// implement this interface to enable the stricter assurance posture.
 type AssurancePrincipalStore interface {
 	PrincipalStore
 	ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error
@@ -285,11 +294,13 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 
 	assurance, hasAssurance := ps.(AssurancePrincipalStore)
 	if claims.TenantID != uuid.Nil {
-		if hasAssurance {
-			if err := assurance.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
-				return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-					"tenant access not permitted", err, errors.Op("auth.Actor"))
-			}
+		if !hasAssurance {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"tenant membership verification unavailable", errors.Op("auth.Actor"))
+		}
+		if err := assurance.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"tenant access not permitted", err, errors.Op("auth.Actor"))
 		}
 	} else {
 		return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",

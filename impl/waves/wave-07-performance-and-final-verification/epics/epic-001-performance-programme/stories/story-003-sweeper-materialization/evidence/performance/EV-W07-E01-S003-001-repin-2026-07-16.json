@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S003-001-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S003-001",
+  "reason": "Original evidence pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-003-sweeper-materialization/evidence/performance/EV-W07-E01-S003-001.json",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres> go test ./kernel/workflow -count=1",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:40:00Z",
+  "result": "PASS: kernel/workflow package passes at current HEAD (unchanged bounded-cardinality behavior).",
+  "result_tail": "ok  \tgithub.com/qatoolist/wowapi/kernel/workflow\t7.101s",
+  "raw_output_checksum_sha256": "cc21ebb27fc38d8a900a83d80b26ad4560abd2b11c5a270c588cca1b9abb021a",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

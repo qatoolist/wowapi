@@ -42,7 +42,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -194,35 +194,48 @@ until its findings are resolved.
 
 ### Evidence identifier
 
-*Not yet executed.*
+Reuses `migrations/00038_jobs_lease_columns.sql` and `kernel/jobs/chaos/duplicate_worker_lease_expiry_test.go`'s
+existing evidence (see W04-E01-S003's own evidence, which exercises this story's fenced-finalize
+columns end-to-end).
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local Postgres via testkit
+(`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`).
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+Spot-check (gate-level confirmation): confirmed `migrations/00038_jobs_lease_columns.sql` (31 lines)
+exists and adds lease columns. The decisive proof of AC-02 (fenced finalize rejects a stale worker)
+is exercised end-to-end by the sibling story's chaos test
+(`kernel/jobs/chaos/duplicate_worker_lease_expiry_test.go`, `TestDuplicateWorkerLeaseExpiry`), which
+this review re-ran and confirmed PASS with log line "stale finalize rejected" and domain/external
+effect counts == 1. Did not independently re-derive the fenced finalize/`ReclaimStalled` SQL text
+line-by-line beyond this behavioral proof. **Open paperwork gap (unresolved by this review):**
+`closure.md`'s "Final status" is still unfilled template text despite `story.md` claiming
+`status: accepted` — same pattern as W04-E01-S001.
 
 ### Retest status
 
-*Not yet executed.*
+Retested via the sibling chaos test; PASS.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept-with-conditions** — condition: fill `closure.md`'s "Final status" section before
+formal closure, consistent with W04-E01-S001's condition.
 
 ## Deviations Record
 

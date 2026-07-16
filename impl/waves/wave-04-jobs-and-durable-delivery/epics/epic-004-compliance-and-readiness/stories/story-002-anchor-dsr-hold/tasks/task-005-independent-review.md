@@ -45,7 +45,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -195,43 +195,97 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+AC-01: read `kernel/audit/external_anchor_test.go`'s `TestIntegrationExternalAnchorTamperDetection`
+in full. It seeds 3 audit rows, calls `ExternalAnchor.AnchorNow`, then directly tampers the DB
+(`DELETE ... WHERE seq > 1` + rewinding `audit_chain.head_hash` to seq 1's hash) so the local,
+in-database chain is internally self-consistent again. The test explicitly asserts the plain
+`w.Verify` (the pre-existing local guard) *passes* after this tamper (`Local Verify still passes
+because the remaining chain is internally consistent`), then asserts `ea.Verify` (the external-anchor
+path) *fails* against the same tampered state. This directly distinguishes the two mechanisms per
+review point 1 — the anchor genuinely catches what the local guard misses, not a duplicate assertion
+of the same property. Ran the test: PASS.
+
+AC-02: read `kernel/retention/anchor_dsr_test.go`'s `TestIntegrationDSRExportArtifactWriteFailure`,
+which injects a `failingWriter` (a `retention.ArtifactWriter` that always errors) and asserts
+`RunExportDetailed` propagates the sentinel error and the DSR request status remains `pending` (not
+advanced to completed) — export completion is genuinely gated on artifact-write success, not
+merely attempted-then-ignored. `TestIntegrationDSRArtifactWriteAndChecksum` and
+`TestIntegrationDSRExportArtifactRoundTrip` cover the success path's checksum verification.
+`deviations.md`'s "Artifact checksum" decision documents `SHA256(ciphertext)` stored in the envelope
+and returned in `ArtifactManifest.Checksum`, i.e. it verifies the bytes actually written, not a
+discarded plaintext hash. Ran both tests: PASS.
+
+AC-03: read `TestIntegrationCentralLegalHoldBlocksDisposeErase`. The registered `RecordClass`'s
+`Dispose`/`Erase` callbacks have **no internal hold check of their own** — they unconditionally set
+`deleted = true` and return success — so a wrapper failure would be unmasked (the test would see
+`deleted == true`). The test places holds, calls the Engine (which wraps every callback with the
+central legal-hold check), and asserts both `SweepDisposition` and `RunErasureDetailed` return
+`retention.ErrHeld` and `deleted` stays `false`. This is a genuine negative test of the wrapper, not
+a callback that happens to duplicate its own check. Ran the test: PASS.
+
+AC-04: `TestIntegrationExplicitPerClassExportStatus` / `TestIntegrationExplicitPerClassErasureStatus`
+/ `TestIntegrationDSRExportEmptyClassStatus` cover callback-bearing and callback-absent classes.
+`deviations.md`'s "RecordClass enumeration" section records the enumeration: a repo-wide grep for
+`retention.NewRegistry().Register`/`Register(retention.RecordClass{...})` in wowapi found only
+framework/test registrations (zero product modules register a class today), and wowsociety was
+independently confirmed (via this epic's `dependencies.md`) to have no `kernel/retention` usage —
+so the enumeration is honestly "zero registered classes in either repo," not a fabricated non-empty
+list. This is recorded in `deviations.md` ahead of (textually, in the same remediation pass as) the
+wrapper's implementation; given the enumeration result is "nothing is registered," the
+precondition's substance (no existing callback could be broken by the wrapper) is trivially and
+verifiably satisfied rather than merely asserted.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS. AC-W04-E04-S002-01 through -04 are all satisfied by real, passing, discriminating tests —
+none of the four is a same-property duplicate or a callback that masks the property under test.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W04-E04-S002-001 (AC-01), EV-W04-E04-S002-002 (AC-02), EV-W04-E04-S002-003 (AC-03),
+EV-W04-E04-S002-004 (enumeration, in `deviations.md`), EV-W04-E04-S002-005 (AC-04) — confirmed
+against the codebase by this review; see `evidence/index.md` for the pre-existing record.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local Postgres via testkit
+(`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`).
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+No AC-blocking findings. Process note (not a defect): the `RecordClass` enumeration's substance is
+"nothing is registered in either repo," which trivially satisfies the "no breaking change to an
+existing callback" precondition — this is honest and verifiable, but means AC-04's enumeration has
+not yet been exercised against a real non-empty callback set; a future story that registers the
+first `RecordClass` should re-run the enumeration-before-wrapper-change sequencing check for real.
+Status-vocabulary note: `story.md`/`closure.md` use `closed-pending-review`, which is not a value in
+this programme's documented status vocabulary (`planned`/`ready`/`in-progress`/`accepted`/etc. per
+`governance/`); recommend the conductor normalize this to a defined status value (`accepted`, given
+this review's PASS verdict, or `in-review` if a distinct pending-review state is added to the
+vocabulary) rather than leaving `closed-pending-review` as an ad hoc token.
 
 ### Retest status
 
-*Not yet executed.*
+Not required — all cited tests pass on first run against the current working tree.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept**, subject to the conductor normalizing the `closed-pending-review` status token
+to a defined value in the status vocabulary (see Findings). All four acceptance criteria are met
+with real, non-duplicative, non-masked test evidence.
 
 ## Deviations Record
 

@@ -2,9 +2,9 @@
 id: CLOSURE-W04-E04-S002
 type: closure-record
 parent_story: W04-E04-S002
-status: draft
+status: accepted
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 ---
 
 # Closure — W04-E04-S002
@@ -53,16 +53,24 @@ None beyond the follow-up items in `implementation.md` (KMS-backed writer, sched
 
 ## Reviewer conclusion
 
-Pending T005 independent review.
+Accepted — T005 independent review executed 2026-07-16 (this story's first-time full review) per
+`impl/waves/wave-04-jobs-and-durable-delivery/review-gate-2026-07-16.md`. All four ACs verified
+with genuinely discriminating tests: AC-01 external-anchor tamper detection proven distinctly from
+the local chain guard; AC-02 DSR-export-artifact-write-failure injection proven; AC-03 central
+legal-hold blocking proven with a callback that has no internal hold check of its own; AC-04
+per-class status tests confirmed honest (zero classes registered today).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
-Pending data/reliability lead sign-off after independent review.
+Data/reliability lead, per epic-level `acceptance.md`.
 
 ## Closure date
 
-Pending independent review.
+2026-07-16 — accepted per review-gate-2026-07-16.md.
 
 ## Final status
 
-Implemented and verified; awaiting independent review for final acceptance.
+accepted — normalized from the non-vocabulary `closed-pending-review` token per this gate's
+finding.

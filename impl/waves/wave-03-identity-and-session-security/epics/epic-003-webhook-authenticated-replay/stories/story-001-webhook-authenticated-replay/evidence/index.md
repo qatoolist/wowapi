@@ -16,9 +16,9 @@ empty. All entries below are `not yet produced`.
 
 | Evidence ID | Type | Task | Acceptance criteria proven | Execution command | Commit SHA | Result | Status |
 |---|---|---|---|---|---|---|---|
-| EV-W03-E03-S001-001 | unit test report | W03-E03-S001-T001 | AC-W03-E03-S001-01 | `go test ./kernel/webhook -run 'TestUnit(HMACVerifier|FakeVerifier)' -v` | TBD | PASS | produced |
-| EV-W03-E03-S001-002 | targeted test report | W03-E03-S001-T002 | AC-W03-E03-S001-02 | `go test ./kernel/webhook -run 'TestIntegrationHandleInbound_TimestampManipulationImmune' -v` | TBD | PASS | produced |
-| EV-W03-E03-S001-003 | adversarial tamper-matrix test report | W03-E03-S001-T003 | AC-W03-E03-S001-03 | `go test ./kernel/webhook -run 'TestIntegrationHandleInbound_TamperMatrix' -v` | TBD | PASS | produced |
+| EV-W03-E03-S001-001 | unit test report | W03-E03-S001-T001 | AC-W03-E03-S001-01 | `go test ./foundation/webhook -run 'TestUnit(HMACVerifier|FakeVerifier)' -v` | TBD | PASS | produced |
+| EV-W03-E03-S001-002 | targeted test report | W03-E03-S001-T002 | AC-W03-E03-S001-02 | `go test ./foundation/webhook -run 'TestIntegrationHandleInbound_TimestampManipulationImmune' -v` | TBD | PASS | produced |
+| EV-W03-E03-S001-003 | adversarial tamper-matrix test report | W03-E03-S001-T003 | AC-W03-E03-S001-03 | `go test ./foundation/webhook -run 'TestIntegrationHandleInbound_TamperMatrix' -v` | TBD | PASS | produced |
 | EV-W03-E03-S001-004 | review report | W03-E03-S001-T005 | AC-W03-E03-S001-01, AC-W03-E03-S001-02, AC-W03-E03-S001-03, AC-W03-E03-S001-04 | Independent review checklist per mandate §14 | TBD | TBD | not yet produced |
 
 Evidence status vocabulary (per mandate §10): `not yet produced` is this programme's pre-execution

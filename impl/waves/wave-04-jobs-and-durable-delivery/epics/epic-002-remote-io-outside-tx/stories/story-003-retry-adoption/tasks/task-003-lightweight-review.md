@@ -40,7 +40,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -183,39 +183,51 @@ until its findings are resolved.
 
 ### Pass or fail
 
-*Not yet executed.*
+Confirmed `cenkalti/backoff/v5 v5.0.3` is a real `go.mod` dependency; `kernel/retry/retry.go` wraps it
+(`NewSchedule`, `SequenceBackOff`); `foundation/notify/service.go` and `foundation/webhook/service.go`
+(the latter re-confirmed during this review's deeper look at W04-E02-S001) both reference
+`kernel/retry` directly for their backoff schedules, not a hand-rolled duplicate. `closure.md`'s
+"Final status" for this story reads `accepted (pending lightweight review per plan)` — filled in,
+unlike several sibling stories in this epic.
+
+### Pass or fail
+
+PASS on the spot-checked slice (dependency + adoption-site confirmation). Did not independently
+re-run the fault-injection test given this review's time budget.
 
 ### Evidence identifier
 
-*Not yet executed.*
+Reuses `go.mod`, `kernel/retry/retry.go`; no new evidence artifact produced by this spot-check.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), Go toolchain per `go.mod`.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+No findings. This story's closure paperwork is self-consistent (unlike the systemic gap found in
+several E01/E02 sibling stories).
 
 ### Retest status
 
-*Not yet executed.*
+Not required for the spot-checked slice.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept**.
 
 ## Deviations Record
 

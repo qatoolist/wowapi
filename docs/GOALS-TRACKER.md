@@ -136,6 +136,29 @@ the enforced CI gate. None are architectural.
 > is the authoritative outstanding-work register; this tracker's per-goal tables remain the record of
 > *completed* goals.
 
+> **Status reconciliation (2026-07-16 implementation autopsy).** The impl/ directory contains the authoritative
+> execution ledger for the Waves 00–07 programme mandated in 2026-07-05. An independent third-party audit of
+> that programme (Fable 5, `impl/reports/implementation-autopsy-report-2026-07-16.md`) found that the programme
+> is **NOT complete** and the framework is **NOT production-ready**, despite commit `e8cda6b` claiming full
+> finalization. Summary: **25 of 75 stories (33%) are fully verified; ~17 are implemented but incomplete or
+> unreviewed; four waves have contradictory status ledgers; at least three false completion claims exist on
+> security stories; one confirmed code defect contradicts an accepted acceptance criterion (webhook delivery
+> in open transaction); the quality-floor gate was silently weakened with no record.**
+>
+> Wave verdicts (per `implementation-autopsy-report-2026-07-16.md` §14):
+> - **W00, W01:** Accepted-with-reservations (4/6 and 7/10 verified respectively; review-gate evidence missing)
+> - **W02:** Closure REJECTED (code substantially real but review gate falsely claimed; statuses contradictory)
+> - **W03:** Open—implemented-unaccepted (substantive code but zero stories validly accepted; contract + tamper gaps)
+> - **W04:** Acceptance REJECTED (E02 contains false acceptances and confirmed code defect; closure report is a template)
+> - **W05:** Not executed as a wave (8 stories missing; FBL-01 done off-ledger; AR-01/02 built-not-wired; SEC-04 missing)
+> - **W06:** Partially verified, wave open (E03 release gating + E04-S001 verified; 4 story claims unsupported)
+> - **W07:** In progress (E01 perf work real but evidence mis-pinned; E02/E03 legitimately blocked; closure gate not run)
+>
+> This tracker's tables in §1–5 remain the record of *framework Goal 1.0/1.1/1.2 and Goal 2 Phases 0–12*,
+> all completed before the Waves 00–07 programme began. The impl/ programme is a *subsequent* governance/
+> verification layer on top of that code base. Consult `implementation-autopsy-report-2026-07-16.md` for the
+> complete findings, remediation plan, and the programme's path to genuine closure.
+
 ---
 
 ## 7. Notes on retired working files

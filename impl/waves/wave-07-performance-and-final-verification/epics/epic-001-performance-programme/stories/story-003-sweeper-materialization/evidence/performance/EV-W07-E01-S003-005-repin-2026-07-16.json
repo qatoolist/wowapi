@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S003-005-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S003-005",
+  "reason": "Original evidence pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-003-sweeper-materialization/evidence/performance/EV-W07-E01-S003-005.json",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres> go test -race ./kernel/outbox -run '^TestIntegrationOutboxLeaseExpiryFencesDuplicateWorker$' -count=10 && go test ./kernel/jobs/chaos -run '^TestDuplicateWorkerLeaseExpiry$' -count=1 -v",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:40:00Z",
+  "result": "PASS: fencing and single-processed-events-row behavior reproduced under race detector and duplicate-worker chaos (unchanged). The ERROR log line in chaos test output is expected \u2014 it demonstrates the stale-finalize rejection being exercised, not a failure.",
+  "result_tail": "ok  \tgithub.com/qatoolist/wowapi/kernel/outbox\t4.459s\n=== RUN   TestDuplicateWorkerLeaseExpiry\n2026/07/16 14:45:27 ERROR jobs: record success failed job_id=1 kind=chaos.duplicate_worker err=\"stale finalize rejected\"\n--- PASS: TestDuplicateWorkerLeaseExpiry (0.26s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/jobs/chaos\t0.736s",
+  "raw_output_checksum_sha256": "77c1120221993abda0bcf2c17b0d8fcdc769045601e53119439516615a94a3ad",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

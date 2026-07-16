@@ -3,20 +3,24 @@
   "evidence_type": "functional-test report (fail-before/pass-after pair)",
   "story": "W01-E04-S001",
   "task": "W01-E04-S001-T004",
-  "acceptance_criteria_proven": ["AC-W01-E04-S001-04"],
+  "acceptance_criteria_proven": [
+    "AC-W01-E04-S001-04"
+  ],
   "execution_command": "go test ./internal/cli/ -run TestGenCRUDOutputBoots -count=1 -v",
   "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
   "revision_note": "HEAD at execution; the test file and the template fix are UNCOMMITTED working-tree changes on top of this SHA (the wave conductor owns commits). New file: internal/cli/gen_crud_boots_test.go.",
   "branch": "main (local working tree)",
   "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation; isolated t.TempDir() product scaffold wired to the checkout via a go.mod replace directive; runs offline after the module-cache-priming go mod tidy",
-  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "tool_versions": {
+    "go": "go1.26.5 darwin/arm64"
+  },
   "datetime_utc": "2026-07-13T07:26:46Z",
   "result": "PASS (post-T003); fail-first FAIL captured pre-T003 with the exact closed-verb-set rejection",
   "runs": [
     {
       "phase": "fail-first (pre-T003, unfixed template)",
       "status": "failed",
-      "outcome": "FAIL. Verbatim boot error from the generated product: \"boot: app: boot validation failed: permission registration failed: permission action %q is not in the closed verb set: widgets.widget.delete\" (plus the downstream \"route permission \\\"widgets.widget.delete\\\" is not declared by any module seed or registration\"). This is exactly the kernel/authz/registry.go:88-90 rejection the task's completion criteria require — not a generic or unrelated failure (task-004 'Risks' mitigation).",
+      "outcome": "FAIL. Verbatim boot error from the generated product: \"boot: app: boot validation failed: permission registration failed: permission action %q is not in the closed verb set: widgets.widget.delete\" (plus the downstream \"route permission \\\"widgets.widget.delete\\\" is not declared by any module seed or registration\"). This is exactly the kernel/authz/registry.go:88-90 rejection the task's completion criteria require \u2014 not a generic or unrelated failure (task-004 'Risks' mitigation).",
       "log": "t004-boots-prefix-failfirst.log",
       "sha256": "48e16e195d2d9afca14e942c75c9f9966ff02193442344913a6b7421bc58d304"
     },
@@ -36,9 +40,16 @@
       "sha256": "c557061b6bfc8f3d98232661910f3b6688af70dae79ddf6fad1d89966ff7cad2"
     }
   ],
-  "harness_note": "Reuses buildRenderedProduct (internal/cli/scaffold_test.go:568) — the existing isolated-temp-dir scaffold primitive (init -> replace-to-local-checkout -> go mod tidy) — rather than reimplementing it, per the story's shared-primitive direction. The seed catalog the boot requires is derived VERBATIM from the RouteMeta permission strings in the generated widget.go, so the boot proof always tracks what the template actually emitted. Boot runs without a database: app.Boot's registration validation (permission key shape, closed verb set, route-permission declaration) executes before any pool use; kernel.New requires only a TxManager, satisfied by a no-op stub whose methods are unreachable during Boot.",
+  "harness_note": "Reuses buildRenderedProduct (internal/cli/scaffold_test.go:568) \u2014 the existing isolated-temp-dir scaffold primitive (init -> replace-to-local-checkout -> go mod tidy) \u2014 rather than reimplementing it, per the story's shared-primitive direction. The seed catalog the boot requires is derived VERBATIM from the RouteMeta permission strings in the generated widget.go, so the boot proof always tracks what the template actually emitted. Boot runs without a database: app.Boot's registration validation (permission key shape, closed verb set, route-permission declaration) executes before any pool use; kernel.New requires only a TxManager, satisfied by a no-op stub whose methods are unreachable during Boot.",
   "ci_wiring": "The test lives in package cli and is gated only by testing.Short(). CI runs the full suite without -short: Makefile `test-unit` = `go test ./...` (Makefile:163-165), invoked by the containerized CI legs (Makefile:325-326). Adding the file therefore wires it into every future CI run touching internal/cli or the kernel verb set.",
   "file_or_uri": "evidence/DX-02/w0-t2-boots-test.json",
-  "reviewer": "pending — wave-level review gate (conductor)",
-  "superseded_evidence": null
+  "reviewer": "pending \u2014 wave-level review gate (conductor)",
+  "superseded_evidence": null,
+  "reviewer_completion_addendum": {
+    "reviewer": "Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3)",
+    "review_date": "2026-07-16",
+    "commit_revision_reviewed_against": "HEAD 43b6e12 + remediation working tree 2026-07-16",
+    "disposition": "Verified. Directly covered by the decisive re-run of `TestGenCRUDOutputBoots` (PASS, 1.86s) \u2014 this record's own named test.",
+    "note": "Retroactively fills the evidence-policy 'reviewer' required field. The original 'reviewer' key above is left unmodified per the failed-evidence preservation convention."
+  }
 }

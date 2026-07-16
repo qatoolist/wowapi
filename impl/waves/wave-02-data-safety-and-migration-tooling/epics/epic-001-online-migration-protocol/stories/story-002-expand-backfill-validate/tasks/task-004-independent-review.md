@@ -2,11 +2,11 @@
 id: W02-E01-S002-T004
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W02-E01-S002
-owner: unassigned
+owner: Independent review agent (Claude Sonnet 4.5)
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E01-S002-T001
   - W02-E01-S002-T002
@@ -16,7 +16,8 @@ acceptance_criteria:
   - AC-W02-E01-S002-02
   - AC-W02-E01-S002-03
 artifacts: []
-evidence: []
+evidence:
+  - EV-W02-E01-S002-004
 ---
 
 # W02-E01-S002-T004 — Independent review
@@ -42,7 +43,7 @@ unassigned
 
 ### Status
 
-todo
+done (executed 2026-07-16 by Independent review agent, Claude Sonnet 4.5)
 
 ### Dependencies
 
@@ -188,43 +189,62 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+Re-verified against real code and a real re-run:
+- AC-W02-E01-S002-01: re-ran `TestExpandPhaseOldReaderCompatibility` — PASS. Expand-phase migration
+  genuinely accepts both old and new reader shapes. CONFIRMED.
+- AC-W02-E01-S002-02: re-ran `TestBackfillInterruptedAndResumed` — PASS. Read the test's assertions
+  directly (`kernel/migration/backfill_test.go:101-197`), not merely its name: it seeds 25 rows,
+  stops the first run mid-way (`stopAfter := 7`), resumes via checkpoint, and asserts
+  `res1.Processed + res2.Processed == 25` (no duplicates, no skips) plus `unprocessed == 0` via a
+  direct DB count — a genuine row-level idempotency assertion, not a weaker "resume completes"
+  proxy. CONFIRMED strong, not weakened.
+- AC-W02-E01-S002-03: re-ran `TestValidationArtifactSchema` (bundled below) — PASS.
+- Interim checkpoint-lease scope boundary and W04-E01-S001 forward reference: confirmed present in
+  `kernel/migration/backfill.go` doc comments and this story's `story.md`/`deviations.md`.
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass. All three ACs confirmed on fresh re-run against real code, with the row-level idempotency
+assertion specifically checked (not just test name).
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W02-E01-S002-004
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16 (kernel/migration/* unmodified by the
+uncommitted remediation diff)
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin/arm64), go1.26.5, local PostgreSQL via
+`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3)
 
 ### Findings
 
-*Not yet executed.*
+1. No code-level gap found; all three ACs confirmed with genuine, strong test assertions.
+2. (Wave-level, not story-specific) status-layer contradiction (`wave.md`/`epic.md`/
+   `status-register.md` vs `story.md`) flagged separately at wave level; conductor to adjudicate.
 
 ### Retest status
 
-*Not yet executed.*
+Retested 2026-07-16. All targeted tests PASS.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommendation: accept. All three acceptance criteria genuinely proven on fresh evidence; no
+finding blocks acceptance at the story/code level. Wave-level status reconciliation (Finding 2)
+is a bookkeeping matter for the conductor, not a code defect.
 
 ## Deviations Record
 

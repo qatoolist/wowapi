@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S003-007-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S003-007",
+  "reason": "Original evidence pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-003-sweeper-materialization/evidence/performance/EV-W07-E01-S003-007.json",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<local-postgres> go test ./kernel/workflow -run '^$' -bench '^BenchmarkSweepSLABatch$' -benchmem -benchtime=1x -count=1 | go run ./internal/tools/benchbudget <budget-file>. The original cited /tmp/perf04-budgets.txt, an ephemeral path that does not persist in the repository; re-checked against the 3 BenchmarkSweepSLABatch entries in the repo's canonical bench-budgets.txt, which carry identical threshold values (due_10<=200,000,000ns/50,000allocs; due_1000<=500,000,000ns/50,000allocs; due_100000<=30,000,000,000ns/50,000allocs).",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Max",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:40:00Z",
+  "result": "PASS, all 3 tiers within budget: due_10=120,785,666ns/4,205 allocs; due_1000=107,321,792ns/9,811 allocs; due_100,000=2,739,424,333ns/9,788 allocs \u2014 same order of magnitude as the original's 135M/107M/2.34B ns figures, no divergence.",
+  "result_tail": "goos: darwin\ngoarch: arm64\npkg: github.com/qatoolist/wowapi/kernel/workflow\ncpu: Apple M3 Max\nBenchmarkSweepSLABatch/due_10-16         \t       1\t 120785666 ns/op\t  935224 B/op\t    4205 allocs/op\nBenchmarkSweepSLABatch/due_1000-16       \t       1\t 107321792 ns/op\t  775224 B/op\t    9811 allocs/op\nBenchmarkSweepSLABatch/due_100000-16     \t       1\t2739424333 ns/op\t  735784 B/op\t    9788 allocs/op\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/workflow\t3.310s\n---budget check (scoped to the 3 SweepSLABatch entries; original's /tmp/perf04-budgets.txt no longer exists on disk \u2014 repo bench-budgets.txt carries identical threshold values for these 3 names)---\nOK    BenchmarkSweepSLABatch/due_100000                        2739424333.0 ns/op  9788 allocs/op\nOK    BenchmarkSweepSLABatch/due_10                            120785666.0 ns/op  4205 allocs/op\nOK    BenchmarkSweepSLABatch/due_1000                          107321792.0 ns/op  9811 allocs/op",
+  "raw_output_checksum_sha256": "eeb6b610476e5992e236352bc0d289e7ee50da1793ef5ff419b8aab3d3d563e0",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

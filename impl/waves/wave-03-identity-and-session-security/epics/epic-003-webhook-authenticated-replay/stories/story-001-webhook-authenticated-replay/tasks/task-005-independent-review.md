@@ -2,7 +2,7 @@
 id: W03-E03-S001-T005
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W03-E03-S001
 owner: unassigned
 created_at: 2026-07-12
@@ -45,7 +45,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -113,118 +113,139 @@ Not applicable — a review-only task has no code to roll back.
 
 ## Implementation Record
 
-*Not yet implemented.*
+Review-only task. Reviewed `foundation/webhook/verifier.go` (`Envelope`, `Verifier` interface),
+`foundation/webhook/webhook.go`/`service.go` (`HandleInbound`), `artifacts/provider-verifier-contract.md`
+(T4), and the full test suite including the 2026-07-16 tamper-matrix remediation
+(`foundation/webhook/tamper_matrix_test.go`, H-9) against `../plan.md` and `../deviations.md`.
 
 ### What was actually implemented
 
-*Not yet implemented.*
-
-### Components changed
-
-*Not applicable — review-only task.*
+Not applicable — review-only task; implementation is T001-T004's.
 
 ### Files changed
 
-*Not applicable.*
-
-### Interfaces introduced or changed
-
-*Not applicable.*
-
-### Configuration changes
-
-*Not applicable.*
-
-### Schema or migration changes
-
-*Not applicable.*
-
-### Security changes
-
-*Not applicable.*
-
-### Observability changes
-
-*Not applicable.*
+Not applicable — review-only task; files reviewed: `foundation/webhook/verifier.go`,
+`foundation/webhook/webhook.go`, `foundation/webhook/service.go`,
+`foundation/webhook/tamper_matrix_test.go`, `foundation/webhook/webhook_test.go`,
+`foundation/webhook/verifier_envelope_test.go`, `foundation/webhook/coverage_test.go`,
+`artifacts/provider-verifier-contract.md`.
 
 ### Tests added or modified
 
-*Not applicable — this task reviews existing tests, it does not add new ones.*
+None added by this review task; existing tests (including the 2026-07-16 tamper-matrix addition)
+re-run against current HEAD + working tree.
 
 ### Commits
 
-*Not yet implemented.*
-
-### Pull requests
-
-*Not yet implemented.*
-
-### Implementation dates
-
-*Not yet implemented.*
-
-### Technical debt introduced
-
-*None anticipated.*
-
-### Known limitations
-
-*Not yet implemented.*
-
-### Follow-up items
-
-*Not yet implemented.*
+Reviewed against `HEAD 43b6e12 + remediation working tree 2026-07-16` (tamper-matrix file is
+uncommitted, per this dispatch's briefing).
 
 ### Relationship to the approved plan
 
-*Not applicable — this task has no `plan.md` implementation strategy beyond the review checklist
-above.*
+Implementation matches `../plan.md`. Note: the artifact/task inventory in earlier registers cited
+`kernel/webhook/...` as the package path; the actual package is `foundation/webhook` (confirmed by
+`find`/build) — a path-reference defect in the registers, not in the code, already flagged by prior
+autopsy finding (Medium). Recommend `../artifacts/index.md` and `../evidence/index.md` be corrected
+to `foundation/webhook/...` — not blocking for this review's verdict since the correct package was
+verifiable and tested.
 
 ## Verification Record
 
 | Acceptance criterion | Verification method | Required environment | Expected result | Evidence type | Reviewer |
 |---|---|---|---|---|---|
-| AC-W03-E03-S001-01 through -04 | Independent review checklist per mandate §14 | N/A (documentation/code review) | No open finding, or every finding resolved/accepted | review report | unassigned |
+| AC-W03-E03-S001-01 through -04 | Independent review checklist per mandate §14 + targeted `go test` re-run (DB-backed) | Local dev, DB up (`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`), Go per `go.mod` | All named tests pass; 5/5 tamper-matrix fields independently proven inert | review report + test output | Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3) |
 
 ### Actual result
 
-*Not yet executed.*
+`go test ./foundation/webhook/... -run 'TestIntegrationHandleInbound' -count=1 -v` (DB up):
+`TestIntegrationHandleInbound_TamperedKeyID`, `_TamperedSignatureVersion`, `_SignatureSuccess`,
+`_BadSignature`, `_Replay`, `_TimestampOutOfWindow`, `_IdlessDedup`,
+`_FailedSigDoesNotBlockValid`, plus `_EndpointNotFound`/`_WrongDirection`/`_InactiveEndpoint`/
+`_NoVerifier`/`_SecretResolveError` — 13/13 PASS (`ok github.com/qatoolist/wowapi/foundation/webhook
+10.960s`). Checklist:
+1. `AC-01` — `Envelope{CanonicalBody, EventID, OccurredAt, SignatureVersion, KeyID}` defined in
+   `verifier.go`; `HMACVerifier` and `FakeVerifier` both compile against and satisfy
+   `Verify(...) (Envelope, error)`. Confirmed by build + `TestIntegrationHandleInbound_SignatureSuccess`.
+2. `AC-02` — `TestIntegrationHandleInbound_FailedSigDoesNotBlockValid` and the envelope-synthesis
+   tests confirm `OccurredAt`/`EventID` are immune to a manipulated `InboundIn.Timestamp`/
+   `ExternalEventID`; `HandleInbound` reads exclusively from `Envelope`.
+3. `AC-03` — the tamper matrix now independently exercises all 5 fields: body
+   (`_BadSignature`), timestamp (`_TimestampOutOfWindow`), event-ID (`_Replay`/`_IdlessDedup`),
+   key-ID (`_TamperedKeyID`, added 2026-07-16), signature-version (`_TamperedSignatureVersion`,
+   added 2026-07-16). All 5 PASS independently — H-9 (autopsy's "2 of 5 fields untested" finding)
+   is remediated.
+   **Judgment call on scope**: the shipped `HMACVerifier` is a body-only HMAC scheme and does not
+   itself bind key-ID or signature-version into its signature — `provider-verifier-contract.md`
+   explicitly documents this as conformant ("From authenticated data if the scheme authenticates a
+   key id; otherwise empty"). The two new tamper tests use a test-local `keyedVerifier` (the same
+   "swap in a purpose-built `Verifier`" technique `webhook_test.go` already uses for the timestamp
+   case) to prove the *`HandleInbound`/`Envelope` plumbing* rejects a tampered key-ID/sig-version
+   whenever a `Verifier` does bind them — which is what AC-03 actually requires ("no security
+   decision in `HandleInbound` reads a raw `InboundIn` field"). AC-03 does not require the shipped
+   `HMACVerifier` itself to authenticate those two fields; it requires the downstream dedup/replay
+   logic to never trust an unauthenticated one, and that any signature scheme that *does* bind them
+   is correctly enforced. On that reading, AC-03 is satisfied. If the true intent was for the
+   default/shipped verifier itself to bind key-ID/sig-version, that would be a scope gap — but
+   nothing in `story.md`'s T2 description ("`HMACVerifier`'s `EventID`/`OccurredAt` synthesis from
+   authenticated data only") mandates key-ID/sig-version binding in `HMACVerifier` specifically, so
+   this reviewer's judgment is the narrower reading is correct and does not block acceptance.
+4. `AC-04` — `provider-verifier-contract.md` exists, accurately reflects the as-built `Envelope`
+   synthesis approach (verified field-by-field against `verifier.go`), documents the
+   unsuitable-for-timestamped-providers limitation, and includes the `HMACVerifier` reference
+   example. Confirmed.
+5. Breaking-interface-change documentation: `story.md` "Compatibility considerations" explicitly
+   states the interface change is breaking and cites the wowsociety-impact re-confirmation
+   (RISK-W03-006). Confirmed present, not merely implied.
+6. Fresh wowsociety-consumer re-confirmation: `closure.md`'s "Accepted risks" section states a fresh
+   re-confirmation found zero custom `Verifier` implementations/imports outside `kernel/webhook`
+   (now `foundation/webhook`) — recorded as a specific finding, not a bare restatement of PLAN's
+   original snapshot. Not independently re-run against the wowsociety repo in this pass (out of
+   this repo's scope); accepted as recorded per the story's own evidence trail.
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W03-E03-S001-004 (this review report).
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD `43b6e12` + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+Local dev; DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable;
+Go per repo `go.mod`.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3). This reviewer did not implement T001-T004.
 
 ### Findings
 
-*Not yet executed.*
+None open. (Historical: autopsy findings "T005 never started" and "H-9 tamper matrix incomplete"
+are both remediated — T005 is this record; H-9 is closed by `tamper_matrix_test.go`.) One
+non-blocking register-hygiene item carried forward: artifact/evidence index files in this story
+still cite `kernel/webhook/...` instead of the actual `foundation/webhook/...` path — recommend
+correcting on next edit, not a re-review blocker.
 
 ### Retest status
 
-*Not yet executed.*
+Initial independent review for this task; all cited tests re-run against current HEAD + working
+tree, not merely re-cited from the autopsy's prior snapshot.
 
 ### Final conclusion
 
-*Not yet executed.*
+Acceptance criteria AC-W03-E03-S001-01 through -04 satisfied, including the remediated tamper
+matrix. Recommend the story proceed toward `accepted` (conductor adjudicates final status), subject
+to the non-blocking path-hygiene note above.
 
 ## Deviations Record
 

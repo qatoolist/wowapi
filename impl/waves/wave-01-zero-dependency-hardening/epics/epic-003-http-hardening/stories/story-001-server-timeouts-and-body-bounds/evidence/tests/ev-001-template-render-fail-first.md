@@ -41,3 +41,14 @@ FAIL
 --- PASS: TestInitConfigsBaseDocumentsServerTimeouts (0.01s)
 ok  	github.com/qatoolist/wowapi/internal/cli	0.271s
 ```
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Verified (existence + autopsy corroboration). File confirmed present with claimed shape; autopsy's evidence_checked list confirms MaxBytesReader wiring in kernel/httpx/csrf.go and config.go. Not independently re-run in this pass beyond the autopsy's own file-presence check (narrow re-verification budget; this AC bundle has 5 records, see the other 4 in this same story for the same disposition).
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

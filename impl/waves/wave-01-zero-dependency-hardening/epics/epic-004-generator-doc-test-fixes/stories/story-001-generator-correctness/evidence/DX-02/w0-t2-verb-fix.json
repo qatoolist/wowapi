@@ -3,20 +3,24 @@
   "evidence_type": "unit-test report (fail-before/pass-after pair)",
   "story": "W01-E04-S001",
   "task": "W01-E04-S001-T003",
-  "acceptance_criteria_proven": ["AC-W01-E04-S001-03"],
+  "acceptance_criteria_proven": [
+    "AC-W01-E04-S001-03"
+  ],
   "execution_command": "go test ./internal/cli/ -run TestGenCRUDPermissionKeys -count=1 -v",
   "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
   "revision_note": "HEAD at execution; the verb fix itself is an UNCOMMITTED working-tree change on top of this SHA (the wave conductor owns commits). Working-tree delta for this task: internal/cli/templates/crud/resource.go.tmpl (1 insertion, 1 deletion) + internal/cli/scaffold_test.go (1 line, TestGenCRUDPermissionKeys assertion). The wave brief cited baseline 0a31186; actual HEAD had advanced to 05dce5c8 before this story executed.",
   "branch": "main (local working tree)",
   "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation",
-  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "tool_versions": {
+    "go": "go1.26.5 darwin/arm64"
+  },
   "datetime_utc": "2026-07-13T07:26:46Z",
   "result": "PASS (post-fix); fail-first baseline captured pre-fix",
   "runs": [
     {
       "phase": "fail-first baseline (pre-fix, unfixed template)",
       "status": "resolved",
-      "outcome": "PASS while asserting the BUGGY string \"widgets.widget.delete\" — proving the test locked the DX-02 defect in as expected behavior (RISK-W01-005). This is the motivation for fixing the test together with the template.",
+      "outcome": "PASS while asserting the BUGGY string \"widgets.widget.delete\" \u2014 proving the test locked the DX-02 defect in as expected behavior (RISK-W01-005). This is the motivation for fixing the test together with the template.",
       "log": "t003-permkeys-prefix-failfirst.log",
       "sha256": "70ff6441bb93a0833272dfe297d9b860273397b4847cb727e6ddaed22aeb4066"
     },
@@ -29,8 +33,15 @@
     }
   ],
   "line_drift_note": "story.md cites TestGenCRUDPermissionKeys at scaffold_test.go:937-953 with the assertion at line 949. At execution time the test sat at lines 985-1001 (assertion at 997) because sibling story W01-E03-S002 added tests earlier in the same file in the shared working tree. Content matched the story's citation exactly; only line numbers drifted.",
-  "kernel_untouched": "git diff --stat kernel/authz/ is empty — the closed verb set was not widened (task-003 detailed-work step 6).",
+  "kernel_untouched": "git diff --stat kernel/authz/ is empty \u2014 the closed verb set was not widened (task-003 detailed-work step 6).",
   "file_or_uri": "evidence/DX-02/w0-t2-verb-fix.json",
-  "reviewer": "pending — wave-level review gate (conductor)",
-  "superseded_evidence": null
+  "reviewer": "pending \u2014 wave-level review gate (conductor)",
+  "superseded_evidence": null,
+  "reviewer_completion_addendum": {
+    "reviewer": "Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3)",
+    "review_date": "2026-07-16",
+    "commit_revision_reviewed_against": "HEAD 43b6e12 + remediation working tree 2026-07-16",
+    "disposition": "Spot-checked, not independently re-run by this record's specific test name in this pass; corroborated by the same package's green re-run above (TestGenCRUD* suite).",
+    "note": "Retroactively fills the evidence-policy 'reviewer' required field. The original 'reviewer' key above is left unmodified per the failed-evidence preservation convention."
+  }
 }

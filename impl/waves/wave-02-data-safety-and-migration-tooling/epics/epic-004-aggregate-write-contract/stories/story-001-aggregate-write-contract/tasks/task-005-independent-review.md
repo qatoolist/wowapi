@@ -2,11 +2,11 @@
 id: W02-E04-S001-T005
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W02-E04-S001
-owner: unassigned
+owner: Independent review agent (Claude Sonnet 4.5)
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E04-S001-T001
   - W02-E04-S001-T002
@@ -18,7 +18,8 @@ acceptance_criteria:
   - AC-W02-E04-S001-03
   - AC-W02-E04-S001-04
 artifacts: []
-evidence: []
+evidence:
+  - EV-W02-E04-S001-005
 ---
 
 # W02-E04-S001-T005 — Independent review
@@ -44,7 +45,7 @@ unassigned
 
 ### Status
 
-todo
+done (executed 2026-07-16 by Independent review agent, Claude Sonnet 4.5)
 
 ### Dependencies
 
@@ -190,43 +191,68 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+- AC-01: re-ran `TestIntegrationAggregateWriteFaultInjection` — PASS, with 4 explicit subtests
+  (`stage1-business-write`, `stage2-mirror-upsert`, `stage3-audit-row`, `stage4-outbox-event`),
+  confirming rollback is genuinely proven at each of the 4 independently-injected stages, not
+  merely one representative stage. CONFIRMED strong.
+- AC-02: re-ran `TestIntegrationAggregateWriteUserWithoutActorFailsFast` (missing-actor rejection)
+  and `TestIntegrationAggregateWriteSystemActorPathsSucceed` (2 subtests:
+  `background-no-principal`, `named-system-principal`) — both PASS, directly proving system-actor
+  call sites remain unaffected (not merely trusting T002's self-report). DATA-07 T3 cross-reference
+  confirmed present in `tasks/task-002-actor-attribution.md` (also referenced in
+  `epic.md`/`acceptance.md`/`dependencies.md`/`closure-report.md`), documenting the fix's location
+  for a future W03-E04-S001 implementer. CONFIRMED.
+- AC-03: re-ran `TestIntegrationRequestsModuleContract` — PASS, no silent test weakening observed
+  (assertions unchanged from evidence file's captured output). CONFIRMED.
+- AC-04 / RISK-W02-E04-001: `epic.md` and `dependencies.md` both reference the AR-03 overlap;
+  recorded, not silently dropped. CONFIRMED.
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass. All four acceptance criteria confirmed on fresh re-run, including the two
+specifically-flagged high-priority checks (system-actor non-regression, DATA-07 T3
+cross-reference).
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W02-E04-S001-005
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16 (kernel/resource/aggregate/* unmodified by the
+uncommitted remediation diff)
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin/arm64), go1.26.5, local PostgreSQL via
+`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3)
 
 ### Findings
 
-*Not yet executed.*
+1. No functional gap found; all four ACs confirmed with genuine, strong test assertions.
+2. (Minor, non-blocking) `evidence/index.md`'s EV-001..004 rows still say "TBD"/"not yet produced"
+   though the actual test-output files exist and pass (same stale-metadata pattern found in
+   W02-E02-S001's evidence index); recommend correcting.
+3. (Wave-level, not story-specific) status-layer contradiction flagged separately; conductor to
+   adjudicate.
 
 ### Retest status
 
-*Not yet executed.*
+Retested 2026-07-16. All targeted tests PASS.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommendation: accept-with-conditions. Functionally sound; condition: fix the stale
+"TBD"/"not yet produced" metadata in `evidence/index.md` for EV-001..004 (Finding 2).
 
 ## Deviations Record
 

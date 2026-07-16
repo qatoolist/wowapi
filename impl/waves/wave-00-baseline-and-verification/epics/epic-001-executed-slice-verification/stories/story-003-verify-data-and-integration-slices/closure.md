@@ -56,8 +56,12 @@ T5-T8 remains at `W07-E02-S002`, per `requirement-inventory.md`.
 
 ## Reviewer conclusion
 
-Pending — the conductor's independent review gate. Executor's conclusion: all evidence pinned to a
-single SHA, no production file modified, all ACs pass.
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Executor's conclusion: all
+evidence pinned to a single SHA, no production file modified, all ACs pass; the review gate also
+re-ran the shared postfix full-suite log at HEAD `43b6e12`, corroborating no regression.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -66,8 +70,9 @@ yet, per `impl/index.md`'s scope-discipline note, inherited from `wave.md`/`epic
 
 ## Closure date
 
-Execution completed 2026-07-13; closure (acceptance) date pending the review gate.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Execution completed 2026-07-13.
 
 ## Final status
 
-`ready-for-review`. Acceptance is the conductor's gate; not self-assigned.
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

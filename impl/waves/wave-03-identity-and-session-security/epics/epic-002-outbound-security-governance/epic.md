@@ -2,7 +2,7 @@
 id: W03-E02
 type: epic
 title: Outbound-security governance
-status: planned
+status: accepted
 wave: W03
 owner: unassigned
 reviewer: unassigned
@@ -127,3 +127,10 @@ story accordingly carries a `decisions/` directory referencing (not authoring) t
 
 W03-E02-S001 reaches `accepted`; AC-W03-E02-01 through AC-W03-E02-06 above are all satisfied;
 `closure-report.md` for this epic is completed with reviewer conclusion and acceptance date.
+
+## Status update (2026-07-16)
+
+`status: accepted` — W03-E02-S001 accepted; genuine independent review superseded the prior
+self-review.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -17,8 +17,8 @@ import (
 // Relationships is the scoped privileged service for ReBAC relationship edges.
 // It lets a module GRANT and REVOKE edges of a relationship type it owns,
 // running with app_platform write privilege but tenant-bound so RLS still
-// isolates. It absorbs, framework-side, every check the product SECURITY DEFINER
-// bridge (identity_grant/revoke_committee_seat) performed.
+// isolates. It absorbs, framework-side, every check a product's SECURITY DEFINER
+// grant/revoke bridge functions would otherwise perform.
 type Relationships struct {
 	tx    database.TxManager // the app_platform, tenant-bindable manager
 	audit *kaudit.Writer
@@ -78,8 +78,8 @@ func (r *Relationships) Grant(ctx context.Context, spec GrantSpec) (uuid.UUID, e
 	id := r.idgen.New()
 	err := r.tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		// Subject existence: when the subject is a capacity, it must be a real,
-		// currently-active acting capacity in the bound tenant (bridge check
-		// identity_committee_seat_capacity_invalid). RLS scopes the SELECT to the
+		// currently-active acting capacity in the bound tenant (the bridge's
+		// capacity-invalid check). RLS scopes the SELECT to the
 		// Kind integrity: the edge's subject/object kinds must match what the
 		// relationship TYPE declares, so a caller cannot point a party-subject type
 		// at a capacity id (or vice versa). relationship_types is the global registry
@@ -118,7 +118,7 @@ func (r *Relationships) Grant(ctx context.Context, spec GrantSpec) (uuid.UUID, e
 			}
 		}
 		// Object existence: the resource must be registered in this tenant with the
-		// declared type (bridge check identity_committee_seat_resource_invalid).
+		// declared type (the bridge's resource-invalid check).
 		ok, err := existsResource(ctx, db, spec.Object)
 		if err != nil {
 			return err
@@ -162,8 +162,8 @@ func (r *Relationships) Grant(ctx context.Context, spec GrantSpec) (uuid.UUID, e
 }
 
 // Revoke soft-revokes an owned edge: it sets valid_to = now() (never deletes, so
-// the historical grant survives — audit-friendly, matching the bridge's
-// identity_revoke_committee_seat), bumps version, and writes an audit row. It
+// the historical grant survives — audit-friendly, matching a revoke bridge's
+// soft-revoke semantics), bumps version, and writes an audit row. It
 // enforces a bound tenant, that the edge's rel_type is owned by this module, and
 // tenant scope (RLS + an explicit re-check under FOR UPDATE). A missing or
 // already-revoked edge is reported; a double-revoke is a no-op conflict rather

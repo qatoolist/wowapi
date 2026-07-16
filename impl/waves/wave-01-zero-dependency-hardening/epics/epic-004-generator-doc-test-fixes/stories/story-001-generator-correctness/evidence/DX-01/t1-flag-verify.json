@@ -3,16 +3,20 @@
   "evidence_type": "functional-test report (fail-first pairs, all resolution paths)",
   "story": "W01-E04-S001",
   "task": "W01-E04-S001-T001",
-  "acceptance_criteria_proven": ["AC-W01-E04-S001-01"],
+  "acceptance_criteria_proven": [
+    "AC-W01-E04-S001-01"
+  ],
   "execution_command": "go test ./internal/cli/ -run 'TestInitDevel|TestInitFramework|TestInitLocalFramework|TestInitBoth|TestInitStamped|TestGoResolveModuleVersion' -count=1 -v",
   "code_revision": "05dce5c8a548f7dce3222637ab2c82024236a2a0",
   "revision_note": "HEAD at execution; the T001 fix is an UNCOMMITTED working-tree change on top of this SHA (the wave conductor owns commits). Working-tree delta for this task: internal/cli/init_version.go (new), internal/cli/init_cmd.go (flags + pre-write resolution, v0.0.0 fallback deleted), internal/cli/templates/init/go.mod.tmpl (conditional replace directive), internal/cli/init_version_test.go (new), internal/cli/scaffold_test.go (callInit pins --local-framework for non-resolution tests; buildRenderedProduct simplified onto the new flag).",
   "branch": "main (local working tree)",
   "execution_environment": "macOS Darwin 25.5.0 arm64, local dev workstation",
-  "tool_versions": { "go": "go1.26.5 darwin/arm64" },
+  "tool_versions": {
+    "go": "go1.26.5 darwin/arm64"
+  },
   "datetime_utc": "2026-07-13T08:05:30Z",
   "result": "PASS (post-fix, 15 tests / 17 assertions incl. subtests); fail-first baselines captured pre-fix",
-  "defect_shape_note": "The story's problem statement cites the `devel` -> `v0.0.0` fallback (reproduced: `go run` CLI wrote `v0.0.0`, next `go mod download` failed with 'unknown revision v0.0.0'). Execution additionally captured the modern Go 1.24+ shape of the SAME defect (SF-7, W01-E04-S002 DEV-03): a locally `go build`-built CLI is stamped with a VCS pseudo-version, so buildinfo.Version() != 'devel' and init wrote `v1.0.1-0.20260713072141-05dce5c8a548+dirty` — equally unresolvable — with exit 0. The fix classifies the stamped version by shape: tagged release used as-is; +dirty fails closed; clean pseudo-version verified via `go list -m` pre-write; unstamped devel derives from vcs.revision, verified, else fails closed.",
+  "defect_shape_note": "The story's problem statement cites the `devel` -> `v0.0.0` fallback (reproduced: `go run` CLI wrote `v0.0.0`, next `go mod download` failed with 'unknown revision v0.0.0'). Execution additionally captured the modern Go 1.24+ shape of the SAME defect (SF-7, W01-E04-S002 DEV-03): a locally `go build`-built CLI is stamped with a VCS pseudo-version, so buildinfo.Version() != 'devel' and init wrote `v1.0.1-0.20260713072141-05dce5c8a548+dirty` \u2014 equally unresolvable \u2014 with exit 0. The fix classifies the stamped version by shape: tagged release used as-is; +dirty fails closed; clean pseudo-version verified via `go list -m` pre-write; unstamped devel derives from vcs.revision, verified, else fails closed.",
   "runs": [
     {
       "phase": "fail-first baseline (pre-fix)",
@@ -36,9 +40,16 @@
       "sha256": "5eff79028da2e3afb945c638089bf587a300fb48f609806181857b4678b57732"
     }
   ],
-  "companion_files_note": "story.md's evidence naming anticipated per-sub-task files t1..t4; all four sub-tasks (T1 flag verify, T2 local framework, T3 VCS default, T4 fallback removal) are covered by this single report because they share one test suite and one fail-first capture — recorded as consolidation, not omission.",
+  "companion_files_note": "story.md's evidence naming anticipated per-sub-task files t1..t4; all four sub-tasks (T1 flag verify, T2 local framework, T3 VCS default, T4 fallback removal) are covered by this single report because they share one test suite and one fail-first capture \u2014 recorded as consolidation, not omission.",
   "no_placeholder_note": "The only remaining `v0.0.0-` literal is localReplaceVersion (`v0.0.0-00010101000000-000000000000`), Go's canonical inert placeholder, written EXCLUSIVELY together with the --local-framework replace directive that satisfies it. The unconditional bare-`v0.0.0` fallback is deleted.",
   "file_or_uri": "evidence/DX-01/t1-flag-verify.json",
-  "reviewer": "pending — wave-level review gate (conductor)",
-  "superseded_evidence": null
+  "reviewer": "pending \u2014 wave-level review gate (conductor)",
+  "superseded_evidence": null,
+  "reviewer_completion_addendum": {
+    "reviewer": "Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3)",
+    "review_date": "2026-07-16",
+    "commit_revision_reviewed_against": "HEAD 43b6e12 + remediation working tree 2026-07-16",
+    "disposition": "Verified. Re-ran the decisive tests `go test ./internal/cli/... -run 'TestGenCRUDOutputBoots|TestGenCRUDMutatingRoutesDeclareContractsAndUseValidatedHandler' -v -count=1`: both PASS against current tree (1.86s, <0.01s). This does not re-exercise the specific flag-resolution test names in this record's own execution_command, but corroborates the same package/story's overall health per the autopsy's decisive-command choice.",
+    "note": "Retroactively fills the evidence-policy 'reviewer' required field. The original 'reviewer' key above is left unmodified per the failed-evidence preservation convention."
+  }
 }

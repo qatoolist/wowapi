@@ -10,8 +10,8 @@ import (
 // against the supported list, falling back to def when the header is empty,
 // unparseable, or names nothing supported.
 //
-// It implements RFC 9110 §12.5.4 content negotiation, ported from the
-// battle-tested wowsociety implementation. It is deliberately narrow: it matches
+// It implements RFC 9110 §12.5.4 content negotiation, ported from a
+// battle-tested product implementation. It is deliberately narrow: it matches
 // on the primary language subtag only (a supported "mr" matches an offered
 // "mr-IN"), which covers the common case without a full BCP 47 tag matcher. A
 // "*" wildcard is intentionally NOT treated as a match for any specific

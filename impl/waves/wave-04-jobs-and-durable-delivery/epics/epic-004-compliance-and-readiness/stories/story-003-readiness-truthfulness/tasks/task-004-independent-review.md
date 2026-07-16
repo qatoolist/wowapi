@@ -42,7 +42,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -191,43 +191,91 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+This story was previously classified `unsupported-by-evidence` by the prior adversarial verification
+pass (time-budget-limited, no code located). This review located and exercised the real code.
+
+AC-01: `app/health_readiness_test.go`'s `TestIntegrationMigrationCurrencyCheckFailsWhenStale` rewinds
+`goose_version_wowapi.version_id` to 1 (simulating a stale-migrated DB), boots the real
+`app.ReadinessWithCatalogs` aggregator with `app.MigrationCurrencyCheck` registered
+(`app/health.go:57`), and asserts `rec.Code == http.StatusServiceUnavailable` (503) and
+`body.Status == "not_ready"` — a genuine, undiluted 503 assertion, not a weaker check. The passing
+companion `TestIntegrationMigrationCurrencyCheckPassesWhenCurrent` confirms 200 on a current DB. Ran
+both: PASS.
+
+AC-02: `app/health.go`'s `ReadinessWithCatalogs` registers three `Detail` providers unconditionally —
+`seed_catalog_hash` (via `latestSeedHash`), `rule_hash` (via `RuleHash`), and `migration_version` (via
+`MigrationVersionDetail`) — plus a `model_hash` provider that is present but only emits when
+`b.Kernel.ModelHash != ""`. `deviations.md`'s `DEV-W04-E04-S003-001` honestly records that AR-01
+(the deterministic model hash) has not landed, so `model_hash` is always omitted today — this matches
+AC-02's own contingency clause ("if unavailable at implementation time, this portion's status is
+recorded honestly in deviations.md, not silently claimed complete"). `TestIntegrationMigrationCurrencyCheckPassesWhenCurrent`
+asserts `migration_version` is present in the payload.
+
+AC-03: `internal/cli/config_delegate.go`'s `resolveProductRoot` genuinely shells out to `go env GOMOD`
+(line ~95, `exec.CommandContext(..., "go", "env", "GOMOD")`) when `--project` is not given, with
+`--project`/`--project=X` parsed first as an explicit override (lines 67-83) — not a CWD-relative
+fallback. Ran the three named tests:
+`TestConfigDoctorDiscoversProductRootFromNestedSubdir`,
+`TestConfigDoctorDiscoversProductRootFromOutsideRepo`, and
+`TestConfigDoctorReportsSkippedProductValidation` (the explicit-reporting-in-both-cases test) — all
+PASS.
+
+T4/scope-drift check: grepped for `CapacityMode`/`HTTPMaxInFlight` enforcement logic anywhere this
+story's implementation touches; the only hit repo-wide is `internal/cli/scaffold_test.go:528`, a
+pre-existing scaffold-template string assertion unrelated to this story's changes. `implementation.md`
+line 29/108 explicitly states DX-07 T4 was left out of scope and no task attempted it — confirmed, no
+drift found.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS. AC-W04-E04-S003-01 through -03 are all satisfied by real, passing tests; the model-hash
+contingency is honestly recorded rather than silently claimed; no T4 scope drift found.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W04-E04-S003-001 (AC-01, stale-migration 503), EV-W04-E04-S003-002 (AC-02, full-readiness-payload),
+EV-W04-E04-S003-003 (AC-03, config-doctor discovery) — confirmed against the codebase by this review;
+see `evidence/index.md` for the pre-existing record and update it accordingly.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local Postgres via testkit
+(`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`) for AC-01/
+AC-02; no DB needed for AC-03 (`internal/cli` unit tests).
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+No AC-blocking findings. This reverses the prior verification pass's `unsupported-by-evidence`
+classification (which was a time-budget limitation, not a defect finding) — the implementation is
+real, tested, and matches the story's own acceptance criteria including the honest model-hash
+contingency.
 
 ### Retest status
 
-*Not yet executed.*
+Not required — all cited tests pass on first run against the current working tree.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept**. Execution commands:
+```
+DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable \
+  go test ./app/... -run 'TestIntegrationMigrationCurrencyCheckPassesWhenCurrent|TestIntegrationMigrationCurrencyCheckFailsWhenStale' -count=1 -v
+go test ./internal/cli/... -run 'TestConfigDoctorDiscoversProductRootFromNestedSubdir|TestConfigDoctorDiscoversProductRootFromOutsideRepo|TestConfigDoctorReportsSkippedProductValidation' -count=1 -v
+```
+Result: both `ok` — app package 3.697s, internal/cli package 1.573s; all 5 named tests PASS.
 
 ## Deviations Record
 

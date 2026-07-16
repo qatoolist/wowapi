@@ -11,6 +11,20 @@ changes to it require a new major version.
 
 ## [Unreleased]
 
+### Completed (2026-07-16)
+- Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.
+- Authorization membership verification: made fail-closed for any `PrincipalStore` implementation (H-3), closing the silent-skip contract gap in SEC-01; independently re-verified.
+- Tamper-matrix, tracing, and safety test coverage added and independently reviewed (webhook Envelope tamper matrix now 5/5 fields; auth fail-closed regression tests).
+- Ledger truth-reconciliation completed and independent review gates executed across Waves 00–04 and 06 (`review-gate-2026-07-16.md` records); statuses normalized to the documented status-model vocabulary.
+- W07 evidence re-pinned at HEAD.
+
+### Fixed
+- Benchmark suite optimization: eliminated O(n²) setup and corrected empty-map measurement in sweep benchmarks, reducing test suite overhead.
+
+### Infrastructure
+- CI workflow improvements: path-scoped benchmarks on PRs, merge_group support for GitHub queue, nightly sweep jobs for recurring tasks.
+- GitHub Actions dependencies: bumped cache action 4.3.0 → 6.1.0 and minor-patch versions for workflow actions.
+
 ## [1.1.0] — 2026-07-10
 
 ### Added

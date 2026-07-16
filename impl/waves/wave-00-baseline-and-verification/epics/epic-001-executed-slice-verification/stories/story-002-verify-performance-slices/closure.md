@@ -58,21 +58,23 @@ W07-E02-S002.
 
 ## Reviewer conclusion
 
-Worker conclusion (W00E01S002): all three ACs proven; two accepted deviations recorded
-(`deviations.md` DEV-01 concurrent load, DEV-02 fail-first check method); no production file
-modified. Independent reviewer conclusion pending — acceptance authority to confirm the evidence
-proves the criteria per mandate §7.
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Worker conclusion
+(W00E01S002): all three ACs proven; two accepted deviations recorded (`deviations.md` DEV-01
+concurrent load, DEV-02 fail-first check method); no production file modified.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
 Framework architecture lead (per wave-level `wave.md` "Acceptance authority" — role-based owner, no
-named human DRI assigned yet). Conductor review gate pending.
+named human DRI assigned yet).
 
 ## Closure date
 
-Execution closed 2026-07-13; story closure (acceptance) pending review.
+2026-07-16 — accepted per review-gate-2026-07-16.md. Execution closed 2026-07-13.
 
 ## Final status
 
-`ready-for-review`. May move to `accepted` only after the acceptance authority independently
-confirms the evidence — per mandate §7, not solely because all tasks are marked `done`.
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

@@ -38,3 +38,14 @@ Trivy (local homebrew; CI pins trivy-action v0.36.0); reviewer: pending independ
 | EV-W01-E01-S003-002 | security-scan report | T002 | AC-…-02 | `trivy fs --scanners license .` (pristine HEAD copy; CI job adds severity CRITICAL,HIGH) | 70 dep licenses enumerated, 0 CRITICAL/HIGH | produced (same CI-run supersession plan) | `logs/trivy-license-local-report.txt` |
 | EV-W01-E01-S003-003 | CI execution record + audit note | T004 | AC-…-03 | `gh run list/view --workflow=ci.yml --event=schedule` + file-chain inspection | Scheduled run 29229288699 success; seed-replay step observed executing | produced | `logs/nightly-fuzz-observed-run.log` + `../artifacts/nightly-fuzz-confirmation.md` |
 | EV-W01-E01-S003-004 | execution log (fail-before/pass-after) | T003 | AC-…-04 | `.githooks/pre-push` under 4 env scenarios (see `verification.md`) | before: silent pass w/ skips; after: loud fail w/o DB, pass w/ DB, loud opt-out | produced | `logs/prepush-fail-before-silent-pass.log`, `logs/prepush-after-nodb-loud-fail.log`, `logs/prepush-after-withdb-pass.log`, `logs/prepush-after-optout-pass.log` |
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Spot-checked; gap CONFIRMED still open. Re-examined `.github/workflows/ci.yml` (go mod verify step present, line 189-190) and this repo's live state: the working tree remains uncommitted/unpushed as of 2026-07-16 (git status shows the wave's closure-report.md itself still modified, never pushed), so the go-mod-verify CI step and Trivy license scanner have STILL never executed in actual CI — the same gap the autopsy found on 2026-07-13 persists. EV-W01-E01-S003-001/002's 'produced (superseded-by-CI-run planned as retested after conductor push)' status is honest and explicit (satisfies the evidence-policy carry-forward rationale-note requirement — this is not a silent carry-forward), but AC-W01-03's CI-execution leg is not yet proven. Recommend accept-with-conditions: accept the local-run + actionlint evidence as sufficient for the non-CI-execution acceptance criteria, but keep AC-W01-03 in a 'retested-pending' state until an actual CI run is recorded as a new evidence record referencing this one as superseded, per evidence-policy.md's revision-pinning rule.
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S001-001-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "supersedes": null,
+  "addendum_to": "EV-W07-E01-S001-001",
+  "reason": "Original evidence pinned base commit SHA 1626b11, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this record re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original record.",
+  "original_evidence_file": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-001-request-benchmarks-real-pg/evidence/benchmarks/EV-W07-E01-S001-001.json",
+  "original_pinned_commit": "1626b11",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "DATABASE_URL=<local> WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 go test ./perf/requestbench -run '^(TestReferenceV1FullFieldContract|TestWorkloadFixtureDefinesCompleteMatrix|TestPublicationRequiresCompleteMatrixAndAttribution|TestPublicationPathIsRepositoryRelative|TestReferenceWarmupDurationConfiguration|TestEachProfileHasARepresentativeQueryPlanHash|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestMatrixContractHasSixVariantsPerProfile|TestRealPostgresRequestProfileMatrix)$' -count=1 -v",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.14 local Docker service (wowapi-postgres-1)"
+  },
+  "date_time": "2026-07-16T09:00:00Z",
+  "result": "PASS: all 12 named contract/matrix tests pass at current HEAD; 78-field reference contract unchanged.",
+  "result_tail": "    --- PASS: TestRealPostgresRequestProfileMatrix/async-enqueue/warm/tenants-10 (0.04s)\n    --- PASS: TestRealPostgresRequestProfileMatrix/async-enqueue/warm/tenants-100 (0.34s)\n=== RUN   TestSeedMatchesReferenceDatasetCardinality\n--- PASS: TestSeedMatchesReferenceDatasetCardinality (4.67s)\n=== RUN   TestSeedGrantsRealPostgresAuthorization\n--- PASS: TestSeedGrantsRealPostgresAuthorization (3.47s)\n=== RUN   TestCostAttributionIsNonOverlapping\n--- PASS: TestCostAttributionIsNonOverlapping (5.62s)\n=== RUN   TestSQLCountExcludesWarmupAndPriorBatches\n--- PASS: TestSQLCountExcludesWarmupAndPriorBatches (4.49s)\n=== RUN   TestMatrixContractHasSixVariantsPerProfile\n--- PASS: TestMatrixContractHasSixVariantsPerProfile (0.00s)\n=== RUN   TestReferenceWarmupDurationConfiguration\n--- PASS: TestReferenceWarmupDurationConfiguration (0.00s)\n=== CONT  TestReferenceV1FullFieldContract\n=== CONT  TestWorkloadFixtureDefinesCompleteMatrix\n--- PASS: TestWorkloadFixtureDefinesCompleteMatrix (0.00s)\n--- PASS: TestReferenceV1FullFieldContract (0.00s)\nPASS\nok  \tgithub.com/qatoolist/wowapi/perf/requestbench\t29.577s",
+  "raw_output_checksum_sha256": "f68ce456085b0f29bf3ddb374d899131ee24c1604541e4534fabb8ebcbf07932",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

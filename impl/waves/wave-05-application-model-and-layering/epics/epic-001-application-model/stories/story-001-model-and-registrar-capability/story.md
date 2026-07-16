@@ -265,3 +265,16 @@ D-03), removing the largest source of ambiguity a story like this would otherwis
 ## Plan
 
 See `plan.md`.
+
+## Note (autopsy remediation R-1, 2026-07-16)
+
+Status is unchanged — this story remains genuinely unexecuted as tracked (`planned`, all tasks
+`todo`). However, the implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, §4 row W05-E01-S001, independent
+verdict **contradictory**) found that related code has, in substance, already landed outside this
+story's execution: a real `port.Key[T]` API and AR-01/AR-02 code (`kernel/appmodel`,
+`kernel/port`, ~765 LOC, tested) exist but are built-but-not-wired (autopsy H-6), and the FBL-01
+kernel re-home this programme's W05-E05 covers was executed on `main` while W05 tracking stayed
+`planned` (autopsy H-7). See deviation **DEV-PROG-002** in
+`impl/tracking/programme-deviations.md` for the full record. — autopsy remediation R-1,
+2026-07-16.

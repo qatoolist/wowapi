@@ -2,7 +2,7 @@
 id: W03-E01-S002
 type: story
 title: Capacity selection and privileged-session resolver
-status: ready
+status: accepted
 wave: W03
 epic: W03-E01
 owner: unassigned

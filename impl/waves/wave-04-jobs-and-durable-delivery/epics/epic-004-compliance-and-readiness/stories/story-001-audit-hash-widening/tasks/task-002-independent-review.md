@@ -40,7 +40,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -194,39 +194,58 @@ until its findings are resolved.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS. Ran:
+```
+DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable \
+  go test ./kernel/audit/... -run TestIntegrationAuditChainDetectsPerFieldTampering -count=1 -v
+```
+Result: PASS — 10 subtests, one per persisted field (id, occurred_at, actor_id, actor_kind,
+impersonator_id, request_id, action, entity_type, entity_id, field, old_value, new_value, reason,
+metadata, tx_id, seq, prev_hash), each independently confirming tampering that field is caught by the
+widened hash. Confirmed `kernel/audit/audit.go` implements a genuine `hash_version` discriminator
+(v1/v2 branching) with fail-closed handling of an unrecognized version (AC-02). Confirmed migration
+`00016*.sql`'s header comment now reads "single processor per operation; multi-worker fan-out is
+added later," correcting the previously false "safe across replicas" claim (this is actually
+W04-E03-S001's AC, cross-checked here for consistency — both pass).
 
 ### Evidence identifier
 
-*Not yet executed.*
+Reuses `kernel/audit/audit_test.go`'s `TestIntegrationAuditChainDetectsPerFieldTampering`; no new
+artifact produced by this spot-check.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local Postgres via testkit
+(`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`).
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+No AC-blocking findings. `closure.md`'s Final status for this story is filled in ("closed-pending-
+review — implementation and evidence complete; awaiting mandatory independent review"), which this
+review record now provides. Note: `closed-pending-review` is not a value in the documented status
+vocabulary — same normalization recommendation as W04-E04-S002.
 
 ### Retest status
 
-*Not yet executed.*
+Retested 2026-07-16; PASS, no regression.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept**, with the same status-token normalization note as W04-E04-S002 (replace
+`closed-pending-review` with a defined status-vocabulary value).
 
 ## Deviations Record
 

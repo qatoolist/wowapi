@@ -2,7 +2,7 @@
 id: W06
 type: wave
 title: Contracts, compatibility, and release gating
-status: planned
+status: in-progress
 owner: unassigned
 reviewer: unassigned
 priority: critical
@@ -254,3 +254,15 @@ updated to reflect `accepted` status; REL-03b's three blocked legs and W06-E03-S
 human-gated activation are each explicitly recorded as either resolved or as an accepted, tracked,
 non-silent open item — this wave must not be closed by silently reclassifying a genuinely blocked item
 as done.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — corrected from the stale `planned` front matter, which had not been
+touched since 2026-07-12 despite substantial story-level activity. Honest summary per
+`review-gate-2026-07-16.md`: 8 of 10 stories independently reviewed 2026-07-16. E02-S003 and
+E03-S002 remain blocked (E02-S003 on W05 dependencies; E03-S002 on the human DEC-Q10 gate).
+E01-S001 is verified-not-accepted, pending W05's AR-01/AR-02 stories reaching `accepted`.
+E04-S002 is accepted scoped to T5 only — T4 remains blocked on W05-E03's manifest work reaching
+`accepted`. No story's claim was found false or overstated once evidence was examined.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

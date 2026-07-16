@@ -217,3 +217,14 @@ re-checked by this story's own review task.
 ## Plan
 
 See `plan.md`.
+
+## Note (autopsy remediation R-1, 2026-07-16)
+
+Status is unchanged — this story remains genuinely unexecuted as tracked (`planned`, all tasks
+`todo`). However, the implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, §4 row W05-E05-S001, independent
+verdict **contradictory**) found that the FBL-01 kernel re-home this story describes is, in
+substance, ALREADY DONE AND WIRED on `main`: all nine packages are under `foundation/` with shims
+in place, executed in commit `e8cda6b` entirely outside this story's tracked execution (autopsy
+H-7). See deviation **DEV-PROG-002** in `impl/tracking/programme-deviations.md` for the full
+record. — autopsy remediation R-1, 2026-07-16.

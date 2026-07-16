@@ -2,7 +2,7 @@
 id: W03-E01-S003
 type: story
 title: Assurance freshness and credential-scheme distinction
-status: accepted
+status: verified
 wave: W03
 epic: W03-E01
 owner: unassigned

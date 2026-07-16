@@ -2,7 +2,7 @@
 id: W03-E05
 type: epic
 title: Workflow privileged completion
-status: planned
+status: accepted
 wave: W03
 owner: unassigned
 reviewer: unassigned
@@ -125,3 +125,9 @@ directive-sanctioned outcomes.
 
 W03-E05-S001 reaches `accepted`; AC-W03-E05-01 through AC-W03-E05-04 above are all satisfied;
 `closure-report.md` for this epic is completed with reviewer conclusion and acceptance date.
+
+## Status update (2026-07-16)
+
+`status: accepted` — W03-E05-S001 accepted.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

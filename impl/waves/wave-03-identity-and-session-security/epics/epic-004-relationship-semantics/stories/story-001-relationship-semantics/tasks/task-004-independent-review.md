@@ -2,7 +2,7 @@
 id: W03-E04-S001-T004
 type: task
 title: Independent review
-status: todo
+status: done
 parent_story: W03-E04-S001
 owner: unassigned
 created_at: 2026-07-12
@@ -44,7 +44,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -111,118 +111,102 @@ Not applicable — a review-only task has no code to roll back.
 
 ## Implementation Record
 
-*Not yet implemented.*
+Review-only task. Reviewed `kernel/relationship/relationship.go:55-160` (`Checker.Has`,
+subject-kind resolution, fail-closed default), `kernel/relationship/relationship_relate_test.go`
+(mutation-governance tests), against `../plan.md`/`../deviations.md`.
 
 ### What was actually implemented
 
-*Not yet implemented.*
-
-### Components changed
-
-*Not applicable — review-only task.*
+Not applicable — review-only task; implementation is T001-T003's.
 
 ### Files changed
 
-*Not applicable.*
-
-### Interfaces introduced or changed
-
-*Not applicable.*
-
-### Configuration changes
-
-*Not applicable.*
-
-### Schema or migration changes
-
-*Not applicable.*
-
-### Security changes
-
-*Not applicable.*
-
-### Observability changes
-
-*Not applicable.*
+Not applicable — review-only task; files reviewed: `kernel/relationship/relationship.go`,
+`kernel/relationship/relationship_test.go`, `kernel/relationship/relationship_relate_test.go`.
 
 ### Tests added or modified
 
-*Not applicable — this task reviews existing tests, it does not add new ones.*
+None added by this review task; existing tests re-run against current HEAD + working tree with a
+live DB.
 
 ### Commits
 
-*Not yet implemented.*
-
-### Pull requests
-
-*Not yet implemented.*
-
-### Implementation dates
-
-*Not yet implemented.*
-
-### Technical debt introduced
-
-*None anticipated.*
-
-### Known limitations
-
-*Not yet implemented.*
-
-### Follow-up items
-
-*Not yet implemented.*
+Reviewed against `HEAD 43b6e12 + remediation working tree 2026-07-16`.
 
 ### Relationship to the approved plan
 
-*Not applicable — this task has no `plan.md` implementation strategy beyond the review checklist
-above.*
+Implementation matches `../plan.md`; no undocumented divergence found in `../deviations.md`.
 
 ## Verification Record
 
 | Acceptance criterion | Verification method | Required environment | Expected result | Evidence type | Reviewer |
 |---|---|---|---|---|---|
-| AC-W03-E04-S001-01 through -03 | Independent review checklist per mandate §14 | N/A (documentation/code review) | No open finding, or every finding resolved/accepted | review report | unassigned |
+| AC-W03-E04-S001-01 through -03 | Independent review checklist per mandate §14 + targeted `go test` re-run (DB-backed) | Local dev, DB up (`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`), Go per `go.mod` | All named tests pass; checklist items 1-6 confirmed | review report + test output | Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3) |
 
 ### Actual result
 
-*Not yet executed.*
+`go test ./kernel/relationship/... -run 'TestIntegrationRelationshipHasPartySubject|TestIntegrationRelationshipSubjectKindMatrix|TestIntegrationRelateRequiresActor|TestUnitResolveSubjectUnsupportedKind|TestIntegrationRelateAttributesAndVersions|TestIntegrationRelateWritesAudit' -count=1 -v`
+(DB up): all 6 named tests PASS, including the 3-case `TestIntegrationRelationshipSubjectKindMatrix`
+subtest matrix (capacity-subject, party-subject, resource-subject-not-actor-resolvable).
+Checklist:
+1. W03-E01 acceptance gate: this story's implementation depends on `authz.Actor` shapes finalized by
+   W03-E01 (S001-S003); code inspection confirms `relationship.go` consumes the stabilized `Actor`
+   struct fields (`UserID`, `TenantID`, `CapacityID`) without referencing any field removed/renamed
+   by the S001 remediation. No evidence the gate was skipped.
+2. All three ACs backed by named, passing tests (AC-01: `HasPartySubject`; AC-02:
+   `SubjectKindMatrix` + `TestUnitResolveSubjectUnsupportedKind`; AC-03: `RelateRequiresActor`,
+   `RelateAttributesAndVersions`, `RelateWritesAudit`). Confirmed.
+3. T3's actor-attribution wiring: reviewed `relationship.go`'s `Relate` mutation path — attribution
+   is sourced from the caller-supplied `authz.Actor`, not a duplicate attribution mechanism; no
+   independent re-implementation of DATA-06 T2's mechanism found in this story's diff scope.
+4. Cache-invalidation sub-criterion: honestly recorded as deferred-linked to W05-E04-S002 in both
+   `story.md`'s risk register and this closure's "Accepted risks"/"Deferred work" sections — not
+   silently dropped or silently assumed complete. Confirmed.
+5. Fail-closed default: `TestUnitResolveSubjectUnsupportedKind` PASS — an unenumerated
+   `subject_kind` value genuinely produces `KindForbidden`/`unsupported_subject_kind`, not a silent
+   pass-through. Confirmed.
 
 ### Pass or fail
 
-*Not yet executed.*
+Pass.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W03-E04-S001-004 (this review report).
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD `43b6e12` + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+Local dev; DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable;
+Go per repo `go.mod`.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3). This reviewer did not implement T001-T003.
 
 ### Findings
 
-*Not yet executed.*
+None open. Also correcting a documented dispute from the autopsy's extraction JSON, which had
+mis-marked this story's T001-T003 as `todo` — closure.md and the actual code both correctly show
+T001-T003 as `done`; that was an extraction artifact, not a story defect.
 
 ### Retest status
 
-*Not yet executed.*
+Initial independent review for this task; all cited tests re-run against current HEAD + working
+tree with a live DB, not merely re-cited from a prior snapshot.
 
 ### Final conclusion
 
-*Not yet executed.*
+Acceptance criteria AC-W03-E04-S001-01 through -03 satisfied. No open finding. Recommend the story
+proceed toward `accepted` (conductor adjudicates final status).
 
 ## Deviations Record
 

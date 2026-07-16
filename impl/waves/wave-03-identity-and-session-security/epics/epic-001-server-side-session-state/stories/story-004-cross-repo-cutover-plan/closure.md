@@ -2,9 +2,9 @@
 id: CLOSURE-W03-E01-S004
 type: closure-record
 parent_story: W03-E01-S004
-status: draft
+status: implemented
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 ---
 
 # Closure — W03-E01-S004
@@ -51,6 +51,15 @@ from the plan or is delayed.
 ## Reviewer conclusion
 
 All three plan documents satisfy their acceptance criteria. No product code was introduced.
+Corrected 2026-07-16 per `review-gate-2026-07-16.md`: the wowapi-side content is confirmed real,
+substantive, and internally consistent, but the wave's own closure condition requires review and
+acceptance by both a wowapi-side and a wowsociety-side reviewer — the wowsociety-side reviewer
+sign-off is unverifiable from this repo (no wowsociety repo state is visible from this dispatch,
+and `story.md` itself carries `owner: unassigned`/`reviewer: unassigned`). Acceptance is deferred
+until that sign-off is recorded, or the story's acceptance criteria are formally narrowed to
+wowapi-side authorship only via a recorded deviation.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -58,8 +67,10 @@ product-security lead (per epic-level acceptance convention).
 
 ## Closure date
 
-2026-07-13.
+Not yet — acceptance deferred pending wowsociety-side reviewer sign-off (see Reviewer conclusion
+above). Story-side plan documents completed 2026-07-13.
 
 ## Final status
 
-accepted.
+implemented — plan documents complete and internally consistent; acceptance deferred pending the
+cross-repo reviewer sign-off condition above.

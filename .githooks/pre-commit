@@ -4,6 +4,19 @@
 # and a lint of only the CHANGED code. Bypass in an emergency: git commit --no-verify
 set -e
 
+# Secret scan of the staged diff (ALL file types — docs/evidence files leak too,
+# not just code). Mirrors CI's blocking gitleaks job; honors .gitleaksignore.
+if command -v gitleaks >/dev/null 2>&1; then
+	gitleaks git --staged --pre-commit --redact --exit-code=1 >/dev/null 2>&1 || {
+		echo "pre-commit: gitleaks found a potential secret in the staged changes:"
+		gitleaks git --staged --pre-commit --redact --exit-code=1 -v || true
+		echo "pre-commit: false positive? Add its fingerprint to .gitleaksignore (see existing entries)."
+		exit 1
+	}
+else
+	echo "pre-commit: gitleaks not found — 'brew install gitleaks'. Skipping secret scan (CI will still block)."
+fi
+
 changed=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.go$' || true)
 [ -z "$changed" ] && exit 0
 

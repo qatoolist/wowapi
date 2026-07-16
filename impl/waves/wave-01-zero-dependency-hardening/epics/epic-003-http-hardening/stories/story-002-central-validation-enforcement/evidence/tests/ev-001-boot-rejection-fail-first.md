@@ -66,3 +66,14 @@ FAIL
 --- PASS: TestValidatedHandlerPassesValidDTOToBusinessLogic (0.00s)
 ok  	github.com/qatoolist/wowapi/kernel/httpx	0.247s
 ```
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Verified (existence + autopsy corroboration). Autopsy confirmed `EnforceRouteContracts` wired into `kernel/httpx/router.go` (3 grep hits) matching this story's claim; file present with claimed shape. Not independently re-run in this pass.
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

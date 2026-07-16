@@ -2,7 +2,7 @@
 id: W03-E03-S001
 type: story
 title: Bind webhook replay and dedup to provider-authenticated data
-status: ready
+status: accepted
 wave: W03
 epic: W03-E03
 owner: unassigned
@@ -243,3 +243,16 @@ coordination is expected to remain open against this story.
 ## Plan
 
 See `plan.md`.
+
+## Correction note (autopsy remediation R-1, 2026-07-16)
+
+This story's `story.md` front matter already honestly read `status: ready` (not `accepted`), but
+its `closure.md` claimed `status: accepted`/`Final status: accepted` while its own body recorded
+task T005 (independent review) as `pending` and the reviewer conclusion as "pending completion of
+T005" — a false completion claim (autopsy finding **C-3**,
+`impl/reports/implementation-autopsy-report-2026-07-16.md`). `closure.md` has been corrected to
+`implemented` (implementation claimed complete, per `governance/status-model.md` §7.2) to match its
+own body; `story.md` status is unchanged (already honest). Separately, the tamper-matrix gap the
+autopsy identified (H-9: only 3 of 5 required manipulated-field cases covered) was remediated
+2026-07-16 in the working tree (`foundation/webhook/tamper_matrix_test.go`); an independent review
+of this story is being scheduled. — autopsy remediation R-1, 2026-07-16.

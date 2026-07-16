@@ -15,4 +15,8 @@ updated_at: 2026-07-13
 | EV-W02-E01-S002-002 | integration-test report (named interrupted/resumed backfill test, `DATA-09/backfill-interrupt-resume/`) | W02-E01-S002-T002 | AC-W02-E01-S002-02 | `DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable WOWAPI_REQUIRE_DB=1 go test ./kernel/migration/... -run 'TestBackfillInterruptedAndResumed' -count=1 -v` | 1626b1132622aacc3e85475e4190e16a457ad1f6 | pass | produced |
 | EV-W02-E01-S002-003 | artifact-schema test report | W02-E01-S002-T003 | AC-W02-E01-S002-03 | `DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable WOWAPI_REQUIRE_DB=1 go test ./kernel/migration/... -run 'TestValidationArtifactSchema' -count=1 -v` | 1626b1132622aacc3e85475e4190e16a457ad1f6 | pass | produced |
 
-All evidence outputs are captured in `evidence/tests/`.
+| EV-W02-E01-S002-004 | review report (independent review, task-004, re-verifying AC-01/AC-02/AC-03 with row-level idempotency assertion specifically checked) | W02-E01-S002-T004 | AC-W02-E01-S002-01, AC-W02-E01-S002-02, AC-W02-E01-S002-03 | `DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable go test ./kernel/migration/... -run 'TestExpandPhaseOldReaderCompatibility\|TestBackfillInterruptedAndResumed\|TestValidationArtifactSchema' -v -count=1` | HEAD 43b6e12 + remediation working tree 2026-07-16 | pass | produced |
+
+All evidence outputs are captured in `evidence/tests/`. Reviewer for EV-004: Independent review
+agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+Environment: macOS (darwin/arm64), go1.26.5.

@@ -5,6 +5,42 @@
 # (The authoritative DB-backed gate runs in CI via `make ci-container`.)
 set -e
 
+# Capture the refs being pushed BEFORE anything else can touch stdin.
+# Format per line: <local ref> <local sha> <remote ref> <remote sha>
+push_refs=$(cat)
+
+# Secret scan of the outgoing commits — mirrors CI's blocking gitleaks job
+# (same detect + --no-merges --first-parent range semantics, same .gitleaksignore),
+# so a leak is caught here instead of failing the pipeline after push.
+if command -v gitleaks >/dev/null 2>&1; then
+	zero=0000000000000000000000000000000000000000
+	printf '%s\n' "$push_refs" | while read -r local_ref local_sha remote_ref remote_sha; do
+		[ -z "$local_sha" ] || [ "$local_sha" = "$zero" ] && continue # branch deletion
+		if [ "$remote_sha" = "$zero" ]; then
+			# New remote branch: scan everything not already on origin/main.
+			base=$(git merge-base origin/main "$local_sha" 2>/dev/null || true)
+		else
+			base="$remote_sha"
+		fi
+		if [ -z "$base" ]; then
+			echo "pre-push: WARNING — cannot resolve a scan base for $local_ref (no origin/main?): secret scan SKIPPED for this ref."
+			echo "pre-push:   run 'make secret-scan' for a full-range scan (CI will still block)."
+			continue
+		fi
+		if [ -n "$base" ]; then
+			echo "pre-push: gitleaks ($base..$local_sha)"
+			gitleaks detect --redact --exit-code=1 \
+				--log-opts="--no-merges --first-parent $base..$local_sha" || {
+				echo "pre-push: FAIL — gitleaks found a potential secret in the outgoing commits."
+				echo "  False positive? Add its fingerprint to .gitleaksignore (see existing entries)."
+				exit 1
+			}
+		fi
+	done || exit 1
+else
+	echo "pre-push: gitleaks not found — 'brew install gitleaks'. Skipping secret scan (CI will still block)."
+fi
+
 echo "pre-push: go vet ./..."
 go vet ./...
 

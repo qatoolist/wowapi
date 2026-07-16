@@ -25,5 +25,9 @@ The six directive-named drills covered are:
 5. Application rollback after switch — `TestSwitchRollbackAfterSwitch`
 6. Forward recovery from every failed phase + delayed contract gate — `TestContractGateAndForwardRecovery`
 
+| EV-W02-E01-S003-006 | review report (independent review, task-006, re-verifying AC-01..04 incl. previously-unexercised `TestPartialFleetRollout`) | W02-E01-S003-T006 | AC-W02-E01-S003-01, AC-W02-E01-S003-02, AC-W02-E01-S003-03, AC-W02-E01-S003-04 | `DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable go test ./kernel/migration/... -run 'TestCanaryNAndNMinusOne\|TestSwitchRollbackAfterSwitch\|TestContractGateAndForwardRecovery\|TestPartialFleetRollout' -v -count=1` | HEAD 43b6e12 + remediation working tree 2026-07-16 | pass (CI end-to-end pipeline run not independently re-executed, see task-006 Findings) | produced |
+
 All evidence outputs are captured in `evidence/tests/` and `evidence/pipeline/`.
 The CI drill pipeline definition is `.github/workflows/migration-drills.yml`.
+Reviewer for EV-006: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5
+conductor (autopsy remediation R-3). Environment: macOS (darwin/arm64), go1.26.5.

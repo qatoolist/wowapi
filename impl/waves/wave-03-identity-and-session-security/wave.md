@@ -2,7 +2,7 @@
 id: W03
 type: wave
 title: Identity and session security
-status: planned
+status: in-progress
 owner: unassigned
 reviewer: unassigned
 priority: critical
@@ -246,3 +246,13 @@ row updated to reflect `accepted` status; DEC-Q1 either resolved or explicitly r
 non-blocking for this wave's closure (per its own safe-default framing); PROD-04's coordination
 artifacts (E01-S004) reviewed and accepted by both a wowapi and a wowsociety-side reviewer, even
 though no wowsociety code change is made by this wave itself.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — 7 of 8 in-scope stories independently reviewed and accepted per
+`review-gate-2026-07-16.md`; E02/E03/E04/E05 all `accepted`. E01 remains `in-progress`: S001/S002
+accepted, S003 verified-pending-human (product-security-lead sign-off, DEF-07), S004 implemented
+(cross-repo wowsociety sign-off unverifiable in-repo, acceptance deferred). Wave cannot reach
+`accepted` until E01's S003/S004 resolve.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

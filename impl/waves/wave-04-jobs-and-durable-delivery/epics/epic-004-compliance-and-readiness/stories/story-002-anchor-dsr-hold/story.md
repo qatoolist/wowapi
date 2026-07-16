@@ -2,7 +2,7 @@
 id: W04-E04-S002
 type: story
 title: External anchoring, DSR export artifact, central legal-hold, and explicit per-class status
-status: closed-pending-review
+status: accepted
 wave: W04
 epic: W04-E04
 owner: W03-E02-E03-E04-E05-Rerun

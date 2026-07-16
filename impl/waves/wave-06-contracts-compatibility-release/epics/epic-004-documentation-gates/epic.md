@@ -2,7 +2,7 @@
 id: W06-E04
 type: epic
 title: Documentation gates
-status: planned
+status: in-progress
 wave: W06
 owner: unassigned
 reviewer: unassigned
@@ -112,3 +112,13 @@ None. AR-05 carries no D-0N architecture-decision dependency in `requirement-inv
 Both stories reach `accepted` (S002's own closure is gated on W05-E03 having reached `accepted` first,
 per its own cross-wave dependency); AC-W06-E04-01 through AC-W06-E04-04 above are all satisfied;
 `closure-report.md` for this epic is completed with reviewer conclusion and acceptance date.
+
+## Status update (2026-07-16)
+
+`status: in-progress` — S001 (doc-example compile gate) accepted (artifact-presence level). S002
+(generated docs and labels) accept-with-conditions: T5 (labeling/lint) is fully implemented,
+evidenced, and reviewed with no W05 dependency; T4 (generate reference/API docs from AR-03's
+manifest) remains open/blocked pending W05-E03 reaching `accepted` — see this story's own
+`closure.md` scoping note. Epic cannot reach `accepted` while S002's T4 remains open.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -4,7 +4,7 @@ type: register
 title: Change log — programme-structure changes (append-only)
 status: active
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 derived: false
 ---
 
@@ -17,6 +17,71 @@ implementation progress — that lives in each story's own files and rolls up vi
 `status-register.md`.
 
 Reverse-chronological (newest first).
+
+## 2026-07-16 — Conductor adjudication applied per the six review-gate-2026-07-16.md records
+
+Conductor adjudication (Fable 5), per review-gate-2026-07-16.md records. Applied the conductor's
+final status adjudications across Waves 00, 01, 02, 03, 04, and 06 following the independent
+review gates executed 2026-07-16 (`review-gate-2026-07-16.md` under each wave's directory; W02 has
+no wave-level file of that name — its per-story independent-review task files, dated 2026-07-16,
+served as the basis instead, flagged as a conflict with the dispatch instructions rather than
+improvised). W00: all 6 stories accepted, including a conductor adjudication note for
+W00-E01-S001's AC-04/DEV-02 and a cross-reference from W00-E02-S001 to the coverage-floor
+supersession (DEV-PROG-001/DEC-PROG-001). W01: all 10 stories remain accepted; W01-E01-S003 gets a
+condition note (AC-W01-03's CI-execution leg outstanding) and a new technical-debt-register.md row
+(TD-005). W02: wave and all 5 epics and all 8 stories set `accepted`; the "8 edges" → "9 edges"
+count corrected in W02-E02-S002's closure.md and in `testkit/tenant_fk_cross_tenant_test.go`'s
+comment; W02-E03-S001's false "T006"/"W02ReviewGate" citation corrected. W03: mixed —
+E01-S001/S002 accepted, E01-S003 verified (not accepted, human sign-off gate — new
+`deferred-items-register.md` row DEF-07), E01-S004 downgraded accepted → implemented (cross-repo
+sign-off unverifiable), E02/E03/E04/E05-S001 accepted; wave and E02-E05 epics accepted, E01 epic
+in-progress, wave in-progress. W04: E01-S001/S002/S003 closure.md template sections filled and
+accepted; E02-S001 accepted (C-1 remediation reviewed and passed); E02-S002 stays planned; E04-S001/
+S002 `closed-pending-review` normalized to `accepted`; E04-S003 accepted; epic-002 in-progress,
+other epics accepted; wave and closure-report.md set/annotated `in-progress`. W06: wave-level
+roll-ups (wave.md, progress.md, acceptance.md, closure-report.md) corrected from
+`planned`/"not begun" to `in-progress` with an honest summary; W06-E04-S002 closure.md given a
+scoping note (T5-only acceptance; T4/AC-01 open pending W05-E03); all 4 epics set `in-progress`
+per their stories. `CHANGELOG.md` `[Unreleased]` remediation note updated from in-progress to
+completed.
+
+## 2026-07-16 — Autopsy remediation R-1: truth-reconciliation pass
+
+- Ref: `impl/reports/implementation-autopsy-report-2026-07-16.md` (independent implementation
+  autopsy of Waves 00-07; verdict: programme not complete, `e8cda6b`'s finalization claim
+  rejected). This entry records remediation R-1 (of R-1..R-10), the truth-reconciliation pass over
+  `impl/` tracking/governance/wave markdown — the gate for all further acceptance activity.
+- **False statuses reverted:** `W04-E02-S002` story.md/closure.md `accepted` → `planned` (C-2,
+  closure body already honestly said unimplemented); `W03-E03-S001` closure.md `accepted` →
+  `implemented` (C-3, story.md was already honestly `ready`); `W03-E02-S001` closure.md `accepted`
+  → `implemented` (H-5, self-review only); `W02` closure-report.md `accepted` → `verification`
+  (C-4, review gate falsely claimed — all 6 epic-level review tasks were `todo`); `W04` wave
+  closure-report.md `accepted` → `in-progress`, template body replaced with an honest interim
+  state summary (C-5); `W04-E02-S001` story.md/closure.md `accepted` → `implemented` (C-1 code
+  defect — webhook outbound I/O inside an open DB transaction — remediated 2026-07-16 in the
+  working tree, re-review pending).
+- **Template closures filled honestly (M-2):** `W04-E01-S001/S002/S003` and `W04-E02-S001/S002`
+  closure.md bodies given short current-state paragraphs reflecting the autopsy's §4 matrix
+  verdicts; story.md statuses left unchanged except `W04-E02-S001` (see above).
+- **W05 contradictory-tracking stories annotated, not re-statused:** `W05-E01-S001`,
+  `W05-E02-S001`, `W05-E03-S001`, `W05-E05-S001` each got a dated note recording that related code
+  landed outside their tracked execution (H-6/H-7), pointing to `DEV-PROG-002`.
+- **New deviation records:** `DEV-PROG-001` (coverage floor 90.0→84.0 silently lowered in
+  `e8cda6b`, H-1), `DEV-PROG-002` (FBL-01/AR-01/AR-02/authz_epoch executed outside W05's story
+  lifecycle, H-6/H-7), `DEV-PROG-003` (W02/W03/W04/W05 sequencing-gate bypasses, H-7),
+  `DEV-PROG-004` (commit `e8cda6b` message overclaims finalization, H-2) — full records in
+  `impl/tracking/programme-deviations.md`, summary rows in `impl/tracking/deviation-register.md`.
+- **New decision records (both `proposed`, human ratification pending):** `DEC-PROG-001` (interim
+  84.0% coverage floor acknowledged as a regression, ratchet plan to 90.0%), `DEC-PROG-002`
+  (disposition of AR-01/AR-02/SEC-04 deferred to the Wave 05 execution owner) — full records in
+  `impl/tracking/programme-decisions.md`, summary rows in `impl/tracking/decision-register.md`.
+- **Evidence-gap acknowledgments (H-4):** dated notes added to `W00`, `W01`, and `W06` wave
+  closure-report.md files stating the review gate outcome was claimed without a compliant evidence
+  record; re-review scheduled 2026-07-16. No reviews were fabricated to fill these gaps.
+- **Not done in this pass (explicitly out of scope for R-1):** `impl/tracking/status-register.md`
+  was not hand-edited (it is script-regenerated); no acceptance/closure activity was performed; no
+  Go code was changed as part of this pass (the C-1/H-9 code fixes referenced above were made
+  separately, outside R-1's own scope, and are only cross-referenced here).
 
 ## 2026-07-13 — W01 executed and accepted
 

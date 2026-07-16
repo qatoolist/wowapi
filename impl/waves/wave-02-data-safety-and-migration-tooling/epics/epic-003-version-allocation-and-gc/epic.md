@@ -168,3 +168,11 @@ The story reaches `accepted` (satisfying its own `closure.md`); AC-W02-E03-01 th
 above are all satisfied; `closure-report.md` for this epic is completed with reviewer conclusion and
 acceptance date; RISK-W02-E03-001 (counter-row contention as the new serialization point) is recorded
 with its measured lock-wait evidence, not silently dropped at closure.
+
+## Status update (2026-07-16)
+
+`status: accepted` (reconfirmed). Independent review executed 2026-07-16 superseded the prior
+uncorroborated `W02ReviewGate` citation and the story's false "T006 complete" claim — no dedicated
+review task ever existed for this story by design.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

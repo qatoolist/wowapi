@@ -13,3 +13,14 @@
 - **Reviewer**: pending — W01 wave review gate (conductor)
 - **Result**: `TestValidatedHandlerRejectsInvalidDTOWith400FieldErrors` posts `{"name":""}` (violating `validate:"required"`) to a route registered through `httpx.ValidatedHandler` with `RouteMeta.Request: createWidgetRequest{}` and enforcement ON: asserts HTTP 400, non-empty `errors` array with `field == "name"` (the existing KindValidation problem-details shape), and that the business handler never ran. Fail-first: with the adaptor stubbed to skip validation (exactly the defect class FBL-08 closes), this test was RED (stage 2 log in EV-W01-E03-S002-001); it went green only when BindAndValidate was actually wired. `TestValidatedHandlerPassesValidDTOToBusinessLogic` covers the happy path (also red under the stub — the stub passed a zero value, proving the test detects a non-binding adaptor).
 - **Log**: see EV-W01-E03-S002-001 stages 2–3 (same runs).
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Verified (existence + autopsy corroboration). Same disposition as ev-001 in this story.
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

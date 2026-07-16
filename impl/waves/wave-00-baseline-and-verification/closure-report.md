@@ -75,3 +75,16 @@ Framework architecture lead (role-based); exercised via the conductor's acceptan
 ## Final status
 
 `accepted`.
+
+## Evidence gap acknowledged (autopsy remediation R-1, 2026-07-16)
+
+This report's "Reviewer conclusion" above claims "independent review gate passed" (W00ReviewGate),
+but the implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, finding **H-4**) found no registered
+evidence artifact anywhere for `W00ReviewGate` — the gate outcome was claimed with no compliant
+evidence record (per `governance/evidence-policy.md`, a record missing required fields "must not
+be cited as proof"). This note acknowledges the gap rather than fabricating a review record to
+fill it. Re-review is scheduled 2026-07-16. Status is left `accepted` pending that re-review —
+this is a documentation gap, not a reversal of the underlying W00 findings, which the autopsy
+independently verified 4 of 6 stories as genuinely `verified`/`implemented-incomplete`. — autopsy
+remediation R-1, 2026-07-16.

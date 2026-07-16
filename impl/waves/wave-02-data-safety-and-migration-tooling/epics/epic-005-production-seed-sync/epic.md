@@ -2,7 +2,7 @@
 id: W02-E05
 type: epic
 title: Production seed-sync
-status: planned
+status: accepted
 wave: W02
 owner: unassigned
 reviewer: unassigned
@@ -175,3 +175,12 @@ acceptance date; RISK-W02-004's outcome is recorded (design landed within antici
 scope expansion was split out per its contingency — either way documented, not silent); the
 wowsociety backport (PROD-03) and PF-9 register closure (FBL-03) pointers are recorded for their
 owning tracks, not silently dropped.
+
+## Status update (2026-07-16)
+
+`status: accepted` — S001 independently reviewed and accepted, superseding this epic's prior
+`planned` state. See
+`stories/story-001-prod-seed-sync-path/evidence/007-independent-review-remediation/review-report.md`
+(2026-07-16 review record is the operative acceptance evidence).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -65,9 +65,13 @@ closed.
 
 ## Reviewer conclusion
 
-Transcription faithful and complete; all three ACs pass; RISK-W00-004 mitigated; one recorded
-deviation (status vocabulary). Ready for conductor acceptance review (`verification.md`
-"Final conclusion").
+Accepted — per `impl/waves/wave-00-baseline-and-verification/review-gate-2026-07-16.md`
+(independent review agent, dispatched 2026-07-16 by Fable 5 conductor). Transcription faithful
+and complete; all three ACs pass; RISK-W00-004 mitigated; one recorded deviation (status
+vocabulary). This is the one W00 story with a fully compliant original review artifact
+(`evidence/reviews/adr-fidelity-review-2026-07-13.md`).
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records
 
 ## Acceptance authority
 
@@ -76,9 +80,9 @@ human DRI assigned yet).
 
 ## Closure date
 
-2026-07-13 (story-side completion; acceptance date to be recorded by the conductor).
+2026-07-16 — accepted per review-gate-2026-07-16.md. Story-side completion 2026-07-13.
 
 ## Final status
 
-`verified` — acceptance criteria proven with valid evidence (status-model story vocabulary).
-`accepted` is the conductor's review gate, not self-marked.
+`accepted` — dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md
+records.

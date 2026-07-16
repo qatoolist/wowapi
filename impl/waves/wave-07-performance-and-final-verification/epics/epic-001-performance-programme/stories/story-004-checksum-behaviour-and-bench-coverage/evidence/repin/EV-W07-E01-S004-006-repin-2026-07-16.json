@@ -1,0 +1,26 @@
+{
+  "evidence_id": "EV-W07-E01-S004-006-repin-2026-07-16",
+  "type": "revision-repin-addendum",
+  "addendum_to": "EV-W07-E01-S004-006",
+  "reason": "Original evidence (recorded inline in this story's evidence/index.md \u2014 no separate per-record file exists) pinned base commit SHA 733ef3e, which is not an ancestor of current HEAD (side effect of the e8cda6b squash noted by the wave-07 autopsy, finding H-8, remediation R-6). Per impl/governance/evidence-policy.md's revision-pinning rule, this addendum re-runs the cited command against the current, ancestor-valid HEAD and records the result as status `retested`, without overwriting the original index.md row.",
+  "original_evidence_reference": "impl/waves/wave-07-performance-and-final-verification/epics/epic-001-performance-programme/stories/story-004-checksum-behaviour-and-bench-coverage/evidence/index.md (inline table row)",
+  "original_pinned_commit": "733ef3e",
+  "original_pinned_commit_is_ancestor_of_head": false,
+  "new_base_commit": "43b6e128672f0b0997adcebc92703884deba5684",
+  "new_base_commit_is_current_head": true,
+  "execution_command": "go test -v on the seven named CS-16 packages (kernel/database, kernel/jobs, kernel/outbox, kernel/workflow, kernel/auth, kernel/mfa, kernel/httpclient) with the exact seven-benchmark regex, -benchmem -count=1. Original cited -benchtime=10x; capped to -benchtime=2x per this remediation's bench-budget cap (smaller of the citation and 2x).",
+  "execution_environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "go": "go1.26.5",
+    "postgres": "16.9 local Docker service (wowapi-postgres-1)",
+    "minio": "local Docker service (wowapi-minio-1)"
+  },
+  "date_time": "2026-07-16T10:00:00Z",
+  "result": "PASS: all seven benchmarks (BenchmarkTenantTransactionOpenCommit, BenchmarkJobClaimFinalize, BenchmarkRelayDispatchBatch, BenchmarkDefinitionValidate, BenchmarkTokenVerify, BenchmarkTOTPDerive, BenchmarkGuardedDial) executed and reported ns/op, B/op, allocs/op (unchanged coverage; absolute timings vary by run/host as expected for wall-clock benchmarks).",
+  "result_tail": "ok  \tgithub.com/qatoolist/wowapi/kernel/workflow\t0.222s\ngoos: darwin\ngoarch: arm64\npkg: github.com/qatoolist/wowapi/kernel/auth\ncpu: Apple M3 Max\nBenchmarkTokenVerify\nBenchmarkTokenVerify-16    \t       2\t     52020 ns/op\t    5744 B/op\t      74 allocs/op\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/auth\t0.561s\ngoos: darwin\ngoarch: arm64\npkg: github.com/qatoolist/wowapi/kernel/mfa\ncpu: Apple M3 Max\nBenchmarkTOTPDerive\nBenchmarkTOTPDerive-16    \t       2\t     11458 ns/op\t    1764 B/op\t      11 allocs/op\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/mfa\t0.460s\ngoos: darwin\ngoarch: arm64\npkg: github.com/qatoolist/wowapi/kernel/httpclient\ncpu: Apple M3 Max\nBenchmarkGuardedDial\nBenchmarkGuardedDial-16    \t       2\t      8375 ns/op\t      56 B/op\t       3 allocs/op\nPASS\nok  \tgithub.com/qatoolist/wowapi/kernel/httpclient\t0.490s",
+  "raw_output_checksum_sha256": "127145aca354d0475848b8ecb889f8baf553161d6a88ee2d206a75feb42e84fc",
+  "status": "retested",
+  "divergence_from_original": null,
+  "executor": "autopsy remediation R-6 agent"
+}

@@ -28,3 +28,16 @@ Per `impl/governance/evidence-policy.md`, no capture attempt failed to run. One 
 lint run (11 nondeterministic staticcheck SA5011 hits under concurrent load, not reproducible in
 two cache-cleaned re-runs) is fully disclosed in EV-W00-E02-S001-002 and its raw output preserved
 at `../artifacts/static-analysis/lint-25-analyzer-run1-anomalous.{txt,json}` — not deleted.
+
+## Cross-reference — coverage floor superseded (2026-07-16)
+
+EV-W00-E02-S001-001's captured baseline (92.3% coverage vs. a 90.0% floor, pinned to
+`0a31186`) has been superseded by the coverage-floor reduction landed in `e8cda6b` ("finalize
+wowapi implementation programme"), which lowers the operative floor to 84.0% (current measured
+coverage 84.5% as of HEAD `43b6e12`). This baseline-capture work itself remains sound and
+honestly self-reported; the floor it measured against is simply no longer the operative gate. See
+`impl/tracking/programme-deviations.md` **DEV-PROG-001** (coverage floor lowered 90.0% → 84.0%
+without a deviation/decision record at the time) and **DEC-PROG-001** (interim floor ratification,
+status: proposed — human ratification pending) for the full traceability chain.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

@@ -2,7 +2,7 @@
 id: W03-E04-S001
 type: story
 title: Relationship semantics — party-subject evaluation, full subject-kind matrix, mutation governance
-status: ready
+status: accepted
 wave: W03
 epic: W03-E04
 owner: unassigned

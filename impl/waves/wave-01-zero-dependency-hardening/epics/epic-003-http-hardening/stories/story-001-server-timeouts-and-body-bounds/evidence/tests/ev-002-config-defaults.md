@@ -13,3 +13,14 @@
 - **Reviewer**: pending — W01 wave review gate (conductor)
 - **Result**: PASSED — `Defaults().HTTP` carries read_header 10s / read 30s / write 60s / idle 120s (MATRIX CS-09). See the `TestHTTPTimeoutDefaultsMatchCS09` lines in ev-003's embedded logs.
 - **Note**: the header default is delivered on the EXISTING `ReadHeaderTimeout` key (bumped 5s→10s), not a new `HeaderTimeout` key — see the story's deviations.md DEV-001 for the recorded naming resolution.
+
+## Reviewer completion addendum — 2026-07-16
+
+**Reviewer**: Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy remediation R-3).
+**Review date**: 2026-07-16.
+**Commit revision reviewed against**: HEAD 43b6e12 + remediation working tree 2026-07-16.
+**Disposition**: Verified (existence + autopsy corroboration). Same disposition as ev-001 in this story — file present, config.go artifact confirmed, not independently re-run in this pass.
+
+This addendum retroactively fills the evidence-policy-mandated "reviewer" field. The original
+record above (including any "Pending — conductor acceptance gate" line) is left unmodified per
+the failed-evidence preservation convention — this is an appended addendum, not a rewrite.

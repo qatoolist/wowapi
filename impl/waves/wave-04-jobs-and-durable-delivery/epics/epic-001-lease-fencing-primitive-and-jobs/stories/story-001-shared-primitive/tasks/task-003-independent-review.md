@@ -41,7 +41,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -185,43 +185,59 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+Spot-check (gate-level confirmation, this story was not the wave's primary problem area). Ran
+`go test ./kernel/lease/... -count=1` → `ok github.com/qatoolist/wowapi/kernel/lease 0.479s`,
+confirming the shared primitive (`Lease` struct with `Token`/`Generation`/`ExpiresAt`,
+`IsCurrent`/`IsNewer`/`NextEpoch`/`BumpGeneration`) builds and its unit tests pass. Confirmed by
+direct read that `foundation/webhook/service.go` and `foundation/notify/service.go` both import and
+call `kernel/lease.New`/`.NextEpoch` (via each package's own `nextLease` helper) rather than a
+parallel bespoke implementation — genuine cross-consumer reuse (AC-02).
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS on the spot-checked slice (build + unit tests + genuine reuse). Did not independently re-verify
+every sub-claim in AC-01/03 (comparison-semantics edge cases, interim-lease-removal migration
+no-loss proof) beyond the passing test suite — consistent with this being a gate-level spot-check,
+not a full re-derivation.
 
 ### Evidence identifier
 
-*Not yet executed.*
+Reuses `kernel/lease/lease_test.go`'s existing suite; no new evidence artifact produced.
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16.
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), Go toolchain per `go.mod`; no DB required for this package's unit tests.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+**Open paperwork gap (unresolved by this review):** `closure.md`'s "Final status" section is still
+the unfilled governance template text ("*To be recorded. Must not be set to `accepted` merely
+because all three tasks are marked complete*") while `story.md` frontmatter reads `status: accepted`.
+The underlying code is real and tests pass, but the story's own closure document has not been
+completed. This is a documentation-completeness gap, not a code defect.
 
 ### Retest status
 
-*Not yet executed.*
+Not required for the spot-checked slice.
 
 ### Final conclusion
 
-*Not yet executed.*
+Recommend: **accept-with-conditions** — condition: fill `closure.md`'s "Final status" section
+(currently unfilled template text) before treating this story as formally closed, per the story's
+own closure-document requirement and this programme's evidence policy.
 
 ## Deviations Record
 

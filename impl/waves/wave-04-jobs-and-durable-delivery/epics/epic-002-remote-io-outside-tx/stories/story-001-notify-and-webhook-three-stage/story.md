@@ -262,3 +262,22 @@ correct and necessary.
 ## Plan
 
 See `plan.md`.
+
+## Correction note (autopsy remediation R-1, 2026-07-16)
+
+`status: accepted` was unsound. The implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, finding **C-1**) confirmed by direct
+code read that this story's central acceptance criterion — no remote I/O while a DB transaction is
+open — was violated: `foundation/webhook/service.go:237,266 → 401,424` performed secret
+resolution and the outbound HTTP POST inside an open transaction on both the dispatch and retry
+paths, on both AC-W04-E02-S001-02 and -03. The sibling notify path (`SendPending`) correctly
+implements the claim/effect/finalize staging; the webhook path did not. This defect was remediated
+2026-07-16 in the working tree (staged claim/deliver/finalize outside the open transaction,
+mirroring `notify.SendPending`). Because the prior acceptance was unsound (granted against a
+violated AC), status is reverted to `implemented` — implementation (including the 2026-07-16 fix)
+is claimed complete; independent re-review of the fix is being scheduled and acceptance must be
+re-granted only after that review. (Note: the task briefing for this remediation named the target
+value `ready-for-review`, which is not a token in `governance/status-model.md`'s controlled
+vocabulary for stories — that vocabulary runs draft → planned → ready → in-progress → implemented
+→ verification → verified → accepted. `implemented` is used as the closest correctly-defined
+equivalent; flagged as a conflict, not improvised silently.) — autopsy remediation R-1, 2026-07-16.

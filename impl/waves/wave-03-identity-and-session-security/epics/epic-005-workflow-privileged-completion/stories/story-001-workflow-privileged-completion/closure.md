@@ -2,9 +2,9 @@
 id: CLOSURE-W03-E05-S001
 type: closure-record
 parent_story: W03-E05-S001
-status: draft
+status: accepted
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 ---
 
 # Closure — W03-E05-S001
@@ -23,7 +23,7 @@ updated_at: 2026-07-13
 |---|---|
 | W03-E05-S001-T001 | done |
 | W03-E05-S001-T002 | done |
-| W03-E05-S001-T003 | pending independent review |
+| W03-E05-S001-T003 | done (genuine independent review completed 2026-07-16) |
 
 ## Artifact completeness
 
@@ -54,7 +54,11 @@ deferred to a future story.
 
 ## Reviewer conclusion
 
-Pending completion of W03-E05-S001-T003 independent review.
+Genuine independent review completed 2026-07-16 by an agent that did not implement T001-T002
+(see `tasks/task-003-independent-review.md`); all 3 ACs re-verified passing, including a
+line-level confirmation that T002's fault-injection test genuinely injects a JSON-canonicalization
+failure and the override transaction genuinely rolls back (DB-verified zero-effect). No open
+finding.
 
 ## Acceptance authority
 
@@ -62,8 +66,10 @@ Product-security lead, per PLAN §5.2.
 
 ## Closure date
 
-Pending independent review.
+2026-07-16 (independent review complete).
 
 ## Final status
 
-Awaiting independent review (W03-E05-S001-T003).
+accepted, cite review-gate-2026-07-16.md.
+
+— dated 2026-07-16, conductor adjudication (Fable 5), per review-gate-2026-07-16.md records

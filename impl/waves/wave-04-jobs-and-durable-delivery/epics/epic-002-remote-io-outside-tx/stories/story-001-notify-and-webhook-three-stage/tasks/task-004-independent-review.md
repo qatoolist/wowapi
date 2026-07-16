@@ -42,7 +42,7 @@ unassigned
 
 ### Status
 
-todo
+done
 
 ### Dependencies
 
@@ -187,43 +187,98 @@ until its findings are resolved.
 
 ### Actual result
 
-*Not yet executed.*
+Code-read `foundation/webhook/service.go` end to end (claimDispatch/claimDeliveryRow/claimRetry ->
+deliverClaimed -> effectDeliver -> finalizeOutboundDelivery) and `foundation/notify/service.go`'s
+existing claim/effect/finalize staging, confirmed the webhook path now mirrors notify's structure:
+(1) claim-tx assigns a fresh `kernel/lease` lease and returns before any transaction closes over
+`secrets.Resolve`/`sender.Post`; (2) `effectDeliver` runs entirely outside `plat.WithTenant(...)`,
+calling `s.secrets.Resolve` then `s.sender.Post`; (3) `finalizeOutboundDelivery` re-opens a short tx
+and applies the outcome only `WHERE lease_token = $n AND lease_generation = $n AND
+lease_expires_at > $n` (stale/reclaimed leases silently discard the effect result, matching AC-02/03's
+fencing intent). The secret-resolution short-circuit is preserved: when `res.secretErr != nil`,
+`finalizeOutboundDelivery` releases the lease (`lease_token=NULL, lease_generation=0,
+lease_expires_at=NULL`) and leaves `delivery_status`/`attempts` untouched — no POST was attempted, no
+row mutation beyond the lease release, matching the pre-staging behavior noted in the code comment.
+Ran the new regression suite `foundation/webhook/tx_boundary_test.go` (`txDepthTracker`-instrumented
+`TestIntegrationDispatchOutbound_NoTxOpenDuringRemoteIO`,
+`TestIntegrationRetryOutbound_NoTxOpenDuringRemoteIO`) which asserts the wrapped `TxManager`'s open-tx
+depth is 0 at the exact moment `Sender.Post`/`secrets.Resolve` execute — both PASS. Also ran the
+pre-existing `foundation/webhook/...` and `foundation/notify/...` suites in full (no regressions) and
+the new tamper-matrix tests (`foundation/webhook/tamper_matrix_test.go`,
+`TestIntegrationHandleInbound_TamperedKeyID`, `TestIntegrationHandleInbound_TamperedSignatureVersion`,
+H-9 scope, adjacent to this story but sharing the same file set) — both PASS.
+
+One residual observation (not blocking): `leaseTTL = 5 * time.Minute` is a fixed constant sized to
+cover `effectDeliver`'s bound (`OutboundTimeout`) plus the finalize round-trip, mirroring notify's
+identical constant — reasonable for the current `OutboundTimeout`, but not derived from it, so a
+future increase to `OutboundTimeout` could silently shrink the fencing margin. Flag as a minor
+follow-up, not an AC failure.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS — AC-W04-E02-S001-01, -02, -03 are satisfied for both the notify leg (previously verified) and
+the webhook leg (this remediation). The C-1 defect (webhook outbound delivery running secret
+resolution and the POST call inside an open `plat.WithTenant` transaction, contradicting task T003's
+own title) identified by the prior adversarial verification
+(`/private/tmp/.../scratchpad/autopsy/verification/wave-04-jobs-and-durable-delivery.json`,
+`W04-E02-S001` / `W04-E02-S001-T003` entries) is resolved by the 2026-07-16 remediation.
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W04-E02-S001-002 (webhook no-send-while-tx-open, retested), EV-W04-E02-S001-003 (webhook
+no-network-call-while-tx-open, retested) — supersede the prior `not yet produced` rows in
+`evidence/index.md` (updated by this review, see below).
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16.
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD 43b6e12 + remediation working tree 2026-07-16 (`foundation/webhook/service.go` modified,
+`foundation/webhook/tx_boundary_test.go` and `foundation/webhook/tamper_matrix_test.go` added,
+uncommitted at review time).
 
 ### Environment
 
-*Not yet executed.*
+macOS (darwin), local Postgres via testkit
+(`DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable`), Go
+toolchain per `go.mod`.
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review agent (Claude Sonnet 4.5), dispatched 2026-07-16 by Fable 5 conductor (autopsy
+remediation R-3).
 
 ### Findings
 
-*Not yet executed.*
+No AC-blocking findings. Minor observation: `leaseTTL` is a fixed constant rather than derived from
+`OutboundTimeout` — recommend a follow-up (not a story blocker) to either derive it or add a comment
+cross-referencing both constants so a future `OutboundTimeout` change is not silently under-fenced.
 
 ### Retest status
 
-*Not yet executed.*
+Retested against the 2026-07-16 remediation commit (working tree); superseded the pre-remediation
+`implemented-incorrectly` verdict recorded in
+`/private/tmp/.../scratchpad/autopsy/verification/wave-04-jobs-and-durable-delivery.json` for
+`W04-E02-S001` / `W04-E02-S001-T003`.
 
 ### Final conclusion
 
-*Not yet executed.*
+AC-W04-E02-S001-01/02/03 are satisfied for both notify and webhook. Recommend: accept. Conductor
+adjudicates final story-status change (this record is a recommendation only, per this review's
+mandate).
+
+Execution command:
+```
+DATABASE_URL=postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable \
+  go test ./foundation/webhook/... -run \
+  'TestIntegrationDispatchOutbound_NoTxOpenDuringRemoteIO|TestIntegrationRetryOutbound_NoTxOpenDuringRemoteIO|TestIntegrationHandleInbound_TamperedKeyID|TestIntegrationHandleInbound_TamperedSignatureVersion' \
+  -count=1 -v
+```
+Result: all 4 tests PASS (`ok github.com/qatoolist/wowapi/foundation/webhook 1.348s`). Full-package
+retest: `go test ./foundation/webhook/... ./foundation/notify/... -count=1` → both `ok` (10.049s,
+9.347s respectively), no regressions.
 
 ## Deviations Record
 

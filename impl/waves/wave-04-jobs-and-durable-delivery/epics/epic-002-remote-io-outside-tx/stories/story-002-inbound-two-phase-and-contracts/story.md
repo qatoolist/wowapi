@@ -2,7 +2,7 @@
 id: W04-E02-S002
 type: story
 title: Inbound two-phase verification, adapter contracts, and the named 6-boundary chaos test
-status: accepted
+status: planned
 wave: W04
 epic: W04-E02
 owner: unassigned
@@ -314,3 +314,15 @@ residual risk for both notify and webhook.
 ## Plan
 
 See `plan.md`.
+
+## Correction note (autopsy remediation R-1, 2026-07-16)
+
+`status: accepted` was false. The implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, finding **C-2**) found this story's
+own `closure.md`, `verification.md`, and evidence records still stating "not implemented,
+verified, or closed" — no two-phase inbound verification, no chaos test for notify/webhook, and
+inbound verification runs in a single transaction, not the claimed two-phase protocol — while
+`story.md` front matter claimed `accepted`. Per the programme's own Definition of Done, a story
+must not be accepted without verification and reviewer acceptance (mandate §7); none occurred
+here. Status reverted to `planned`, the honest status-model value matching the story's actual,
+unstarted state. — autopsy remediation R-1, 2026-07-16.

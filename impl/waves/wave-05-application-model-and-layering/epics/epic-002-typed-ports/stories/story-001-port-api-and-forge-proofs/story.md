@@ -192,3 +192,15 @@ independently re-confirmed by this story's own review task.
 ## Plan
 
 See `plan.md`.
+
+## Note (autopsy remediation R-1, 2026-07-16)
+
+Status is unchanged — this story remains genuinely unexecuted as tracked (`planned`, all tasks
+`todo`). However, the implementation-autopsy report
+(`impl/reports/implementation-autopsy-report-2026-07-16.md`, §4 row W05-E02-S001, independent
+verdict **contradictory**) found a real `port.Key[T]` API (`Define`/`Provide`/`Require`/`Resolve`
+generic free functions) and a `registrar_forge_compile_fail_fixture` directory already exist,
+matching this story's claimed AR-02 artifacts, while tracking still says `planned`/`todo`. This is
+built-but-not-wired code landed outside this story's execution (autopsy H-6/H-7). See deviation
+**DEV-PROG-002** in `impl/tracking/programme-deviations.md` for the full record. — autopsy
+remediation R-1, 2026-07-16.

@@ -26,7 +26,7 @@ import (
 //   - admin (BYPASSRLS superuser — the "platform provisioner" posture CS-18
 //     names): RLS never runs, so the ONLY thing that can block the mismatch is
 //     the composite FK itself. Post-migration this must fail with SQLSTATE
-//     23503 (foreign_key_violation) on all 8 edges.
+//     23503 (foreign_key_violation) on all 9 edges.
 //   - app_rt: the production runtime role. The cross-tenant row passes the
 //     tenant-isolation WITH CHECK (its own tenant_id matches the binding), so
 //     only the composite FK blocks it → 23503. Exception: the

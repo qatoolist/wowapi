@@ -470,6 +470,51 @@ func TestActor_GarbageTenantRejected(t *testing.T) {
 	}
 }
 
+// baseOnlyPrincipalStore implements only the base auth.PrincipalStore
+// interface (no AssurancePrincipalStore extension), simulating a legacy or
+// misconfigured store wired into a Verifier.
+type baseOnlyPrincipalStore struct {
+	userID  uuid.UUID
+	subject string
+	okCap   uuid.UUID
+}
+
+func (b baseOnlyPrincipalStore) UserIDBySubject(_ context.Context, subject string) (uuid.UUID, error) {
+	if subject != b.subject {
+		return uuid.Nil, errors.E(errors.KindUnauthenticated, "unauthenticated", "no such subject")
+	}
+	return b.userID, nil
+}
+
+func (b baseOnlyPrincipalStore) ValidateCapacity(_ context.Context, userID, _ uuid.UUID, capacityID uuid.UUID) error {
+	if userID == b.userID && capacityID == b.okCap {
+		return nil
+	}
+	return errors.E(errors.KindForbidden, "permission_denied", "capacity not yours")
+}
+
+// TestActor_BaseOnlyStoreFailsClosedOnTenantClaim proves SEC-01's unconditional
+// membership verification cannot be silently bypassed by wiring a
+// PrincipalStore that lacks the AssurancePrincipalStore extension: a token
+// carrying a TenantID must be rejected, not waved through unverified.
+func TestActor_BaseOnlyStoreFailsClosedOnTenantClaim(t *testing.T) {
+	ti := testkit.NewTokenIssuer()
+	v := newVerifier(ti)
+	userID := uuid.New()
+	tenantID := uuid.New()
+	ps := baseOnlyPrincipalStore{userID: userID, subject: "idp|alice"}
+
+	tok := ti.Issue("idp|alice", tenantID, uuid.Nil)
+	claims, err := v.Verify(context.Background(), tok)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	_, err = v.Actor(context.Background(), claims, ps)
+	if err == nil || errors.KindOf(err) != errors.KindForbidden {
+		t.Fatalf("want KindForbidden (fail closed on missing assurance store), got %v", err)
+	}
+}
+
 // T4 — capacity-selection enforcement.
 
 // TestActor_NoCapacitySingleCapacityAllowed proves that a capacity-less token

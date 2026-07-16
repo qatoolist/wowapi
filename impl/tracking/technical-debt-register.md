@@ -68,6 +68,19 @@ introduced" field becomes the canonical source for future entries).
 | Related stories | W01-E03-S001 (FBL-09) |
 | Acceptance authority | Conductor (Main), W01 review gate 2026-07-13 |
 
+## TD-005 — AC-W01-03 CI-execution leg unproven (local + actionlint evidence only)
+
+| Field | Value |
+|---|---|
+| Debt ID | TD-005 |
+| Origin | W01-E01-S003 (FBL-05/FBL-07 supply-chain and hooks) — `review-gate-2026-07-16.md` |
+| Description | AC-W01-03 requires the `go mod verify` CI step and Trivy license scanner added by this story to execute in CI. As of the 2026-07-16 independent review, the wave remains an uncommitted/unpushed working tree, so only local-run + actionlint-syntax evidence (`gomodverify-and-actionlint.log`) exists; the CI leg has never actually executed. |
+| Reason accepted | The gap is self-disclosed in the story's own `evidence/index.md` ("produced (superseded-by-CI-run planned as retested after conductor push)") and in `closure-report.md`'s open items; not concealed. The rest of the story's evidence is sound. |
+| Impact | Low-to-medium — the CI-execution leg is unproven until an actual push occurs; no evidence of a functional defect, only an untested-in-CI gap |
+| Target resolution wave | W01 — close on the next conductor push, by registering an actual CI-run evidence record (status `retested`, referencing `EV-W01-E01-S003-001`/`-002` as superseded) |
+| Related stories | W01-E01-S003 (FBL-05/FBL-07) |
+| Acceptance authority | Conductor (Fable 5), W01 review gate 2026-07-16 |
+
 ## Note on grounding
 
 TD-001 was verified against `.golangci.yml` directly (both exclusions present, scoped as
