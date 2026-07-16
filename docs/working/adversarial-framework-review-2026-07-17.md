@@ -413,9 +413,14 @@ with adversarial regression tests that failed before each fix:
 
 - F-01/F-08/F-09 + F-02/F-03/F-06/F-07: commit `6770a4b`.
 - F-04/F-05: commit `9ae702b`.
-- F-10: compiler-to-runtime integration (ownership, duplicate, nil/type,
-  declared-dependency, and post-boot-seal enforcement wired into `App.Boot`
-  via `kernel/appmodel`), same branch.
+- F-10: commit `3d750a3` — compiler-to-runtime integration (ownership,
+  duplicate, nil, declared-dependency, and post-boot-seal enforcement wired
+  into `App.Boot` via `kernel/appmodel`).
+- Independent-gate fixes: commit `313b6ac` — migration 00049 ledger
+  registration, skip-manifest entry SKIP-040, extension seal extended from
+  ports to every boot collector (Migrations/Seeds/OpenAPI/Health/
+  RecurringJob/I18n), harness module-cache self-invalidation, CHANGELOG
+  compatibility notes.
 
 Closure evidence, per-finding commands, and the final verdict live in the
 Remediation and Closure Report delivered with the branch. This report's
