@@ -153,15 +153,16 @@ func purgeStaleFrameworkVersion(t *testing.T, version, freshZip string) {
 		return
 	}
 	cachedZip := filepath.Join(gmc, "cache", "download", "github.com", "qatoolist", "wowapi", "@v", version+".zip")
+	extracted := filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version)
 	if cached, err := os.ReadFile(cachedZip); err == nil {
 		fresh, err := os.ReadFile(freshZip)
 		if err != nil {
 			t.Fatalf("read fresh proxy zip: %v", err)
 		}
-		if sha256.Sum256(cached) == sha256.Sum256(fresh) {
-			return // cache is current — do not disturb concurrent builds
+		if sha256.Sum256(cached) == sha256.Sum256(fresh) && extractionComplete(t, freshZip, extracted, version) {
+			return // cache is current and intact — do not disturb concurrent builds
 		}
-		t.Logf("framework proxy: cached %s is stale (checkout changed); purging module cache copies", version)
+		t.Logf("framework proxy: cached %s is stale or incompletely extracted; purging module cache copies", version)
 	}
 	targets := []string{
 		filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version),
@@ -190,6 +191,35 @@ func purgeStaleFrameworkVersion(t *testing.T, version, freshZip string) {
 			t.Logf("purge cached framework %s: %v", path, err)
 		}
 	}
+}
+
+// extractionComplete reports whether every file in the proxy zip exists in the
+// extracted module dir. A matching download zip does NOT prove the extraction
+// is intact: a disk-full run (or a truncated CI cache save/restore of
+// .cicache/gomod) can persist a partially extracted module whose builds fail
+// with bogus "could not import ... (open : no such file)" errors.
+func extractionComplete(t *testing.T, zipPath, extractedDir, version string) bool {
+	t.Helper()
+	if _, err := os.Stat(extractedDir); err != nil {
+		return false
+	}
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("open fresh proxy zip: %v", err)
+	}
+	defer func() { _ = zr.Close() }()
+	prefix := "github.com/qatoolist/wowapi@" + version + "/"
+	for _, f := range zr.File {
+		rel := strings.TrimPrefix(f.Name, prefix)
+		if rel == f.Name || rel == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(extractedDir, filepath.FromSlash(rel))); err != nil {
+			t.Logf("framework proxy: extracted module missing %s", rel)
+			return false
+		}
+	}
+	return true
 }
 
 func buildFrameworkProxy(t *testing.T, version string) string {
