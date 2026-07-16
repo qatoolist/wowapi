@@ -18,6 +18,10 @@
 graphify-out
 tmp
 var
+# CI's persisted Go caches live in the workspace (actions/cache -> .cicache) and
+# reach the toolbox through the compose bind mount, NOT the image. Copying them
+# into the build context (~GBs) filled the runner disk (PR #33 coverage job).
+.cicache
 coverage.out
 coverage.html
 *.coverprofile
