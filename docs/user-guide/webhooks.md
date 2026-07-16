@@ -3,7 +3,7 @@
 `kernel/webhook` is wowapi's webhook subsystem: inbound signature verification + replay protection +
 async processing, and outbound signed HTTP delivery with per-endpoint circuit breakers. This page covers
 the outbound delivery path's SSRF protection (backlog B2); for the inbound verify/dedup/process pipeline
-and the `Service` API, read the package doc in `kernel/webhook/webhook.go`.
+and the `Service` API, read the package doc in `foundation/webhook/webhook.go` (or via the `kernel/webhook` compat shim for backward compatibility).
 
 ## Outbound SSRF protection
 
@@ -31,9 +31,9 @@ moment it registers an outbound endpoint.
 | RFC6598 carrier-grade NAT (CGNAT) | `100.64.0.0/10` — used internally by AWS, many container/K8s overlays, other cloud infra |
 | Multicast | `224.0.0.0/4`, `ff00::/8` |
 
-A blocked dial fails with an error wrapping `httpclient.ErrBlockedAddress`; `webhook.deliverToEndpoint`
+A blocked dial fails with an error wrapping `httpclient.ErrBlockedAddress`; the outbound delivery pipeline
 records it as a normal delivery failure (`delivery_status = failed`, backing off per the usual retry
-schedule, eventually `dead` at `MaxAttempts`) — an SSRF attempt is never silently retried forever, and
+schedule, eventually `dead` at `MaxAttempts` in `finalizeOutboundDelivery`) — an SSRF attempt is never silently retried forever, and
 it never crashes the dispatch loop for other endpoints.
 
 ### Resolve-then-verify (DNS-rebinding safe)
@@ -106,6 +106,6 @@ and to prove real delivery is unaffected.
 
 - [Configuration](configuration.md) — the full `webhook.outbound.*` key reference.
 - [Building & extending modules](modules.md) — `Webhooks()` on `module.Context`.
-- `kernel/webhook/webhook.go` — the `Service` API (inbound verify/dedup/process, outbound
-  dispatch/retry, circuit breaker).
+- `foundation/webhook/` — the `Service` API (inbound verify/dedup/process, outbound
+  dispatch/retry, circuit breaker); via compat shim `kernel/webhook` for imports.
 - `kernel/httpclient/client.go` — the SSRF guard implementation.

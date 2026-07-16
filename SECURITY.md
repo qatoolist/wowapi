@@ -26,14 +26,17 @@ We will coordinate a disclosure timeline with you and credit reporters unless yo
 
 ## Supported versions
 
-wowapi is pre-1.0 (`v0.x`). Until `v1.0.0`, only the **latest minor** receives security fixes.
+wowapi is on the stable `v1` line (see
+[`docs/operations/upgrade-and-deprecation-policy.md`](docs/operations/upgrade-and-deprecation-policy.md)).
+Per that policy's support window, the current and immediately previous v1 minor receive fixes; the
+previous minor gets critical security/data-integrity fixes for at least six months after its successor
+ships.
 
 | Version | Supported |
 |---|---|
-| latest `v0.x` minor | ✅ |
-| older `v0.x` | ❌ (upgrade to latest) |
-
-After `v1.0.0`, this table will list the supported release lines.
+| latest `v1` minor (currently `v1.1.x`) | ✅ |
+| previous `v1` minor (currently `v1.0.x`) | ✅ (critical security/data-integrity fixes only) |
+| older `v1.x` | ❌ (upgrade to a supported minor) |
 
 ## Security properties & assurance
 

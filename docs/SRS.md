@@ -2,7 +2,7 @@
 
 - **Product:** `wowapi` — a reusable, domain-agnostic enterprise backend framework ("platform kernel") in Go.
 - **Module path:** `github.com/qatoolist/wowapi`
-- **Status:** pre-1.0 (`v0.x`); public API additive-frozen at `v1.0.0`.
+- **Status:** stable `v1` line (v1.0.0 shipped 2026-07-06; current v1.1.0); public API additive-frozen as of `v1.0.0`.
 - **Document status:** Living. Synthesized from the original prompt/vision files (`Goal.md`, `Goal 1.1.md`, `Goal 1.2.md`, `Goal 2.md`), the authoritative design blueprint (`docs/blueprint/00–12`), the hardening tranche (`ROADMAP-wowapi.md`, `CHANGELOG.md`, `VERIFICATION-wowapi-hardening.md`), and cross-checked against the implemented code (50 commits; 251 Go files; 108 test files; 24 migrations; Go 1.26).
 - **Companion:** [GOALS-TRACKER.md](GOALS-TRACKER.md) — what is done / deferred / pending, with the full backlog.
 
@@ -85,7 +85,7 @@ secrets (5 typed layers) · observability · module SDK · CLI/codegen · testki
 
 ### 2.4 Constraints (see §5 for full list)
 Go 1.26 · PostgreSQL 16 (RLS mandatory) · pgx/v5 + sqlc · goose migrations · River jobs · one-way import law
-(kernel ← module ← product; adapters implement kernel ports) · pre-1.0 versioning discipline.
+(kernel ← module ← product; adapters implement kernel ports) · v1 versioning discipline (additive-only within v1).
 
 ### 2.5 Assumptions & Dependencies (product-supplied, via adapters/hooks — not built into core)
 External OIDC/JWT IdP (framework does authZ, consumes authN) · S3-compatible object storage (presigned up/download) ·
@@ -338,6 +338,8 @@ fixture module; and physically, because product code lives in other repositories
   migrations/cmd/wowapi`; no consumer contract under `internal/`.
 - **C-5 Versioning:** pre-1.0 `v0.x` (surface may move); `v1.0.0` when `10-delivery.md` acceptance is green and the
   surface freezes to additive-only; `v2+` via `/v2` module path; deprecations survive ≥ 1 minor.
+  *Status note (2026-07-16): the `v1.0.0` milestone this constraint anticipated shipped 2026-07-06; the surface is
+  now additive-frozen. Live support window: `SECURITY.md` + `docs/operations/upgrade-and-deprecation-policy.md`.*
 - **C-6 Architecture:** modular monolith; compile-time modules; hexagonal at edges only; manual DI; no reflection
   container / service locator; microservices/event-sourcing/CQRS-everywhere/low-code-runtime rejected for v1.
 
@@ -361,12 +363,20 @@ named in this document's provenance notes live in the same archive — see GOALS
 
 > **Programme execution and verification (Waves 00–07, 2026-07-16).** The `impl/` directory contains the execution
 > ledger for the Waves 00–07 programme (mandate, 8 waves, 75 stories, ~370 tasks, registers). An independent
-> third-party audit (`impl/reports/implementation-autopsy-report-2026-07-16.md`, Fable 5) found **25 of 75 stories
-> (33%) fully verified; the remaining 50 are incomplete, unreviewed, incorrectly implemented, or have contradictory
-> status records.** The framework code that exists is largely good (lease/fencing, audit chain, release gating,
-> online migration verified clean); the failure is one of **governance and truthfulness of completion claims**
-> (statuses advanced without mandatory reviews, evidence records left unfilled or mis-pinned, a quality gate
-> silently lowered). **Production-readiness claim rejected.** Remediation plan in `implementation-autopsy-report-2026-07-16.md`
-> §13 (R-1 truth reconciliation is the gate for all else). Until W05–W07 genuinely close and the final gate runs,
-> no production-readiness claim should be made. The SRS requirements themselves remain architecturally sound; the
-> gap is execution and verification discipline, not the specification.
+> third-party audit (`impl/reports/implementation-autopsy-report-2026-07-16.md`, Fable 5) originally found **25 of
+> 75 stories (33%) fully verified; the remaining 50 are incomplete, unreviewed, incorrectly implemented, or have
+> contradictory status records.** The framework code that exists is largely good (lease/fencing, audit chain,
+> release gating, online migration verified clean); the failure was one of **governance and truthfulness of
+> completion claims** (statuses advanced without mandatory reviews, evidence records left unfilled or mis-pinned,
+> a quality gate silently lowered). **Production-readiness claim rejected** at that point.
+>
+> **§16 remediation addendum (same day).** Most cited defects were fixed the same day under Fable supervision
+> (fixes → ledger truth-reconciliation → independent re-review → conductor adjudication), including the C-1
+> webhook-in-open-transaction code defect and the W02 false-review-gate claim (W02 now legitimately accepted).
+> The post-remediation ledger (script-generated) stands at **49 accepted · 5 verified · 1 implemented · 15
+> planned · 4 blocked · 1 ready-for-review**. Two limitations remain disclosed rather than claimed away: the
+> re-reviews were AI-agent-executed by the same conductor that supervised the fixes (human ratification
+> recommended), and DEC-PROG-001 (interim coverage floor) is still `proposed`. Remediation plan detail in
+> `implementation-autopsy-report-2026-07-16.md` §13; disposition table in §16. Until W05–W07 genuinely close and
+> the final gate runs, no unqualified production-readiness claim should be made. The SRS requirements themselves
+> remain architecturally sound; the gap is execution and verification discipline, not the specification.

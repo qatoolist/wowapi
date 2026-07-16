@@ -145,7 +145,7 @@ the enforced CI gate. None are architectural.
 > security stories; one confirmed code defect contradicts an accepted acceptance criterion (webhook delivery
 > in open transaction); the quality-floor gate was silently weakened with no record.**
 >
-> Wave verdicts (per `implementation-autopsy-report-2026-07-16.md` §14):
+> Wave verdicts as originally found (per `implementation-autopsy-report-2026-07-16.md` §14 — history, superseded below):
 > - **W00, W01:** Accepted-with-reservations (4/6 and 7/10 verified respectively; review-gate evidence missing)
 > - **W02:** Closure REJECTED (code substantially real but review gate falsely claimed; statuses contradictory)
 > - **W03:** Open—implemented-unaccepted (substantive code but zero stories validly accepted; contract + tamper gaps)
@@ -153,6 +153,19 @@ the enforced CI gate. None are architectural.
 > - **W05:** Not executed as a wave (8 stories missing; FBL-01 done off-ledger; AR-01/02 built-not-wired; SEC-04 missing)
 > - **W06:** Partially verified, wave open (E03 release gating + E04-S001 verified; 4 story claims unsupported)
 > - **W07:** In progress (E01 perf work real but evidence mis-pinned; E02/E03 legitimately blocked; closure gate not run)
+>
+> **Post-remediation status (same day, §16 addendum).** The findings above were remediated same-day under Fable
+> supervision (fixes → ledger truth-reconciliation → independent re-review → conductor adjudication): 27 of 28
+> findings closed, one caught and fixed by the remediation's own closing gate. **W02 is now legitimately
+> `accepted`** (C-4: all 8 stories independently re-verified); **C-1** (webhook delivery-in-open-transaction
+> defect) is fixed (staged claim→effect→finalize, mirroring notify); **C-3** (SEC-03) is genuinely reviewed and
+> accepted. Per `impl/tracking/status-register.md` (script-generated from canonical front matter): W00/W01/W02
+> accepted, W03/W04/W06 in-progress (honestly, not falsely-accepted), W05 planned, W07 in-progress.
+> Post-remediation ledger: **49 accepted · 5 verified · 1 implemented · 15 planned (W05 + W04-E02-S002 + W07-E04)
+> · 4 blocked · 1 ready-for-review (W05)**. Two limitations remain disclosed, not claimed away: the independent
+> reviews were performed by AI agents dispatched by the same conductor that supervised the fixes (human
+> ratification recommended), and DEC-PROG-001 (interim coverage floor) is still `proposed`, pending human
+> ratification. Consult §16 of `implementation-autopsy-report-2026-07-16.md` for the full disposition table.
 >
 > This tracker's tables in §1–5 remain the record of *framework Goal 1.0/1.1/1.2 and Goal 2 Phases 0–12*,
 > all completed before the Waves 00–07 programme began. The impl/ programme is a *subsequent* governance/

@@ -32,6 +32,11 @@ MIGRATE_URL=postgres://app_migrate@host:5432/db?sslmode=require    # DDL      �
 > database, point `MIGRATE_URL` at a role that can create roles (the DB owner or a superuser, or a
 > pre-created `app_migrate` with `CREATEROLE`) for the initial `migrate up`. `app_rt`/`app_platform` exist
 > only *after* that first migration; provision `app_migrate` yourself beforehand.
+>
+> The migration creates `app_rt`/`app_platform` as `NOLOGIN` by design (no password ships in migrations) —
+> ops must grant a login out-of-band before `DATABASE_URL`/`PLATFORM_URL` will connect: `ALTER ROLE app_rt
+> LOGIN PASSWORD '…';` (same for `app_platform`). See `scripts/product-dev.sh` for the automated version of
+> this step.
 
 ## Row-level security in practice
 

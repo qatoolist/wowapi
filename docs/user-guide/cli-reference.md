@@ -6,8 +6,9 @@ below is taken from the source — if a subcommand you expect isn't here, it isn
 
 ## `wowapi` CLI
 
-Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or build from a clone — see
-[Getting Started](getting-started.md#step-1--get-the-wowapi-cli)).
+Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0` — pin an exact tag, never `@latest`
+(per the [upgrade policy](../operations/upgrade-and-deprecation-policy.md)) — or build from a clone; see
+[Getting Started](getting-started.md#step-1--get-the-wowapi-cli).
 
 ### Global
 
@@ -20,7 +21,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 
 | Command | Flags | Purpose |
 |---|---|---|
-| `wowapi init` | `--module` **(req)**, `--name`, `--dir` (`.`), `--force` | Scaffold a product repository. |
+| `wowapi init` | `--module` **(req)**, `--name`, `--dir` (`.`), `--force`, `--framework-version`, `--local-framework` | Scaffold a product repository. |
 | `wowapi new-module` | `--name` **(req)**, `--dir` (`internal/modules`), `--force` | Scaffold a module package. |
 | `wowapi gen crud` | `--module` **(req)**, `--resource` **(req)**, `--fields` (`name:type,…`), `--force` | Generate CRUD scaffolding. |
 | `wowapi gen` subsystem commands | `rule`, `workflow`, `event-handler`, `recurring-job`, `document-flow`, `notification`, or `webhook`; each takes `--module`, `--name`, `--force` | Generate a boot-wired subsystem declaration. |
@@ -29,12 +30,12 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 
 | Command | Flags | Purpose |
 |---|---|---|
-| `wowapi config validate` | `--dir` (`configs`), `--base`, `--env`, `--env-prefix` (`WOWAPI__`) | Load + validate; exit 0 OK / 1 invalid (prints every problem). |
-| `wowapi config print` | `--dir`, `--base`, `--env`, `--env-prefix`, `--redacted` **(req)** | Print effective config as JSON, secrets redacted. |
-| `wowapi config doctor` | `--dir`, `--base`, `--env`, `--env-prefix` | Per-key provenance table + fingerprint. |
+| `wowapi config validate` | `--dir` (`configs`), `--base`, `--env`, `--env-prefix` (`WOWAPI__`), `--project` | Load + validate; exit 0 OK / 1 invalid (prints every problem). |
+| `wowapi config print` | `--dir`, `--base`, `--env`, `--env-prefix`, `--project`, `--redacted` **(req)** | Print effective config as JSON, secrets redacted. |
+| `wowapi config doctor` | `--dir`, `--base`, `--env`, `--env-prefix`, `--project` | Per-key provenance table + fingerprint. |
 | `wowapi config diff` | `--from` **(req)**, `--to` **(req)**, `--dir`, `--env-prefix` | Redacted effective-config diff between two environments. |
 | `wowapi config schema` | — | Emit JSON Schema derived from struct tags. |
-| `wowapi config capacity` | `--dir`, `--base`, `--env`, `--env-prefix` | Check the concurrency capacity budget; exit 0 within budget/not configured, exit 1 oversubscribed. |
+| `wowapi config capacity` | `--dir`, `--base`, `--env`, `--env-prefix`, `--project` | Check the concurrency capacity budget; exit 0 within budget/not configured, exit 1 oversubscribed. |
 
 ### Migrations, seeds, OpenAPI
 
@@ -45,6 +46,7 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi seed sync` | `--module name=dir` **(req, repeatable)**, `--dry-run` | Load one or more modules' seed bundles and upsert them into a real database (`DATABASE_URL`, connects as `app_platform`). Idempotent; computes a content hash so re-runs with an unchanged manifest are true no-ops. `--dry-run` prints a change plan without writing. See [Database & Migrations § Seeds](database-migrations.md#seeds-declarative-yaml-catalogs). |
 | `wowapi i18n validate` | `--dir` (`locales`), `--default-locale` (`en`), `--supported` (`en`), `--strict` | Load + validate a product's locale catalogs (no database): coverage, `kernel.*` ownership, intra-layer duplicates, placeholder drift. Exit 0 OK / 1 with every problem listed. See [Validation & error handling § Localizing responses](validation-errors.md#localizing-responses-i18n). |
 | `wowapi openapi merge` | `--dir` (`.`), `--title` (`wowapi API`), `--version` (`0.0.0`), `--out` | Merge OpenAPI 3.1 fragments into one document. |
+| `wowapi openapi diff` | `--baseline` **(req)**, `--current` **(req)** | Enforce v1 semantic-compatibility policy: compare a current merged document against a previously released baseline. |
 
 > Applying migrations at runtime is the **product** `cmd/migrate` (`go run ./cmd/migrate up` / `make
 > migrate-up`), not the `wowapi` CLI. The CLI's `migrate` subcommand only *creates* migration files. The
@@ -58,6 +60,25 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@latest` (or buil
 | `wowapi lint boundaries` | `--pkgs` (`./...`) | Module isolation + layering (import-law) check. |
 | `wowapi lint lifecycle` | — | Print + lint the static provider/lifecycle manifest (`kernel/lifecycle`): catches scope leaks, raw pools reaching modules, tenant-scoped values escaping their transaction, migrate-only services wired into API/worker runtime, and missing providers/cycles. Exit 0 clean / 1 with every violation listed. |
 | `wowapi deploy render` | `--format` (`compose`\|`env`), `--name` (`app`), `--image` (`app:latest`), `--env` (`local`\|`dev`\|`stage`\|`prod`), `--out` | Render a deployment manifest. |
+
+### API keys
+
+Manage machine API keys and service principals (`internal/cli/apikey_cmd.go`):
+
+| Command | Flags | Purpose |
+|---|---|---|
+| `wowapi apikey issue` | `--tenant` **(req)**, `--name` **(req)**, `--scopes`, `--expires` | Create a new API key. Prints the plaintext token once; it cannot be recovered later. |
+| `wowapi apikey list` | `--tenant` **(req)** | List all API keys for a tenant. |
+| `wowapi apikey rotate` | `--tenant` **(req)**, `--id` **(req)** | Mint a new secret for an existing key. The old secret stays valid until revoked. |
+| `wowapi apikey revoke` | `--tenant` **(req)**, `--id` **(req)** | Revoke an API key. |
+
+### Audit log
+
+Verify audit chain integrity (`internal/cli/audit_cmd.go`):
+
+| Command | Flags | Purpose |
+|---|---|---|
+| `wowapi audit verify` | `--tenant` **(req)** | Verify a tenant's tamper-evident audit chain. Requires `DATABASE_URL`; connects as `app_rt` and binds the tenant (RLS applies). Exit 0 = intact, 1 = tamper detected. |
 
 ### Dead-letter queue operations
 

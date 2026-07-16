@@ -42,6 +42,10 @@ http:
   request_timeout: "30s"          # per-request handler timeout
   max_body_bytes: 1048576         # max request body size (1 MiB)
   cors_allowed_origins: []        # exact-match CORS allowlist (empty = none)
+  rate_limit:
+    disabled: false               # set true to remove the default per-client rate limiter (enabled by default)
+    requests_per_second: 20       # sustained requests/sec per client key
+    burst: 40                     # burst capacity per client key
 
 log:
   level: "info"                   # debug | info | warn | error
@@ -82,6 +86,9 @@ db:
 | `http.request_timeout` | duration | `30s` | Per-request handler timeout. |
 | `http.max_body_bytes` | int64 | `1048576` | Request body cap (1 MiB). |
 | `http.cors_allowed_origins` | []string | `[]` | Exact-match origins; empty = no cross-origin. |
+| `http.rate_limit.disabled` | bool | `false` | Set `true` to remove the default per-client rate limiter (enabled by default as an opt-out guard). |
+| `http.rate_limit.requests_per_second` | float64 | `20` | Sustained requests/sec per client key (per replica). |
+| `http.rate_limit.burst` | int | `40` | Burst capacity per client key. |
 | `log.level` | string | `info` | `debug`/`info`/`warn`/`error`. |
 | `log.format` | string | `json` | `json` for prod; `text` for local. |
 | `db.dsn` | secret | — | Runtime DSN (`app_rt`). |

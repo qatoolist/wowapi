@@ -111,8 +111,7 @@ can't silently skip. See [Testing](testing.md).
 [CLI reference](cli-reference.md).
 
 **Is there a license?**
-**No `LICENSE` file is present in the repository yet.** Until one is added, treat the code as
-"all rights reserved" and confirm usage terms with the maintainers. (Documented as a gap, not a claim.)
+This project is licensed under the **Apache License 2.0**. See the `LICENSE` file in the repository root for details.
 
 **Where's the deeper design rationale?**
 The [blueprint](../blueprint/README.md) explains the *why* behind every subsystem; the

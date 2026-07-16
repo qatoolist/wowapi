@@ -217,6 +217,10 @@ export MIGRATE_URL="postgres://app_migrate:secret@localhost:5432/myapp?sslmode=d
 export PLATFORM_URL="postgres://app_platform:secret@localhost:5432/myapp?sslmode=disable"
 ```
 
+> **One-time role provisioning:** the bootstrap migration creates `app_rt`/`app_platform` as `NOLOGIN` —
+> ops must grant a login out-of-band before the DSNs above will connect: `ALTER ROLE app_rt LOGIN PASSWORD
+> '…';` (same for `app_platform`). See `scripts/product-dev.sh` for the automated version of this step.
+
 **4. Validate config, migrate, run:**
 
 ```bash

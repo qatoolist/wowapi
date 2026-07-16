@@ -6,7 +6,7 @@ secret-handling paragraph in the blueprint did not spell out the concrete, wowap
 rotating a provider credential that a tenant row references.
 
 It is domain-neutral: "provider" here means any external-provider adapter a module registers
-(payment, messaging, identity, storage, device — see `kernel/integration/integration.go` `validKinds`),
+(payment, messaging, identity, storage, device — see `foundation/integration/integration.go` `validKinds`),
 not any particular society/business concept.
 
 ## How a provider credential is stored
@@ -20,18 +20,18 @@ A provider credential is **never** stored as plaintext. Each row in `integration
   (`kernel/secrets/secrets.go:17` `Scheme`, `:29` `ParseRef`).
 - The write path rejects anything that is not a `secretref://` reference, so plaintext cannot enter:
   `if in.CredentialRef != "" && !secrets.IsRef(in.CredentialRef) { … "credential_ref must be a
-  secretref:// reference, never plaintext" }` (`kernel/integration/store.go:54`).
+  secretref:// reference, never plaintext" }` (`foundation/integration/store.go:54`).
 - The row is a platform+tenant hybrid: `tenant_id` NULL is the platform default; a non-NULL `tenant_id`
   is a tenant override. RLS admits a tenant to its own rows plus platform defaults, and a tenant-bound
-  session cannot forge a platform row (`migrations/00011_notify_webhook_integration.sql:115`–`135`).
+  session cannot forge a platform row (`migrations/00011_notify_webhook_integration.sql:115`–`133`).
 
 At use time the kernel resolves the reference to a value on demand and wraps it in a structurally
 redacted `config.Secret`:
 
-- `integration.Config.Credential` is a `config.Secret` (`kernel/integration/integration.go:42`).
+- `integration.Config.Credential` is a `config.Secret` (`foundation/integration/integration.go:42`).
 - `Store.Resolve` reads the row on the caller's `TenantDB` (RLS-scoped: a tenant override wins over the
   platform default), parses `credential_ref`, calls the secrets provider, and stores the result as
-  `config.NewSecret(*credRef, val)` (`kernel/integration/store.go:88`–`126`). Resolution happens **per
+  `config.NewSecret(*credRef, val)` (`foundation/integration/store.go:88`–`128`). Resolution happens **per
   `Resolve` call**, not once at boot — so a new secret value is picked up on the next resolution
   without a redeploy.
 - The secrets provider is the port `secrets.Provider.Resolve` (`kernel/secrets/secrets.go:48`). The
