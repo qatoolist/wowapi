@@ -80,3 +80,5 @@ data/reliability lead.
 ## Final status
 
 accepted.
+
+— CORRECTION (2026-07-16, findings-remediation adjudication): acceptance status rolled back to `implemented` per discovery that the three tasks' named proof artifacts (T001: seeded-mismatch detection test; T002: lock-duration report; T003: concurrent-writer-load test) were never built, while the schema properties themselves (mismatch audit, composite FK validation, cross-tenant insert rejection) were independently re-verified live on 2026-07-16. See story.md status note and programme-deviations.md DEV-PROG-005.

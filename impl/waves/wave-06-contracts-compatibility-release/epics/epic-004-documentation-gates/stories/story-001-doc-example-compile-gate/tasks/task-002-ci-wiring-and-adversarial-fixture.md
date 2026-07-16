@@ -2,11 +2,11 @@
 id: W06-E04-S001-T002
 type: task
 title: Wire into CI and make docs-check; adversarial staled-example fixture
-status: complete
+status: done
 parent_story: W06-E04-S001
 owner: W06E04Impl
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on:
   - W06-E04-S001-T001
 acceptance_criteria:

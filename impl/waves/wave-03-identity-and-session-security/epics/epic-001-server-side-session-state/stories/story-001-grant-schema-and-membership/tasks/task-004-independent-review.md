@@ -2,11 +2,11 @@
 id: W03-E01-S001-T004
 type: task
 title: Independent review
-status: complete
+status: done
 parent_story: W03-E01-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W03-E01-S001-T001
   - W03-E01-S001-T002

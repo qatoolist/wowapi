@@ -2,14 +2,14 @@
 id: W02-E02-S002
 type: story
 title: Cross-tenant mismatch audit, composite FK validation, and negative tests
-status: accepted
+status: implemented
 wave: W02
 epic: W02-E02
 owner: W02FKVerAgg
 reviewer: W02ReviewGate
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 source_requirements:
   - DATA-01
 depends_on:
@@ -48,6 +48,8 @@ W02-E02-S002
 ## Title
 
 Cross-tenant mismatch audit, composite FK validation, and negative tests
+
+> **Status note (2026-07-16):** acceptance rolled back to `implemented` by the findings-remediation adjudication: three tasks' named proof artifacts (seeded-mismatch detection test, lock-duration report, concurrent-writer-load test) were never produced, so the mandate's all-tasks-done acceptance precondition was not met. The safety properties themselves were independently re-verified live on 2026-07-16 (EV-008). Parent epic and wave W02 are `partially-accepted` accordingly.
 
 ## Objective
 

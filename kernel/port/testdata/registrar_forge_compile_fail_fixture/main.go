@@ -30,7 +30,7 @@ func main() {
 
 	// Attempt 4: Use port Key with mismatched generic type
 	keyInt := port.NewKey[int]("test_port")
-	
+
 	// We try to register with a forged registrar
 	_ = port.Define(forgedReg, keyInt)
 }

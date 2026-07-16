@@ -2,12 +2,12 @@
 id: W02
 type: wave
 title: Data-safety and migration tooling
-status: accepted
+status: partially-accepted
 owner: unassigned
 reviewer: unassigned
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 included_epics:
   - W02-E01
   - W02-E02

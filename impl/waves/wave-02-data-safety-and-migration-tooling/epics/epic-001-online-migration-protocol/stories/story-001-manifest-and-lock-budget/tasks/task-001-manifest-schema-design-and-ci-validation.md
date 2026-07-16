@@ -2,11 +2,11 @@
 id: W02-E01-S001-T001
 type: task
 title: Manifest schema design, external review, and CI validation
-status: todo
+status: done
 parent_story: W02-E01-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W02-E01-S001-01
@@ -42,6 +42,8 @@ unassigned
 ### Status
 
 todo
+
+> **Status note (2026-07-16):** marked done per the 2026-07-16 independent review (EV-W02-E01-S001-004), which was adjudicated as the operative AC-02 evidence after the original pre-CI external-review claim (W02Proto.ManifestSchemaReview) was found uncorroborated; see closure.md.
 
 ### Dependencies
 

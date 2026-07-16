@@ -2,11 +2,11 @@
 id: W03-E01-S001-T003
 type: task
 title: Zero/unknown-tenant rejection (SEC-01 T3)
-status: complete
+status: done
 parent_story: W03-E01-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W03-E01-S001-T002
 acceptance_criteria:

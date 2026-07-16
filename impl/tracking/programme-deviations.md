@@ -144,6 +144,86 @@ defer with records), then finish W05 per plan — tracked via **DEC-PROG-002**.
 
 ---
 
+## DEV-PROG-005 — W02-E02-S002 acceptance rolled back (proof artifacts never built)
+
+### Deviation ID
+
+DEV-PROG-005
+
+### Approved plan
+
+W02-E02-S002 was approved for acceptance 2026-07-13 (closure.md dated 2026-07-13, status: `accepted`).
+The acceptance criteria AC-01 through AC-04 are listed as `pass`, and the five task rows (T001–T005)
+plus the independent-review task (T006) are all listed as `complete` in closure.md.
+
+### Actual implementation
+
+The 2026-07-16 findings-remediation verification pass discovered that three tasks' completion
+criteria's named proof artifacts were never built, despite being explicitly called for in the
+acceptance criteria:
+- **T001 (Mismatch audit):** AC-W02-E02-S002-01 requires "an integration test that seeds a
+  deliberate cross-tenant mismatch" (EV-W02-E02-S002-002). This seeded-mismatch integration test
+  artifact was never constructed.
+- **T002 (Composite FK `NOT VALID` add):** AC-W02-E02-S002-02 requires "a migration lock-duration
+  test" (EV-W02-E02-S002-003). This lock-duration test artifact was never constructed.
+- **T003 (`VALIDATE CONSTRAINT`):** AC-W02-E02-S002-03 requires "a load test under concurrent writer
+  load" (EV-W02-E02-S002-004). This concurrent-writer-load test artifact was never constructed.
+
+The schema deliverables themselves (mismatch audit schema query, composite FK migrations, validation
+schema work) were applied and independently re-verified live on 2026-07-16, so the safety properties
+are confirmed. The three tasks are re-classified as `implemented` (schema deliverable applied and
+verified) rather than `done` (completion criteria fully satisfied with all named proof artifacts).
+
+### Reason
+
+Not recorded at the time (2026-07-13). The closure.md acceptance claim was made without a final
+cross-check against the completion criteria's explicit artifact requirements, per mandate §2.6
+(truthful-status reporting). The autopsy (2026-07-16) detected the discrepancy during a sample
+verification of closure evidence against front-matter acceptance-criteria language.
+
+### Impact
+
+Story W02-E02-S002 acceptance status rolled back from `accepted` to `implemented`. Parent epic
+W02-E02 rolled back to `partially-accepted` (5 stories total: 4 fully accepted, 1 implemented).
+Parent wave W02 rolled back to `partially-accepted` (8 stories total: 7 fully accepted, 1
+implemented). The safety properties themselves remain confirmed and live on 2026-07-16, so the
+data-integrity guarantees are not in doubt — this is a completion-criterion formality, not a
+safety regression.
+
+### Risks
+
+The three deferred proof artifacts (seeded-mismatch test, lock-duration test, concurrent-writer-load
+test) could become stale or bit-rot if not built soon, so future readers would lose the ability to
+re-verify the specific acceptance criteria independently. Residual risk: low if the three artifacts
+are built and evidence is recorded within the next maintenance cycle; medium if they remain deferred
+for longer than one quarter.
+
+### Approval
+
+Not originally approved by any recorded decision. The acceptance rollback (this deviation) was
+adjudicated 2026-07-16 as part of the findings-remediation pass (autopsy remediation R-1 +
+conductor adjudication per review-gate-2026-07-16.md). The disposition — build the three proof
+artifacts and re-accept, or formally descope them and lower the acceptance criteria — is recorded
+as an open item in **DEC-PROG-006** (status: proposed, human ratification pending).
+
+### Compensating controls
+
+The story.md status note (2026-07-16) and closure.md correction note (2026-07-16) both record the
+discovery and the status change, along with references to this deviation record. The safety
+properties remain independently verified live (EV-008, DB-backed tests re-run 2026-07-16). If the
+three proof artifacts are built, the closure.md will be re-opened, the three tasks reclassified
+back to `done`, the story re-accepted, and this deviation superseded.
+
+### Follow-up work
+
+Autopsy remediation R-2 (frame the options for W02-E02-S002 completion): either (a) build the three
+proof artifacts and re-accept the story, or (b) formally descope the three artifacts via a ratified
+decision record (DEC-PROG-006, currently `proposed`). The choice depends on the W02 execution
+owner's assessment of the cost/value tradeoff; both paths are valid. Until one is chosen and
+executed, W02-E02-S002 remains `implemented` and the parent wave W02 remains `partially-accepted`.
+
+---
+
 ## DEV-PROG-003 — Sequencing-gate bypasses across W02/W03/W04/W05
 
 ### Deviation ID

@@ -2,11 +2,11 @@
 id: W07-E01-S003-T001
 type: task
 title: Bounded batch claiming for SweepSLA
-status: complete
+status: done
 parent_story: W07-E01-S003
 owner: W07-Scoping-Dispatch.W07E01S003
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W07-E01-S003-01

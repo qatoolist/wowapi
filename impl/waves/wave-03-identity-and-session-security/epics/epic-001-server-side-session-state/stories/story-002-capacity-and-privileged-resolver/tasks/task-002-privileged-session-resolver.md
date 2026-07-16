@@ -2,11 +2,11 @@
 id: W03-E01-S002-T002
 type: task
 title: Privileged-session resolver (SEC-01 T5)
-status: complete
+status: done
 parent_story: W03-E01-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W03-E01-S002-02

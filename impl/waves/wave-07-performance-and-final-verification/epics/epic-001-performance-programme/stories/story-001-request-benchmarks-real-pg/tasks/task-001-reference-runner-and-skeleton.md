@@ -2,11 +2,11 @@
 id: W07-E01-S001-T001
 type: task
 title: Reference runner + perf/reference-v1.json skeleton
-status: complete
+status: done
 parent_story: W07-E01-S001
 owner: W07-Phase-A-Execution.W07E01S001
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W07-E01-S001-01

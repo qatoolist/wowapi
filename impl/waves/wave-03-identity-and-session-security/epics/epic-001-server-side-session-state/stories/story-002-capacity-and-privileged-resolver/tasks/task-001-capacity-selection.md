@@ -2,11 +2,11 @@
 id: W03-E01-S002-T001
 type: task
 title: Capacity-selection enforcement (SEC-01 T4)
-status: complete
+status: done
 parent_story: W03-E01-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W03-E01-S002-01

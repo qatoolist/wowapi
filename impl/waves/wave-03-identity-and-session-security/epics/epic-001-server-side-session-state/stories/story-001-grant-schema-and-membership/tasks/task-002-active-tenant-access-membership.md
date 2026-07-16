@@ -2,11 +2,11 @@
 id: W03-E01-S001-T002
 type: task
 title: ActiveTenantAccess + unconditional membership check (SEC-01 T2)
-status: complete
+status: done
 parent_story: W03-E01-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W03-E01-S001-02

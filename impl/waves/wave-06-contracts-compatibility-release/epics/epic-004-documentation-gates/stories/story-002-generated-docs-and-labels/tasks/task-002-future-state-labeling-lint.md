@@ -2,11 +2,11 @@
 id: W06-E04-S002-T002
 type: task
 title: Future-state-labeling lint
-status: complete
+status: done
 parent_story: W06-E04-S002
 owner: W06E04Impl
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W06-E04-S002-02

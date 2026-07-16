@@ -2,11 +2,11 @@
 id: W07-E01-S001-T002
 type: task
 title: DB-backed benchmarks, all 6 profiles
-status: complete
+status: done
 parent_story: W07-E01-S001
 owner: W07-Phase-A-Execution.W07E01S001
 created_at: 2026-07-12
-updated_at: 2026-07-14
+updated_at: 2026-07-16
 depends_on:
   - W07-E01-S001-T001
 acceptance_criteria:

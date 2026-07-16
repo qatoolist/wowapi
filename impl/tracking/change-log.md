@@ -18,6 +18,15 @@ implementation progress — that lives in each story's own files and rolls up vi
 
 Reverse-chronological (newest first).
 
+## 2026-07-16 — Findings-remediation pass R-1 follow-up: task front-matter and register reconciliation
+
+- **Task front-matter status normalization:** 31 W02/W03 task files reconciled: todo→done vocabulary normalization (34 files); front-matter status values matched to mapped task evidence. W02-E02-S002 T001/T002/T003 reclassified `implemented` (schema delivered and re-verified live, but three specific proof artifacts never built — noted in task caveat entries).
+- **Story and index demotion:** W02-E02-S002 story.md acceptance rolled back to `implemented` per findings-remediation adjudication (discovery: three tasks' named proof artifacts in acceptance criteria never built); story.md given status note and closure.md given dated correction line; parent epic W02-E02 and wave W02 set to `partially-accepted`. Tasks/index.md files for 10 stories (8 W02 + 2 W03) updated to match current task front-matter status values; W06-E03-S001 T006 status cell changed from `done-with-deviation` to `done` (deviation tracking preserved in other columns).
+- **New deviation and decision records:** DEV-PROG-005 (W02-E02-S002 acceptance rollback with three deferred proof artifacts) and DEV-PROG-006 (proposed, human ratification pending — options for W02-E02-S002 completion: build the 3 artifacts + re-accept, or formally descope via decision).
+- **Verification records updated:** W03-E01-S003 tasks T001/T002 "Verification Record" sections replaced with real evidence from closure.md re-run on 2026-07-16 (DB-backed tests PASS).
+- **W03 caveat notes added:** Task status notes added to W02-E01-S001-T001 and W02-E01-S003-T004 per findings-remediation adjudication (evidence reconciliation).
+- **Status-register ready for regeneration:** vocabulary normalization and roll-up corrections in place; `python3 miscellaneous/regen_status_register.py --check` run in this pass (see verification output below).
+
 ## 2026-07-16 — Conductor adjudication applied per the six review-gate-2026-07-16.md records
 
 Conductor adjudication (Fable 5), per review-gate-2026-07-16.md records. Applied the conductor's

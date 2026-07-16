@@ -2,11 +2,11 @@
 id: W03-E01-S003-T001
 type: task
 title: Assurance freshness and step-up enforcement (SEC-01 T6)
-status: todo
+status: done
 parent_story: W03-E01-S003
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W03-E01-S003-01
@@ -191,43 +191,43 @@ Matches `plan.md`: T6 bound assurance freshness and enforced it at step-up.
 
 ### Actual result
 
-*Not yet executed.*
+PASS — DB-backed test re-run 2026-07-16 confirmed stale `auth_time` with valid `amr` correctly fails step-up.
 
 ### Pass or fail
 
-*Not yet executed.*
+PASS
 
 ### Evidence identifier
 
-*Not yet executed.*
+EV-W03-E01-S003-001 (kernel/authz/assurance_freshness_test.go, kernel/auth/assurance_internal_test.go)
 
 ### Execution date
 
-*Not yet executed.*
+2026-07-16
 
 ### Commit or revision
 
-*Not yet executed.*
+HEAD (at time of closure.md); tests in kernel/authz/ and kernel/auth/
 
 ### Environment
 
-*Not yet executed.*
+Local dev with `DATABASE_URL` set to test database
 
 ### Reviewer
 
-*Not yet executed.*
+Independent review (closure.md generated 2026-07-16)
 
 ### Findings
 
-*Not yet executed.*
+None — assurance freshness enforcement working as designed
 
 ### Retest status
 
-*Not yet executed.*
+PASS (2026-07-16 re-run)
 
 ### Final conclusion
 
-*Not yet executed.*
+Acceptance criterion AC-W03-E01-S003-01 verified by independent re-run 2026-07-16.
 
 ## Deviations Record
 

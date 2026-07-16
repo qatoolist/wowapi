@@ -2,11 +2,11 @@
 id: W02-E02-S002-T002
 type: task
 title: Composite FK NOT VALID add, all 8 edges (DATA-01 T4)
-status: todo
+status: implemented
 parent_story: W02-E02-S002
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E02-S002-T001
 acceptance_criteria:
@@ -37,6 +37,8 @@ unassigned
 ### Status
 
 todo
+
+> **Status note (2026-07-16):** marked implemented (schema deliverable applied and independently verified live 2026-07-16), but the completion criterion's named proof artifact (lock-duration report/test) was never built — evidence index row remains "not yet produced".
 
 ### Dependencies
 

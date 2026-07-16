@@ -16,10 +16,10 @@ record as internal sections.
 
 | Task | Title | Owner | Status | Dependencies | Output | Related AC | Implementation state | Verification state |
 |---|---|---|---|---|---|---|---|---|
-| [W03-E04-S001-T001](task-001-party-subject-evaluation.md) | Checker.Has party-subject evaluation (DATA-07 T1) | unassigned | todo | none | `Checker.Has` correctly evaluates party-subject edges via the post-SEC-01 pri... | AC-W03-E04-S001-01 | not started | not started |
-| [W03-E04-S001-T002](task-002-subject-kind-matrix.md) | Checker.Has full subject-kind matrix (DATA-07 T2) | unassigned | todo | W03-E04-S001-T001 | Every schema-enumerated, live-requirement `subject_kind` has an explicit eval... | AC-W03-E04-S001-02 | not started | not started |
-| [W03-E04-S001-T003](task-003-mutation-governance.md) | Mutation governance - ownership, attribution, audit, versioning (DATA-07 T4) | unassigned | todo | W03-E04-S001-T001, W03-E04-S001-T002 | Every relationship-edge create/revoke mutation is ownership-checked, attribut... | AC-W03-E04-S001-03 | not started | not started |
-| [W03-E04-S001-T004](task-004-independent-review.md) | Independent review | unassigned | todo | W03-E04-S001-T001, W03-E04-S001-T002, W03-E04-S001-T003 | A completed review report confirming the checklist above, recorded as evidence. | AC-W03-E04-S001-01, AC-W03-E04-S001-02, AC-W03-E04-S001-03 | not started | not started |
+| [W03-E04-S001-T001](task-001-party-subject-evaluation.md) | Checker.Has party-subject evaluation (DATA-07 T1) | unassigned | done | none | `Checker.Has` correctly evaluates party-subject edges via the post-SEC-01 pri... | AC-W03-E04-S001-01 | implemented | verified |
+| [W03-E04-S001-T002](task-002-subject-kind-matrix.md) | Checker.Has full subject-kind matrix (DATA-07 T2) | unassigned | done | W03-E04-S001-T001 | Every schema-enumerated, live-requirement `subject_kind` has an explicit eval... | AC-W03-E04-S001-02 | implemented | verified |
+| [W03-E04-S001-T003](task-003-mutation-governance.md) | Mutation governance - ownership, attribution, audit, versioning (DATA-07 T4) | unassigned | done | W03-E04-S001-T001, W03-E04-S001-T002 | Every relationship-edge create/revoke mutation is ownership-checked, attribut... | AC-W03-E04-S001-03 | implemented | verified |
+| [W03-E04-S001-T004](task-004-independent-review.md) | Independent review | unassigned | done | W03-E04-S001-T001, W03-E04-S001-T002, W03-E04-S001-T003 | A completed review report confirming the checklist above, recorded as evidence. | AC-W03-E04-S001-01, AC-W03-E04-S001-02, AC-W03-E04-S001-03 | reviewed | verified |
 
 ## Grouping rationale
 

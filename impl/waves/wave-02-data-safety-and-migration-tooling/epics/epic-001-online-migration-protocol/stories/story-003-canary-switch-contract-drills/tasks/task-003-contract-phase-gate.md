@@ -2,11 +2,11 @@
 id: W02-E01-S003-T003
 type: task
 title: Contract-phase gate
-status: todo
+status: done
 parent_story: W02-E01-S003
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on:
   - W02-E01-S003-T002
 acceptance_criteria:

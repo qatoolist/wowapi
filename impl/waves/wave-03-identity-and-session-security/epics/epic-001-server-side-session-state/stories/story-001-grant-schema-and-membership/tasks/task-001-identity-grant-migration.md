@@ -2,11 +2,11 @@
 id: W03-E01-S001-T001
 type: task
 title: identity_grant migration (SEC-01 T1)
-status: complete
+status: done
 parent_story: W03-E01-S001
 owner: unassigned
 created_at: 2026-07-12
-updated_at: 2026-07-12
+updated_at: 2026-07-16
 depends_on: []
 acceptance_criteria:
   - AC-W03-E01-S001-01

@@ -192,6 +192,8 @@ jobs:
         run: make lint-boundaries
       - name: documentation contracts (examples, generated references, future-state labels)
         run: make docs-check
+      - name: impl status vocabulary + roll-up consistency (canonical front matter vs register)
+        run: python3 miscellaneous/regen_status_register.py --check
       - name: test skip manifest (owner + rationale; negative fixture)
         run: make check-test-skips
       - name: unit tests (no database — pure unit path must pass standalone)

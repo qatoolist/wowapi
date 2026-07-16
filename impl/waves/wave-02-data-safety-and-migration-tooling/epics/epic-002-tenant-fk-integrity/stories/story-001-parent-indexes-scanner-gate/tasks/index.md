@@ -16,10 +16,10 @@ definition, implementation record, verification record, and deviations record as
 
 | Task | Title | Owner | Status | Dependencies | Output | Related AC | Implementation state | Verification state |
 |---|---|---|---|---|---|---|---|---|
-| [W02-E02-S001-T001](task-001-parent-tenant-unique-indexes.md) | Parent tenant-scoped unique indexes | unassigned | todo | none | `UNIQUE (tenant_id, id)` on `parties`, `organizations`, `documents`, `document_versions` | AC-W02-E02-S001-01 | not started | not started |
-| [W02-E02-S001-T002](task-002-tenant-fk-catalog-scanner.md) | Tenant-FK catalog scanner | unassigned | todo | none | Scanner enumerating all tenant-table FKs, flagging non-composite ones | AC-W02-E02-S001-02 | not started | not started |
-| [W02-E02-S001-T003](task-003-ci-gate-wiring.md) | CI gate wiring | unassigned | todo | T002 | Scanner wired as permanent CI gate + negative fixture migration | AC-W02-E02-S001-03 | not started | not started |
-| [W02-E02-S001-T004](task-004-independent-review.md) | Independent review | unassigned | todo | T001, T002, T003 | Independent-review record per mandate §14 | AC-W02-E02-S001-01, AC-W02-E02-S001-02, AC-W02-E02-S001-03 | not started | not started |
+| [W02-E02-S001-T001](task-001-parent-tenant-unique-indexes.md) | Parent tenant-scoped unique indexes | unassigned | done | none | `UNIQUE (tenant_id, id)` on `parties`, `organizations`, `documents`, `document_versions` | AC-W02-E02-S001-01 | implemented | verified |
+| [W02-E02-S001-T002](task-002-tenant-fk-catalog-scanner.md) | Tenant-FK catalog scanner | unassigned | done | none | Scanner enumerating all tenant-table FKs, flagging non-composite ones | AC-W02-E02-S001-02 | implemented | verified |
+| [W02-E02-S001-T003](task-003-ci-gate-wiring.md) | CI gate wiring | unassigned | done | T002 | Scanner wired as permanent CI gate + negative fixture migration | AC-W02-E02-S001-03 | implemented | verified |
+| [W02-E02-S001-T004](task-004-independent-review.md) | Independent review | unassigned | done | T001, T002, T003 | Independent-review record per mandate §14 | AC-W02-E02-S001-01, AC-W02-E02-S001-02, AC-W02-E02-S001-03 | reviewed | verified |
 
 ## Grouping rationale
 

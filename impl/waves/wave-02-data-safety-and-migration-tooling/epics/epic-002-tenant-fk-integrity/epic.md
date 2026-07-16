@@ -2,13 +2,13 @@
 id: W02-E02
 type: epic
 title: Tenant foreign-key integrity
-status: accepted
+status: partially-accepted
 wave: W02
 owner: W02FKVerAgg
 reviewer: W02ReviewGate
 priority: critical
 created_at: 2026-07-12
-updated_at: 2026-07-13
+updated_at: 2026-07-16
 source_requirements:
   - DATA-01
   - CS-18

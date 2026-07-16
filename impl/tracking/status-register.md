@@ -47,7 +47,7 @@ hand-edit this file; regenerate it after any canonical status change.
 | W01-E04-S002 | story | Documentation reconciliation — plan traceability fix, DX-05 residual, wowsociety upstream register | accepted |
 | W01-E04-S003 | story | E2E flake diagnosis — reproduction-first investigation of the intermittent internal/e2e full-suite failure | accepted |
 
-## wave-02-data-safety-and-migration-tooling — wave status: `accepted`
+## wave-02-data-safety-and-migration-tooling — wave status: `partially-accepted`
 
 | Item | Level | Title | Status |
 |---|---|---|---|
@@ -55,9 +55,9 @@ hand-edit this file; regenerate it after any canonical status change.
 | W02-E01-S001 | story | Migration manifest schema and online-DDL lock budget | accepted |
 | W02-E01-S002 | story | Expand-phase tooling, resumable backfill harness, and validation-phase tooling | accepted |
 | W02-E01-S003 | story | Canary, switch, and contract-phase tooling with the full CI drill pipeline | accepted |
-| W02-E02 | epic | Tenant foreign-key integrity | accepted |
+| W02-E02 | epic | Tenant foreign-key integrity | partially-accepted |
 | W02-E02-S001 | story | Parent tenant-scoped unique indexes, FK catalog scanner, and CI gate | accepted |
-| W02-E02-S002 | story | Cross-tenant mismatch audit, composite FK validation, and negative tests | accepted |
+| W02-E02-S002 | story | Cross-tenant mismatch audit, composite FK validation, and negative tests | implemented |
 | W02-E03 | epic | Version allocation and GC | accepted |
 | W02-E03-S001 | story | Version-allocation races and upload-blob GC | accepted |
 | W02-E04 | epic | Aggregate write contract | accepted |
@@ -120,7 +120,7 @@ hand-edit this file; regenerate it after any canonical status change.
 | W05-E03-S001 | story | Manifest schema and derived-projection tooling | planned |
 | W05-E03-S002 | story | Boot-time strictness and the shared no-op-adapter waiver mechanism | planned |
 | W05-E04 | epic | Wiring and cache hygiene | planned |
-| W05-E04-S001 | story | Constructor-boundary lint and kernel.go audit | ready-for-review |
+| W05-E04-S001 | story | Constructor-boundary lint and kernel.go audit | implemented |
 | W05-E04-S002 | story | Bounded, epoch-invalidated authorization cache | planned |
 | W05-E05 | epic | Kernel re-home | planned |
 | W05-E05-S001 | story | Foundation tree, package moves, and mfa forwarding shim | planned |
@@ -165,9 +165,8 @@ hand-edit this file; regenerate it after any canonical status change.
 
 ## Story status totals
 
-- `accepted`: 49
+- `accepted`: 48
 - `blocked`: 4
-- `implemented`: 1
+- `implemented`: 3
 - `planned`: 15
-- `ready-for-review`: 1
 - `verified`: 5
