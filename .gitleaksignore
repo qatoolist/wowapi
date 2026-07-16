@@ -10,6 +10,10 @@ e6bed505ef49f581cb6f75ae0c0e9a5fc7c89dc0:docs/implementation/architecture-direct
 # this file's own earlier comment (commit 5223495) quoted the flagged vocabulary and tripped
 # the rule in that commit's diff; the comment is reworded at HEAD, the history stays allowlisted.
 522349585ed864297c6767f6b3932e9969cd9ca3:.gitleaksignore:generic-api-key:4
+# wave-02 evidence report: the commit_sha frontmatter field holds a prose provenance note
+# (commit id + touched-file list), which the entropy rule reads as a key assignment.
+# Verified by direct read; no secret material.
+93b9da66482f020810e2ce31a0f6048064400070:impl/waves/wave-02-data-safety-and-migration-tooling/epics/epic-005-production-seed-sync/stories/story-001-prod-seed-sync-path/evidence/007-independent-review-remediation/review-report.md:generic-api-key:18
 # Migration files flagged as API keys (false positives)
 adapters/secrets/envprovider/envprovider_test.go:generic-api-key:77
 .superpowers/sdd/review-287abc3..d2a4164.diff:generic-api-key:10944
