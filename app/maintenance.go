@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,40 +35,26 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 	// Workflow SLA timers: fan out one tenant-bound sweep per active tenant. One
 	// tenant's failure is logged and does not block the others.
 	sched.Register("kernel.workflow.sla", slaEvery, func(ctx context.Context) error {
-		tenants, err := activeTenants(ctx, k)
-		if err != nil {
-			return err
-		}
-		for _, tid := range tenants {
+		return forEachActiveTenant(ctx, k, "kernel.workflow.sla", func(ctx context.Context, tid uuid.UUID) error {
 			tctx := database.WithTenantID(ctx, tid)
-			if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+			return k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
 				_, _, serr := k.WorkflowRuntime.SweepSLA(ctx, db, time.Now())
 				return serr
-			}); err != nil {
-				k.Log.WarnContext(ctx, "scheduler: sla sweep failed for tenant", "tenant", tid, "err", err)
-			}
-		}
-		return nil
+			})
+		})
 	})
 
 	// Data-lifecycle disposition: fan out per active tenant, running each
 	// registered record class's Dispose (roadmap E2). A no-op until a product
 	// registers record classes; one tenant's failure never blocks the rest.
 	sched.Register("kernel.retention.disposition", slaEvery, func(ctx context.Context) error {
-		tenants, err := activeTenants(ctx, k)
-		if err != nil {
-			return err
-		}
-		for _, tid := range tenants {
+		return forEachActiveTenant(ctx, k, "kernel.retention.disposition", func(ctx context.Context, tid uuid.UUID) error {
 			tctx := database.WithTenantID(ctx, tid)
-			if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+			return k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
 				_, serr := k.Retention.SweepDisposition(ctx, db, time.Now())
 				return serr
-			}); err != nil {
-				k.Log.WarnContext(ctx, "scheduler: disposition sweep failed for tenant", "tenant", tid, "err", err)
-			}
-		}
-		return nil
+			})
+		})
 	})
 
 	// DLQ depth: export dead-lettered jobs + outbox events as the dlq_depth
@@ -100,16 +88,10 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 	// being wired (nil in api-only postures that skip the notification framework).
 	if k.Notify != nil {
 		sched.Register("kernel.notify.send_pending", notifyEvery, func(ctx context.Context) error {
-			tenants, err := activeTenants(ctx, k)
-			if err != nil {
-				return err
-			}
-			for _, tid := range tenants {
-				if _, serr := k.Notify.SendPending(ctx, platTxM, tid, time.Now()); serr != nil {
-					k.Log.WarnContext(ctx, "scheduler: notify send_pending failed for tenant", "tenant", tid, "err", serr)
-				}
-			}
-			return nil
+			return forEachActiveTenant(ctx, k, "kernel.notify.send_pending", func(ctx context.Context, tid uuid.UUID) error {
+				_, serr := k.Notify.SendPending(ctx, platTxM, tid, time.Now())
+				return serr
+			})
 		})
 	}
 
@@ -121,19 +103,16 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 	// rest. Guarded on Webhooks being wired.
 	if k.Webhooks != nil {
 		sched.Register("kernel.webhook.retry", webhookEvery, func(ctx context.Context) error {
-			tenants, err := activeTenants(ctx, k)
-			if err != nil {
-				return err
-			}
-			for _, tid := range tenants {
+			return forEachActiveTenant(ctx, k, "kernel.webhook.retry", func(ctx context.Context, tid uuid.UUID) error {
+				var errs []error
 				if rerr := k.Webhooks.RetryOutbound(ctx, platTxM, tid, time.Now()); rerr != nil {
-					k.Log.WarnContext(ctx, "scheduler: webhook retry failed for tenant", "tenant", tid, "err", rerr)
+					errs = append(errs, fmt.Errorf("retry_outbound: %w", rerr))
 				}
 				if perr := k.Webhooks.ProcessInbound(ctx, platTxM, tid, time.Now()); perr != nil {
-					k.Log.WarnContext(ctx, "scheduler: webhook process_inbound failed for tenant", "tenant", tid, "err", perr)
+					errs = append(errs, fmt.Errorf("process_inbound: %w", perr))
 				}
-			}
-			return nil
+				return errors.Join(errs...)
+			})
 		})
 	}
 
@@ -142,18 +121,16 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 	// Documents being wired (nil in api-only postures without storage).
 	if k.Documents != nil {
 		sched.Register("kernel.document.upload_session_sweep", uploadSessionEvery, func(ctx context.Context) error {
-			tenants, err := activeTenants(ctx, k)
-			if err != nil {
-				return err
-			}
-			for _, tid := range tenants {
-				if n, serr := k.Documents.SweepUploadSessions(ctx, platTxM, tid, time.Now()); serr != nil {
-					k.Log.WarnContext(ctx, "scheduler: upload session sweep failed for tenant", "tenant", tid, "err", serr)
-				} else if n > 0 {
+			return forEachActiveTenant(ctx, k, "kernel.document.upload_session_sweep", func(ctx context.Context, tid uuid.UUID) error {
+				n, serr := k.Documents.SweepUploadSessions(ctx, platTxM, tid, time.Now())
+				if serr != nil {
+					return serr
+				}
+				if n > 0 {
 					k.Log.InfoContext(ctx, "scheduler: expired upload sessions swept", "tenant", tid, "count", n)
 				}
-			}
-			return nil
+				return nil
+			})
 		})
 	}
 }
@@ -166,22 +143,37 @@ func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idem
 func registerModuleRecurring(sched *jobs.Scheduler, k *kernel.Kernel, recurring []RecurringJob) {
 	for _, rj := range recurring {
 		sched.Register(rj.Name, rj.Every, func(ctx context.Context) error {
-			tenants, err := activeTenants(ctx, k)
-			if err != nil {
-				return err
-			}
-			for _, tid := range tenants {
+			return forEachActiveTenant(ctx, k, rj.Name, func(ctx context.Context, tid uuid.UUID) error {
 				tctx := database.WithTenantID(ctx, tid)
-				if err := k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+				return k.Tx.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
 					return rj.Run(ctx, db)
-				}); err != nil {
-					k.Log.WarnContext(ctx, "scheduler: module recurring job failed for tenant",
-						"job", rj.Name, "tenant", tid, "err", err)
-				}
-			}
-			return nil
+				})
+			})
 		})
 	}
+}
+
+// forEachActiveTenant fans a maintenance function out across every active
+// tenant, continuing past per-tenant failures so one tenant never blocks the
+// rest — but returning the JOINED per-tenant errors instead of swallowing them
+// (adversarial review 2026-07-17, F-09: the observer and
+// scheduler_task_errors_total previously reported success even when every
+// tenant failed). Failed tenants retry at the task's next interval; the
+// schedule advances regardless.
+func forEachActiveTenant(ctx context.Context, k *kernel.Kernel, task string, fn func(ctx context.Context, tid uuid.UUID) error) error {
+	tenants, err := activeTenants(ctx, k)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, tid := range tenants {
+		if err := fn(ctx, tid); err != nil {
+			k.Log.WarnContext(ctx, "scheduler: task failed for tenant",
+				"task", task, "tenant", tid, "err", err)
+			errs = append(errs, fmt.Errorf("tenant %s: %w", tid, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // activeTenants lists tenant ids eligible for per-tenant maintenance. Read on the

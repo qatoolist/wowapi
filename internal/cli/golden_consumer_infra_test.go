@@ -113,7 +113,33 @@ func exerciseGoldenConsumerRealInfrastructure(t *testing.T, productDir string, g
 	waitGoldenHTTP(t, fmt.Sprintf("http://127.0.0.1:%d/metrics", workerPort), 30*time.Second)
 	waitGoldenEventStatus(t, h, tenantA.ID, 2, "dispatched", 30*time.Second)
 
+	// F-06 regression (adversarial-framework-review-2026-07-17): a valid request
+	// for an absent resource must return the framework's RFC 9457 not-found —
+	// GET previously leaked raw pgx.ErrNoRows as an opaque 500, and PUT/DELETE
+	// ignored the command tag, returning false 200/204 for nonexistent rows.
+	// Runs after the fixture-count assertions so the extra writes are inert.
+	missing := "00000000-0000-4000-8000-00000000dead"
+	if status := goldenRequestStatus(t, http.MethodGet, base+"/item/"+missing, tokenA, ""); status != http.StatusNotFound {
+		t.Fatalf("GET of a valid nonexistent id returned %d, want 404", status)
+	}
+	if status := goldenRequestStatus(t, http.MethodPut, base+"/item/"+missing, tokenA, `{"name":"ghost","stock":1}`); status != http.StatusNotFound {
+		t.Fatalf("PUT of a valid nonexistent id returned %d, want 404 (false success masks lost updates)", status)
+	}
+	if status := goldenRequestStatus(t, http.MethodDelete, base+"/item/"+missing, tokenA, ""); status != http.StatusNotFound {
+		t.Fatalf("DELETE of a valid nonexistent id returned %d, want 404 (false 204 masks no-ops)", status)
+	}
+	// An inactive (soft-deleted) row must behave identically: the original row's
+	// one real DELETE returns 204, then every follow-up verb sees not-found.
 	goldenJSONRequest(t, http.MethodDelete, base+"/item/"+id, tokenA, "", http.StatusNoContent)
+	if status := goldenRequestStatus(t, http.MethodGet, base+"/item/"+id, tokenA, ""); status != http.StatusNotFound {
+		t.Fatalf("GET of an inactive row returned %d, want 404", status)
+	}
+	if status := goldenRequestStatus(t, http.MethodPut, base+"/item/"+id, tokenA, `{"name":"ghost","stock":2}`); status != http.StatusNotFound {
+		t.Fatalf("PUT of an inactive row returned %d, want 404", status)
+	}
+	if status := goldenRequestStatus(t, http.MethodDelete, base+"/item/"+id, tokenA, ""); status != http.StatusNotFound {
+		t.Fatalf("repeat DELETE of an inactive row returned %d, want 404", status)
+	}
 }
 
 func goldenEnvOr(key, fallback string) string {

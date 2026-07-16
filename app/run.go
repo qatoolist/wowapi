@@ -12,6 +12,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -25,6 +26,14 @@ type Hook struct {
 	// the component's lifetime). The ctx is the run context; components should
 	// respect its cancellation on their own internal paths.
 	Start func(ctx context.Context) error
+	// Failed, when non-nil, is how a hook reports that its background work
+	// died AFTER a successful Start (a listener that stopped serving, a loop
+	// that crashed). RunHooks treats a received error like a Start failure:
+	// it stops every started hook and returns the error — the process must
+	// never sit alive while a critical serving loop is dead (adversarial
+	// review 2026-07-17, F-02). Send at most one error; nil channels are
+	// simply never selected.
+	Failed <-chan error
 	// Stop performs a graceful shutdown. nil means nothing to stop. Stop
 	// receives a fresh context bounded by the stopTimeout, independent of
 	// the (already-cancelled) run context.
@@ -55,9 +64,36 @@ func RunHooks(ctx context.Context, logger *slog.Logger, stopTimeout time.Duratio
 		started = append(started, h)
 	}
 
-	// Block until the run context is done (normal shutdown or start failure).
+	// Block until the run context is done (normal shutdown), a Start failed,
+	// or a started hook reports that its background work died (F-02: a process
+	// must never sit alive while a critical serving loop is dead).
 	if startErr == nil {
-		<-ctx.Done()
+		asyncFail := make(chan error, 1)
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		for _, h := range started {
+			if h.Failed == nil {
+				continue
+			}
+			go func(h Hook) {
+				select {
+				case err := <-h.Failed:
+					if err != nil {
+						select {
+						case asyncFail <- fmt.Errorf("hook %q: background work failed: %w", h.Name, err):
+						default:
+						}
+					}
+				case <-watchCtx.Done():
+				}
+			}(h)
+		}
+		select {
+		case <-ctx.Done():
+		case err := <-asyncFail:
+			logger.Error("hook background work failed; shutting down", "err", err)
+			startErr = err
+		}
+		stopWatch()
 	}
 
 	// Stop in reverse order; Stop receives its own timeout-bounded context

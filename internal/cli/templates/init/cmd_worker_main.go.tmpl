@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
 	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
@@ -173,11 +174,24 @@ func run(ctx context.Context) error {
 	metricsMux.Handle("/metrics", metrics.Handler())
 	metricsSrv := &http.Server{Addr: metricsAddr, Handler: metricsMux, ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout}
 	go func() {
+		// Policy decision (framework F-02 review): the metrics listener is
+		// observability, not the worker's critical work — its failure is logged
+		// loudly but does NOT kill the process. Promote to fail-fast by wiring
+		// it through app.Hook.Failed if metrics availability is process-critical
+		// for your deployment.
 		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.ErrorContext(ctx, "worker metrics server error", "err", err)
+			log.ErrorContext(ctx, "worker metrics server error (non-fatal by policy)", "err", err)
 		}
 	}()
-	defer func() { _ = metricsSrv.Shutdown(context.WithoutCancel(ctx)) }()
+	defer func() {
+		// Fresh bounded deadline: the run ctx is already cancelled here, and an
+		// unbounded shutdown could exceed the orchestrator's termination grace.
+		sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer scancel()
+		if err := metricsSrv.Shutdown(sctx); err != nil {
+			log.WarnContext(sctx, "worker metrics server shutdown", "err", err)
+		}
+	}()
 
 	return app.StartWorker(ctx, booted, app.WorkerConfigOpts{})
 }

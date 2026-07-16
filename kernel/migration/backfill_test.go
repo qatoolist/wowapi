@@ -69,7 +69,7 @@ func TestBackfillCheckpointUsesSharedLeasePrimitive(t *testing.T) {
 		t.Fatal("expected resumed=true for existing checkpoint")
 	}
 
-	var token string
+	var token *string
 	var generation int64
 	var lastKey int64
 	if err := admin.QueryRow(ctx,
@@ -77,8 +77,12 @@ func TestBackfillCheckpointUsesSharedLeasePrimitive(t *testing.T) {
 		Scan(&token, &generation, &lastKey); err != nil {
 		t.Fatalf("read checkpoint: %v", err)
 	}
-	if token == "" {
-		t.Fatal("lease_token not set after run")
+	// F-03 fencing contract: a COMPLETED run releases its lease (token cleared)
+	// so a successor claims immediately; the stored generation is retained so
+	// the next epoch is strictly greater. Only a crashed runner leaves a live
+	// token behind (its successor waits out the expiry).
+	if token != nil {
+		t.Fatalf("lease_token = %q after a completed run, want released (NULL)", *token)
 	}
 	if generation == 0 {
 		t.Fatal("lease_generation not bumped after run")

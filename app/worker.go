@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -117,33 +119,62 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	// forever (review finding ARCH-57). Leaked in-flight work is logged; the DB
 	// reclaim path recovers any job left 'running'.
 	log.InfoContext(ctx, "worker starting", "relay_poll", opts.RelayPoll, "job_poll", opts.JobPoll)
-	var wg sync.WaitGroup
-	var relayErr, jobErr, schedErr error
+
+	// Supervision (adversarial review 2026-07-17, F-02): the relay, runner, and
+	// scheduler are this process's reason to exist. Each runs under a child
+	// context; the FIRST unexpected child failure (a non-nil error while the
+	// parent context is still live) cancels the siblings, drains, and returns
+	// promptly — the worker must never sit falsely alive with its critical
+	// loops dead, waiting for an external signal.
+	childCtx, cancelChildren := context.WithCancel(ctx)
+	defer cancelChildren()
+
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		childErr []error
+		failed   = make(chan struct{})
+		failOnce sync.Once
+	)
+	supervise := func(name string, run func(context.Context) error) {
+		defer wg.Done()
+		if err := run(childCtx); err != nil && !errors.Is(err, context.Canceled) {
+			mu.Lock()
+			childErr = append(childErr, fmt.Errorf("%s: %w", name, err))
+			mu.Unlock()
+			failOnce.Do(func() { close(failed) })
+			cancelChildren() // fail fast: siblings stop instead of serving a half-dead process
+		}
+	}
 	wg.Add(3)
-	go func() { defer wg.Done(); relayErr = relay.Run(ctx, opts.RelayPoll) }()
-	go func() { defer wg.Done(); jobErr = runner.Run(ctx, opts.JobPoll) }()
-	go func() { defer wg.Done(); schedErr = sched.Run(ctx, opts.SchedulerPoll) }()
+	go supervise("relay", func(c context.Context) error { return relay.Run(c, opts.RelayPoll) })
+	go supervise("job runner", func(c context.Context) error { return runner.Run(c, opts.JobPoll) })
+	go supervise("scheduler", func(c context.Context) error { return sched.Run(c, opts.SchedulerPoll) })
 
 	drained := make(chan struct{})
 	go func() { wg.Wait(); close(drained) }()
 
-	<-ctx.Done() // wait for shutdown signal
+	select {
+	case <-ctx.Done(): // normal shutdown signal
+	case <-failed: // a critical child died while the parent was still live
+		log.ErrorContext(context.WithoutCancel(ctx),
+			"worker critical loop failed; cancelling siblings and shutting down")
+	}
 	stopCtx := context.WithoutCancel(ctx)
+	cancelChildren()
 	select {
 	case <-drained:
 		log.InfoContext(stopCtx, "worker stopped (drained)")
 	case <-time.After(opts.ShutdownDrain):
 		log.WarnContext(stopCtx, "worker shutdown drain deadline exceeded; releasing with work possibly in flight",
 			"drain", opts.ShutdownDrain)
-		return errDrainTimeout
+		mu.Lock()
+		defer mu.Unlock()
+		return errors.Join(append([]error{error(errDrainTimeout)}, childErr...)...)
 	}
-	if relayErr != nil {
-		return relayErr
-	}
-	if jobErr != nil {
-		return jobErr
-	}
-	return schedErr
+	mu.Lock()
+	defer mu.Unlock()
+	return errors.Join(childErr...)
 }
 
 // errDrainTimeout signals the hard shutdown-drain cap was hit.
