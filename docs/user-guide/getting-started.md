@@ -16,7 +16,7 @@ Go from zero to a running wowapi-based product. (To work on the framework itself
 
 **Option A (published):**
 ```bash
-go install github.com/qatoolist/wowapi/cmd/wowapi@latest    # or @vX.Y.Z once a version is tagged
+go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0    # pin an exact tag — never @latest (see the upgrade policy)
 wowapi version
 ```
 

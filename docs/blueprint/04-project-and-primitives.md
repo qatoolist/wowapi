@@ -105,9 +105,13 @@ directly public to product modules.
 | `kernel/i18n` | localization support | — | ✅ |
 | `kernel/lease` | distributed lease/fencing mechanism | — | ✅ |
 | `kernel/lifecycle` | module/provider lifecycle hooks | — | ✅ |
-| `kernel/mfa` | multi-factor auth (TOTP, SMS, etc.) | — | ✅ |
+| `foundation/mfa` | multi-factor auth (TOTP enrolment/verification) (via `kernel/mfa` compat shim) | — | ✅ |
+| `foundation/artifact` | immutable versioned artifacts (via `kernel/artifact` compat shim) | — | ✅ |
+| `foundation/attachment` | attachment lifecycle over object storage (via `kernel/attachment` compat shim) | — | ✅ |
+| `foundation/bulk` | bulk-operation framework (via `kernel/bulk` compat shim) | — | ✅ |
+| `foundation/comment` | generic comment threads (via `kernel/comment` compat shim) | — | ✅ |
 | `kernel/migration` | database migration runner, goose integration | — | ✅ |
-| `kernel/port` | service boundary definitions (pluggable adapters) | — | internal |
+| `kernel/port` | inter-module port registry (declared service boundaries) | — | via module SDK (`module.Context` port lookup) |
 | `kernel/privileged` | privileged operation markers (audit, taints) | — | ✅ |
 | `kernel/retry` | retry/backoff strategies | — | ✅ |
 | `kernel/safety` | atomic/idempotent write guards | — | ✅ |

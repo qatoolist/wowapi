@@ -34,8 +34,8 @@ ships.
 
 | Version | Supported |
 |---|---|
-| `v1.1.x` (latest minor) | ✅ |
-| `v1.0.x` (previous minor) | ✅ (critical security/data-integrity fixes only) |
+| latest `v1` minor (currently `v1.1.x`) | ✅ |
+| previous `v1` minor (currently `v1.0.x`) | ✅ (critical security/data-integrity fixes only) |
 | older `v1.x` | ❌ (upgrade to a supported minor) |
 
 ## Security properties & assurance

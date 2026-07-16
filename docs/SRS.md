@@ -2,7 +2,7 @@
 
 - **Product:** `wowapi` — a reusable, domain-agnostic enterprise backend framework ("platform kernel") in Go.
 - **Module path:** `github.com/qatoolist/wowapi`
-- **Status:** pre-1.0 (`v0.x`); public API additive-frozen at `v1.0.0`.
+- **Status:** stable `v1` line (v1.0.0 shipped 2026-07-06; current v1.1.0); public API additive-frozen as of `v1.0.0`.
 - **Document status:** Living. Synthesized from the original prompt/vision files (`Goal.md`, `Goal 1.1.md`, `Goal 1.2.md`, `Goal 2.md`), the authoritative design blueprint (`docs/blueprint/00–12`), the hardening tranche (`ROADMAP-wowapi.md`, `CHANGELOG.md`, `VERIFICATION-wowapi-hardening.md`), and cross-checked against the implemented code (50 commits; 251 Go files; 108 test files; 24 migrations; Go 1.26).
 - **Companion:** [GOALS-TRACKER.md](GOALS-TRACKER.md) — what is done / deferred / pending, with the full backlog.
 
@@ -85,7 +85,7 @@ secrets (5 typed layers) · observability · module SDK · CLI/codegen · testki
 
 ### 2.4 Constraints (see §5 for full list)
 Go 1.26 · PostgreSQL 16 (RLS mandatory) · pgx/v5 + sqlc · goose migrations · River jobs · one-way import law
-(kernel ← module ← product; adapters implement kernel ports) · pre-1.0 versioning discipline.
+(kernel ← module ← product; adapters implement kernel ports) · v1 versioning discipline (additive-only within v1).
 
 ### 2.5 Assumptions & Dependencies (product-supplied, via adapters/hooks — not built into core)
 External OIDC/JWT IdP (framework does authZ, consumes authN) · S3-compatible object storage (presigned up/download) ·
@@ -338,6 +338,8 @@ fixture module; and physically, because product code lives in other repositories
   migrations/cmd/wowapi`; no consumer contract under `internal/`.
 - **C-5 Versioning:** pre-1.0 `v0.x` (surface may move); `v1.0.0` when `10-delivery.md` acceptance is green and the
   surface freezes to additive-only; `v2+` via `/v2` module path; deprecations survive ≥ 1 minor.
+  *Status note (2026-07-16): the `v1.0.0` milestone this constraint anticipated shipped 2026-07-06; the surface is
+  now additive-frozen. Live support window: `SECURITY.md` + `docs/operations/upgrade-and-deprecation-policy.md`.*
 - **C-6 Architecture:** modular monolith; compile-time modules; hexagonal at edges only; manual DI; no reflection
   container / service locator; microservices/event-sourcing/CQRS-everywhere/low-code-runtime rejected for v1.
 
