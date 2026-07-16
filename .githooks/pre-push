@@ -22,6 +22,11 @@ if command -v gitleaks >/dev/null 2>&1; then
 		else
 			base="$remote_sha"
 		fi
+		if [ -z "$base" ]; then
+			echo "pre-push: WARNING — cannot resolve a scan base for $local_ref (no origin/main?): secret scan SKIPPED for this ref."
+			echo "pre-push:   run 'make secret-scan' for a full-range scan (CI will still block)."
+			continue
+		fi
 		if [ -n "$base" ]; then
 			echo "pre-push: gitleaks ($base..$local_sha)"
 			gitleaks detect --redact --exit-code=1 \

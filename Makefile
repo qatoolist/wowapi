@@ -166,6 +166,14 @@ tidy-check: ## Fail if go.mod/go.sum are not tidy
 .PHONY: check
 check: fmt-check vet lint-new tidy-check test-unit ## Fast pre-flight before commit/push (fmt, vet, lint changed code, tidy, unit tests)
 
+.PHONY: secret-scan
+secret-scan: ## CI-parity gitleaks scan of the FULL branch range (merge-base(origin/main)^..HEAD) — covers commits the pre-push hook's incremental scan never saw
+	@command -v gitleaks >/dev/null 2>&1 || { echo ">> gitleaks not found — brew install gitleaks"; exit 1; }
+	@base=$$(git merge-base origin/main HEAD 2>/dev/null); \
+		if [ -z "$$base" ]; then echo ">> cannot resolve merge-base with origin/main"; exit 1; fi; \
+		echo ">> gitleaks $$base^..HEAD (CI range semantics)"; \
+		gitleaks detect --redact --exit-code=1 --log-opts="--no-merges --first-parent $$base^..HEAD"
+
 .PHONY: hooks
 hooks: ## Install the versioned git hooks (pre-commit + pre-push)
 	@git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push 2>/dev/null; echo "git hooks installed (core.hooksPath=.githooks)"
