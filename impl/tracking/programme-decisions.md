@@ -164,3 +164,56 @@ Autopsy findings H-6, H-7; DEV-PROG-002; DEV-PROG-003; autopsy remediation R-7;
 
 Proposed by autopsy remediation R-1 (conductor); decision explicitly deferred to the Wave 05
 execution owner, pending human/acceptance-authority ratification of that assignment.
+
+---
+
+## DEC-PROG-003 — Disposition of W02-E02-S002's three unbuilt proof artifacts
+
+### Decision ID
+
+DEC-PROG-003
+
+### Title
+
+Disposition of W02-E02-S002's three unbuilt proof artifacts (build-and-re-accept vs. formal descope)
+
+### Status
+
+proposed
+
+### Context
+
+The 2026-07-16 findings-remediation verification pass (DEV-PROG-005) found that story
+W02-E02-S002 (audit, FK VALIDATE, cross-tenant negatives) was accepted while three task
+completion criteria's named proof artifacts were never produced: T001's seeded-mismatch
+detection test, T002's lock-duration report/test, and T003's concurrent-writer-load test —
+the story's own evidence index honestly lists them as "not yet produced". The schema
+deliverables themselves are applied and were independently re-verified live on 2026-07-16
+(EV-008). The story was demoted to `implemented`; epic W02-E02 and wave W02 are
+`partially-accepted` until this decision resolves.
+
+### Options considered
+
+1. **Build the three proof artifacts and re-accept.** Restores full compliance with the
+   original acceptance criteria; the three tests also add durable regression protection for
+   the tenant-FK safety properties.
+2. **Formally descope the three artifacts.** Ratify a narrowing of the acceptance criteria
+   on the record (mandate-compliant descope, not silent weakening), re-accept the story as-is,
+   and rely on the 2026-07-16 live property verification as the operative evidence.
+3. **Leave the story `implemented` indefinitely.** Rejected — it leaves wave W02 permanently
+   `partially-accepted` with no closure path.
+
+### Decision
+
+**Unresolved — deferred to the W02 execution owner / acceptance authority.** Recorded per
+mandate §11.8 so the open question is explicit. Option 1 is the conductor's recommendation
+(the three tests are small, bounded, and directly protect DATA-01 invariants).
+
+### Date
+
+2026-07-16.
+
+### Deciders
+
+Proposed by the 2026-07-16 findings-remediation pass (conductor); resolution deferred to the
+W02 execution owner / acceptance authority, pending human ratification.

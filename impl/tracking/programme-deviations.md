@@ -204,7 +204,7 @@ Not originally approved by any recorded decision. The acceptance rollback (this 
 adjudicated 2026-07-16 as part of the findings-remediation pass (autopsy remediation R-1 +
 conductor adjudication per review-gate-2026-07-16.md). The disposition — build the three proof
 artifacts and re-accept, or formally descope them and lower the acceptance criteria — is recorded
-as an open item in **DEC-PROG-006** (status: proposed, human ratification pending).
+as an open item in **DEC-PROG-003** (status: proposed, human ratification pending).
 
 ### Compensating controls
 
@@ -218,7 +218,7 @@ back to `done`, the story re-accepted, and this deviation superseded.
 
 Autopsy remediation R-2 (frame the options for W02-E02-S002 completion): either (a) build the three
 proof artifacts and re-accept the story, or (b) formally descope the three artifacts via a ratified
-decision record (DEC-PROG-006, currently `proposed`). The choice depends on the W02 execution
+decision record (DEC-PROG-003, currently `proposed`). The choice depends on the W02 execution
 owner's assessment of the cost/value tradeoff; both paths are valid. Until one is chosen and
 executed, W02-E02-S002 remains `implemented` and the parent wave W02 remains `partially-accepted`.
 
