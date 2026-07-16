@@ -406,7 +406,16 @@ func scaffoldPipeline(t *testing.T, cli, modulePath string, initArgs, goEnv []st
 // contributor workstation GOPRIVATE/GONOPROXY typically route
 // github.com/qatoolist/* straight to VCS, which would bypass the harness
 // proxy and reintroduce a network dependency.
-func hermeticGoEnv(proxy string) []string {
+func hermeticGoEnv(t *testing.T, proxy string) []string {
+	t.Helper()
+	// Isolated GOCACHE: consumer builds must never share the ambient build
+	// cache. The framework proxy serves the CURRENT checkout under a CONSTANT
+	// synthetic version, so persisted build caches (a developer's ~/.cache, the
+	// toolbox volume, CI's .cicache) hold entries keyed against OLD content and
+	// poison the build with bogus "could not import" errors once the checkout
+	// changes (observed on host, toolbox, and CI during the 2026-07-17
+	// adversarial-review remediation). A cold cache costs seconds; a poisoned
+	// one costs a false red gate.
 	return []string{
 		"GOWORK=off",
 		"GOFLAGS=-mod=mod",
@@ -415,6 +424,7 @@ func hermeticGoEnv(proxy string) []string {
 		"GONOPROXY=",
 		"GONOSUMDB=",
 		"GOPROXY=" + proxy,
+		"GOCACHE=" + filepath.Join(t.TempDir(), "gocache"),
 	}
 }
 
@@ -444,7 +454,7 @@ func TestE2EScaffoldSourceBuiltCLI(t *testing.T) {
 		t.Errorf("fail-closed init output missing remediation:\n%s", out)
 	}
 
-	goEnv := hermeticGoEnv(modCacheProxyURL(t)) // offline: deps from the local module cache
+	goEnv := hermeticGoEnv(t, modCacheProxyURL(t)) // offline: deps from the local module cache
 	dir := scaffoldPipeline(t, cli, "github.com/acme/e2esource",
 		[]string{"--local-framework", wowapiCheckoutRoot(t)}, goEnv)
 
@@ -468,7 +478,7 @@ func TestE2EScaffoldReleasedCLI(t *testing.T) {
 	cli := buildWowapiCLI(t, e2eReleaseVersion)
 	frameworkProxy := buildFrameworkProxy(t, e2eReleaseVersion)
 
-	goEnv := hermeticGoEnv(frameworkProxy + "," + modCacheProxyURL(t))
+	goEnv := hermeticGoEnv(t, frameworkProxy+","+modCacheProxyURL(t))
 	dir := scaffoldPipeline(t, cli, "github.com/acme/e2erelease", nil, goEnv)
 
 	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
