@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -188,7 +189,9 @@ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID,
 		return 0, nil
 	}
 	if status == "pending" {
-		if err := s.mark(tctx, txm, bulkID, "running"); err != nil {
+		// Race-tolerant: a peer may transition first; any outcome other than
+		// pending/running is re-checked by the loop below.
+		if err := s.transition(tctx, txm, bulkID, "running", "pending"); err != nil && kerr.KindOf(err) != kerr.KindConflict {
 			return 0, err
 		}
 	}
@@ -222,9 +225,15 @@ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID,
 			return processed, err
 		}
 		if len(batch) == 0 {
-			if err := s.mark(tctx, txm, bulkID, "completed"); err != nil {
+			// Complete ONLY when no nonterminal item exists (F-04): an empty
+			// claim while a peer worker holds a live running item must return
+			// without completing — that item may yet fail retryably and go back
+			// to pending. The peer (or a later Process) completes the aggregate.
+			completed, err := s.completeIfDrained(tctx, txm, bulkID)
+			if err != nil {
 				return processed, err
 			}
+			_ = completed
 			break
 		}
 
@@ -244,27 +253,30 @@ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID,
 	return processed, nil
 }
 
-// Pause suspends a running operation. In-flight items are allowed to finish;
-// new batches will not be claimed until Resume is called.
+// Pause suspends a pending or running operation. In-flight items are allowed
+// to finish; new batches will not be claimed until Resume is called. Terminal
+// or already-paused operations are an invalid transition (F-04: lifecycle
+// writes are compare-and-swap over legal source states, never labels).
 func (s *Service) Pause(ctx context.Context, txm database.TxManager, tenantID, bulkID uuid.UUID) error {
-	return s.mark(database.WithTenantID(ctx, tenantID), txm, bulkID, "paused")
+	return s.transition(database.WithTenantID(ctx, tenantID), txm, bulkID, "paused", "pending", "running")
 }
 
-// Resume transitions a paused operation back to running.
+// Resume transitions a paused operation back to running. Only paused
+// operations may resume — completed/cancelled are terminal.
 func (s *Service) Resume(ctx context.Context, txm database.TxManager, tenantID, bulkID uuid.UUID) error {
-	return s.mark(database.WithTenantID(ctx, tenantID), txm, bulkID, "running")
+	return s.transition(database.WithTenantID(ctx, tenantID), txm, bulkID, "running", "paused")
 }
 
-// Cancel stops an operation and marks all pending items as cancelled. In-flight
-// items finish under their existing leases; subsequent Process calls will not
-// claim new items.
+// Cancel stops a pending, running, or paused operation and marks all pending
+// items as cancelled. In-flight items finish under their existing leases;
+// subsequent Process calls will not claim new items. Terminal operations
+// cannot be re-cancelled or reopened.
 func (s *Service) Cancel(ctx context.Context, txm database.TxManager, tenantID, bulkID uuid.UUID) error {
 	tctx := database.WithTenantID(ctx, tenantID)
+	if err := s.transition(tctx, txm, bulkID, "cancelled", "pending", "running", "paused"); err != nil {
+		return err
+	}
 	return txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
-		if _, err := db.Exec(ctx,
-			`UPDATE bulk_operations SET status = 'cancelled', updated_at = now() WHERE id = $1`, bulkID); err != nil {
-			return kerr.Wrapf(err, "bulk.Cancel", "mark operation cancelled")
-		}
 		if _, err := db.Exec(ctx,
 			`UPDATE bulk_items SET status = 'cancelled' WHERE bulk_id = $1 AND status = 'pending'`, bulkID); err != nil {
 			return kerr.Wrapf(err, "bulk.Cancel", "cancel pending items")
@@ -501,14 +513,53 @@ func (s *Service) cancelPending(ctx context.Context, txm database.TxManager, bul
 }
 
 // mark sets the operation status (idempotent).
-func (s *Service) mark(ctx context.Context, txm database.TxManager, bulkID uuid.UUID, status string) error {
+// transition is the single compare-and-swap for aggregate lifecycle states: it
+// moves bulkID to `to` only from one of the legal `from` states, distinguishing
+// a missing operation (KindNotFound) from an illegal source state
+// (KindConflict). No unconditional status label exists anymore (F-04).
+func (s *Service) transition(ctx context.Context, txm database.TxManager, bulkID uuid.UUID, to string, from ...string) error {
 	return txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
-		if _, err := db.Exec(ctx,
-			`UPDATE bulk_operations SET status = $2, updated_at = now() WHERE id = $1`, bulkID, status); err != nil {
-			return kerr.Wrapf(err, "bulk.mark", "set status %s", status)
+		tag, err := db.Exec(ctx,
+			`UPDATE bulk_operations SET status = $2, updated_at = now()
+			  WHERE id = $1 AND status = ANY($3)`, bulkID, to, from)
+		if err != nil {
+			return kerr.Wrapf(err, "bulk.transition", "set status %s", to)
 		}
+		if tag.RowsAffected() == 1 {
+			return nil
+		}
+		var current string
+		err = db.QueryRow(ctx, `SELECT status FROM bulk_operations WHERE id = $1`, bulkID).Scan(&current)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return kerr.E(kerr.KindNotFound, "not_found", "bulk operation not found")
+		}
+		if err != nil {
+			return kerr.Wrapf(err, "bulk.transition", "read status")
+		}
+		return kerr.E(kerr.KindConflict, "invalid_transition",
+			fmt.Sprintf("bulk operation is %s; cannot transition to %s", current, to))
+	})
+}
+
+// completeIfDrained marks the operation completed ONLY when no pending or
+// running item remains — including a peer worker's live running item (F-04).
+// It reports whether the completion happened.
+func (s *Service) completeIfDrained(ctx context.Context, txm database.TxManager, bulkID uuid.UUID) (bool, error) {
+	var done bool
+	err := txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		tag, err := db.Exec(ctx, `
+			UPDATE bulk_operations SET status = 'completed', updated_at = now()
+			 WHERE id = $1 AND status = 'running'
+			   AND NOT EXISTS (
+			       SELECT 1 FROM bulk_items
+			        WHERE bulk_id = $1 AND status IN ('pending', 'running'))`, bulkID)
+		if err != nil {
+			return kerr.Wrapf(err, "bulk.completeIfDrained", "conditional complete")
+		}
+		done = tag.RowsAffected() == 1
 		return nil
 	})
+	return done, err
 }
 
 // Progress reports live counts for an operation, in the caller's tenant tx.
