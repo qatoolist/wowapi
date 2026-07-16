@@ -283,6 +283,7 @@ func (c *moduleContext) Jobs() *jobs.Registry {
 // scheduler runs it (roadmap E5/CA-5). The name is module-prefixed to avoid
 // collisions with kernel maintenance tasks and other modules.
 func (c *moduleContext) RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error) {
+	c.mustBeUnsealed("RecurringJob")
 	c.boot.recurring = append(c.boot.recurring, RecurringJob{
 		Name:  c.name + "." + name,
 		Every: every,
@@ -346,18 +347,41 @@ func (c *moduleContext) Webhooks() *webhook.Service                  { return c.
 func (c *moduleContext) IntegrationProviders() *integration.Registry { return c.intReg }
 func (c *moduleContext) Integrations() *integration.Store            { return c.intStore }
 
-func (c *moduleContext) Migrations(fsys fs.FS) { c.boot.migrations[c.name] = fsys }
-func (c *moduleContext) Seeds(fsys fs.FS)      { c.boot.seeds[c.name] = fsys }
+// mustBeUnsealed guards every boot-time collector: a retained module context
+// must not mutate extension state after Boot has compiled and sealed the model
+// (F-10). Health is the sharpest case — its map is read by the live health
+// handler, so a post-boot write is also a concurrent map hazard.
+func (c *moduleContext) mustBeUnsealed(what string) {
+	if c.boot.sealed {
+		panic(fmt.Sprintf("module %q: %s after boot: the extension model is sealed", c.name, what))
+	}
+}
+
+func (c *moduleContext) Migrations(fsys fs.FS) {
+	c.mustBeUnsealed("Migrations")
+	c.boot.migrations[c.name] = fsys
+}
+
+func (c *moduleContext) Seeds(fsys fs.FS) {
+	c.mustBeUnsealed("Seeds")
+	c.boot.seeds[c.name] = fsys
+}
+
 func (c *moduleContext) OpenAPI(fragment []byte) {
+	c.mustBeUnsealed("OpenAPI")
 	c.boot.openapi[c.name] = fragment
 }
 
 // I18n registers a module's localized message bundle under this module's name.
 // Ownership (keys prefixed "<name>.") is enforced by the shared registry;
 // violations accumulate and fail boot via the registry's Err().
-func (c *moduleContext) I18n(bundle i18n.Bundle) { c.boot.i18n.Register(c.name, bundle) }
+func (c *moduleContext) I18n(bundle i18n.Bundle) {
+	c.mustBeUnsealed("I18n")
+	c.boot.i18n.Register(c.name, bundle)
+}
 
 func (c *moduleContext) Health(name string, check func(context.Context) error) {
+	c.mustBeUnsealed("Health")
 	c.boot.health[c.name+"."+name] = check
 }
 

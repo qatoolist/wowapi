@@ -137,10 +137,19 @@ func TestRetainedContextCannotMutatePortsAfterBoot(t *testing.T) {
 	); err != nil {
 		t.Fatalf("boot: %v", err)
 	}
-	defer func() {
-		if recover() == nil {
-			t.Fatal("ProvidePort on a retained context after boot did not panic — extensions are mutable post-boot")
-		}
-	}()
-	retained.ProvidePort("widgets.late", widgetImpl{})
+	mustPanic := func(what string, fn func()) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Fatalf("%s on a retained context after boot did not panic — extensions are mutable post-boot", what)
+			}
+		}()
+		fn()
+	}
+	mustPanic("ProvidePort", func() { retained.ProvidePort("widgets.late", widgetImpl{}) })
+	// Health is the sharpest post-boot surface: its map is concurrently read by
+	// the live health handler.
+	mustPanic("Health", func() { retained.Health("late", func(context.Context) error { return nil }) })
+	mustPanic("Migrations", func() { retained.Migrations(nil) })
+	mustPanic("OpenAPI", func() { retained.OpenAPI([]byte("{}")) })
 }

@@ -1,7 +1,7 @@
 # Adversarial Framework Review Report
 
-Date: 2026-07-17  
-Reviewed revision: `5f4ffcea03d2854cfc9693995a95f72d68c51d5b`  
+Date: 2026-07-17
+Reviewed revision: `5f4ffcea03d2854cfc9693995a95f72d68c51d5b`
 Scope: correctness, reliability, operability, compatibility, and misuse resistance. Security assessment was explicitly excluded.
 
 ## Executive verdict
@@ -64,7 +64,7 @@ No Critical issue was established. The retry panic is High rather than Critical 
 
 ### F-01 — Shared retry schedules race and can panic
 
-**Severity/classification:** High — Confirmed Defect  
+**Severity/classification:** High — Confirmed Defect
 **Files and symbols:**
 
 - `kernel/retry/retry.go:13-38`, `Schedule` and `Schedule.Next`
@@ -90,7 +90,7 @@ This is a behavioral defect, not only race-detector hygiene. One goroutine can c
 
 ### F-02 — Critical child failures are not supervised
 
-**Severity/classification:** High — Confirmed Defect  
+**Severity/classification:** High — Confirmed Defect
 **Files and symbols:**
 
 - `app/worker.go:120-146`, `StartWorker`
@@ -122,7 +122,7 @@ This is a behavioral defect, not only race-detector hygiene. One goroutine can c
 
 ### F-03 — Backfill checkpoint identity and lease fencing are broken
 
-**Severity/classification:** High — Confirmed Defect  
+**Severity/classification:** High — Confirmed Defect
 **Files and symbols:**
 
 - `migrations/00042_backfill_checkpoint_lease_columns.sql:21-34`
@@ -162,7 +162,7 @@ Two runners can therefore read the same `last_key`, both claim the row, both pro
 
 ### F-04 — Bulk completion and lifecycle transitions violate aggregate state
 
-**Severity/classification:** High — Confirmed Defect  
+**Severity/classification:** High — Confirmed Defect
 **Files and symbols:**
 
 - `foundation/bulk/bulk.go:174-245`, `Service.Process`
@@ -194,7 +194,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-05 — Upload confirmation is not bound to document or expiry
 
-**Severity/classification:** High — Confirmed Defect  
+**Severity/classification:** High — Confirmed Defect
 **Files and symbols:**
 
 - `foundation/document/service.go:247-300`, caller-supplied document and storage validation
@@ -218,7 +218,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-06 — Generated CRUD returns incorrect missing-resource outcomes
 
-**Severity/classification:** Medium — Confirmed Defect  
+**Severity/classification:** Medium — Confirmed Defect
 **Files and symbols:**
 
 - `internal/cli/templates/crud/resource.go.tmpl:133-149`, generated GET
@@ -244,7 +244,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-07 — Outbox retry recovery is hidden and can starve
 
-**Severity/classification:** Medium — Confirmed Defect for swallowed errors; Reproducible Risk for sustained-traffic starvation  
+**Severity/classification:** Medium — Confirmed Defect for swallowed errors; Reproducible Risk for sustained-traffic starvation
 **Files and symbols:** `kernel/outbox/relay.go:356-397`, `Relay.Run` and `RequeueFailed`
 
 **Violated invariant:** Retryable failed events must be returned to the dispatch queue on schedule, and recovery failure must be observable.
@@ -261,7 +261,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-08 — Pagination accepts invalid default configuration
 
-**Severity/classification:** Medium — Missing Safeguard  
+**Severity/classification:** Medium — Missing Safeguard
 **File and symbols:** `kernel/pagination/pagination.go:43-105`, `Defaults`, `Request`, and `Parse`
 
 **Violated invariant:** The documented parsed request limit is positive and clamped to `[1, MaxPerPage]` when an upper bound exists.
@@ -278,7 +278,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-09 — Recurring-job failures are reported as success
 
-**Severity/classification:** Medium — Confirmed Defect  
+**Severity/classification:** Medium — Confirmed Defect
 **Files and symbols:**
 
 - `app/maintenance.go:161-183`, `registerModuleRecurring`
@@ -299,7 +299,7 @@ Lifecycle methods compound the defect: `Pause`, `Resume`, and `Cancel` issue unc
 
 ### F-10 — Runtime extensions bypass the ownership-bound compiler
 
-**Severity/classification:** High — Architectural Weakness  
+**Severity/classification:** High — Architectural Weakness
 **Files and symbols:**
 
 - `module/module.go:66-125`, public `Context` extension contract

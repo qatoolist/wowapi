@@ -131,8 +131,55 @@ func primeReleasedModuleCacheProxy(t *testing.T, version string) {
 // inside a file:// GOPROXY directory (list, .info, .mod, .zip), so a
 // released-CLI scaffold's `go mod download github.com/qatoolist/wowapi@version`
 // succeeds hermetically. Only the files a consumer build needs are zipped.
+// purgeCachedFrameworkVersion removes any previously downloaded/extracted copy
+// of the synthetic framework version from the shared GOMODCACHE. The proxy zips
+// the CURRENT checkout under a CONSTANT version string, so a cached copy from
+// an earlier run can silently serve stale framework code to consumer builds —
+// masking working-tree changes with bogus compile errors (observed during the
+// 2026-07-17 adversarial-review remediation, on both the host cache and the
+// toolbox container's gomod volume).
+func purgeCachedFrameworkVersion(t *testing.T, version string) {
+	t.Helper()
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Fatalf("go env GOMODCACHE: %v", err)
+	}
+	gmc := strings.TrimSpace(string(out))
+	if gmc == "" {
+		return
+	}
+	targets := []string{
+		filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version),
+	}
+	dl := filepath.Join(gmc, "cache", "download", "github.com", "qatoolist", "wowapi", "@v")
+	if entries, err := os.ReadDir(dl); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), version+".") {
+				targets = append(targets, filepath.Join(dl, e.Name()))
+			}
+		}
+	}
+	for _, path := range targets {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		// Module-cache contents are read-only; make writable before removal.
+		_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err == nil {
+				_ = os.Chmod(p, 0o755)
+			}
+			return nil
+		})
+		_ = os.Chmod(filepath.Dir(path), 0o755)
+		if err := os.RemoveAll(path); err != nil {
+			t.Logf("purge cached framework %s: %v", path, err)
+		}
+	}
+}
+
 func buildFrameworkProxy(t *testing.T, version string) string {
 	t.Helper()
+	purgeCachedFrameworkVersion(t, version)
 	root := wowapiCheckoutRoot(t)
 	proxy := t.TempDir()
 	vdir := filepath.Join(proxy, filepath.FromSlash("github.com/qatoolist/wowapi/@v"))

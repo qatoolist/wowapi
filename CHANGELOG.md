@@ -11,6 +11,44 @@ changes to it require a new major version.
 
 ## [Unreleased]
 
+### Fixed (2026-07-17 — adversarial framework review remediation, F-01..F-10)
+- `kernel/retry`: `Schedule.Next` is now safe for concurrent use (shared notify/webhook
+  schedules could return wrong durations or panic); `NewSchedule(nil)` fails fast (F-01).
+- `app.StartWorker`: critical worker loops (relay, runner, scheduler) are supervised — the
+  first unexpected child failure cancels siblings, drains, and returns promptly instead of
+  leaving the process falsely alive (F-02).
+- `kernel/migration` backfill: checkpoint identity is `(job_id, tenant_id)` (migration
+  00049; all-zeros sentinel for global jobs); claims take only absent-or-expired leases with
+  a strictly increasing stored generation; every checkpoint write is fenced and monotonic;
+  completed runs release their lease (F-03).
+- `foundation/bulk`: completion and Pause/Resume/Cancel are compare-and-swap transitions —
+  no more false completion under a peer's live item, no reopened terminal states, unknown
+  ids are not-found (F-04).
+- `foundation/document.ConfirmUpload`: the session CAS is bound to the reserved document,
+  version, storage key, checksum, AND expiry; effects use only authoritative session values
+  (F-05).
+- Generated CRUD (`wowapi gen crud`): absent/inactive rows return RFC 9457 not-found instead
+  of opaque 500 (GET) or false 200/204 (PUT/DELETE) (F-06).
+- `kernel/outbox.Relay`: failed-event requeue runs on its own schedule even under sustained
+  traffic; failures increment `outbox_requeue_errors_total` and surface after bounded
+  consecutive misses (F-07).
+- `app` recurring maintenance: per-tenant failures are joined and reported (observer +
+  `scheduler_task_errors_total`); every tenant is still attempted (F-09).
+- `App.Boot` runtime extensions: ports are compiled through the ownership-bound
+  `kernel/appmodel` compiler (owner-prefix, duplicate, nil, declared-dependency checks) and
+  the whole extension model — ports, migrations, seeds, OpenAPI, health, recurring, i18n —
+  is sealed after boot; retained module contexts cannot mutate it (F-10).
+
+### Added
+- `app.Hook.Failed` (additive): hooks can report post-start background-work death;
+  `RunHooks` shuts the process down instead of serving nothing. The generated API binds its
+  listener synchronously so a bind failure is a start error (F-02).
+
+### Changed (behavior; misuse surface only)
+- `kernel/pagination.Parse` now returns a `KindInternal` error when `Defaults.PerPage` is
+  zero or negative instead of silently passing the value into SQL `LIMIT` (F-08). Correctly
+  configured callers (all in-repo and generated code) are unaffected.
+
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.
 - Authorization membership verification: made fail-closed for any `PrincipalStore` implementation (H-3), closing the silent-skip contract gap in SEC-01; independently re-verified.

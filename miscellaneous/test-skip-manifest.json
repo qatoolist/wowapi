@@ -445,6 +445,17 @@
       "classification": "required-fail-closed",
       "rationale": "The query-count comparison is optional without local PostgreSQL and mandatory in the authoritative database gate.",
       "guard": "WOWAPI_REQUIRE_DB causes testkit.NewDB to fail before every skipped subtest"
+    },
+    {
+      "id": "SKIP-040",
+      "path": "kernel/migration/backfill_fencing_test.go",
+      "function": "backfillFencingSetup",
+      "method": "Skip",
+      "message": "integration test needs Postgres",
+      "ordinal": 1,
+      "owner": "database-maintainers",
+      "classification": "optional",
+      "rationale": "Only the explicit -short developer profile omits these Postgres fencing regressions (F-03); authoritative CI runs the normal profile."
     }
   ]
 }
