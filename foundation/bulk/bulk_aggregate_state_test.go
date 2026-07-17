@@ -53,7 +53,18 @@ func TestIntegrationBulkEmptyClaimWithLivePeerDoesNotComplete(t *testing.T) {
 		workerA <- err
 	}()
 
-	<-claimed // A owns the sole item's live lease inside its callback.
+	// Wait for A to own the item's live lease inside its callback — but never
+	// block forever: if A's Process returns early (a claim error / connection
+	// starvation under heavy CI load) it never closes `claimed`, so also select
+	// on A's completion and a bounded deadline. An unguarded receive here would
+	// hang the whole package to the 10-minute go-test timeout.
+	select {
+	case <-claimed:
+	case err := <-workerA:
+		t.Fatalf("worker A returned before claiming the item (err=%v); cannot exercise the live-peer race", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("worker A did not claim the item within 30s")
+	}
 
 	// Worker B: empty claim while A's running item is live. Must NOT complete.
 	if n, err := svc.Process(context.Background(), h.TxM, tenant, id, 0, okFunc); err != nil || n != 0 {
