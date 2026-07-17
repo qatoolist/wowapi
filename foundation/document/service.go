@@ -298,9 +298,15 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		return uuid.Nil, err
 	}
 
-	// CAS confirm the durable session. The returned version_no/storage_key are
-	// authoritative; input values are validated but not trusted for the insert.
+	// CAS confirm the durable session, predicated on the COMPLETE reserved
+	// identity — session id, pending status, document, version, storage key,
+	// checksum — AND the validity window (adversarial review 2026-07-17, F-05:
+	// the old predicate covered only id+pending+checksum, so document A's
+	// session could attach its content to document B, and an expired-but-
+	// unswept session remained confirmable). The RETURNING values are the
+	// authoritative identity used for every subsequent effect.
 	var confirmed struct {
+		documentID uuid.UUID
 		versionNo  int
 		storageKey string
 	}
@@ -311,19 +317,17 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		        mime_type = $2,
 		        size_bytes = $3
 		  WHERE id = $1 AND status = 'pending' AND checksum_sha256 = $4
-		 RETURNING version_no, storage_key`,
-		in.SessionID, mime, info.Size, checkSum).Scan(&confirmed.versionNo, &confirmed.storageKey)
+		    AND document_id = $5 AND version_no = $6 AND storage_key = $7
+		    AND expires_at > now()
+		 RETURNING document_id, version_no, storage_key`,
+		in.SessionID, mime, info.Size, checkSum, in.DocumentID, in.VersionNo, in.StorageKey).
+		Scan(&confirmed.documentID, &confirmed.versionNo, &confirmed.storageKey)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, kerr.E(kerr.KindConflict, "session_settled", "session already confirmed or expired")
+		return uuid.Nil, kerr.E(kerr.KindConflict, "session_settled",
+			"session already settled, expired, or does not match the reserved document/version/key")
 	}
 	if err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "confirm session")
-	}
-	if confirmed.versionNo != in.VersionNo {
-		return uuid.Nil, kerr.E(kerr.KindValidation, "version_mismatch", "session version does not match requested version")
-	}
-	if confirmed.storageKey != in.StorageKey {
-		return uuid.Nil, kerr.E(kerr.KindValidation, "storage_key_mismatch", "session storage key does not match requested key")
 	}
 
 	verID := s.idgen.New()
@@ -332,7 +336,7 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		`INSERT INTO document_versions
 		    (id, tenant_id, document_id, version_no, storage_key, mime_type, size_bytes, checksum_sha256, scan_status, uploaded_by)
 		 VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, 'pending', $8)`,
-		verID, in.DocumentID, confirmed.versionNo, confirmed.storageKey, mime, info.Size, checkSum, actor)
+		verID, confirmed.documentID, confirmed.versionNo, confirmed.storageKey, mime, info.Size, checkSum, actor)
 	if isUniqueViolation(err) {
 		return uuid.Nil, kerr.E(kerr.KindConflict, "version_exists", "that version number is already confirmed")
 	}
@@ -341,10 +345,10 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	}
 	if _, err := db.Exec(ctx,
 		`UPDATE documents SET version = $2, updated_at = now(), updated_by = $3 WHERE id = $1`,
-		in.DocumentID, confirmed.versionNo, actor); err != nil {
+		confirmed.documentID, confirmed.versionNo, actor); err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "bump document version")
 	}
-	if err := s.emit(ctx, db, "document.version_added", docRef(in.DocumentID), map[string]any{"version_no": confirmed.versionNo, "mime": mime}); err != nil {
+	if err := s.emit(ctx, db, "document.version_added", docRef(confirmed.documentID), map[string]any{"version_no": confirmed.versionNo, "mime": mime}); err != nil {
 		return uuid.Nil, err
 	}
 	return verID, nil

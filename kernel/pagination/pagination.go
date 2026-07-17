@@ -80,10 +80,23 @@ func Parse(perPageRaw, cursorRaw string, def Defaults) (Request, error) {
 	return Request{Limit: limit, Cursor: cur}, nil
 }
 
+// defaultPerPage validates the configured default before it becomes a limit:
+// the documented Request contract is a limit clamped to [1, MaxPerPage], and a
+// zero/negative Defaults.PerPage is server misconfiguration, not client input —
+// it must fail loudly (adversarial review 2026-07-17, F-08), never flow into
+// SQL as LIMIT 0 or a negative limit a caller may read as "unlimited".
+func defaultPerPage(def Defaults) (int, error) {
+	if def.PerPage < 1 {
+		return 0, errors.E(errors.KindInternal, "internal",
+			"pagination: Defaults.PerPage must be positive")
+	}
+	return clampMax(def.PerPage, def), nil
+}
+
 func clampPerPage(raw string, def Defaults) (int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return clampMax(def.PerPage, def), nil
+		return defaultPerPage(def)
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
@@ -93,7 +106,7 @@ func clampPerPage(raw string, def Defaults) (int, error) {
 		return 0, errors.E(errors.KindValidation, "validation_failed", "per_page must not be negative")
 	}
 	if n == 0 {
-		return clampMax(def.PerPage, def), nil
+		return defaultPerPage(def)
 	}
 	return clampMax(n, def), nil
 }

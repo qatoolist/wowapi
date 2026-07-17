@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-closed security gate, waiver, visibility, and private-fallback contracts."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,12 +14,33 @@ import sys
 import time
 from typing import Any
 
-REQUIRED_WAIVER_FIELDS = {"id", "scanner", "scope", "owner", "rationale", "expires", "remediation_link"}
+REQUIRED_WAIVER_FIELDS = {
+    "id",
+    "scanner",
+    "scope",
+    "owner",
+    "rationale",
+    "expires",
+    "remediation_link",
+}
 ALLOWED_WAIVER_FIELDS = REQUIRED_WAIVER_FIELDS
-ALLOWED_SCANNERS = {"trivy", "gitleaks", "govulncheck", "dependency-review", "actionlint", "codeql", "scorecard", "local-sast"}
+ALLOWED_SCANNERS = {
+    "trivy",
+    "gitleaks",
+    "govulncheck",
+    "dependency-review",
+    "actionlint",
+    "codeql",
+    "scorecard",
+    "local-sast",
+}
 REQUIRED_SECURITY_RESULTS = {
-    "secret", "reachable-vulnerability", "disallowed-license",
-    "dependency", "workflow", "critical-high-config",
+    "secret",
+    "reachable-vulnerability",
+    "disallowed-license",
+    "dependency",
+    "workflow",
+    "critical-high-config",
 }
 HOSTED_SCANNERS = ("dependency-review", "codeql", "scorecard")
 
@@ -43,7 +65,9 @@ def parse_day(raw: str, field: str) -> date:
 
 def validate_waivers(data: Any, today: date) -> list[dict[str, str]]:
     if not isinstance(data, dict) or set(data) != {"schema_version", "waivers"}:
-        raise ContractError("waiver registry must contain only schema_version and waivers")
+        raise ContractError(
+            "waiver registry must contain only schema_version and waivers"
+        )
     if data["schema_version"] != 1 or not isinstance(data["waivers"], list):
         raise ContractError("waiver registry schema_version/waivers is invalid")
     seen: set[tuple[str, str, str]] = set()
@@ -54,9 +78,13 @@ def validate_waivers(data: Any, today: date) -> list[dict[str, str]]:
         missing = REQUIRED_WAIVER_FIELDS - waiver.keys()
         unknown = waiver.keys() - ALLOWED_WAIVER_FIELDS
         if missing:
-            raise ContractError(f"waiver {index} missing required field: {sorted(missing)[0]}")
+            raise ContractError(
+                f"waiver {index} missing required field: {sorted(missing)[0]}"
+            )
         if unknown:
-            raise ContractError(f"waiver {index} has unknown field: {sorted(unknown)[0]}")
+            raise ContractError(
+                f"waiver {index} has unknown field: {sorted(unknown)[0]}"
+            )
         for field in REQUIRED_WAIVER_FIELDS:
             if not isinstance(waiver[field], str) or not waiver[field].strip():
                 raise ContractError(f"waiver {index} field {field} must be non-empty")
@@ -68,7 +96,9 @@ def validate_waivers(data: Any, today: date) -> list[dict[str, str]]:
             raise ContractError(f"waiver {index} remediation_link must use https")
         expiry = parse_day(waiver["expires"], f"waiver {index} expires")
         if expiry < today:
-            raise ContractError(f"waiver {waiver['id']} expired on {expiry.isoformat()}")
+            raise ContractError(
+                f"waiver {waiver['id']} expired on {expiry.isoformat()}"
+            )
         key = (waiver["scanner"], waiver["id"], waiver["scope"])
         if key in seen:
             raise ContractError(f"duplicate waiver scope: {key}")
@@ -85,7 +115,9 @@ def command_validate_waivers(args: argparse.Namespace) -> None:
     schema = load_json(Path(args.schema))
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise ContractError("waiver schema must use JSON Schema 2020-12")
-    waivers = validate_waivers(load_json(Path(args.waivers)), requested_today(args.today))
+    waivers = validate_waivers(
+        load_json(Path(args.waivers)), requested_today(args.today)
+    )
     print(f"valid waiver registry: {len(waivers)} active scoped waiver(s)")
 
 
@@ -94,20 +126,33 @@ def command_enforce_results(args: argparse.Namespace) -> None:
     waivers = validate_waivers(load_json(Path(args.waivers)), today)
     registry = {(item["scanner"], item["id"], item["scope"]): item for item in waivers}
     document = load_json(Path(args.results))
-    if not isinstance(document, dict) or document.get("schema_version") != 1 or not isinstance(document.get("results"), list):
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != 1
+        or not isinstance(document.get("results"), list)
+    ):
         raise ContractError("scanner results document is invalid")
     failures: list[str] = []
     for index, result in enumerate(document["results"]):
-        if not isinstance(result, dict) or result.get("status") not in {"passed", "failed"}:
+        if not isinstance(result, dict) or result.get("status") not in {
+            "passed",
+            "failed",
+        }:
             raise ContractError(f"scanner result {index} is invalid")
         result_class = result.get("class")
         if result_class not in REQUIRED_SECURITY_RESULTS:
             raise ContractError(f"scanner result {index} has unsupported class")
         if result["status"] == "passed":
             continue
-        key = (result.get("scanner", ""), result.get("finding_id", ""), result.get("scope", ""))
+        key = (
+            result.get("scanner", ""),
+            result.get("finding_id", ""),
+            result.get("scope", ""),
+        )
         if key not in registry:
-            failures.append(f"{result_class}: unwaived finding {key[1] or '<missing-id>'} in {key[2] or '<missing-scope>'}")
+            failures.append(
+                f"{result_class}: unwaived finding {key[1] or '<missing-id>'} in {key[2] or '<missing-scope>'}"
+            )
     if failures:
         raise ContractError("; ".join(failures))
     print("security scanner results passed or matched exact active waiver scopes")
@@ -122,15 +167,23 @@ def command_visibility_guard(args: argparse.Namespace) -> None:
     if args.visibility == "public":
         failed = [name for name in HOSTED_SCANNERS if results.get(name) != "success"]
         if failed:
-            raise ContractError("public repository missing successful hosted scanner: " + ", ".join(failed))
+            raise ContractError(
+                "public repository missing successful hosted scanner: "
+                + ", ".join(failed)
+            )
         print("public hosted scanners all ran successfully")
     else:
-        print("fallback-required: hosted scanners are not trusted for non-public visibility")
+        print(
+            "fallback-required: hosted scanners are not trusted for non-public visibility"
+        )
 
 
 def unsafe_findings(root: Path) -> list[str]:
     patterns = (
-        (re.compile(r'exec\.Command\(\s*"(?:sh|bash)"\s*,\s*"-c"\s*,'), "unsafe shell command construction"),
+        (
+            re.compile(r'exec\.Command\(\s*"(?:sh|bash)"\s*,\s*"-c"\s*,'),
+            "unsafe shell command construction",
+        ),
         (re.compile(r"InsecureSkipVerify\s*:\s*true"), "TLS verification disabled"),
         (re.compile(r"md5\.New\s*\("), "cryptographic MD5 use"),
     )
@@ -149,7 +202,9 @@ def unsafe_findings(root: Path) -> list[str]:
 def command_local_sast(args: argparse.Namespace) -> None:
     findings = unsafe_findings(Path(args.path))
     if findings:
-        raise ContractError("local SAST unsafe shell/security pattern: " + "; ".join(findings))
+        raise ContractError(
+            "local SAST unsafe shell/security pattern: " + "; ".join(findings)
+        )
     print("local SAST fallback found no seeded unsafe pattern")
 
 
@@ -164,7 +219,9 @@ def posture_findings(workflow: Path) -> list[str]:
         if action.startswith("./") or action.startswith("docker://"):
             continue
         if "@" not in action or not re.fullmatch(r"[^@]+@[0-9a-fA-F]{40}", action):
-            findings.append(f"{workflow}:{line_number}: action is not pinned to a full commit SHA: {action}")
+            findings.append(
+                f"{workflow}:{line_number}: action is not pinned to a full commit SHA: {action}"
+            )
     if "permissions:" not in text:
         findings.append(f"{workflow}: missing explicit permissions")
     return findings
@@ -179,7 +236,10 @@ def command_repository_posture(args: argparse.Namespace) -> None:
         paths = sorted((root / ".github/workflows").glob("*.yml"))
     findings = [finding for path in paths for finding in posture_findings(path)]
     if findings:
-        raise ContractError("scorecard-equivalent posture failure (full commit SHA/least privilege): " + "; ".join(findings))
+        raise ContractError(
+            "scorecard-equivalent posture failure (full commit SHA/least privilege): "
+            + "; ".join(findings)
+        )
     print(f"scorecard-equivalent posture passed for {len(paths)} workflow(s)")
 
 
@@ -200,23 +260,56 @@ def command_cross_reference(args: argparse.Namespace) -> None:
                 counts[result_class] += 1
     wrong = {name: count for name, count in counts.items() if count != 1}
     if wrong:
-        raise ContractError("security result manifest cardinality is not exactly one: " + json.dumps(wrong, sort_keys=True))
-    required_ids = {"trivy-blocking", "security-waivers", "hosted-scanner-meta", "private-scanner-fallback"}
+        raise ContractError(
+            "security result manifest cardinality is not exactly one: "
+            + json.dumps(wrong, sort_keys=True)
+        )
+    required_ids = {
+        "trivy-blocking",
+        "security-waivers",
+        "hosted-scanner-meta",
+        "private-scanner-fallback",
+    }
     if missing := required_ids - ids:
-        raise ContractError("REL-02 manifest entry missing: " + ", ".join(sorted(missing)))
-    print("every required security result and REL-02 check appears exactly once in the gate manifest")
+        raise ContractError(
+            "REL-02 manifest entry missing: " + ", ".join(sorted(missing))
+        )
+    print(
+        "every required security result and REL-02 check appears exactly once in the gate manifest"
+    )
 
 
-def gh_output(args: list[str]) -> str:
-    result = subprocess.run(args, text=True, capture_output=True, check=False)
-    if result.returncode != 0:
-        raise ContractError(f"command failed closed: {' '.join(args)}: {result.stderr.strip()}")
-    return result.stdout
+def gh_output(args: list[str], *, retries: int = 0, interval: float = 3.0) -> str:
+    """Run a gh command, returning stdout. Fails CLOSED (raises) on error.
+
+    retries>0 re-attempts on a transient failure — a non-zero exit, OR a 200
+    whose body is an HTML error/maintenance page (GitHub occasionally serves
+    these during API incidents, which then fail a downstream `--jq` parse with
+    'invalid character <'). This does NOT weaken the gate: it still raises after
+    the last attempt, and the facts these calls read (repo visibility, hosted
+    scan conclusions) are stable, so retrying a blip is strictly correct.
+    """
+    last = ""
+    for attempt in range(retries + 1):
+        result = subprocess.run(args, text=True, capture_output=True, check=False)
+        if result.returncode == 0 and not result.stdout.lstrip().startswith("<"):
+            return result.stdout
+        last = (result.stderr.strip() or result.stdout.strip())[:200]
+        if attempt < retries:
+            time.sleep(interval)
+    raise ContractError(
+        f"command failed closed after {retries + 1} attempt(s): {' '.join(args)}: {last}"
+    )
 
 
 def repository_visibility() -> str:
     repo = os.environ.get("GITHUB_REPOSITORY", "qatoolist/wowapi")
-    return gh_output(["gh", "api", f"repos/{repo}", "--jq", ".visibility"]).strip()
+    # Bounded retries: a transient API blip must not fail the gate irrecoverably
+    # (mirrors the hosted-scanner meta-check's own retry loop below).
+    attempts = int(os.environ.get("WOWAPI_GH_API_RETRIES", "5"))
+    return gh_output(
+        ["gh", "api", f"repos/{repo}", "--jq", ".visibility"], retries=attempts
+    ).strip()
 
 
 def hosted_results_for_sha(source_sha: str) -> dict[str, str]:
@@ -229,14 +322,34 @@ def hosted_results_for_sha(source_sha: str) -> dict[str, str]:
     }
     results: dict[str, str] = {}
     for name, workflow in workflows.items():
-        raw = gh_output(["gh", "run", "list", "--workflow", workflow, "--commit", source_sha, "--limit", "20", "--json", "conclusion"])
+        raw = gh_output(
+            [
+                "gh",
+                "run",
+                "list",
+                "--workflow",
+                workflow,
+                "--commit",
+                source_sha,
+                "--limit",
+                "20",
+                "--json",
+                "conclusion",
+            ]
+        )
         runs = json.loads(raw)
-        results[name] = "success" if any(item.get("conclusion") == "success" for item in runs) else "missing"
+        results[name] = (
+            "success"
+            if any(item.get("conclusion") == "success" for item in runs)
+            else "missing"
+        )
     return results
 
 
 def command_workflow_policy(args: argparse.Namespace) -> None:
-    visibility = repository_visibility() if args.visibility == "auto" else args.visibility
+    visibility = (
+        repository_visibility() if args.visibility == "auto" else args.visibility
+    )
     if visibility != "public":
         print("fallback-required: non-public repository must run local scanners")
         return
@@ -253,7 +366,10 @@ def command_workflow_policy(args: argparse.Namespace) -> None:
             return
         if attempt + 1 < attempts:
             time.sleep(interval)
-    raise ContractError("public exact-SHA hosted scanner missing/success not observed: " + ", ".join(failed))
+    raise ContractError(
+        "public exact-SHA hosted scanner missing/success not observed: "
+        + ", ".join(failed)
+    )
 
 
 def run_checked(command: list[str], cwd: Path) -> None:
@@ -264,23 +380,57 @@ def run_checked(command: list[str], cwd: Path) -> None:
 
 def command_private_fallback(args: argparse.Namespace) -> None:
     root = Path(args.path).resolve()
-    if not args.force and os.environ.get("GITHUB_ACTIONS") == "true" and repository_visibility() == "public":
+    if (
+        not args.force
+        and os.environ.get("GITHUB_ACTIONS") == "true"
+        and repository_visibility() == "public"
+    ):
         print("private fallback not required for public repository")
         return
     findings = unsafe_findings(root)
     if findings:
         raise ContractError("private local SAST failed: " + "; ".join(findings))
-    workflow_findings = [finding for path in sorted((root / ".github/workflows").glob("*.yml")) for finding in posture_findings(path)]
+    workflow_findings = [
+        finding
+        for path in sorted((root / ".github/workflows").glob("*.yml"))
+        for finding in posture_findings(path)
+    ]
     if workflow_findings:
-        raise ContractError("private scorecard-equivalent failed: " + "; ".join(workflow_findings))
-    run_checked(["go", "run", "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12", "-color"], root)
-    run_checked(["go", "run", "golang.org/x/vuln/cmd/govulncheck@v1.1.4", "./..."], root)
-    run_checked(["trivy", "fs", "--scanners", "vuln,secret,misconfig,license", "--severity", "CRITICAL,HIGH", "--ignorefile", ".trivyignore.yaml", "--exit-code", "1", "."], root)
-    print("private fallback scanners passed (local SAST/posture/actionlint/govulncheck/Trivy)")
+        raise ContractError(
+            "private scorecard-equivalent failed: " + "; ".join(workflow_findings)
+        )
+    run_checked(
+        ["go", "run", "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12", "-color"],
+        root,
+    )
+    run_checked(
+        ["go", "run", "golang.org/x/vuln/cmd/govulncheck@v1.1.4", "./..."], root
+    )
+    run_checked(
+        [
+            "trivy",
+            "fs",
+            "--scanners",
+            "vuln,secret,misconfig,license",
+            "--severity",
+            "CRITICAL,HIGH",
+            "--ignorefile",
+            ".trivyignore.yaml",
+            "--exit-code",
+            "1",
+            ".",
+        ],
+        root,
+    )
+    print(
+        "private fallback scanners passed (local SAST/posture/actionlint/govulncheck/Trivy)"
+    )
 
 
 def command_validate_trivy_ignore(args: argparse.Namespace) -> None:
-    waivers = validate_waivers(load_json(Path(args.waivers)), requested_today(args.today))
+    waivers = validate_waivers(
+        load_json(Path(args.waivers)), requested_today(args.today)
+    )
     expected = {
         (item["id"], item["scope"], item["expires"])
         for item in waivers
@@ -313,20 +463,24 @@ def command_validate_trivy_ignore(args: argparse.Namespace) -> None:
 
 
 def command_render_trivy_ignore(args: argparse.Namespace) -> None:
-    waivers = validate_waivers(load_json(Path(args.waivers)), requested_today(args.today))
+    waivers = validate_waivers(
+        load_json(Path(args.waivers)), requested_today(args.today)
+    )
     entries = sorted(
         (item for item in waivers if item["scanner"] == "trivy"),
         key=lambda item: (item["id"], item["scope"]),
     )
     lines = ["misconfigurations:"]
     for item in entries:
-        lines.extend([
-            f"  - id: {item['id']}",
-            "    paths:",
-            f"      - {item['scope']}",
-            f"    expired_at: {item['expires']}",
-            f"    statement: \"Owner {item['owner']}; {item['rationale']} See {item['remediation_link']}\"",
-        ])
+        lines.extend(
+            [
+                f"  - id: {item['id']}",
+                "    paths:",
+                f"      - {item['scope']}",
+                f"    expired_at: {item['expires']}",
+                f'    statement: "Owner {item["owner"]}; {item["rationale"]} See {item["remediation_link"]}"',
+            ]
+        )
     Path(args.output).write_text("\n".join(lines) + "\n")
     print(f"rendered {len(entries)} active scoped Trivy waiver(s)")
 
@@ -335,31 +489,51 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     sub = result.add_subparsers(dest="command", required=True)
     item = sub.add_parser("validate-waivers")
-    item.add_argument("--waivers", required=True); item.add_argument("--schema", required=True); item.add_argument("--today")
+    item.add_argument("--waivers", required=True)
+    item.add_argument("--schema", required=True)
+    item.add_argument("--today")
     item.set_defaults(func=command_validate_waivers)
     item = sub.add_parser("enforce-results")
-    item.add_argument("--results", required=True); item.add_argument("--waivers", required=True); item.add_argument("--today")
+    item.add_argument("--results", required=True)
+    item.add_argument("--waivers", required=True)
+    item.add_argument("--today")
     item.set_defaults(func=command_enforce_results)
     item = sub.add_parser("visibility-guard")
-    item.add_argument("--visibility", required=True); item.add_argument("--hosted-results", required=True)
+    item.add_argument("--visibility", required=True)
+    item.add_argument("--hosted-results", required=True)
     item.set_defaults(func=command_visibility_guard)
     item = sub.add_parser("local-sast")
-    item.add_argument("--path", required=True); item.set_defaults(func=command_local_sast)
+    item.add_argument("--path", required=True)
+    item.set_defaults(func=command_local_sast)
     item = sub.add_parser("repository-posture")
-    group = item.add_mutually_exclusive_group(required=True); group.add_argument("--workflow"); group.add_argument("--path")
+    group = item.add_mutually_exclusive_group(required=True)
+    group.add_argument("--workflow")
+    group.add_argument("--path")
     item.set_defaults(func=command_repository_posture)
     item = sub.add_parser("cross-reference-gates")
-    item.add_argument("--manifest", required=True); item.set_defaults(func=command_cross_reference)
+    item.add_argument("--manifest", required=True)
+    item.set_defaults(func=command_cross_reference)
     item = sub.add_parser("workflow-policy")
-    item.add_argument("--visibility", choices=["auto", "public", "private", "internal"], default="auto")
-    item.add_argument("--source-sha", required=True); item.set_defaults(func=command_workflow_policy)
+    item.add_argument(
+        "--visibility",
+        choices=["auto", "public", "private", "internal"],
+        default="auto",
+    )
+    item.add_argument("--source-sha", required=True)
+    item.set_defaults(func=command_workflow_policy)
     item = sub.add_parser("private-fallback")
-    item.add_argument("--path", required=True); item.add_argument("--force", action="store_true"); item.set_defaults(func=command_private_fallback)
+    item.add_argument("--path", required=True)
+    item.add_argument("--force", action="store_true")
+    item.set_defaults(func=command_private_fallback)
     item = sub.add_parser("validate-trivy-ignore")
-    item.add_argument("--waivers", required=True); item.add_argument("--ignore", required=True); item.add_argument("--today")
+    item.add_argument("--waivers", required=True)
+    item.add_argument("--ignore", required=True)
+    item.add_argument("--today")
     item.set_defaults(func=command_validate_trivy_ignore)
     item = sub.add_parser("render-trivy-ignore")
-    item.add_argument("--waivers", required=True); item.add_argument("--output", required=True); item.add_argument("--today")
+    item.add_argument("--waivers", required=True)
+    item.add_argument("--output", required=True)
+    item.add_argument("--today")
     item.set_defaults(func=command_render_trivy_ignore)
     return result
 

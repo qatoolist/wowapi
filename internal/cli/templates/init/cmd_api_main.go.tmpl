@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -327,19 +328,30 @@ func run(ctx context.Context) error {
 		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
+	// Bind synchronously so an occupied/unavailable address is a Start error
+	// (the process exits non-zero instead of running while serving nothing),
+	// and report an unexpected post-start Serve termination through Failed so
+	// RunHooks shuts the process down promptly (framework F-02 supervision).
+	httpFailed := make(chan error, 1)
 	return app.RunHooks(ctx, log, 30*time.Second,
 		app.Hook{
 			Name: "http",
 			Start: func(ctx context.Context) error {
+				ln, err := net.Listen("tcp", cfg.HTTP.Addr)
+				if err != nil {
+					return fmt.Errorf("http: bind %s: %w", cfg.HTTP.Addr, err)
+				}
 				log.InfoContext(ctx, "listening", "addr", cfg.HTTP.Addr)
 				go func() {
-					if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 						log.ErrorContext(ctx, "http server error", "err", err)
+						httpFailed <- err
 					}
 				}()
 				return nil
 			},
-			Stop: func(ctx context.Context) error { return srv.Shutdown(ctx) },
+			Failed: httpFailed,
+			Stop:   func(ctx context.Context) error { return srv.Shutdown(ctx) },
 		},
 	)
 }

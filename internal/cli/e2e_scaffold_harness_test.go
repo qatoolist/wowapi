@@ -34,6 +34,7 @@ package cli
 
 import (
 	"archive/zip"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -131,6 +132,96 @@ func primeReleasedModuleCacheProxy(t *testing.T, version string) {
 // inside a file:// GOPROXY directory (list, .info, .mod, .zip), so a
 // released-CLI scaffold's `go mod download github.com/qatoolist/wowapi@version`
 // succeeds hermetically. Only the files a consumer build needs are zipped.
+// purgeStaleFrameworkVersion removes a previously downloaded/extracted copy of
+// the synthetic framework version from the shared GOMODCACHE — but ONLY when
+// the freshly built proxy zip's content differs from the cached copy. The
+// proxy zips the CURRENT checkout under a CONSTANT version string, so a stale
+// cached copy silently serves old framework code to consumer builds (masking
+// working-tree changes as bogus compile errors — observed 2026-07-17 on both
+// the host cache and the toolbox container's gomod volume). The hash guard
+// keeps the purge a no-op for unchanged checkouts, so concurrently running
+// test packages (internal/cli and testkit both build golden consumers) do not
+// yank the module out from under each other's in-flight builds.
+func purgeStaleFrameworkVersion(t *testing.T, version, freshZip string) {
+	t.Helper()
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Fatalf("go env GOMODCACHE: %v", err)
+	}
+	gmc := strings.TrimSpace(string(out))
+	if gmc == "" {
+		return
+	}
+	cachedZip := filepath.Join(gmc, "cache", "download", "github.com", "qatoolist", "wowapi", "@v", version+".zip")
+	extracted := filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version)
+	if cached, err := os.ReadFile(cachedZip); err == nil {
+		fresh, err := os.ReadFile(freshZip)
+		if err != nil {
+			t.Fatalf("read fresh proxy zip: %v", err)
+		}
+		if sha256.Sum256(cached) == sha256.Sum256(fresh) && extractionComplete(t, freshZip, extracted, version) {
+			return // cache is current and intact — do not disturb concurrent builds
+		}
+		t.Logf("framework proxy: cached %s is stale or incompletely extracted; purging module cache copies", version)
+	}
+	targets := []string{
+		filepath.Join(gmc, "github.com", "qatoolist", "wowapi@"+version),
+	}
+	dl := filepath.Join(gmc, "cache", "download", "github.com", "qatoolist", "wowapi", "@v")
+	if entries, err := os.ReadDir(dl); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), version+".") {
+				targets = append(targets, filepath.Join(dl, e.Name()))
+			}
+		}
+	}
+	for _, path := range targets {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		// Module-cache contents are read-only; make writable before removal.
+		_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err == nil {
+				_ = os.Chmod(p, 0o755)
+			}
+			return nil
+		})
+		_ = os.Chmod(filepath.Dir(path), 0o755)
+		if err := os.RemoveAll(path); err != nil {
+			t.Logf("purge cached framework %s: %v", path, err)
+		}
+	}
+}
+
+// extractionComplete reports whether every file in the proxy zip exists in the
+// extracted module dir. A matching download zip does NOT prove the extraction
+// is intact: a disk-full run (or a truncated CI cache save/restore of
+// .cicache/gomod) can persist a partially extracted module whose builds fail
+// with bogus "could not import ... (open : no such file)" errors.
+func extractionComplete(t *testing.T, zipPath, extractedDir, version string) bool {
+	t.Helper()
+	if _, err := os.Stat(extractedDir); err != nil {
+		return false
+	}
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("open fresh proxy zip: %v", err)
+	}
+	defer func() { _ = zr.Close() }()
+	prefix := "github.com/qatoolist/wowapi@" + version + "/"
+	for _, f := range zr.File {
+		rel := strings.TrimPrefix(f.Name, prefix)
+		if rel == f.Name || rel == "" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(extractedDir, filepath.FromSlash(rel))); err != nil {
+			t.Logf("framework proxy: extracted module missing %s", rel)
+			return false
+		}
+	}
+	return true
+}
+
 func buildFrameworkProxy(t *testing.T, version string) string {
 	t.Helper()
 	root := wowapiCheckoutRoot(t)
@@ -215,6 +306,7 @@ func buildFrameworkProxy(t *testing.T, version string) string {
 	if err := zf.Close(); err != nil {
 		t.Fatal(err)
 	}
+	purgeStaleFrameworkVersion(t, version, zf.Name())
 	return "file://" + filepath.ToSlash(proxy)
 }
 
@@ -345,6 +437,13 @@ func scaffoldPipeline(t *testing.T, cli, modulePath string, initArgs, goEnv []st
 // github.com/qatoolist/* straight to VCS, which would bypass the harness
 // proxy and reintroduce a network dependency.
 func hermeticGoEnv(proxy string) []string {
+	// Consumer builds SHARE the ambient GOCACHE: a stale build-cache object is
+	// keyed by content hash, so it simply misses and recompiles — it never
+	// poisons. (The real hazard was an incomplete GOMODCACHE *extraction*, which
+	// buildFrameworkProxy detects and re-extracts via extractionComplete.)
+	// Isolating GOCACHE per test made every generated-consumer build recompile
+	// the whole framework cold and pushed the internal/cli unit package past the
+	// 10-minute go-test timeout — so keep the shared cache for speed.
 	return []string{
 		"GOWORK=off",
 		"GOFLAGS=-mod=mod",

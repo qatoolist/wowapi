@@ -63,19 +63,64 @@ func EnsureCheckpointTable(ctx context.Context, conn *pgx.Conn) error {
 	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS migration"); err != nil {
 		return err
 	}
-	_, err := conn.Exec(ctx, `
+	// Identity is (job_id, tenant_id): a tenant-scoped job checkpoints per
+	// tenant; global jobs use the all-zeros sentinel (adversarial review
+	// 2026-07-17, F-03 — a job_id-only key made a second tenant's checkpoint
+	// collide with the first's). Mirrors migration 00049.
+	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS migration.backfill_checkpoint (
-			job_id text PRIMARY KEY,
-			tenant_id uuid,
+			job_id text NOT NULL,
+			tenant_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
 			last_key bigint NOT NULL DEFAULT 0,
 			updated_at timestamptz NOT NULL DEFAULT now(),
 			lease_token text,
 			lease_generation bigint NOT NULL DEFAULT 0,
-			lease_expires_at timestamptz
+			lease_expires_at timestamptz,
+			PRIMARY KEY (job_id, tenant_id)
 		)
+	`); err != nil {
+		return err
+	}
+	// Upgrade a pre-F-03 table in place (idempotent on the new shape).
+	_, err := conn.Exec(ctx, `
+		DO $$
+		BEGIN
+			IF EXISTS (
+				SELECT 1 FROM pg_constraint c
+				 JOIN pg_class r ON r.oid = c.conrelid
+				 JOIN pg_namespace n ON n.oid = r.relnamespace
+				WHERE n.nspname = 'migration' AND r.relname = 'backfill_checkpoint'
+				  AND c.contype = 'p' AND array_length(c.conkey, 1) = 1
+			) THEN
+				UPDATE migration.backfill_checkpoint
+				   SET tenant_id = '00000000-0000-0000-0000-000000000000'
+				 WHERE tenant_id IS NULL;
+				ALTER TABLE migration.backfill_checkpoint
+					ALTER COLUMN tenant_id SET DEFAULT '00000000-0000-0000-0000-000000000000',
+					ALTER COLUMN tenant_id SET NOT NULL;
+				ALTER TABLE migration.backfill_checkpoint
+					DROP CONSTRAINT backfill_checkpoint_pkey;
+				ALTER TABLE migration.backfill_checkpoint
+					ADD PRIMARY KEY (job_id, tenant_id);
+			END IF;
+		END $$;
 	`)
 	return err
 }
+
+// Checkpoint fencing errors (F-03): claims and writes are compare-and-swap
+// operations, never unconditional labels.
+var (
+	// ErrCheckpointLeaseHeld means another runner holds a live, unexpired lease
+	// on this (job, tenant) checkpoint.
+	ErrCheckpointLeaseHeld = errors.New("migration: backfill checkpoint lease held by another runner")
+	// ErrStaleCheckpointWrite means this runner's lease epoch is no longer
+	// current (reclaimed or expired), or the write would move last_key backward.
+	ErrStaleCheckpointWrite = errors.New("migration: stale or non-monotonic backfill checkpoint write rejected")
+)
+
+// globalTenantSentinel is the tenant_id for jobs without a tenant scope.
+var globalTenantSentinel = uuid.Nil
 
 // NewBackfill builds a backfill runner for the given configuration.
 func NewBackfill(cfg BackfillConfig) *Backfill {
@@ -97,14 +142,17 @@ func (b *Backfill) Run(ctx context.Context, conn *pgx.Conn, process ProcessBatch
 		b.cfg.BatchSize = 1000
 	}
 
-	lastKey, resumed, err := b.readCheckpoint(ctx, conn)
+	// Claim atomically creates-or-takes-over the (job, tenant) checkpoint and
+	// returns the authoritative resume key — read and claim are one CAS so a
+	// concurrent runner can never read a key it does not own (F-03).
+	lastKey, resumed, err := b.claimCheckpoint(ctx, conn)
 	if err != nil {
-		return nil, fmt.Errorf("read checkpoint: %w", err)
-	}
-	// Claim the checkpoint under a fresh lease epoch for this run.
-	if err := b.claimCheckpoint(ctx, conn); err != nil {
 		return nil, fmt.Errorf("claim checkpoint: %w", err)
 	}
+	// Release the lease when this run ends so a successor (resume, next window)
+	// claims immediately; a CRASHED runner skips this and its successor waits
+	// for expiry — that asymmetry is the fence.
+	defer func() { b.releaseCheckpoint(context.WithoutCancel(ctx), conn) }()
 
 	res := &BackfillResult{Resumed: resumed}
 	start := time.Now()
@@ -200,74 +248,96 @@ func (b *Backfill) selectArgs(lastKey int64) (string, []any) {
 	), []any{lastKey}
 }
 
-func (b *Backfill) tenantArg() any {
+func (b *Backfill) tenantArg() uuid.UUID {
 	if b.cfg.TenantID == nil {
-		return nil
+		return globalTenantSentinel
 	}
 	return *b.cfg.TenantID
 }
 
-func (b *Backfill) readCheckpoint(ctx context.Context, conn *pgx.Conn) (lastKey int64, resumed bool, err error) {
-	var args []any
-	query := "SELECT last_key FROM migration.backfill_checkpoint WHERE job_id = $1"
-	args = append(args, b.cfg.JobID)
-	if b.cfg.TenantID != nil {
-		query += " AND tenant_id = $2"
-		args = append(args, b.tenantArg())
-	}
-	err = conn.QueryRow(ctx, query, args...).Scan(&lastKey)
+// claimCheckpoint atomically claims the (job, tenant) checkpoint for this run:
+// it creates an absent row, or takes over an ABSENT-OR-EXPIRED lease with a
+// strictly increased stored generation. A live lease held by another runner is
+// never displaced (F-03: the lease is a fence, not metadata). It returns the
+// authoritative last_key and whether the checkpoint pre-existed.
+func (b *Backfill) claimCheckpoint(ctx context.Context, conn *pgx.Conn) (lastKey int64, resumed bool, err error) {
+	fresh := lease.New(checkpointLeaseTTL)
+	var generation int64
+	var inserted bool
+	err = conn.QueryRow(ctx, `
+		INSERT INTO migration.backfill_checkpoint (job_id, tenant_id, last_key, updated_at, lease_token, lease_generation, lease_expires_at)
+		VALUES ($1, $2, 0, now(), $3, 1, $4)
+		ON CONFLICT (job_id, tenant_id) DO UPDATE
+		SET lease_token = EXCLUDED.lease_token,
+		    lease_generation = migration.backfill_checkpoint.lease_generation + 1,
+		    lease_expires_at = EXCLUDED.lease_expires_at,
+		    updated_at = now()
+		WHERE migration.backfill_checkpoint.lease_token IS NULL
+		   OR migration.backfill_checkpoint.lease_expires_at <= now()
+		RETURNING last_key, lease_generation, (xmax = 0) AS inserted
+	`, b.cfg.JobID, b.tenantArg(), fresh.Token, fresh.ExpiresAt).Scan(&lastKey, &generation, &inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := b.writeCheckpoint(ctx, conn, 0); err != nil {
-			return 0, false, err
-		}
-		return 0, false, nil
+		return 0, false, fmt.Errorf("%w: job %q tenant %s", ErrCheckpointLeaseHeld, b.cfg.JobID, b.tenantArg())
 	}
 	if err != nil {
 		return 0, false, err
 	}
-	return lastKey, true, nil
+	b.lease = lease.Lease{Token: fresh.Token, Generation: generation, ExpiresAt: fresh.ExpiresAt}
+	return lastKey, !inserted, nil
 }
 
-// claimCheckpoint bumps the checkpoint into a new lease epoch for this run.
-func (b *Backfill) claimCheckpoint(ctx context.Context, conn *pgx.Conn) error {
-	b.lease = lease.New(5 * time.Minute)
-	_, err := conn.Exec(ctx, `
-		INSERT INTO migration.backfill_checkpoint (job_id, tenant_id, last_key, updated_at, lease_token, lease_generation, lease_expires_at)
-		VALUES ($1, $2, 0, now(), $3, $4, $5)
-		ON CONFLICT (job_id) DO UPDATE
-		SET lease_token = EXCLUDED.lease_token,
-		    lease_generation = EXCLUDED.lease_generation,
-		    lease_expires_at = EXCLUDED.lease_expires_at
-	`, b.cfg.JobID, b.tenantArg(), b.lease.Token, b.lease.Generation, b.lease.ExpiresAt)
-	return err
+// checkpointLeaseTTL bounds how long a crashed runner blocks a successor.
+const checkpointLeaseTTL = 5 * time.Minute
+
+// releaseCheckpoint clears this runner's lease if it is still the current
+// epoch, letting the next runner claim without waiting out the TTL. Losing the
+// race (already reclaimed) is fine — the fence already excludes this runner.
+func (b *Backfill) releaseCheckpoint(ctx context.Context, conn *pgx.Conn) {
+	_, _ = conn.Exec(ctx, `
+		UPDATE migration.backfill_checkpoint
+		   SET lease_token = NULL, lease_expires_at = NULL, updated_at = now()
+		 WHERE job_id = $1 AND tenant_id = $2
+		   AND lease_token = $3 AND lease_generation = $4
+	`, b.cfg.JobID, b.tenantArg(), b.lease.Token, b.lease.Generation)
 }
+
+// checkpointWriteSQL fences every checkpoint advance on the complete claimed
+// identity — (job, tenant), lease token, generation, unexpired ownership — and
+// on monotonic progress. Exactly one row must be affected (F-03).
+const checkpointWriteSQL = `
+	UPDATE migration.backfill_checkpoint
+	   SET last_key = $3,
+	       updated_at = now(),
+	       lease_expires_at = $6
+	 WHERE job_id = $1 AND tenant_id = $2
+	   AND lease_token = $4 AND lease_generation = $5
+	   AND lease_expires_at > now()
+	   AND last_key <= $3`
 
 func (b *Backfill) writeCheckpoint(ctx context.Context, conn *pgx.Conn, lastKey int64) error {
-	b.lease = b.lease.Renew(5 * time.Minute)
-	_, err := conn.Exec(ctx, `
-		INSERT INTO migration.backfill_checkpoint (job_id, tenant_id, last_key, updated_at, lease_token, lease_generation, lease_expires_at)
-		VALUES ($1, $2, $3, now(), $4, $5, $6)
-		ON CONFLICT (job_id) DO UPDATE
-		SET last_key = EXCLUDED.last_key,
-		    updated_at = EXCLUDED.updated_at,
-		    lease_token = EXCLUDED.lease_token,
-		    lease_generation = EXCLUDED.lease_generation,
-		    lease_expires_at = EXCLUDED.lease_expires_at
-	`, b.cfg.JobID, b.tenantArg(), lastKey, b.lease.Token, b.lease.Generation, b.lease.ExpiresAt)
-	return err
+	renewed := b.lease.Renew(checkpointLeaseTTL)
+	tag, err := conn.Exec(ctx, checkpointWriteSQL,
+		b.cfg.JobID, b.tenantArg(), lastKey, b.lease.Token, b.lease.Generation, renewed.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("%w: job %q tenant %s last_key %d", ErrStaleCheckpointWrite, b.cfg.JobID, b.tenantArg(), lastKey)
+	}
+	b.lease = renewed
+	return nil
 }
 
 func (b *Backfill) writeCheckpointTx(ctx context.Context, tx pgx.Tx, lastKey int64) error {
-	b.lease = b.lease.Renew(5 * time.Minute)
-	_, err := tx.Exec(ctx, `
-		INSERT INTO migration.backfill_checkpoint (job_id, tenant_id, last_key, updated_at, lease_token, lease_generation, lease_expires_at)
-		VALUES ($1, $2, $3, now(), $4, $5, $6)
-		ON CONFLICT (job_id) DO UPDATE
-		SET last_key = EXCLUDED.last_key,
-		    updated_at = EXCLUDED.updated_at,
-		    lease_token = EXCLUDED.lease_token,
-		    lease_generation = EXCLUDED.lease_generation,
-		    lease_expires_at = EXCLUDED.lease_expires_at
-	`, b.cfg.JobID, b.tenantArg(), lastKey, b.lease.Token, b.lease.Generation, b.lease.ExpiresAt)
-	return err
+	renewed := b.lease.Renew(checkpointLeaseTTL)
+	tag, err := tx.Exec(ctx, checkpointWriteSQL,
+		b.cfg.JobID, b.tenantArg(), lastKey, b.lease.Token, b.lease.Generation, renewed.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("%w: job %q tenant %s last_key %d", ErrStaleCheckpointWrite, b.cfg.JobID, b.tenantArg(), lastKey)
+	}
+	b.lease = renewed
+	return nil
 }

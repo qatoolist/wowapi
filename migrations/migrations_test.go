@@ -59,6 +59,7 @@ var expectedFiles = []string{
 	"00046_authz_epoch.sql",
 	"00047_perf04_sweeper_outbox_leases.sql",
 	"00048_rule_versions_resolution_indexes.sql",
+	"00049_backfill_checkpoint_composite_identity.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the

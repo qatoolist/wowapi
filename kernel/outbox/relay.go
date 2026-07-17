@@ -47,6 +47,17 @@ type Relay struct {
 	leaseTTL time.Duration
 	tracer   observability.Tracer
 	metrics  observability.Metrics
+	// hooks overrides RequeueFailed/DispatchOnce in tests (fault injection for
+	// the F-07 recovery-observability regression); nil means the real
+	// implementations. A pointer (not func fields) so Relay stays comparable —
+	// the Go API compatibility gate guards that property of the v1 surface.
+	hooks *relayTestHooks
+}
+
+// relayTestHooks carries test-only fault-injection seams for Relay.Run.
+type relayTestHooks struct {
+	requeue  func(ctx context.Context, cooldown time.Duration) error
+	dispatch func(ctx context.Context) (int, error)
 }
 
 // RelayOption customizes the relay.
@@ -349,18 +360,65 @@ func (r *Relay) dispatch(ctx context.Context, rw row) error {
 	return derr
 }
 
+// relayRequeueMaxConsecutiveFailures bounds silent retry of failed-event
+// maintenance: each failure increments outbox_requeue_errors_total, and after
+// this many CONSECUTIVE failures Run returns the error so the process
+// supervisor restarts the relay instead of hiding a persistent grant/schema
+// problem forever (adversarial review 2026-07-17, F-07).
+const relayRequeueMaxConsecutiveFailures = 5
+
 // Run drives the relay until ctx is cancelled: dispatch batches back-to-back
 // while there is work, then poll on the interval. Failed events (marked
 // 'failed') are re-claimed by resetting them to pending after a cooldown — see
-// RequeueFailed. Run returns nil on clean cancellation.
+// RequeueFailed. Recovery runs on its OWN due schedule, even while the drain
+// loop is busy: under sustained pending traffic the idle branch may never
+// execute, and a failed predecessor would otherwise starve behind unrelated
+// events (F-07). A requeue error is counted on outbox_requeue_errors_total and,
+// after relayRequeueMaxConsecutiveFailures consecutive failures, returned. Run
+// returns nil on clean cancellation.
 func (r *Relay) Run(ctx context.Context, poll time.Duration) error {
 	if poll <= 0 {
 		poll = time.Second
 	}
+	requeue, dispatchOnce := r.RequeueFailed, r.DispatchOnce
+	if r.hooks != nil {
+		if r.hooks.requeue != nil {
+			requeue = r.hooks.requeue
+		}
+		if r.hooks.dispatch != nil {
+			dispatchOnce = r.hooks.dispatch
+		}
+	}
+	var (
+		nextRequeue     time.Time // zero: due immediately
+		requeueFailures int
+	)
+	maybeRequeue := func() error {
+		if time.Now().Before(nextRequeue) {
+			return nil
+		}
+		nextRequeue = time.Now().Add(poll)
+		if err := requeue(ctx, 30*time.Second); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			requeueFailures++
+			r.metrics.IncCounter("outbox_requeue_errors_total", 1, outboxRelayMetricLabels)
+			if requeueFailures >= relayRequeueMaxConsecutiveFailures {
+				return kerr.Wrapf(err, "relay.Run", "failed-event requeue failed %d consecutive times", requeueFailures)
+			}
+			return nil
+		}
+		requeueFailures = 0
+		return nil
+	}
 	t := time.NewTicker(poll)
 	defer t.Stop()
 	for {
-		n, err := r.DispatchOnce(ctx)
+		if err := maybeRequeue(); err != nil {
+			return err
+		}
+		n, err := dispatchOnce(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -368,13 +426,12 @@ func (r *Relay) Run(ctx context.Context, poll time.Duration) error {
 			return err
 		}
 		if n > 0 {
-			continue // drain
+			continue // drain; maybeRequeue above keeps recovery on schedule
 		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			_ = r.RequeueFailed(ctx, 30*time.Second)
 		}
 	}
 }
