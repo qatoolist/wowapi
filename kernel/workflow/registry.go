@@ -67,7 +67,13 @@ type Registry struct {
 	autos     map[string]AutoAction
 	resolvers map[string]AssigneeResolver
 	errs      []error
+	sealed    bool
 }
+
+// Seal freezes the registry once boot validation completes: any later
+// registration panics rather than silently adding a definition, auto-action,
+// or resolver the boot gates never saw (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -85,6 +91,9 @@ func defKey(key string, version int) string { return key + "\x00" + strconv.Itoa
 // Full graph validation is deferred to Err() so it runs after all auto-actions
 // and resolvers are registered.
 func (r *Registry) RegisterDefinition(def Definition) error {
+	if r.sealed {
+		panic("workflow: definition registration after boot: the extension model is sealed")
+	}
 	if def.Key == "" || def.Version <= 0 {
 		err := kerr.E(kerr.KindValidation, "workflow_definition_invalid",
 			"workflow definition requires a non-empty key and positive version")
@@ -107,6 +116,9 @@ func (r *Registry) RegisterDefinition(def Definition) error {
 
 // RegisterAutoAction binds a Go action to an auto step's action key.
 func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
+	if r.sealed {
+		panic("workflow: auto-action registration after boot: the extension model is sealed")
+	}
 	if key == "" || fn == nil {
 		r.errs = append(r.errs, kerr.E(kerr.KindValidation, "invalid_auto_action",
 			"RegisterAutoAction requires a key and fn"))
@@ -122,6 +134,9 @@ func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
 
 // RegisterAssigneeResolver binds a resolver func to a resolver key.
 func (r *Registry) RegisterAssigneeResolver(key string, fn AssigneeResolver) {
+	if r.sealed {
+		panic("workflow: assignee-resolver registration after boot: the extension model is sealed")
+	}
 	if key == "" || fn == nil {
 		r.errs = append(r.errs, kerr.E(kerr.KindValidation, "invalid_resolver",
 			"RegisterAssigneeResolver requires a key and fn"))

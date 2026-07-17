@@ -314,16 +314,63 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	// write and a post-boot mutation cannot silently change served strings.
 	boot.i18n.Freeze()
 
+	// Seal every extension registry (closure review 2026-07-17, F-10): the
+	// extension model is registration-at-boot only. Booted intentionally hands
+	// out the live Router/Events/Jobs pointers for serving, and retained module
+	// contexts still reference the shared kernel registries — from here on every
+	// registration mutator on them panics, so neither path can add a route, job
+	// kind, subscription, permission, resource type, rule point, workflow,
+	// record class, document class/hook, template, or provider after the boot
+	// gates above have validated the model. (RetentionClasses/DocumentHooks are
+	// nil-guarded: unlike the others they are not required by the Err() gates.)
+	router.Seal()
+	events.Seal()
+	jobReg.Seal()
+	k.Perms.Seal()
+	k.Resources.Seal()
+	k.Rules.Seal()
+	k.Workflows.Seal()
+	k.DocumentClasses.Seal()
+	k.NotifyTemplates.Seal()
+	k.IntegrationProviders.Seal()
+	if k.RetentionClasses != nil {
+		k.RetentionClasses.Seal()
+	}
+	if k.DocumentHooks != nil {
+		k.DocumentHooks.Seal()
+	}
+
+	// Booted carries SNAPSHOTS of the boot-time collectors, not the backing
+	// structures (closure review 2026-07-17, F-10): the maps/slice handed out
+	// here are fresh copies, so neither a retained module context nor a caller
+	// mutating Booted's fields can alter the sealed extension state the runtime
+	// (health handler, worker scheduler, migration runner) actually consumes —
+	// and the reverse aliasing (Booted mutation racing a live reader) is
+	// structurally impossible.
+	openapi := make(map[string][]byte, len(boot.openapi))
+	for k, v := range boot.openapi {
+		openapi[k] = append([]byte(nil), v...)
+	}
+	health := make(map[string]func(context.Context) error, len(boot.health))
+	for k, v := range boot.health {
+		health[k] = v
+	}
+	migrationsFS := make(map[string]fs.FS, len(boot.migrations))
+	for k, v := range boot.migrations {
+		migrationsFS[k] = v
+	}
+	recurring := append([]RecurringJob(nil), boot.recurring...)
+
 	return &Booted{
 		Kernel:     k,
 		Router:     router,
 		Events:     events,
 		Jobs:       jobReg,
-		OpenAPI:    boot.openapi,
-		Health:     boot.health,
-		Migrations: boot.migrations,
+		OpenAPI:    openapi,
+		Health:     health,
+		Migrations: migrationsFS,
 		Seeds:      bundle,
-		Recurring:  boot.recurring,
+		Recurring:  recurring,
 		I18n:       boot.i18n.Catalog(),
 	}, nil
 }

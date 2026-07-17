@@ -427,6 +427,16 @@ Remediation and Closure Report delivered with the branch. This report's
 "not approved" verdict describes revision `5f4ffce`, superseded by the
 remediated branch.
 
+**Correction (2026-07-17, post-closure-review):** the follow-up adversarial
+closure review (`docs/working/adversarial-closure-review-2026-07-17.md`)
+REJECTED the first remediation's "all ten closed / production-correctness
+restored" claim: F-04 (non-atomic cancellation), F-05 (hooks before the CAS;
+voided-document confirmation), and F-10 (ignored port errors, typed nils,
+duplicate collectors, mutable Booted/registry exposure) retained material
+bypasses, and F-02's `Hook.Failed` field was a source-incompatible API change.
+Those blockers were remediated in the closure-blockers branch that carries
+this correction; the closure-review record documents the final disposition.
+
 Harness observation recorded during remediation: the e2e/golden module-proxy
 fixtures reuse constant synthetic framework versions; the shared GOMODCACHE and
 build cache can serve stale zips/objects that mask working-tree changes

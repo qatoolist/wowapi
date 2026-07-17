@@ -40,14 +40,27 @@ changes to it require a new major version.
   is sealed after boot; retained module contexts cannot mutate it (F-10).
 
 ### Added
-- `app.Hook.Failed` (additive): hooks can report post-start background-work death;
-  `RunHooks` shuts the process down instead of serving nothing. The generated API binds its
-  listener synchronously so a bind failure is a start error (F-02).
+- `app.SupervisedHook` + `app.RunSupervisedHooks`: components whose background
+  work can die after a successful start report it via `Failed`; the runner stops
+  every started hook and returns the error instead of serving nothing (F-02).
+  The generated API binds its listener synchronously so a bind failure is a
+  start error. NOTE: an earlier iteration added a `Failed` field to `app.Hook`
+  itself — that broke unkeyed composite literals (`app.Hook{"api", start, stop}`)
+  and was withdrawn before release; `Hook`'s v1 field set (Name, Start, Stop) is
+  frozen and guarded by a compile-time compatibility test.
 
 ### Changed (behavior; misuse surface only)
 - `kernel/pagination.Parse` now returns a `KindInternal` error when `Defaults.PerPage` is
   zero or negative instead of silently passing the value into SQL `LIMIT` (F-08). Correctly
   configured callers (all in-repo and generated code) are unaffected.
+- Every extension registry (`httpx.Router`, outbox subscriptions, job kinds, permissions,
+  resource types, rule points, workflows, retention/document classes, document hooks,
+  notification templates, integration providers) is **sealed by `App.Boot`** once validation
+  completes: a post-boot registration — through a retained `module.Context` or the live
+  `Booted.Router/Events/Jobs` pointers — panics instead of silently taking effect against
+  the running server/worker (closure review 2026-07-17, F-10). Registration during module
+  `Register` (the supported pattern) is unaffected; registries constructed outside `Boot`
+  are never sealed.
 
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.

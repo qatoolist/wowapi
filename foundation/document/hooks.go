@@ -37,16 +37,34 @@ type (
 type Hooks struct {
 	onUpload []UploadHook
 	onAccess []AccessHook
+	sealed   bool
 }
 
 // NewHooks returns an empty hook set.
 func NewHooks() *Hooks { return &Hooks{} }
 
+// Seal freezes the hook set once boot validation completes: any later
+// registration panics rather than silently attaching a hook the boot gates
+// never saw (closure review 2026-07-17, F-10).
+func (h *Hooks) Seal() { h.sealed = true }
+
+func (h *Hooks) mustBeUnsealed() {
+	if h.sealed {
+		panic("document: hook registration after boot: the extension model is sealed")
+	}
+}
+
 // OnFileUpload registers a confirm-time hook.
-func (h *Hooks) OnFileUpload(fn UploadHook) { h.onUpload = append(h.onUpload, fn) }
+func (h *Hooks) OnFileUpload(fn UploadHook) {
+	h.mustBeUnsealed()
+	h.onUpload = append(h.onUpload, fn)
+}
 
 // OnDocumentAccess registers a download-time hook.
-func (h *Hooks) OnDocumentAccess(fn AccessHook) { h.onAccess = append(h.onAccess, fn) }
+func (h *Hooks) OnDocumentAccess(fn AccessHook) {
+	h.mustBeUnsealed()
+	h.onAccess = append(h.onAccess, fn)
+}
 
 func (h *Hooks) runUpload(ctx context.Context, e UploadEvent) error {
 	if h == nil {

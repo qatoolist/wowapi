@@ -49,16 +49,25 @@ type TypeSpec struct {
 // and is synced to the resource_types table at boot. Duplicate keys and keys
 // whose module prefix does not match the registering module are errors.
 type Registry struct {
-	specs map[string]TypeSpec
-	errs  []error
+	specs  map[string]TypeSpec
+	errs   []error
+	sealed bool
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{specs: map[string]TypeSpec{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a resource type the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register adds a resource type for the given module. The key must be
 // "<module>.<name>"; a mismatch or duplicate records an error surfaced by Err.
 func (r *Registry) Register(module string, spec TypeSpec) {
+	if r.sealed {
+		panic("resource: resource-type registration after boot: the extension model is sealed")
+	}
 	if !ValidTypeKey(spec.Key) {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_resource_type",
 			"resource type key must be <module>.<name>: "+spec.Key))
@@ -77,8 +86,17 @@ func (r *Registry) Register(module string, spec TypeSpec) {
 	r.specs[spec.Key] = spec
 }
 
-// Specs returns the registered specs keyed by type key.
-func (r *Registry) Specs() map[string]TypeSpec { return r.specs }
+// Specs returns a COPY of the registered specs keyed by type key. Callers get
+// a snapshot they can range and mutate freely without aliasing the registry's
+// backing map (closure review 2026-07-17, F-10: exported backing maps let
+// post-boot callers mutate sealed extension state).
+func (r *Registry) Specs() map[string]TypeSpec {
+	out := make(map[string]TypeSpec, len(r.specs))
+	for k, v := range r.specs {
+		out[k] = v
+	}
+	return out
+}
 
 // Err returns accumulated registration errors joined, or nil.
 func (r *Registry) Err() error {

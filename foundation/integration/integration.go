@@ -58,14 +58,23 @@ type Provider interface {
 type Registry struct {
 	providers map[string]Provider
 	errs      []error
+	sealed    bool
 }
 
 // NewRegistry returns an empty provider registry.
 func NewRegistry() *Registry { return &Registry{providers: map[string]Provider{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a provider the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register adds a provider adapter. A malformed/foreign-module key, an invalid
 // kind, or a duplicate is recorded and surfaced by Err().
 func (r *Registry) Register(module string, p Provider) {
+	if r.sealed {
+		panic("integration: provider registration after boot: the extension model is sealed")
+	}
 	key := p.Key()
 	if !keyRE.MatchString(key) {
 		r.errf("provider key must be module.name: %s", key)

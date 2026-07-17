@@ -3,8 +3,13 @@ package app_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,6 +63,16 @@ func TestStartWorkerReturnsPromptlyWhenChildrenFail(t *testing.T) {
 		if err == nil {
 			t.Fatal("StartWorker returned nil after its critical children failed")
 		}
+		// Sibling cancellation, explicitly: StartWorker only returns after ALL
+		// three children have exited (drain barrier) or the 2s drain cap fires.
+		// The parent context is still live (30s), so a prompt full-drain return
+		// entails that every child that had not itself failed exited via the
+		// supervisor's sibling cancellation — a child waiting on the PARENT
+		// context would hold the drain for the full 30s and trip the cap path
+		// with errDrainTimeout in the joined error instead.
+		if strings.Contains(err.Error(), "shutdown drain deadline exceeded") {
+			t.Fatalf("children did not exit via sibling cancellation (drain cap hit): %v", err)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("StartWorker still blocked 10s after every critical child loop failed (parent context live) — child failures are unsupervised")
 	}
@@ -71,7 +86,7 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 	sentinel := errors.New("listener died")
 	failed := make(chan error, 1)
 
-	hook := app.Hook{
+	hook := app.SupervisedHook{
 		Name: "flaky-listener",
 		Start: func(ctx context.Context) error {
 			go func() {
@@ -87,7 +102,7 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- app.RunHooks(ctx, log, time.Second, hook) }()
+	go func() { done <- app.RunSupervisedHooks(ctx, log, time.Second, hook) }()
 
 	select {
 	case err := <-done:
@@ -96,5 +111,96 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("RunHooks still blocked 10s after the hook's serving loop failed — async hook death is unobserved")
+	}
+}
+
+// Closure-review regressions (adversarial closure review 2026-07-17, F-02).
+
+// The v1 Hook shape is frozen: external consumers write unkeyed composite
+// literals, so this test is a COMPILE-TIME guarantee that Hook still has
+// exactly (Name, Start, Stop) in that order.
+func TestHookUnkeyedLiteralCompatibility(t *testing.T) {
+	start := func(context.Context) error { return nil }
+	stop := func(context.Context) error { return nil }
+	h := app.Hook{"api", start, stop} //nolint:govet // unkeyed on purpose: the compatibility contract under test
+	if h.Name != "api" {
+		t.Fatal("unkeyed Hook literal mis-mapped")
+	}
+}
+
+// After an async hook failure, RunSupervisedHooks must still STOP every
+// started hook (in reverse order) before returning the failure.
+func TestRunSupervisedHooksStopsAllHooksAfterAsyncFailure(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sentinel := errors.New("serving loop died")
+	failed := make(chan error, 1)
+	var stops []string
+	var mu sync.Mutex
+	recordStop := func(name string) func(context.Context) error {
+		return func(context.Context) error {
+			mu.Lock()
+			defer mu.Unlock()
+			stops = append(stops, name)
+			return nil
+		}
+	}
+	hooks := []app.SupervisedHook{
+		{Name: "first", Start: func(context.Context) error { return nil }, Stop: recordStop("first")},
+		{Name: "flaky", Start: func(context.Context) error {
+			go func() { failed <- sentinel }()
+			return nil
+		}, Failed: failed, Stop: recordStop("flaky")},
+		{Name: "last", Start: func(context.Context) error { return nil }, Stop: recordStop("last")},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	err := app.RunSupervisedHooks(ctx, log, time.Second, hooks...)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("RunSupervisedHooks = %v, want the async failure", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(stops) != 3 || stops[0] != "last" || stops[1] != "flaky" || stops[2] != "first" {
+		t.Fatalf("stops after async failure = %v, want [last flaky first] (all hooks, reverse order)", stops)
+	}
+}
+
+// The generated API's exact hook shape (synchronous net.Listen in Start,
+// Serve-death via Failed): an occupied address must surface as a Start error
+// from the hook runner — the process exits instead of serving nothing.
+func TestSupervisedListenerHookFailsStartOnOccupiedAddress(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// Occupy a port.
+	occupier, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = occupier.Close() }()
+	addr := occupier.Addr().String()
+
+	srv := &http.Server{Addr: addr}
+	httpFailed := make(chan error, 1)
+	hook := app.SupervisedHook{
+		Name: "http",
+		Start: func(ctx context.Context) error {
+			ln, err := net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("http: bind %s: %w", addr, err)
+			}
+			go func() {
+				if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+					httpFailed <- err
+				}
+			}()
+			return nil
+		},
+		Failed: httpFailed,
+		Stop:   func(ctx context.Context) error { return srv.Shutdown(ctx) },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err = app.RunSupervisedHooks(ctx, log, time.Second, hook)
+	if err == nil || !strings.Contains(err.Error(), "bind") {
+		t.Fatalf("RunSupervisedHooks on an occupied address = %v, want a bind Start error", err)
 	}
 }

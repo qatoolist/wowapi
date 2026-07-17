@@ -382,6 +382,11 @@ func TestIntegrationBulkFencedFinalizeRejectsStaleWorker(t *testing.T) {
 
 	// Worker A claims the item and holds it (simulate a stalled worker).
 	blocked := make(chan struct{})
+	// A parks inside an open tenant tx until blocked closes; if the test dies on
+	// any earlier Fatal, cleanup must still unblock it or the pool teardown
+	// deadlocks the whole package into the 10m go-test panic.
+	unblock := sync.OnceFunc(func() { close(blocked) })
+	t.Cleanup(unblock)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	var aErr error
@@ -393,10 +398,23 @@ func TestIntegrationBulkFencedFinalizeRejectsStaleWorker(t *testing.T) {
 		})
 	}()
 
-	// Wait for A to claim, then let the lease expire and reclaim.
-	time.Sleep(100 * time.Millisecond)
-	if _, err := svc.ReclaimStalled(context.Background(), h.TxM, tenant, id); err != nil {
-		t.Fatalf("ReclaimStalled: %v", err)
+	// Reclaim deterministically: poll until A's claim exists AND its lease has
+	// lapsed (ReclaimStalled only reclaims expired leases, so n>=1 proves both).
+	// A fixed sleep is not enough — under full-suite DB contention A can claim
+	// late, leaving its lease unexpired at any fixed instant.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		n, err := svc.ReclaimStalled(context.Background(), h.TxM, tenant, id)
+		if err != nil {
+			t.Fatalf("ReclaimStalled: %v", err)
+		}
+		if n >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("worker A's lease was never reclaimed (claim missing or lease never lapsed)")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	// Worker B now claims and completes the item.
@@ -405,7 +423,7 @@ func TestIntegrationBulkFencedFinalizeRejectsStaleWorker(t *testing.T) {
 	}
 
 	// Unblock A. A's finalize must be fenced because its lease was reclaimed.
-	close(blocked)
+	unblock()
 	wg.Wait()
 	if aErr == nil {
 		t.Fatal("stale worker A finalized successfully, want lease-mismatch error")

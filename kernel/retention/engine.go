@@ -50,14 +50,23 @@ type RecordClass struct {
 type Registry struct {
 	classes map[string]RecordClass
 	err     error
+	sealed  bool
 }
 
 // NewRegistry builds an empty registry.
 func NewRegistry() *Registry { return &Registry{classes: map[string]RecordClass{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a record class the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register adds a record class. Keys must be non-empty and unique; the first
 // error is retained and surfaced by Err (checked at boot).
 func (r *Registry) Register(c RecordClass) {
+	if r.sealed {
+		panic("retention: record-class registration after boot: the extension model is sealed")
+	}
 	if r.err != nil {
 		return
 	}

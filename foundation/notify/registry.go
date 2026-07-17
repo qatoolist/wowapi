@@ -66,16 +66,25 @@ func (s TemplateSpec) allowsVar(v string) bool {
 // Registry holds TemplateSpec declarations made by modules at boot. Keys must
 // be module.area.name and a module may only register keys with its own prefix.
 type Registry struct {
-	specs map[string]TemplateSpec
-	errs  []error
+	specs  map[string]TemplateSpec
+	errs   []error
+	sealed bool
 }
 
 // NewRegistry returns an empty template registry.
 func NewRegistry() *Registry { return &Registry{specs: map[string]TemplateSpec{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a template the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register records a template key's spec. Errors (bad key, prefix mismatch,
 // duplicate) accumulate and are returned by Err().
 func (r *Registry) Register(module string, spec TemplateSpec) {
+	if r.sealed {
+		panic("notify: template registration after boot: the extension model is sealed")
+	}
 	if !keyRE.MatchString(spec.Key) {
 		r.errf("notify template key must be module.area.name: %s", spec.Key)
 		return

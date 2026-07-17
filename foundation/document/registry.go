@@ -62,14 +62,23 @@ func (c Class) allowsMIME(mime string) bool {
 type Registry struct {
 	classes map[string]Class
 	errs    []error
+	sealed  bool
 }
 
 // NewRegistry returns an empty class registry.
 func NewRegistry() *Registry { return &Registry{classes: map[string]Class{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a document class the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register adds a document class. Malformed keys, a module-prefix mismatch, an
 // invalid default sensitivity, or a duplicate are recorded and surfaced by Err().
 func (r *Registry) Register(module string, c Class) {
+	if r.sealed {
+		panic("document: class registration after boot: the extension model is sealed")
+	}
 	if !classKeyRE.MatchString(c.Key) {
 		r.errf("document class key must be module.name: %s", c.Key)
 		return

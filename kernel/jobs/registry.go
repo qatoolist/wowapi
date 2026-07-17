@@ -18,9 +18,15 @@ type entry struct {
 // once via Err() with every problem reported together (mirrors outbox's
 // HandlerRegistry).
 type Registry struct {
-	kinds map[string]entry
-	errs  []error
+	kinds  map[string]entry
+	errs   []error
+	sealed bool
 }
+
+// Seal freezes the registry once boot validation completes: any later
+// RegisterKind panics rather than introducing a job kind the running worker
+// pool would dispatch without boot validation (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -40,6 +46,9 @@ func (r *Registry) RegisterKind(kind string, w Worker, rp RetryPolicy) {
 // error surfaced by Err(). A zero-value RetryPolicy is filled from DefaultRetry
 // so a caller can register with just a worker and idempotency.
 func (r *Registry) RegisterKindWithIdempotency(kind string, w Worker, idem Idempotency, rp RetryPolicy) {
+	if r.sealed {
+		panic("jobs: job-kind registration after boot: the extension model is sealed")
+	}
 	if kind == "" {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_kind",
 			"RegisterKind requires a non-empty kind"))

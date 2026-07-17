@@ -83,7 +83,13 @@ type Router struct {
 	// RISK-W01-002): existing routes keep booting unchanged until a product
 	// opts in via config.Security.EnforceRouteContracts.
 	requireContracts bool
+	sealed           bool
 }
+
+// Seal freezes the router once boot validation completes: any later Handle
+// call panics rather than silently adding a route whose permission was never
+// boot-validated (closure review 2026-07-17, F-10).
+func (r *Router) Seal() { r.sealed = true }
 
 // NewRouter returns an empty Router.
 func NewRouter() *Router {
@@ -103,6 +109,9 @@ func (r *Router) RequireRequestContracts() {
 // records an error retrievable via Err() — it does not panic, so a module's
 // whole route set is validated at once.
 func (r *Router) Handle(method, pattern string, meta RouteMeta, h http.HandlerFunc) {
+	if r.sealed {
+		panic("httpx: route registration after boot: the extension model is sealed")
+	}
 	if err := meta.validate(); err != nil {
 		r.errs = append(r.errs, fmt.Errorf("%s %s: %w", method, pattern, err))
 		return

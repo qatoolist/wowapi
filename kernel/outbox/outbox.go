@@ -140,10 +140,16 @@ type subscription struct {
 
 // HandlerRegistry collects event subscriptions during module registration.
 type HandlerRegistry struct {
-	subs []subscription
-	seen map[string]bool // eventType+name dedup
-	errs []error
+	subs   []subscription
+	seen   map[string]bool // eventType+name dedup
+	errs   []error
+	sealed bool
 }
+
+// Seal freezes the registry once boot validation completes: any later
+// Subscribe panics rather than silently attaching a handler the relay would
+// dispatch to without boot validation (closure review 2026-07-17, F-10).
+func (r *HandlerRegistry) Seal() { r.sealed = true }
 
 // NewHandlerRegistry returns an empty registry.
 func NewHandlerRegistry() *HandlerRegistry { return &HandlerRegistry{seen: map[string]bool{}} }
@@ -151,6 +157,9 @@ func NewHandlerRegistry() *HandlerRegistry { return &HandlerRegistry{seen: map[s
 // Subscribe registers an idempotent handler for an event type. handlerName must
 // be unique per event type and stable across deploys (it keys the inbox).
 func (r *HandlerRegistry) Subscribe(eventType, handlerName string, fn Handler) {
+	if r.sealed {
+		panic("outbox: event subscription after boot: the extension model is sealed")
+	}
 	if eventType == "" || handlerName == "" || fn == nil {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_subscription",
 			"Subscribe requires eventType, handlerName, and fn"))

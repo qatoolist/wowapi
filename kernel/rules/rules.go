@@ -98,10 +98,16 @@ func (p Point) allowsScope(s ScopeKind) bool {
 type Registry struct {
 	points map[string]Point
 	errs   []error
+	sealed bool
 }
 
 // NewRegistry returns an empty rule registry.
 func NewRegistry() *Registry { return &Registry{points: map[string]Point{}} }
+
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a rule point the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
 
 // Register adds a rule point. Malformed keys, a module-prefix mismatch, a
 // missing schema/default, a schema that is malformed or names an unknown
@@ -111,6 +117,9 @@ func NewRegistry() *Registry { return &Registry{points: map[string]Point{}} }
 // calls k.Rules.Err()) turns any of these into a boot failure, so a
 // silently-unenforced or self-contradictory rule point can never go live.
 func (r *Registry) Register(module string, p Point) {
+	if r.sealed {
+		panic("rules: rule-point registration after boot: the extension model is sealed")
+	}
 	if !keyRE.MatchString(p.Key) {
 		r.errf("rule key must be module.area.name: %s", p.Key)
 		return
@@ -151,8 +160,15 @@ func (r *Registry) Keys() []string {
 	return out
 }
 
-// Points returns the registered points keyed by key.
-func (r *Registry) Points() map[string]Point { return r.points }
+// Points returns a COPY of the registered points keyed by key — a snapshot,
+// never the registry's backing map (closure review 2026-07-17, F-10).
+func (r *Registry) Points() map[string]Point {
+	out := make(map[string]Point, len(r.points))
+	for k, v := range r.points {
+		out[k] = v
+	}
+	return out
+}
 
 func (r *Registry) errf(format string, args ...any) {
 	r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_rule", fmt.Sprintf(format, args...)))

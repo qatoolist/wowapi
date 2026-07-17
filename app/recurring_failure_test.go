@@ -117,3 +117,72 @@ func TestIntegrationModuleRecurringTenantFailureIsReported(t *testing.T) {
 		t.Fatalf("StartWorker returned unexpected error: %v", err)
 	}
 }
+
+// Closure-review regression (2026-07-17, F-09): when EVERY tenant fails, the
+// run must still attempt every tenant, report failure, and keep scheduling
+// (failed tenants retry at the next interval — the schedule advances).
+func TestIntegrationModuleRecurringAllTenantsFailingIsReported(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	metrics := &countingMetrics{}
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM, Metrics: metrics,
+	})
+	if err != nil {
+		t.Fatalf("kernel.New: %v", err)
+	}
+	testkit.CreateTenant(t, h)
+	testkit.CreateTenant(t, h)
+
+	var attempts sync.Map
+	var runs atomic.Int64
+	a := app.New()
+	a.Register(funcModule{name: "widgets", reg: func(mc module.Context) error {
+		mc.RecurringJob("doomed", 100*time.Millisecond, func(ctx context.Context, _ database.TenantDB) error {
+			tid, _ := database.TenantIDFrom(ctx)
+			attempts.LoadOrStore(tid.String(), true)
+			runs.Add(1)
+			return errors.New("boom for every tenant")
+		})
+		return nil
+	}})
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- app.StartWorker(ctx, booted, app.WorkerConfigOpts{
+			RelayPoll:     80 * time.Millisecond,
+			JobPoll:       80 * time.Millisecond,
+			SchedulerPoll: 40 * time.Millisecond,
+			ShutdownDrain: 3 * time.Second,
+		})
+	}()
+
+	deadline := time.After(15 * time.Second)
+	// Wait until BOTH: the error metric moved AND the job ran more times than
+	// there are tenants (i.e. the schedule advanced past an all-fail interval).
+	for metrics.counter("scheduler_task_errors_total") == 0 || runs.Load() <= 2 {
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatalf("all-fail run not truthfully reported or schedule stalled (errors=%v runs=%d)",
+				metrics.counter("scheduler_task_errors_total"), runs.Load())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	count := 0
+	attempts.Range(func(_, _ any) bool { count++; return true })
+	if count < 2 {
+		t.Fatalf("only %d tenant(s) attempted in the all-fail case, want 2", count)
+	}
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("StartWorker: %v", err)
+	}
+}

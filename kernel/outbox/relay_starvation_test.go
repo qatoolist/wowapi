@@ -28,8 +28,12 @@ func TestIntegrationRelayRequeueNotStarvedByBusyTraffic(t *testing.T) {
 		return nil
 	})
 
-	// Seed one FAILED event whose cooldown (30s, keyed on failed_at) has long
-	// elapsed: it is due for requeue immediately.
+	// Seed one FAILED event that becomes due only AFTER sustained draining has
+	// begun (closure review 2026-07-17: a row already due at startup can be
+	// recovered by a single requeue before the first dispatch, which would let
+	// this test pass even if recovery ran only once). failed_at = now() with a
+	// 2-second effective cooldown (wrapping the REAL RequeueFailed) means the
+	// row is NOT due until ~2s of busy traffic have already elapsed.
 	writer := outbox.NewWriter(model.UUIDv7())
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tenant.ID), func(ctx context.Context, db database.TenantDB) error {
 		return writer.Write(ctx, db, outbox.Event{Type: "starved.event"})
@@ -37,7 +41,7 @@ func TestIntegrationRelayRequeueNotStarvedByBusyTraffic(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := h.Admin.Exec(context.Background(),
-		`UPDATE events_outbox SET dispatch_status = 'failed', failed_at = now() - interval '10 minutes'
+		`UPDATE events_outbox SET dispatch_status = 'failed', failed_at = now()
 		  WHERE event_type = 'starved.event'`); err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +64,11 @@ func TestIntegrationRelayRequeueNotStarvedByBusyTraffic(t *testing.T) {
 	relayCtx, stopRelay := context.WithCancel(context.Background())
 	defer stopRelay()
 	relay := outbox.NewRelay(h.Platform, h.TxM, reg, 1) // batch=1: guaranteed continuous drain
+	// Wrap the REAL requeue with a 2s cooldown so the seeded row becomes due
+	// mid-drain, never at startup.
+	outbox.SetRequeueHook(relay, func(ctx context.Context, _ time.Duration) error {
+		return relay.RequeueFailed(ctx, 2*time.Second)
+	})
 	relayDone := make(chan error, 1)
 	go func() { relayDone <- relay.Run(relayCtx, 50*time.Millisecond) }()
 

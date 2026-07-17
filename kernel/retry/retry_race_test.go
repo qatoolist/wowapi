@@ -46,9 +46,12 @@ func TestScheduleNextConcurrentExactDurations(t *testing.T) {
 	}
 }
 
-// blockingBackOff forces the reset/advance interleaving the review's isolated
-// reproduction used to drive SequenceBackOff past its slice: it yields between
-// Reset and NextBackOff so another goroutine's Reset can land mid-iteration.
+// blockingBackOff raises the LIKELIHOOD of reset/advance interleavings (the
+// class the review's isolated reproduction used to drive SequenceBackOff past
+// its slice) by adding non-blocking channel polls between operations. It does
+// not deterministically force a specific interleaving — the concurrent
+// exact-duration test above plus -race are the load-bearing assertions; this
+// test adds panic coverage under heavier goroutine churn.
 type blockingBackOff struct {
 	inner   *SequenceBackOff
 	release chan struct{}

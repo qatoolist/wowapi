@@ -75,16 +75,25 @@ type StepUpPolicy struct {
 // from the registry is a programming error, so registration is validated and
 // its Err() must gate boot — an unknown permission can never silently allow.
 type Registry struct {
-	perms map[string]Permission
-	errs  []error
+	perms  map[string]Permission
+	errs   []error
+	sealed bool
 }
 
 // NewRegistry returns an empty permission registry.
 func NewRegistry() *Registry { return &Registry{perms: map[string]Permission{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a permission the boot gates never saw
+// (closure review 2026-07-17, F-10).
+func (r *Registry) Seal() { r.sealed = true }
+
 // Register adds a permission. Malformed keys, unknown action verbs, and
 // duplicates are recorded as errors surfaced by Err().
 func (r *Registry) Register(p Permission) {
+	if r.sealed {
+		panic("authz: permission registration after boot: the extension model is sealed")
+	}
 	if !permKeyRE.MatchString(p.Key) {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_permission",
 			"permission key must be module.resource.action: "+p.Key))
