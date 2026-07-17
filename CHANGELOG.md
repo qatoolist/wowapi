@@ -48,13 +48,16 @@ changes to it require a new major version.
   itself — that broke unkeyed composite literals (`app.Hook{"api", start, stop}`)
   and was withdrawn before release; `Hook`'s v1 field set (Name, Start, Stop) is
   frozen and guarded by a compile-time compatibility test.
-- `document.UploadEvent` gains two additive fields (second closure audit, F-05): `Tx`, the
-  confirming transaction's tenant handle (effects written through it commit and roll back
-  atomically with the confirmation), and `DeliveryID`, a durable idempotency identifier
-  (the upload session id, stable across retries of the same reserved upload) that
-  external hook effects must deduplicate on. The hook-effect contract is documented on
-  the type: the confirming transaction can still fail after a hook returns, so non-Tx
-  effects may be re-delivered on retry.
+- `document.UploadDeliveryFromContext` (third closure audit, F-05/compat): OnFileUpload
+  hooks read the transactional delivery context — `DeliveryID`, a durable idempotency
+  identifier (the upload session id, stable across retries of the same reserved upload),
+  and `Tx`, the confirming transaction's tenant handle (effects written through it commit
+  and roll back atomically with the confirmation) — from the hook's context.
+  `UploadEvent`'s v1 field set is FROZEN (guarded by positional-literal compile fixtures
+  in-package and in `internal/compat`): an interim iteration added these as event fields,
+  which broke unkeyed composite literals for stable-v1 consumers and was withdrawn before
+  release. The confirming transaction can still fail after a hook returns, so non-Tx
+  effects may be re-delivered on retry and must deduplicate on `DeliveryID`.
 
 ### Changed (behavior; misuse surface only)
 - `kernel/pagination.Parse` now returns a `KindInternal` error when `Defaults.PerPage` is
@@ -94,6 +97,20 @@ changes to it require a new major version.
   lock (unlocked fast-fail read → object I/O → `FOR UPDATE` + locked active recheck), so
   slow storage no longer blocks retention or peer confirmations (second closure audit,
   F-05 Medium).
+- Boot is now an OWNERSHIP-TRANSFER boundary (third closure audit, F-10): seed catalogs
+  and the frozen i18n catalog join the boot-validated runtime view
+  (`Booted.RuntimeSeeds()` / `Booted.RuntimeI18n()`; readiness and the generated
+  api/migrate templates consume them); module migration filesystems are MATERIALIZED into
+  immutable byte snapshots at boot (the runtime never calls a module-owned `fs.FS`
+  again); workflow gateway `Condition.Equals` values are restricted to immutable scalars
+  (string/bool/number — anything aliasable is a collected boot error); and the unbooted
+  fallback is removed — `Runtime*` accessors fail loudly and `StartWorker` returns
+  `ErrNotBooted` for any `Booted` value `App.Boot` did not produce.
+- Declaration validation hardened (third closure audit): nil `Migrations`/`Seeds`
+  filesystems, empty-name or nil health checks, and nil or typed-nil integration
+  providers are collected boot errors. A boundary lint prohibits generated templates from
+  reading informational `Booted` fields; `docs/reference/invariant-ledger.md` records
+  each framework invariant's enforcement, consumer classes, and guarding regression.
 
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.

@@ -172,7 +172,9 @@ func run(ctx context.Context, argv []string) error {
 	// check denies and resource-mirror writes fail their FK (GAP-003). No
 	// invalidator is passed: this process holds no long-lived authz cache (it
 	// exits immediately after migrating), unlike the api/worker runtime.
-	seedReport, err := seeds.Apply(ctx, pool, booted.Seeds, seeds.ApplyOptions{Actor: "migrate"})
+	// RuntimeSeeds is the boot-validated catalog; the informational Seeds
+	// field could have been reassigned or mutated after boot.
+	seedReport, err := seeds.Apply(ctx, pool, booted.RuntimeSeeds(), seeds.ApplyOptions{Actor: "migrate"})
 	if err != nil {
 		return fmt.Errorf("seed sync: %w", err)
 	}

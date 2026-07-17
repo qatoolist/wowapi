@@ -397,6 +397,11 @@ func (c *moduleContext) rejectDuplicate(what string, exists bool) bool {
 
 func (c *moduleContext) Migrations(fsys fs.FS) {
 	c.mustBeUnsealed("Migrations")
+	if fsys == nil {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Migrations registered a nil fs.FS", c.name))
+		return
+	}
 	if _, dup := c.boot.migrations[c.name]; c.rejectDuplicate("Migrations", dup) {
 		return
 	}
@@ -405,6 +410,11 @@ func (c *moduleContext) Migrations(fsys fs.FS) {
 
 func (c *moduleContext) Seeds(fsys fs.FS) {
 	c.mustBeUnsealed("Seeds")
+	if fsys == nil {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Seeds registered a nil fs.FS", c.name))
+		return
+	}
 	if _, dup := c.boot.seeds[c.name]; c.rejectDuplicate("Seeds", dup) {
 		return
 	}
@@ -429,6 +439,16 @@ func (c *moduleContext) I18n(bundle i18n.Bundle) {
 
 func (c *moduleContext) Health(name string, check func(context.Context) error) {
 	c.mustBeUnsealed("Health")
+	if name == "" {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Health requires a non-empty check name", c.name))
+		return
+	}
+	if check == nil {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: health check %q has a nil func (would panic when probed)", c.name, name))
+		return
+	}
 	key := c.name + "." + name
 	if _, dup := c.boot.health[key]; c.rejectDuplicate("Health("+name+")", dup) {
 		return

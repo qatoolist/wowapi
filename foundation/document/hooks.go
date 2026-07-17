@@ -16,15 +16,21 @@ import (
 // an async malware scan; the version lands scan_status=pending and downloads of
 // confidential+ documents block until the scan clears it.
 //
+// UploadEvent's field set is FROZEN at its v1 shape (the seven fields below):
+// consumers write unkeyed composite literals, and adding any field is a
+// source-incompatible change for them (third closure audit 2026-07-17 — the
+// same compatibility class as app.Hook). The transactional effect contract is
+// delivered through the context instead: see UploadDeliveryFromContext.
+//
 // Effect contract (second closure audit 2026-07-17, F-05): the hook runs
 // INSIDE the confirming transaction, which can still roll back after the hook
 // returns (a later insert/update/outbox write or the commit itself can fail),
 // and the same reserved upload is then retryable — so a hook effect is exactly
-// once ONLY if it is written through Tx (it commits and rolls back atomically
-// with the confirmation; the canonical scan enqueue is an outbox write through
-// Tx). An effect delivered OUTSIDE the transaction may be re-delivered on
-// retry and MUST be idempotent keyed on DeliveryID, which is stable across
-// retries of the same reserved upload.
+// once ONLY if it is written through the delivery's Tx (it commits and rolls
+// back atomically with the confirmation; the canonical scan enqueue is an
+// outbox write through it). An effect delivered OUTSIDE the transaction may be
+// re-delivered on retry and MUST be idempotent keyed on the delivery's
+// DeliveryID, which is stable across retries of the same reserved upload.
 type UploadEvent struct {
 	DocumentID  string
 	Class       string
@@ -33,6 +39,13 @@ type UploadEvent struct {
 	MIME        string
 	SizeBytes   int64
 	Sensitivity Sensitivity
+}
+
+// UploadDelivery is the transactional execution context of one OnFileUpload
+// invocation, carried on the hook's context (NOT on UploadEvent, whose v1
+// field set is frozen for unkeyed-literal compatibility). A domain event
+// describes what happened; the delivery carries the execution capabilities.
+type UploadDelivery struct {
 	// DeliveryID is the durable idempotency identifier for this upload's hook
 	// effects: the upload session's id, identical on every retry of the same
 	// reserved (document, version, key) confirmation. External (non-Tx) effects
@@ -42,6 +55,24 @@ type UploadEvent struct {
 	// it are atomic with the confirmation: they are never visible if the
 	// confirmation rolls back, and land exactly once when it commits.
 	Tx database.TenantDB
+}
+
+type uploadDeliveryKey struct{}
+
+// withUploadDelivery binds the confirming transaction's delivery context for
+// the duration of the hook invocations.
+func withUploadDelivery(ctx context.Context, d UploadDelivery) context.Context {
+	return context.WithValue(ctx, uploadDeliveryKey{}, d)
+}
+
+// UploadDeliveryFromContext returns the transactional delivery context of the
+// current OnFileUpload invocation: the retry-stable DeliveryID and the
+// confirming transaction's tenant handle. It reports false outside a hook
+// invocation. Delivered via the context so UploadEvent's frozen v1 shape stays
+// source-compatible for unkeyed composite literals.
+func UploadDeliveryFromContext(ctx context.Context) (UploadDelivery, bool) {
+	d, ok := ctx.Value(uploadDeliveryKey{}).(UploadDelivery)
+	return d, ok
 }
 
 // AccessEvent is passed to OnDocumentAccess hooks after authorization succeeds

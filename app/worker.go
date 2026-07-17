@@ -40,6 +40,12 @@ type WorkerConfigOpts struct {
 // Signal wiring (SIGINT/SIGTERM) belongs to the process main via
 // signal.NotifyContext; StartWorker stays testable with a plain context.
 func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
+	// A Booted value App.Boot did not produce never passed validation; running
+	// it would convert construction misuse into unvalidated operation (third
+	// closure audit 2026-07-17). No fallback — fail closed.
+	if b == nil || !b.runtime.set {
+		return ErrNotBooted
+	}
 	k := b.Kernel
 	if k.Platform == nil {
 		return errNoPlatformPool

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"testing/fstest"
 	"time"
 
 	"github.com/qatoolist/wowapi/internal/sealer"
@@ -59,83 +60,147 @@ type Booted struct {
 	runtime runtimeView
 }
 
-// runtimeView holds the boot-validated collectors Boot captured before
-// returning. Zero (never set) only when a Booted was hand-constructed rather
-// than produced by Boot; the accessors then fall back to the exported fields —
-// such a Booted never passed boot validation in the first place.
+// runtimeView holds the boot-validated state Boot captured before returning.
+// It is the SINGLE authoritative runtime source: the exported Booted fields
+// are informational mirrors only, and there is deliberately NO fallback from
+// the view to the fields — a Booted that was not produced by App.Boot never
+// passed validation, so operating on it must fail loudly rather than convert
+// construction misuse into apparently-valid unvalidated operation (third
+// closure audit 2026-07-17).
 type runtimeView struct {
 	// set marks a view captured by Boot. The nil-ness of individual members
-	// must NOT be the fallback signal: a product with zero recurring jobs would
-	// otherwise fall back to the replaceable exported field — exactly the
-	// bypass this view closes.
+	// must NOT be the signal: a product with zero recurring jobs would
+	// otherwise be indistinguishable from an unbooted value.
 	set        bool
 	router     *httpx.Router
 	events     *outbox.HandlerRegistry
 	jobs       *jobs.Registry
 	health     map[string]func(context.Context) error
-	migrations map[string]fs.FS
+	migrations map[string]fs.FS // materialized immutable snapshots, not module FS values
 	recurring  []RecurringJob
+	seeds      seeds.Bundle
+	i18n       *i18n.Catalog
+}
+
+// ErrNotBooted reports an operation on a Booted value that was not produced by
+// App.Boot (zero or hand-constructed): such a value never passed boot
+// validation and must not run.
+var ErrNotBooted = errors.New("app: Booted was not produced by App.Boot; boot the application first")
+
+// mustBeBooted fails loudly on a Booted value App.Boot did not produce.
+func (b *Booted) mustBeBooted() {
+	if b == nil || !b.runtime.set {
+		panic(ErrNotBooted.Error())
+	}
 }
 
 // RuntimeRouter returns the boot-validated (sealed) router a serving process
 // must mount. Unlike the informational Router field, it cannot be reassigned;
 // the generated api process uses it.
 func (b *Booted) RuntimeRouter() *httpx.Router {
-	if b.runtime.set {
-		return b.runtime.router
-	}
-	return b.Router
+	b.mustBeBooted()
+	return b.runtime.router
 }
 
 // RuntimeEvents returns the boot-validated event-subscription registry the
 // relay dispatches from (used by StartWorker).
 func (b *Booted) RuntimeEvents() *outbox.HandlerRegistry {
-	if b.runtime.set {
-		return b.runtime.events
-	}
-	return b.Events
+	b.mustBeBooted()
+	return b.runtime.events
 }
 
 // RuntimeJobs returns the boot-validated job-kind registry the worker pools
 // dispatch from (used by StartWorker).
 func (b *Booted) RuntimeJobs() *jobs.Registry {
-	if b.runtime.set {
-		return b.runtime.jobs
-	}
-	return b.Jobs
+	b.mustBeBooted()
+	return b.runtime.jobs
 }
 
-// RuntimeMigrations returns a fresh copy of the boot-validated migration sets;
-// the generated migrate process uses it. Reassigning the Migrations field does
-// not affect it.
+// RuntimeMigrations returns a fresh copy of the boot-validated migration sets.
+// The values are immutable byte snapshots MATERIALIZED at boot (third closure
+// audit 2026-07-17): the runtime never calls back into a module-owned fs.FS,
+// so post-boot filesystem mutation cannot alter migration content. The
+// generated migrate process uses it.
 func (b *Booted) RuntimeMigrations() map[string]fs.FS {
-	src := b.Migrations
-	if b.runtime.set {
-		src = b.runtime.migrations
-	}
-	out := make(map[string]fs.FS, len(src))
-	for k, v := range src {
+	b.mustBeBooted()
+	out := make(map[string]fs.FS, len(b.runtime.migrations))
+	for k, v := range b.runtime.migrations {
 		out[k] = v
 	}
 	return out
 }
 
+// RuntimeSeeds returns a deep copy of the boot-validated merged seed catalog;
+// the generated migrate process applies it. Neither reassigning the Seeds
+// field nor mutating retained/returned bundle slices can alter what boot
+// validated.
+func (b *Booted) RuntimeSeeds() seeds.Bundle {
+	b.mustBeBooted()
+	return b.runtime.seeds.Clone()
+}
+
+// RuntimeI18n returns the boot-frozen message catalog; the generated api
+// process passes it to httpx.Locale. Unlike the informational I18n field, it
+// cannot be reassigned after boot.
+func (b *Booted) RuntimeI18n() *i18n.Catalog {
+	b.mustBeBooted()
+	return b.runtime.i18n
+}
+
 // runtimeHealth returns the boot-validated health-check set the Readiness
 // builders consume.
 func (b *Booted) runtimeHealth() map[string]func(context.Context) error {
-	if b.runtime.set {
-		return b.runtime.health
-	}
-	return b.Health
+	b.mustBeBooted()
+	return b.runtime.health
+}
+
+// runtimeSeeds returns the boot-validated seed bundle for internal readers.
+func (b *Booted) runtimeSeeds() seeds.Bundle {
+	b.mustBeBooted()
+	return b.runtime.seeds
 }
 
 // runtimeRecurring returns the boot-validated recurring jobs the worker
 // scheduler runs.
 func (b *Booted) runtimeRecurring() []RecurringJob {
-	if b.runtime.set {
-		return b.runtime.recurring
+	b.mustBeBooted()
+	return b.runtime.recurring
+}
+
+// snapshotFS is an immutable, boot-materialized filesystem: every declared
+// file's bytes were read and copied at boot. The unexported type prevents the
+// type assertions that would make a raw fstest.MapFS (a map) mutable again.
+type snapshotFS struct{ files fstest.MapFS }
+
+func (s snapshotFS) Open(name string) (fs.File, error) { return s.files.Open(name) }
+
+// materializeFS enumerates and reads every regular file under fsys into an
+// immutable byte snapshot. Copying an fs.FS interface value copies only the
+// reference — a module retaining a mutable implementation (e.g. fstest.MapFS)
+// could otherwise alter migration content after boot validated it.
+func materializeFS(fsys fs.FS) (fs.FS, error) {
+	out := fstest.MapFS{}
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s: not a regular file", path)
+		}
+		data, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		out[path] = &fstest.MapFile{Data: append([]byte(nil), data...)}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return b.Recurring
+	return snapshotFS{files: out}, nil
 }
 
 // RecurringJob is a leader-safe per-tenant recurring job a module registered via
@@ -407,6 +472,20 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		}
 	}
 
+	// Materialize every module migration filesystem into an immutable byte
+	// snapshot (third closure audit 2026-07-17, F-10): the runtime consumes
+	// captured bytes, never a module-owned fs.FS whose content could change
+	// after validation. Unreadable declarations fail boot with the rest.
+	materialized := make(map[string]fs.FS, len(boot.migrations))
+	for name, fsys := range boot.migrations {
+		snap, err := materializeFS(fsys)
+		if err != nil {
+			regErrs = append(regErrs, fmt.Errorf("module %q: materializing migrations: %w", name, err))
+			continue
+		}
+		materialized[name] = snap
+	}
+
 	if len(regErrs) > 0 {
 		return nil, fmt.Errorf("app: boot validation failed: %w", errors.Join(regErrs...))
 	}
@@ -466,6 +545,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		migrationsFS[k] = v
 	}
 	recurring := append([]RecurringJob(nil), boot.recurring...)
+	catalog := boot.i18n.Catalog()
 
 	return &Booted{
 		Kernel:     k,
@@ -475,17 +555,19 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		OpenAPI:    openapi,
 		Health:     health,
 		Migrations: migrationsFS,
-		Seeds:      bundle,
+		Seeds:      bundle.Clone(),
 		Recurring:  recurring,
-		I18n:       boot.i18n.Catalog(),
+		I18n:       catalog,
 		runtime: runtimeView{
 			set:        true,
 			router:     router,
 			events:     events,
 			jobs:       jobReg,
 			health:     boot.health,
-			migrations: boot.migrations,
+			migrations: materialized,
 			recurring:  boot.recurring,
+			seeds:      bundle,
+			i18n:       catalog,
 		},
 	}, nil
 }

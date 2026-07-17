@@ -49,9 +49,13 @@ func Readiness(b *Booted, fingerprint config.Fingerprint, extra map[string]httpx
 func ReadinessWithCatalogs(b *Booted, fingerprint config.Fingerprint, db database.DBTX, src fs.FS, source string, extra map[string]httpx.HealthCheck) *httpx.Health {
 	h := Readiness(b, fingerprint, extra)
 
-	if bundleHasSeeds(b.Seeds) {
+	// Read the boot-validated seed catalog, never the reassignable Seeds field
+	// (third closure audit 2026-07-17, F-10): the readiness hash and the
+	// seeded-catalog check must reflect what boot validated.
+	validatedSeeds := b.runtimeSeeds()
+	if bundleHasSeeds(validatedSeeds) {
 		h.Register("seed_catalogs", func(ctx context.Context) error {
-			return CatalogsSeeded(ctx, db, b.Seeds)
+			return CatalogsSeeded(ctx, db, validatedSeeds)
 		})
 	}
 

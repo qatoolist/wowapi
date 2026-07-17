@@ -366,14 +366,16 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	// and wrong-version attempts triggered scan-enqueue and other external hook
 	// effects for confirmations that were then rejected). A hook error returns
 	// before any version effect and rolls the CAS back with the caller's tx.
-	// The event carries the confirming tx (Tx) and a retry-stable idempotency
+	// The hook context carries the confirming tx and a retry-stable idempotency
 	// identifier (DeliveryID = the session id) so hook effects can be atomic
 	// with the confirmation or deduplicated across a post-hook rollback+retry
-	// (second closure audit 2026-07-17, F-05 — see UploadEvent's contract).
-	if err := s.hooks.runUpload(ctx, UploadEvent{
+	// (second closure audit 2026-07-17, F-05). Delivered via the context —
+	// UploadDeliveryFromContext — because UploadEvent's v1 field set is frozen
+	// for unkeyed-literal source compatibility (third closure audit).
+	hookCtx := withUploadDelivery(ctx, UploadDelivery{DeliveryID: in.SessionID.String(), Tx: db})
+	if err := s.hooks.runUpload(hookCtx, UploadEvent{
 		DocumentID: confirmed.documentID.String(), Class: class, VersionNo: confirmed.versionNo,
 		StorageKey: confirmed.storageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
-		DeliveryID: in.SessionID.String(), Tx: db,
 	}); err != nil {
 		return uuid.Nil, err
 	}

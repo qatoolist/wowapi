@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -53,11 +54,38 @@ func TestRuntimeViewZeroRecurringIsNotAFallbackHole(t *testing.T) {
 	}
 }
 
-// A hand-constructed Booted (never produced by Boot) keeps working through the
-// exported fields — the fallback is for that case only.
-func TestRuntimeViewFallsBackForHandConstructedBooted(t *testing.T) {
+// A hand-constructed Booted (never produced by Boot) must FAIL LOUDLY, never
+// silently operate on unvalidated state (third closure audit 2026-07-17):
+// there is deliberately no fallback from the runtime view to the exported
+// fields.
+func TestUnbootedBootedFailsLoudly(t *testing.T) {
 	b := &Booted{Recurring: []RecurringJob{{Name: "manual.job", Every: time.Minute}}}
-	if got := b.runtimeRecurring(); len(got) != 1 || got[0].Name != "manual.job" {
-		t.Fatalf("hand-constructed Booted lost its recurring jobs: %+v", got)
+
+	if err := StartWorker(context.Background(), b, WorkerConfigOpts{}); !errors.Is(err, ErrNotBooted) {
+		t.Fatalf("StartWorker on an unbooted value = %v, want ErrNotBooted", err)
+	}
+	if err := StartWorker(context.Background(), nil, WorkerConfigOpts{}); !errors.Is(err, ErrNotBooted) {
+		t.Fatalf("StartWorker on nil = %v, want ErrNotBooted", err)
+	}
+
+	for name, fn := range map[string]func(){
+		"RuntimeRouter":     func() { b.RuntimeRouter() },
+		"RuntimeEvents":     func() { b.RuntimeEvents() },
+		"RuntimeJobs":       func() { b.RuntimeJobs() },
+		"RuntimeMigrations": func() { _ = b.RuntimeMigrations() },
+		"RuntimeSeeds":      func() { _ = b.RuntimeSeeds() },
+		"RuntimeI18n":       func() { b.RuntimeI18n() },
+		"runtimeRecurring":  func() { b.runtimeRecurring() },
+		"runtimeHealth":     func() { b.runtimeHealth() },
+		"runtimeSeeds":      func() { _ = b.runtimeSeeds() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("%s on an unbooted value did not panic — unvalidated state would run", name)
+				}
+			}()
+			fn()
+		})
 	}
 }

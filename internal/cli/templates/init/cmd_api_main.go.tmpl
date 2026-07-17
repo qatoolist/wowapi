@@ -270,10 +270,11 @@ func run(ctx context.Context) error {
 		// Locale negotiation (kernel/i18n): binds the request's negotiated
 		// locale + the merged message catalog (framework English + every
 		// module's bundles) into the context before any handler runs, and
-		// sets Content-Language on the response. booted.I18n is never nil
-		// (the framework catalog is always pre-loaded), so this is a
-		// standard, always-on concern — no product config gate needed.
-		httpx.Locale(booted.I18n),
+		// sets Content-Language on the response. RuntimeI18n is the
+		// boot-frozen catalog (never nil — the framework catalog is always
+		// pre-loaded); the informational I18n field could have been
+		// reassigned after boot.
+		httpx.Locale(booted.RuntimeI18n()),
 		observability.Trace(tracer),     // OTel span per request when tracing is enabled
 		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),

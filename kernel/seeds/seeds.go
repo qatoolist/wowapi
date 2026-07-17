@@ -34,6 +34,40 @@ type Bundle struct {
 	RelationshipTypes []RelationshipTypeSeed `yaml:"relationship_types"`
 }
 
+// Clone returns a deep copy of the bundle: no slice — outer or nested
+// (PermissionSeed.StepUpAMR, RoleSeed.Permissions) — is shared with the
+// receiver. Boot captures a clone as its validated seed state so
+// module-retained declaration memory can never alter what migration applies
+// or what readiness hashes (third closure audit 2026-07-17, F-10).
+func (b Bundle) Clone() Bundle {
+	out := b
+	if b.Permissions != nil {
+		out.Permissions = make([]PermissionSeed, len(b.Permissions))
+		for i, p := range b.Permissions {
+			if p.StepUpAMR != nil {
+				p.StepUpAMR = append([]string(nil), p.StepUpAMR...)
+			}
+			out.Permissions[i] = p
+		}
+	}
+	if b.Roles != nil {
+		out.Roles = make([]RoleSeed, len(b.Roles))
+		for i, r := range b.Roles {
+			if r.Permissions != nil {
+				r.Permissions = append([]string(nil), r.Permissions...)
+			}
+			out.Roles[i] = r
+		}
+	}
+	if b.ResourceTypes != nil {
+		out.ResourceTypes = append([]ResourceTypeSeed(nil), b.ResourceTypes...)
+	}
+	if b.RelationshipTypes != nil {
+		out.RelationshipTypes = append([]RelationshipTypeSeed(nil), b.RelationshipTypes...)
+	}
+	return out
+}
+
 // PermissionSeed declares a permission in the catalog.
 type PermissionSeed struct {
 	Key         string `yaml:"key"`

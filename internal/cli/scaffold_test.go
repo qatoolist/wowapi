@@ -346,7 +346,7 @@ func TestInitMigrateMainSyncsSeeds(t *testing.T) {
 	}
 	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
 	assertFileContains(t, migratePath, "kernel/seeds")
-	assertFileContains(t, migratePath, "seeds.Apply(ctx, pool, booted.Seeds")
+	assertFileContains(t, migratePath, "seeds.Apply(ctx, pool, booted.RuntimeSeeds()")
 	assertParseGo(t, migratePath)
 }
 
@@ -375,7 +375,7 @@ func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedIdx := strings.Index(string(content), "seeds.Apply(ctx, pool, booted.Seeds")
+	seedIdx := strings.Index(string(content), "seeds.Apply(ctx, pool, booted.RuntimeSeeds()")
 	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
 	if seedIdx == -1 || ruleIdx == -1 || ruleIdx < seedIdx {
 		t.Fatalf("rule-definition sync must appear AFTER seed sync in generated migrate main (seedIdx=%d ruleIdx=%d)", seedIdx, ruleIdx)
@@ -471,7 +471,7 @@ func TestInitWorkerMainWiresOptionalStorage(t *testing.T) {
 
 // TestInitAPIMainWiresLocaleMiddleware: the generated api main must install the
 // framework's i18n locale-negotiation middleware (kernel/i18n landed this
-// branch) unconditionally — booted.I18n is always a non-nil catalog
+// branch) unconditionally — booted.RuntimeI18n() is always a non-nil catalog
 // (framework English is pre-loaded), so this is a pure framework-standard
 // concern with no product config gate, unlike storage/OIDC.
 func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
@@ -482,7 +482,7 @@ func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
 	}
 	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
 	assertParseGo(t, apiPath)
-	assertFileContains(t, apiPath, "httpx.Locale(booted.I18n)")
+	assertFileContains(t, apiPath, "httpx.Locale(booted.RuntimeI18n())")
 }
 
 // TestInitConfigsBaseDocumentsStorage: the generated configs/base.yaml should

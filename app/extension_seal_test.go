@@ -26,6 +26,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/retention"
 	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/kernel/workflow"
 	"github.com/qatoolist/wowapi/module"
 	"github.com/qatoolist/wowapi/testkit"
@@ -230,5 +231,108 @@ func TestBootedFieldReplacementCannotAlterRuntimeState(t *testing.T) {
 	}
 	if !strings.Contains(body, "widgets.real") {
 		t.Fatalf("readiness built after field replacement lost the boot-validated check: %s", body)
+	}
+}
+
+// Third closure-audit regressions (2026-07-17, F-10): seed state and the i18n
+// catalog are part of the boot-validated runtime view; migration content is
+// MATERIALIZED at boot. Replacing the public mirrors, mutating nested seed
+// slices, or mutating the module-owned migration filesystem after boot must
+// not change what the runtime consumers (readiness, migrate, locale
+// middleware) operate on.
+func TestSeedsI18nAndMigrationContentAreBootCaptured(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM,
+	})
+	if err != nil {
+		t.Fatalf("kernel.New: %v", err)
+	}
+	migFS := fstest.MapFS{"0001_real.up.sql": &fstest.MapFile{Data: []byte("SELECT 1;")}}
+	seedFS := fstest.MapFS{"catalog.yaml": &fstest.MapFile{Data: []byte(
+		"permissions:\n  - key: widgets.thing.read\n    description: read things\nroles:\n  - key: widgets.reader\n    name: Reader\n    permissions: [widgets.thing.read]\n")}}
+	a := app.New()
+	a.Register(funcModule{name: "widgets", reg: func(mc module.Context) error {
+		mc.Migrations(migFS)
+		mc.Seeds(seedFS)
+		return nil
+	}})
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	frozenI18n := booted.RuntimeI18n()
+	if frozenI18n == nil {
+		t.Fatal("RuntimeI18n returned nil")
+	}
+
+	// (1) Replace the public mirrors wholesale.
+	booted.Seeds = seeds.Bundle{Permissions: []seeds.PermissionSeed{{Key: "evil.thing.admin"}}}
+	booted.I18n = nil
+
+	rs := booted.RuntimeSeeds()
+	if len(rs.Permissions) != 1 || rs.Permissions[0].Key != "widgets.thing.read" {
+		t.Fatalf("RuntimeSeeds follows the replaced Seeds field: %+v", rs.Permissions)
+	}
+	if booted.RuntimeI18n() != frozenI18n {
+		t.Fatal("RuntimeI18n follows the replaced I18n field")
+	}
+
+	// (2) Mutate nested slices on a RuntimeSeeds result AND on the replaced
+	// public mirror; the validated catalog must be unaffected.
+	rs.Roles[0].Permissions[0] = "evil.everything.admin"
+	rs.Permissions[0].Key = "evil.thing.read"
+	again := booted.RuntimeSeeds()
+	if again.Permissions[0].Key != "widgets.thing.read" || again.Roles[0].Permissions[0] != "widgets.thing.read" {
+		t.Fatalf("mutating a RuntimeSeeds result altered the validated catalog: %+v", again)
+	}
+
+	// (3) Mutate the module-owned migration filesystem: the boot-materialized
+	// snapshot must keep serving the validated bytes.
+	migFS["0001_real.up.sql"].Data = []byte("DROP TABLE users;")
+	migFS["0002_evil.up.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE tenants;")}
+	snap := booted.RuntimeMigrations()["widgets"]
+	if snap == nil {
+		t.Fatal("RuntimeMigrations lost the module set")
+	}
+	data, err := fs.ReadFile(snap, "0001_real.up.sql")
+	if err != nil {
+		t.Fatalf("read materialized migration: %v", err)
+	}
+	if string(data) != "SELECT 1;" {
+		t.Fatalf("materialized migration content changed after post-boot FS mutation: %q", data)
+	}
+	if _, err := fs.ReadFile(snap, "0002_evil.up.sql"); err == nil {
+		t.Fatal("a file added to the module FS after boot appeared in the materialized snapshot")
+	}
+}
+
+// Third closure-audit regressions (2026-07-17): declaration registries reject
+// nil/empty declarations at boot instead of deferring the failure to first use.
+func TestBootRejectsNilAndEmptyDeclarations(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reg  func(mc module.Context)
+		want string
+	}{
+		"nil migrations FS": {func(mc module.Context) { mc.Migrations(nil) }, "nil fs.FS"},
+		"nil seeds FS":      {func(mc module.Context) { mc.Seeds(nil) }, "nil fs.FS"},
+		"empty health name": {func(mc module.Context) {
+			mc.Health("", func(context.Context) error { return nil })
+		}, "non-empty check name"},
+		"nil health check": {func(mc module.Context) { mc.Health("db", nil) }, "nil func"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := bootModules(t, funcModule{name: "widgets", reg: func(mc module.Context) error {
+				tc.reg(mc)
+				return nil
+			}})
+			if err == nil {
+				t.Fatalf("boot accepted %s", name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("boot error %v does not explain %q", err, tc.want)
+			}
+		})
 	}
 }

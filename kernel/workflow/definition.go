@@ -186,6 +186,20 @@ type Fraction struct {
 	Value string `yaml:"value,omitempty"`
 }
 
+// scalarConditionValue reports whether v is one of the immutable scalar kinds
+// a compiled gateway condition supports. nil is excluded: a When without a
+// value is meaningless (a default branch omits When entirely).
+func scalarConditionValue(v any) bool {
+	switch v.(type) {
+	case string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return true
+	}
+	return false
+}
+
 // stripStepPrefix normalizes an "step:key" escalate_to reference to "key".
 func stripStepPrefix(s string) string { return strings.TrimPrefix(s, "step:") }
 
@@ -287,6 +301,25 @@ func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
 			}
 			if step.OnReject == nil || step.OnReject.target() == "" {
 				add("approval step %q must define on_reject.next", name)
+			}
+		}
+		// Gateway conditions: Equals is `any` for YAML authoring flexibility,
+		// but the COMPILED definition only accepts immutable scalars (third
+		// closure audit 2026-07-17, F-10): a map, slice, pointer, or other
+		// reference value would keep the registry's cloned definition aliased
+		// to module-owned mutable memory — gateway routing could then change
+		// after boot validation and race runtime readers. The framework only
+		// accepts condition values it can compare, clone, and serialize
+		// deterministically; anything else is unrepresentable, not cloned.
+		for i, b := range step.Branches {
+			if b.When == nil {
+				continue
+			}
+			if b.When.Key == "" {
+				add("step %q branch[%d]: when requires a key", name, i)
+			}
+			if !scalarConditionValue(b.When.Equals) {
+				add("step %q branch[%d]: when.equals must be an immutable scalar (string, bool, or number), not %T", name, i, b.When.Equals)
 			}
 		}
 		for _, tgt := range step.outgoing() {

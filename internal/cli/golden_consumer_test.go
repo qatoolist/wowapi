@@ -9,23 +9,26 @@ import (
 	"testing"
 )
 
-const (
-	goldenConsumerModulePath = "example.com/wowapi-golden-consumer"
-	// BUMP the numeric suffix whenever the checkout's package SET changes — see
-	// e2eReleaseVersion's comment (the go module index is path-keyed and
-	// immutable-by-assumption; only a new version path gets a fresh index).
-	goldenConsumerFrameworkVersion = "v1.2.0-w06e01s002.12"
-)
+const goldenConsumerModulePath = "example.com/wowapi-golden-consumer"
+
+// goldenConsumerFrameworkVersion is the synthetic version the golden-consumer
+// proxy serves this checkout as. The content-derived suffix keeps it in
+// lock-step with the packaged source (see frameworkSourceSuffix): the go
+// module index is path-keyed and immutable-by-assumption, so only a new
+// version path gets a fresh index.
+func goldenConsumerFrameworkVersion(t *testing.T) string {
+	return "v1.2.0-w06e01s002-" + frameworkSourceSuffix(t)
+}
 
 func goldenConsumerScaffold(t *testing.T) string {
 	t.Helper()
 
 	gobin := t.TempDir()
-	proxy := buildFrameworkProxy(t, goldenConsumerFrameworkVersion)
+	proxy := buildFrameworkProxy(t, goldenConsumerFrameworkVersion(t))
 	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
 	install := exec.Command(
 		"go", "install", "-buildvcs=false",
-		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion,
+		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion(t),
 	)
 	install.Dir = wowapiCheckoutRoot(t)
 	install.Env = append(os.Environ(), goEnv...)
@@ -39,7 +42,7 @@ func goldenConsumerScaffold(t *testing.T) string {
 	provenance := runPipelineStep(t, "verify installed CLI provenance", install.Dir, goEnv,
 		"go", "version", "-m", cli)
 	if !strings.Contains(provenance, "github.com/qatoolist/wowapi/cmd/wowapi") ||
-		!strings.Contains(provenance, goldenConsumerFrameworkVersion) {
+		!strings.Contains(provenance, goldenConsumerFrameworkVersion(t)) {
 		t.Fatalf("installed CLI provenance does not name versioned wowapi module:\n%s", provenance)
 	}
 	productDir := scaffoldPipeline(t, cli, goldenConsumerModulePath, nil, goEnv)
@@ -276,10 +279,8 @@ func assertGoldenConsumerContract(t *testing.T, productDir string, goEnv []strin
 // upgrade both to the locally packaged release candidate, then rerun the same
 // contract checks against the upgraded fixture.
 func TestGoldenConsumerUpgradeReplay(t *testing.T) {
-	const (
-		previous = "v1.1.0"
-		current  = goldenConsumerFrameworkVersion
-	)
+	const previous = "v1.1.0"
+	current := goldenConsumerFrameworkVersion(t)
 
 	previousCLI := installGoldenConsumerCLI(t, previous)
 	currentCLI, goEnv := installGoldenConsumerCandidateCLI(t, current)

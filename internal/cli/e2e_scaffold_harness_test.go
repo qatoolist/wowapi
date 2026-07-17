@@ -41,22 +41,110 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
+// frameworkZipInclude is the whitelist of top-level entries a consumer build
+// needs — module metadata plus every Go source tree. A future top-level Go
+// package missing here fails the harness build step loudly, with the missing
+// import named. It is ALSO the input set for the content-derived version
+// suffix below, so the two can never diverge.
+var frameworkZipInclude = []string{
+	"go.mod", "go.sum", "LICENSE", "NOTICE", "README.md",
+	"adapters", "app", "cmd", "foundation", "internal", "kernel", "migrations", "module", "testkit",
+}
+
+// frameworkSourceSuffix is a CONTENT-DERIVED version identifier for the
+// synthetic module versions the local proxies serve. The go command caches a
+// per-module package index (package lists, file sets, import sets) keyed by
+// the extracted directory path and assumes module-cache dirs are immutable;
+// the harness's staleness purge re-extracts bytes but cannot invalidate that
+// index. A constant version therefore resolves imports against STALE package
+// metadata whenever the checkout changes (observed twice on 2026-07-17: a new
+// internal/sealer package was invisible, then a new `reflect` import in an
+// existing file was unresolvable). Deriving the suffix from a digest of the
+// packaged source closes the defect class: any content change yields a new
+// version path and a fresh index — no manual bumps to forget.
+var (
+	frameworkSuffixOnce sync.Once
+	frameworkSuffixVal  string
+)
+
+func frameworkSourceSuffix(t *testing.T) string {
+	t.Helper()
+	frameworkSuffixOnce.Do(func() {
+		root := wowapiCheckoutRoot(t)
+		h := sha256.New()
+		for _, entry := range frameworkZipInclude {
+			abs := filepath.Join(root, entry)
+			st, err := os.Stat(abs)
+			if err != nil {
+				t.Fatalf("framework source digest: missing expected entry %s: %v", entry, err)
+			}
+			if !st.IsDir() {
+				data, err := os.ReadFile(abs)
+				if err != nil {
+					t.Fatalf("framework source digest: %v", err)
+				}
+				fmt.Fprintf(h, "%s\x00%d\x00", entry, len(data))
+				h.Write(data)
+				continue
+			}
+			err = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				name := d.Name()
+				if d.IsDir() {
+					if strings.HasPrefix(name, ".") {
+						return filepath.SkipDir
+					}
+					if path != abs {
+						if _, nestedErr := os.Stat(filepath.Join(path, "go.mod")); nestedErr == nil {
+							return filepath.SkipDir
+						} else if !os.IsNotExist(nestedErr) {
+							return nestedErr
+						}
+					}
+					return nil
+				}
+				if !d.Type().IsRegular() || strings.HasPrefix(name, ".") {
+					return nil
+				}
+				rel, err := filepath.Rel(root, path)
+				if err != nil {
+					return err
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(h, "%s\x00%d\x00", filepath.ToSlash(rel), len(data))
+				h.Write(data)
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("framework source digest: walking %s: %v", entry, err)
+			}
+		}
+		frameworkSuffixVal = fmt.Sprintf("%x", h.Sum(nil))[:12]
+	})
+	if frameworkSuffixVal == "" {
+		t.Fatal("framework source digest unavailable (an earlier computation failed)")
+	}
+	return frameworkSuffixVal
+}
+
 // e2eReleaseVersion is the release version the "released CLI" stand-in is
 // stamped with, and the version the local file proxy serves this checkout as.
-// e2eReleaseVersion is a release version that does not collide with any
-// published tag or module-cache entry, so the released-CLI path is forced to
-// resolve the framework from the local file proxy packaged from this checkout.
-// BUMP the numeric suffix whenever the checkout's package SET changes (a
-// package added or removed): the go command caches a per-module package index
-// keyed by the extracted directory path, which it assumes immutable — the
-// harness's staleness purge re-extracts sources but cannot invalidate that
-// index, so a same-version re-serve resolves imports against the OLD package
-// list (observed 2026-07-17: a new internal/sealer package was invisible until
-// the version changed).
-const e2eReleaseVersion = "v0.2.0-w06shared.2"
+// It does not collide with any published tag or module-cache entry, so the
+// released-CLI path is forced to resolve the framework from the local file
+// proxy packaged from this checkout. The content-derived suffix keeps the
+// version in lock-step with the packaged source (see frameworkSourceSuffix).
+func e2eReleaseVersion(t *testing.T) string {
+	return "v0.2.0-w06shared-" + frameworkSourceSuffix(t)
+}
 
 // buildWowapiCLI compiles cmd/wowapi into a temp dir and returns the binary
 // path. ldflagsVersion != "" stamps a release version exactly as the release
@@ -258,14 +346,7 @@ func buildFrameworkProxy(t *testing.T, version string) string {
 	}
 	zw := zip.NewWriter(zf)
 	prefix := "github.com/qatoolist/wowapi@" + version + "/"
-	// Whitelist of top-level entries a consumer build needs — module metadata
-	// plus every Go source tree. A future top-level Go package missing here
-	// fails the harness build step loudly, with the missing import named.
-	include := []string{
-		"go.mod", "go.sum", "LICENSE", "NOTICE", "README.md",
-		"adapters", "app", "cmd", "foundation", "internal", "kernel", "migrations", "module", "testkit",
-	}
-	for _, entry := range include {
+	for _, entry := range frameworkZipInclude {
 		abs := filepath.Join(root, entry)
 		st, err := os.Stat(abs)
 		if err != nil {
@@ -509,8 +590,8 @@ func TestE2EScaffoldReleasedCLI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the CLI, a module proxy, and a full scaffolded product; skipped in -short")
 	}
-	cli := buildWowapiCLI(t, e2eReleaseVersion)
-	frameworkProxy := buildFrameworkProxy(t, e2eReleaseVersion)
+	cli := buildWowapiCLI(t, e2eReleaseVersion(t))
+	frameworkProxy := buildFrameworkProxy(t, e2eReleaseVersion(t))
 
 	goEnv := hermeticGoEnv(frameworkProxy + "," + modCacheProxyURL(t))
 	dir := scaffoldPipeline(t, cli, "github.com/acme/e2erelease", nil, goEnv)
@@ -519,7 +600,7 @@ func TestE2EScaffoldReleasedCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+e2eReleaseVersion) {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+e2eReleaseVersion(t)) {
 		t.Errorf("released-path go.mod must pin the CLI's release version:\n%s", gomod)
 	}
 	if strings.Contains(string(gomod), "replace ") {
