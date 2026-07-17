@@ -37,11 +37,10 @@ type RouteMeta struct {
 	// `Request: CreateThingRequest{}` (FBL-08 / MATRIX CS-08). Wire the
 	// handler through ValidatedHandler[CreateThingRequest] so declaring the
 	// contract and running BindAndValidate are the same act. When the router
-	// runs with RequireRequestContracts (config.Security.EnforceRouteContracts),
-	// a mutating route that declares neither Request nor NoRequestBody fails
+	// runs, a mutating route that declares neither Request nor NoRequestBody fails
 	// registration. The declared value is deliberately a concrete prototype,
-	// not a bool: AR-03 (W05) derives RouteMeta projections (OpenAPI request
-	// schemas) and needs the concrete type reachable from the route table.
+	// not a bool, so OpenAPI generation derives the request schema from the same
+	// route table that runtime validation consumes.
 	Request any
 	// NoRequestBody waives the Request-contract requirement for a genuinely
 	// body-less mutation (e.g. POST /things/{id}/archive). It is mutually
@@ -80,12 +79,7 @@ type Router struct {
 	routes []Route
 	errs   []error
 	seen   map[string]bool // method+pattern dedupe
-	// requireContracts gates the mutating-route Request-contract check
-	// (FBL-08). Off by default for compatibility (profile-flag first,
-	// RISK-W01-002): existing routes keep booting unchanged until a product
-	// opts in via config.Security.EnforceRouteContracts.
-	requireContracts bool
-	sealed           bool
+	sealed bool
 }
 
 // Seal freezes the router once boot validation completes: any later Handle
@@ -99,15 +93,6 @@ func (r *Router) Seal(sealer.Authority) { r.sealed = true }
 // NewRouter returns an empty Router.
 func NewRouter() *Router {
 	return &Router{seen: map[string]bool{}}
-}
-
-// RequireRequestContracts turns on boot-time request-contract enforcement:
-// every POST/PUT/PATCH route registered afterwards must declare either a
-// RouteMeta.Request contract or the NoRequestBody waiver. Call it before
-// modules register (app.Boot does, when config.Security.EnforceRouteContracts
-// is set); routes registered while enforcement is off are not re-checked.
-func (r *Router) RequireRequestContracts() {
-	r.requireContracts = true
 }
 
 // Handle registers a route. Invalid metadata (or a duplicate method+pattern)
@@ -139,8 +124,8 @@ func (r *Router) Handle(method, pattern string, meta RouteMeta, h http.HandlerFu
 }
 
 // mutatingMethods are the verbs whose routes carry a request body by
-// convention and therefore need a declared request contract under
-// RequireRequestContracts (FBL-08). DELETE is deliberately absent: it is
+// convention and therefore need a declared request contract. DELETE is
+// deliberately absent: it is
 // body-less by convention here, like GET/HEAD.
 var mutatingMethods = map[string]bool{
 	http.MethodPost:  true,
@@ -149,12 +134,9 @@ var mutatingMethods = map[string]bool{
 }
 
 // checkRequestContract enforces the mutating-route contract invariants. The
-// Request/NoRequestBody contradiction is invalid unconditionally (both fields
-// are new; nothing can depend on the combination); the missing-contract
-// rejection applies only under RequireRequestContracts, so existing
-// registrations keep booting until a product opts in (RISK-W01-002). This
-// lives on Router rather than RouteMeta.validate() because the metadata alone
-// does not know the HTTP method.
+// Request/NoRequestBody contradiction and a missing contract are invalid.
+// This lives on Router rather than RouteMeta.validate() because the metadata
+// alone does not know the HTTP method.
 func (r *Router) checkRequestContract(method string, meta RouteMeta) error {
 	if !mutatingMethods[method] {
 		return nil
@@ -162,7 +144,7 @@ func (r *Router) checkRequestContract(method string, meta RouteMeta) error {
 	if meta.Request != nil && meta.NoRequestBody {
 		return fmt.Errorf("route declares both a Request contract and NoRequestBody — choose one")
 	}
-	if r.requireContracts && meta.Request == nil && !meta.NoRequestBody {
+	if meta.Request == nil && !meta.NoRequestBody {
 		return fmt.Errorf("mutating route declares no request contract: set RouteMeta.Request to the request DTO's zero value (and wire the handler through ValidatedHandler), or set NoRequestBody for a genuinely body-less mutation")
 	}
 	return nil

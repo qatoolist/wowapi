@@ -205,51 +205,25 @@ func TestRegistryDuplicateDefinition(t *testing.T) {
 	}
 }
 
-// bp returns a pointer to a bool literal (for Policy.SelfApproval).
-func bp(b bool) *bool { return &b }
-
-// TestValidateFailsClosedOnUnenforcedGating is the SEC-36/37/38 regression: a
-// definition that RELIES on gating the runtime does not yet enforce must be
-// rejected at boot, not silently accepted and mis-tallied at runtime.
-func TestValidateFailsClosedOnUnenforcedGating(t *testing.T) {
-	cases := []struct {
-		name string
-		step Step
-		want string
-	}{
-		{
-			name: "vote step",
-			step: Step{Type: StepVote, Next: &Transition{Next: "end"}},
-			want: "vote steps are not yet tallied",
-		},
-		{
-			name: "min_approvals > 1",
-			step: Step{
-				Type: StepApproval, Policy: &Policy{MinApprovals: 2},
-				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"},
-			},
-			want: "min_approvals > 1 is not yet enforced",
-		},
-		{
-			name: "self_approval:false",
-			step: Step{
-				Type: StepApproval, Policy: &Policy{SelfApproval: bp(false)},
-				OnApprove: &Transition{Next: "end"}, OnReject: &Transition{Next: "end"},
-			},
-			want: "self_approval:false is not yet enforced",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			def := Definition{Key: "k.v", Version: 1, InitialStep: "a", Steps: map[string]Step{
-				"a":   tc.step,
-				"end": {Type: StepTerminal, Outcome: "completed"},
-			}}
-			err := def.Validate(nil, nil)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("expected fail-closed error %q, got %v", tc.want, err)
+func TestRemovedWorkflowSchemaIsRejected(t *testing.T) {
+	for name, raw := range map[string]string{
+		"definition ratify": `{"key":"k.v","version":1,"ratify_by":"approver","initial_step":"end","steps":{"end":{"type":"terminal"}}}`,
+		"step ratify":       `{"key":"k.v","version":1,"initial_step":"end","steps":{"end":{"type":"terminal","ratify_by":"approver"}}}`,
+		"approval policy":   `{"key":"k.v","version":1,"initial_step":"end","steps":{"end":{"type":"terminal","policy":{"min_approvals":2}}}}`,
+		"vote fields":       `{"key":"k.v","version":1,"initial_step":"end","steps":{"end":{"type":"terminal","electorate":{"kind":"role"}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseDefinition([]byte(raw)); err == nil {
+				t.Fatal("removed workflow schema was still accepted")
 			}
 		})
+	}
+	vote, err := ParseDefinition([]byte(`{"key":"k.v","version":1,"initial_step":"end","steps":{"end":{"type":"vote"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vote.Validate(nil, nil); err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Fatalf("removed vote step was not rejected: %v", err)
 	}
 }
 

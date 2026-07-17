@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/qatoolist/wowapi/internal/buildinfo"
 )
 
 func genUsage(w io.Writer) {
@@ -45,21 +47,23 @@ type fieldDef struct {
 
 // crudData is the template data passed to crud templates.
 type crudData struct {
-	Package       string // Go package name (base of modDir)
-	ModuleName    string // same as Package
-	Resource      string // resource name, e.g. "widget"
-	ResourceTitle string // title-cased resource, e.g. "Widget"
-	Table         string // SQL table name, e.g. "widgets_widget"
-	Fields        []fieldDef
-	PermPrefix    string // permission key prefix, e.g. "widgets.widget"
+	FrameworkModule string
+	Package         string // Go package name (base of modDir)
+	ModuleName      string // same as Package
+	Resource        string // resource name, e.g. "widget"
+	ResourceTitle   string // title-cased resource, e.g. "Widget"
+	Table           string // SQL table name, e.g. "widgets_widget"
+	Fields          []fieldDef
+	PermPrefix      string // permission key prefix, e.g. "widgets.widget"
 }
 
 type subsystemData struct {
-	Package    string
-	ModuleName string
-	Kind       string
-	Name       string
-	Title      string
+	FrameworkModule string
+	Package         string
+	ModuleName      string
+	Kind            string
+	Name            string
+	Title           string
 }
 
 // runGen dispatches `wowapi gen <subcommand>`.
@@ -153,13 +157,14 @@ func runGenCRUD(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	data := crudData{
-		Package:       moduleName,
-		ModuleName:    moduleName,
-		Resource:      *resource,
-		ResourceTitle: toCamel(*resource),
-		Table:         moduleName + "_" + *resource,
-		Fields:        fieldDefs,
-		PermPrefix:    moduleName + "." + *resource,
+		FrameworkModule: buildinfo.ModulePath,
+		Package:         moduleName,
+		ModuleName:      moduleName,
+		Resource:        *resource,
+		ResourceTitle:   toCamel(*resource),
+		Table:           moduleName + "_" + *resource,
+		Fields:          fieldDefs,
+		PermPrefix:      moduleName + "." + *resource,
 	}
 
 	migrationDir := filepath.Join(*modDir, "migrations")
@@ -314,11 +319,12 @@ func runGenSubsystem(kind string, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	data := subsystemData{
-		Package:    moduleName,
-		ModuleName: moduleName,
-		Kind:       kind,
-		Name:       *name,
-		Title:      toCamel(*name),
+		FrameworkModule: buildinfo.ModulePath,
+		Package:         moduleName,
+		ModuleName:      moduleName,
+		Kind:            kind,
+		Name:            *name,
+		Title:           toCamel(*name),
 	}
 	dest := filepath.Join(*modDir, *name+"_"+strings.ReplaceAll(kind, "-", "_")+".go")
 	if err := renderToFile(dest, "templates/subsystem/subsystem.go.tmpl", data, *force); err != nil {
@@ -330,8 +336,8 @@ func runGenSubsystem(kind string, args []string, stdout, stderr io.Writer) int {
 }
 
 // mapFieldType maps a user-supplied type name to (goType, sqlType).
-// All returned goType values are built-in Go types to keep generated files
-// import-free; consumers can refine to uuid.UUID / time.Time as needed.
+// UUID and timestamp fields use their semantic Go types; the CRUD template
+// already imports uuid and time for its framework-owned fields.
 // ok is false for an unrecognized type — the caller rejects it rather than
 // emitting an undefined Go type that only fails at `go build` (CLI-01).
 func mapFieldType(typ string) (goType, sqlType string, ok bool) {
@@ -347,9 +353,9 @@ func mapFieldType(typ string) (goType, sqlType string, ok bool) {
 	case "float64", "float", "double":
 		return "float64", "double precision", true
 	case "uuid":
-		return "string", "uuid", true // TODO: replace with uuid.UUID + import as needed
+		return "uuid.UUID", "uuid", true
 	case "time", "timestamp", "timestamptz":
-		return "string", "timestamptz", true // TODO: replace with time.Time + import as needed
+		return "time.Time", "timestamptz", true
 	default:
 		return "", "", false
 	}

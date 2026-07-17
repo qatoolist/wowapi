@@ -11,22 +11,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
-	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
-	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
-	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/apikey"
-	kaudit "github.com/qatoolist/wowapi/kernel/audit"
-	kauth "github.com/qatoolist/wowapi/kernel/auth"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/migrations"
+	"{{.FrameworkModule}}/adapters/auth/pgprincipal"
+	promadapter "{{.FrameworkModule}}/adapters/metrics/prometheus"
+	s3adapter "{{.FrameworkModule}}/adapters/storage/s3"
+	oteladapter "{{.FrameworkModule}}/adapters/tracing/otel"
+	"{{.FrameworkModule}}/app"
+	"{{.FrameworkModule}}/kernel"
+	"{{.FrameworkModule}}/kernel/apikey"
+	kaudit "{{.FrameworkModule}}/kernel/audit"
+	kauth "{{.FrameworkModule}}/kernel/auth"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/httpx"
+	"{{.FrameworkModule}}/kernel/logging"
+	"{{.FrameworkModule}}/kernel/model"
+	"{{.FrameworkModule}}/kernel/observability"
+	"{{.FrameworkModule}}/kernel/storage"
+	"{{.FrameworkModule}}/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -336,8 +336,8 @@ func run(ctx context.Context) error {
 	// and report an unexpected post-start Serve termination through Failed so
 	// RunHooks shuts the process down promptly (framework F-02 supervision).
 	httpFailed := make(chan error, 1)
-	return app.RunSupervisedHooks(ctx, log, 30*time.Second,
-		app.SupervisedHook{
+	return app.RunHooks(ctx, log, 30*time.Second,
+		app.Hook{
 			Name: "http",
 			Start: func(ctx context.Context) error {
 				ln, err := net.Listen("tcp", cfg.HTTP.Addr)

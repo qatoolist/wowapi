@@ -60,7 +60,7 @@ func TestIntegrationInitiateUploadConcurrentVersionAllocation(t *testing.T) {
 			began := time.Now()
 			var v int
 			err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
-				sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+				sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 				v = sess.VersionNo
 				return e
 			})
@@ -121,7 +121,7 @@ func TestIntegrationUploadSessionDurability(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 		if e != nil {
 			return e
 		}
@@ -162,7 +162,7 @@ func TestIntegrationConfirmUploadCAS(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e = a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e = a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		return e
 	})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestIntegrationSweepUploadSessionsAdversarial(t *testing.T) {
 		}
 
 		// Confirmed session: full upload flow.
-		s1, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		s1, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -249,7 +249,7 @@ func TestIntegrationSweepUploadSessionsAdversarial(t *testing.T) {
 		confirmedKey = s1.StorageKey
 
 		// Expired session: pending row, but we age its expiry so the sweep picks it up.
-		s2, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		s2, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -258,7 +258,7 @@ func TestIntegrationSweepUploadSessionsAdversarial(t *testing.T) {
 		expiredKey = s2.StorageKey
 
 		// Still-pending session: future expiry.
-		s3, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		s3, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}

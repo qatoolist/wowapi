@@ -5,7 +5,8 @@
 //	up    apply kernel then module migrations (forward, expand-contract), then
 //	      sync the merged module seed catalog (permissions, roles, resource
 //	      types, relationship types) idempotently, then sync the rule
-//	      registry's definitions (rule_definitions) idempotently. Without the
+//	      registry's definitions (rule_definitions) idempotently, then sync the
+//	      canonical workflow definitions. Without the
 //	      seed step the catalogs stay empty and every authorization check
 //	      denies (GAP-003); without the rule-definition step, any registered
 //	      rule point fails rule_versions.rule_key's FK until synced (GAP-007) —
@@ -24,15 +25,16 @@ import (
 	"sort"
 	"time"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/rules"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/migrations"
+	"{{.FrameworkModule}}/app"
+	"{{.FrameworkModule}}/kernel"
+	"{{.FrameworkModule}}/kernel/config"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/logging"
+	"{{.FrameworkModule}}/kernel/rules"
+	"{{.FrameworkModule}}/kernel/seeds"
+	"{{.FrameworkModule}}/kernel/storage"
+	"{{.FrameworkModule}}/kernel/workflow"
+	"{{.FrameworkModule}}/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -194,6 +196,14 @@ func run(ctx context.Context, argv []string) error {
 		return fmt.Errorf("rule definition sync: %w", err)
 	}
 	log.InfoContext(ctx, "rule definitions synced", "keys", len(k.Rules.Keys()))
+
+	// Workflow definitions are executable identities, not mutable tenant data.
+	// Materialize the exact boot-validated registry snapshot atomically after
+	// all schema and catalog synchronization has completed.
+	if err := workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows()); err != nil {
+		return fmt.Errorf("workflow definition sync: %w", err)
+	}
+	log.InfoContext(ctx, "workflow definitions synced")
 	return nil
 }
 

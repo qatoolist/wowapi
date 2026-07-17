@@ -4,9 +4,7 @@
 //
 // Every framework-issued upload signs S3's SHA-256 checksum algorithm header,
 // so Stat can verify integrity from HEAD metadata without downloading the body.
-// Legacy objects without canonical checksum metadata fail normal Stat closed;
-// only the explicitly labeled, size/time-bounded RepairChecksum path may hash
-// their bytes.
+// Objects without canonical checksum metadata fail normal Stat closed.
 //   - Stat/Peek/PresignGet of an absent key return errors.KindNotFound.
 //   - Delete is idempotent: deleting an absent key is a clean no-op.
 //   - Presigned URLs are short-lived: a caller-requested ttl <= 0 or above the
@@ -30,7 +28,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/kernel/storage"
 )
 
@@ -60,9 +57,6 @@ type Config struct {
 	// Transport overrides MinIO's HTTP transport. It is primarily useful for
 	// request accounting in integration tests; nil uses the SDK default.
 	Transport http.RoundTripper
-	// Metrics receives labeled legacy-repair hit, byte, and duration samples.
-	// Nil uses observability.NoOp.
-	Metrics observability.Metrics
 	// CreateBucket makes New create the bucket when absent (local/dev overlays
 	// only). Default false: production buckets are provisioned out of band,
 	// and New fails closed at boot when the bucket is missing.
@@ -75,15 +69,10 @@ type Adapter struct {
 	client     *minio.Client
 	bucket     string
 	presignTTL time.Duration
-	metrics    observability.Metrics
 }
 
 // The port is the contract; fail the build, not the boot, if it drifts.
-var (
-	_ storage.Adapter          = (*Adapter)(nil)
-	_ storage.ChecksumRepairer = (*Adapter)(nil)
-	_ storage.ChecksumUploader = (*Adapter)(nil)
-)
+var _ storage.Adapter = (*Adapter)(nil)
 
 // New validates cfg, builds the client, and verifies the bucket — a missing or
 // unreachable bucket fails boot closed rather than surfacing as 500s on the
@@ -133,11 +122,7 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 		return nil, fmt.Errorf("storage: client: %w", err)
 	}
 
-	metrics := cfg.Metrics
-	if metrics == nil {
-		metrics = observability.NoOp
-	}
-	a := &Adapter{client: client, bucket: cfg.Bucket, presignTTL: ttl, metrics: metrics}
+	a := &Adapter{client: client, bucket: cfg.Bucket, presignTTL: ttl}
 	if err := a.ensureBucket(ctx, cfg.CreateBucket, cfg.Region); err != nil {
 		return nil, err
 	}
@@ -195,12 +180,6 @@ func (a *Adapter) clampTTL(ttl time.Duration) time.Duration {
 	return ttl
 }
 
-// PresignPut rejects unsigned-checksum uploads. It remains only for Adapter
-// source compatibility; framework callers use PresignPutChecksum.
-func (a *Adapter) PresignPut(_ context.Context, _ string, _ time.Duration) (storage.PresignedURL, error) {
-	return storage.PresignedURL{}, kerr.E(kerr.KindValidation, "upload_checksum_required", "S3 uploads require PresignPutChecksum")
-}
-
 // PresignPutChecksum returns a checksum-enforcing presigned PUT. The client
 // must copy every returned header; S3 validates and persists the SHA-256.
 func (a *Adapter) PresignPutChecksum(ctx context.Context, key, checksumSHA256 string, ttl time.Duration) (storage.PresignedURL, error) {
@@ -247,7 +226,7 @@ func (a *Adapter) PresignGet(ctx context.Context, key string, ttl time.Duration)
 }
 
 // Stat reports size and canonical SHA-256 from HEAD metadata only. Missing
-// metadata is an explicit legacy-object error; normal reads never hash bytes.
+// metadata is an explicit integrity error; normal reads never hash bytes.
 func (a *Adapter) Stat(ctx context.Context, key string) (storage.ObjectInfo, error) {
 	info, err := a.client.StatObject(ctx, a.bucket, key, minio.StatObjectOptions{Checksum: true})
 	if err != nil {
@@ -262,80 +241,8 @@ func (a *Adapter) Stat(ctx context.Context, key string) (storage.ObjectInfo, err
 	return storage.ObjectInfo{}, kerr.E(
 		kerr.KindConflict,
 		"storage_checksum_missing",
-		"storage object lacks canonical checksum metadata; use labeled checksum repair: "+key,
+		"storage object lacks canonical checksum metadata: "+key,
 	)
-}
-
-// RepairChecksum hashes one legacy object under explicit resource bounds and
-// persists the result as storage-owned metadata via an in-place server copy.
-func (a *Adapter) RepairChecksum(ctx context.Context, key string, opts storage.RepairOptions) (storage.ObjectInfo, error) {
-	if strings.TrimSpace(opts.Label) == "" {
-		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_label_required", "checksum repair label is required")
-	}
-	if opts.MaxBytes <= 0 {
-		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_max_bytes_required", "checksum repair max bytes must be positive")
-	}
-	if opts.Timeout <= 0 {
-		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_timeout_required", "checksum repair timeout must be positive")
-	}
-
-	info, err := a.client.StatObject(ctx, a.bucket, key, minio.StatObjectOptions{Checksum: true})
-	if err != nil {
-		if isNotFound(err) {
-			return storage.ObjectInfo{}, objectNotFound(key)
-		}
-		return storage.ObjectInfo{}, kerr.Wrapf(err, "storage.s3.RepairChecksum", "stat %q", key)
-	}
-	if checksum, ok := checksumFromInfo(info); ok {
-		return storage.ObjectInfo{Size: info.Size, Checksum: checksum}, nil
-	}
-	if info.Size > opts.MaxBytes {
-		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_object_too_large", "storage object exceeds checksum repair byte bound")
-	}
-
-	labels := map[string]string{"label": opts.Label}
-	a.metrics.IncCounter("storage_checksum_repair_hits_total", 1, labels)
-	started := time.Now()
-	defer func() {
-		observability.ObserveHistogram(a.metrics, "storage_checksum_repair_duration_seconds", time.Since(started).Seconds(), labels)
-	}()
-
-	repairCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
-	defer cancel()
-	obj, err := a.client.GetObject(repairCtx, a.bucket, key, minio.GetObjectOptions{})
-	if err != nil {
-		return storage.ObjectInfo{}, kerr.Wrapf(err, "storage.s3.RepairChecksum", "get %q", key)
-	}
-	defer func() { _ = obj.Close() }()
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(obj, opts.MaxBytes+1))
-	if err != nil {
-		if isNotFound(err) {
-			return storage.ObjectInfo{}, objectNotFound(key)
-		}
-		return storage.ObjectInfo{}, kerr.Wrapf(err, "storage.s3.RepairChecksum", "hash %q", key)
-	}
-	if n > opts.MaxBytes {
-		return storage.ObjectInfo{}, kerr.E(kerr.KindValidation, "repair_object_too_large", "storage object exceeds checksum repair byte bound")
-	}
-	observability.ObserveHistogram(a.metrics, "storage_checksum_repair_bytes", float64(n), labels)
-	checksum := hex.EncodeToString(h.Sum(nil))
-	metadata := make(map[string]string, len(info.UserMetadata)+1)
-	for name, value := range info.UserMetadata {
-		metadata[name] = value
-	}
-	metadata[repairChecksumMetadata] = checksum
-	_, err = a.client.CopyObject(repairCtx,
-		minio.CopyDestOptions{
-			Bucket: a.bucket, Object: key,
-			UserMetadata: metadata, ReplaceMetadata: true,
-		},
-		minio.CopySrcOptions{Bucket: a.bucket, Object: key, MatchETag: info.ETag},
-	)
-	if err != nil {
-		return storage.ObjectInfo{}, kerr.Wrapf(err, "storage.s3.RepairChecksum", "persist checksum %q", key)
-	}
-	return storage.ObjectInfo{Size: n, Checksum: checksum}, nil
 }
 
 // Peek returns up to n leading bytes (ranged GET) for MIME sniffing.
@@ -383,24 +290,8 @@ func (a *Adapter) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-const repairChecksumMetadata = "wowapi-sha256"
-
 func checksumFromInfo(info minio.ObjectInfo) (string, bool) {
-	if checksum, ok := decodeSHA256Checksum(info.ChecksumSHA256); ok {
-		return checksum, true
-	}
-	return decodeHexSHA256(info.Metadata.Get("X-Amz-Meta-" + repairChecksumMetadata))
-}
-
-func decodeHexSHA256(value string) (string, bool) {
-	if len(value) != sha256.Size*2 {
-		return "", false
-	}
-	raw, err := hex.DecodeString(value)
-	if err != nil || len(raw) != sha256.Size {
-		return "", false
-	}
-	return strings.ToLower(value), true
+	return decodeSHA256Checksum(info.ChecksumSHA256)
 }
 
 // decodeSHA256Checksum converts the base64 SHA-256 S3 reports in HeadObject

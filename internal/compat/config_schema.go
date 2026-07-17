@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// CheckConfigSchemaCompatibility enforces wowapi's v1 backward-compatibility
+// CheckConfigSchemaCompatibility enforces the supported-line compatibility
 // policy for generated configuration schemas. Existing fields and accepted
 // values must remain valid; new optional fields and relaxed enums are allowed.
 func CheckConfigSchemaCompatibility(baseline, current []byte) error {

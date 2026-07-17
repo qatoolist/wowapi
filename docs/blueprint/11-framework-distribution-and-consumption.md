@@ -8,13 +8,14 @@ contains no real product modules — only neutral standalone examples and privat
 
 ## 1. Distribution model
 
-- **One Go module:** `github.com/qatoolist/wowapi`, semver-tagged. The repository is on the **stable
-  v1 line** (`v1.0.0`, `v1.1.0` tagged): the public surface follows additive-only changes within v1.
-  `v2+` uses `/v2` module paths per Go convention for any incompatible change. See
+- **One Go module:** `github.com/qatoolist/wowapi`, semver-tagged. `v1.2.0` is the first supported
+  release of the clean baseline. The previously published `v1.0.0` and `v1.1.0` identities are
+  abandoned and are neither supported predecessors nor compatibility baselines. After `v1.2.0`,
+  the public surface follows semantic versioning; an incompatible future release uses `/v2`. See
   [Versioning & stability](../../README.md#versioning--stability) and the
   [upgrade & deprecation policy](../operations/upgrade-and-deprecation-policy.md).
-- **Stability contract:** public root packages (`kernel`, `module`, `app`, `adapters`, `testkit`,
-  `migrations`, and `cmd/wowapi`) follow semver. Deprecations keep working for ≥1 minor release
+- **Stability contract:** public root packages (`kernel`, `foundation`, `module`, `app`, `adapters`,
+  `testkit`, `migrations`, and `cmd/wowapi`) follow semver from `v1.2.0`. Deprecations keep working for ≥1 minor release
   with a `// Deprecated:` notice and a changelog entry. `/internal` is private; `/examples` are
   non-contractual sample apps and preferably nested modules with their own `go.mod`.
 - **What ships in the dependency:** kernel packages, module SDK, app composition helpers, adapters,
@@ -28,7 +29,8 @@ contains no real product modules — only neutral standalone examples and privat
 
 | Path | Visibility | Contents |
 |---|---|---|
-| `wowapi/kernel/...` | **public** | primitives + service contracts modules import: `model`, `errors`, `validation`, `pagination`, `filtering`, `httpx`, `database` (TxManager/TenantDB), `tenant`, `auth`, `authz`, `policy`, `resource`, `relationship`, `workflow`, `rules`, `audit`, `outbox`, `jobs`, `document`, `notify`, `webhook`, `integration`, `secrets`, `config`, `health` |
+| `wowapi/kernel/...` | **public** | primitives + service contracts modules import: `model`, `errors`, `validation`, `pagination`, `filtering`, `httpx`, `database` (TxManager/TenantDB), `tenant`, `auth`, `authz`, `policy`, `resource`, `relationship`, `workflow`, `rules`, `audit`, `outbox`, `jobs`, `secrets`, `config`, `health` |
+| `wowapi/foundation/...` | **public** | stateful framework capabilities: document, notification, webhook, integration, MFA, artifact, attachment, bulk, and comment services |
 | `wowapi/module` | **public** | `Module`, `Context`, registries, lifecycle contracts |
 | `wowapi/app` | **public** | composition helpers: `App.New`, `App.Register`, `App.Boot(ctx, *kernel.Kernel, ...)` (product constructs the kernel via `kernel.New` and passes it in), plus the free function `StartWorker` |
 | `wowapi/adapters/...` | **public** | postgres, s3, smtp, sms, push, oidc, secrets, scanner |
@@ -112,11 +114,9 @@ The marker directly above each Go fence states its contract. A
 source; `<!-- doc-example: illustrative -->` identifies signatures or product-specific pseudo-code
 that is intentionally not compiled.
 
-Run `make docs-check` before submitting documentation changes. When the authoritative AR-03
-ApplicationModel projection changes intentionally, regenerate
-`docs/reference/application-model.md` with
-`go run ./internal/tools/docexamples -write-reference`, then run `make docs-check` to prove the
-generated table byte-matches the export.
+Run `make docs-check` before submitting documentation changes. It compiles normative examples and
+checks that future-state prose is labeled honestly. Runtime declarations remain authoritative in
+the actual boot-validated registries; there is no parallel hand-authored projection manifest.
 
 This minimal framework-only example is compile-checked:
 

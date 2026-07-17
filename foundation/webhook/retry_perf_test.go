@@ -14,6 +14,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 type retryQueryRecorder struct {
@@ -104,7 +105,7 @@ func TestIntegrationRetryOutboundBatchLoadsEndpointsOnce(t *testing.T) {
 	h := testkit.NewDBWithOptions(t, testkit.DBOptions{PlatformPool: []database.Option{database.WithQueryTracer(recorder)}})
 	tenant := testkit.CreateTenant(t, h)
 	seedRetryBatch(t, h, tenant.ID, 3, 10)
-	svc := webhook.New(&webhook.FakeSender{StatusCode: 200}, &webhook.FakeSecretResolver{Secret: testSecret}, model.UUIDv7())
+	svc := webhook.New(&fakes.WebhookSender{StatusCode: 200}, &fakes.WebhookSecretResolver{Secret: testSecret}, model.UUIDv7())
 	recorder.reset()
 
 	if err := svc.RetryOutbound(context.Background(), h.PlatformTxM, tenant.ID, time.Now()); err != nil {
@@ -123,7 +124,7 @@ func TestIntegrationRetryOutboundMetrics(t *testing.T) {
 	tenant := testkit.CreateTenant(t, h)
 	seedRetryBatch(t, h, tenant.ID, 1, 1)
 	metrics := &retryMetrics{gauges: map[string]float64{}}
-	svc := webhook.New(&webhook.FakeSender{StatusCode: 200}, &webhook.FakeSecretResolver{Secret: testSecret}, model.UUIDv7(), webhook.WithMetrics(metrics))
+	svc := webhook.New(&fakes.WebhookSender{StatusCode: 200}, &fakes.WebhookSecretResolver{Secret: testSecret}, model.UUIDv7(), webhook.WithMetrics(metrics))
 
 	if err := svc.RetryOutbound(context.Background(), h.PlatformTxM, tenant.ID, time.Now()); err != nil {
 		t.Fatalf("RetryOutbound: %v", err)

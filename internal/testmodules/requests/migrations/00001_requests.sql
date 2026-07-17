@@ -1,7 +1,7 @@
 -- Module: requests — fixture test module migration (blueprint 08 §2, 11 §4).
 -- This is a MODULE migration source "requests"; numbering is independent of
 -- the kernel source "wowapi". Goose histories are keyed by source name so
--- 00001 here does not collide with 00001_bootstrap.sql in the kernel.
+-- 00001 here does not collide with 00001_baseline.sql in the kernel.
 --
 -- Table: requests_request — tenant-scoped, RLS-enforced, audit columns per
 -- blueprint 03 §1 convention (id, tenant_id, created_at/by, updated_at/by,

@@ -69,7 +69,7 @@ func (r *Rules) ActivateTenant(ctx context.Context, versionID, approvedBy uuid.U
 		// platform (NULL-tenant) rows; the explicit scope/tenant checks below then
 		// refuse anything that is not a tenant-scope row of THIS tenant.
 		// IMPORTANT: rule_versions carries an app_platform bypass RLS policy
-		// (rule_versions_platform_all, USING/WITH CHECK true, migration 00008) so a
+		// (rule_versions_platform_all, USING/WITH CHECK true, clean baseline) so a
 		// tenant-bound app_platform tx can STILL see and write every tenant's rows —
 		// unlike relationships/resources/acting_capacities, whose tenant-isolation
 		// policies bind app_platform too. The cross-tenant boundary for activation is

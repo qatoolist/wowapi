@@ -32,28 +32,6 @@ func TestDefaultsIncludesSecurity(t *testing.T) {
 	}
 }
 
-// TestEnforceRouteContractsDefaultsOff pins the FBL-08 compat guarantee
-// (RISK-W01-002, "profile-flag first"): route-contract enforcement ships OFF
-// by default in both the compiled defaults and the section default, and a
-// config enabling it still validates in every environment (it is a hardening
-// knob, not an unsafe one — no prod gate).
-func TestEnforceRouteContractsDefaultsOff(t *testing.T) {
-	if DefaultSecurity().EnforceRouteContracts {
-		t.Fatal("DefaultSecurity().EnforceRouteContracts must be false (compat: profile-flag first)")
-	}
-	if Defaults().Security.EnforceRouteContracts {
-		t.Fatal("Defaults().Security.EnforceRouteContracts must be false (compat: profile-flag first)")
-	}
-	for _, env := range []Env{EnvLocal, EnvDev, EnvStage, EnvProd} {
-		f := Defaults()
-		f.Environment = env
-		f.Security.EnforceRouteContracts = true
-		if err := f.Validate(); err != nil {
-			t.Errorf("env=%s: enabling enforce_route_contracts must validate, got: %v", env, err)
-		}
-	}
-}
-
 func TestSecurityProfileValidValues(t *testing.T) {
 	cases := []struct {
 		profile SecurityProfile

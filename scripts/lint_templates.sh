@@ -26,4 +26,14 @@ if [ -n "$alias_bad" ]; then
   fail=1
 fi
 
+# Framework imports in generated Go must come from the one template-data
+# source (`buildinfo.ModulePath`). A literal path here was the source of the
+# root-/v2 transition drift and would let generators disagree again.
+module_bad=$(find "$dir" -type f -name '*.go.tmpl' -exec grep -nH 'github\.com/qatoolist/wowapi' {} + 2>/dev/null || true)
+if [ -n "$module_bad" ]; then
+  echo "TEMPLATE VIOLATION (literal framework module path; use {{.FrameworkModule}}):"
+  echo "$module_bad" | sed 's/^/  /'
+  fail=1
+fi
+
 exit $fail

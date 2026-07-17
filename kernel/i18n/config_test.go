@@ -52,13 +52,6 @@ func TestBuildLayersCanonicalPrecedence(t *testing.T) {
 	}
 }
 
-func TestBuildLayersRejectsDBOverlay(t *testing.T) {
-	_, err := i18n.BuildLayers(fstest.MapFS{}, []i18n.SourceSpec{{Kind: i18n.KindDBOverlay, Enabled: true}})
-	if err == nil || !strings.Contains(err.Error(), "db_overlay") {
-		t.Fatalf("expected db_overlay rejection, got %v", err)
-	}
-}
-
 func TestBuildLayersRejectsUnknownKind(t *testing.T) {
 	_, err := i18n.BuildLayers(fstest.MapFS{}, []i18n.SourceSpec{{Kind: "bogus", Enabled: true}})
 	if err == nil || !strings.Contains(err.Error(), "unknown i18n source kind") {

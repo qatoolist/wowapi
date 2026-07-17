@@ -151,21 +151,21 @@ func WithMetrics(m observability.Metrics) Option {
 	}
 }
 
+// WithClock supplies the service clock. It is primarily useful for
+// deterministic tests; production composition should use New's real clock.
+func WithClock(now func() time.Time) Option {
+	if now == nil {
+		panic("webhook.WithClock: clock is required")
+	}
+	return func(s *Service) { s.now = now }
+}
+
 // New wires the Service. sender, secrets, and idgen are required.
 func New(sender Sender, secrets SecretResolver, idgen model.IDGen, opts ...Option) *Service {
 	if sender == nil || secrets == nil || idgen == nil {
 		panic("webhook.New: sender, secrets, and idgen are required")
 	}
 	return newService(sender, secrets, idgen, time.Now, opts...)
-}
-
-// NewWithClock is like New but accepts an injectable clock — used by tests that
-// exercise the circuit breaker and retry/DLQ paths deterministically.
-func NewWithClock(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time, opts ...Option) *Service {
-	if sender == nil || secrets == nil || idgen == nil || nowFn == nil {
-		panic("webhook.NewWithClock: all arguments are required")
-	}
-	return newService(sender, secrets, idgen, nowFn, opts...)
 }
 
 func newService(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn func() time.Time, opts ...Option) *Service {
@@ -177,7 +177,7 @@ func newService(sender Sender, secrets SecretResolver, idgen model.IDGen, nowFn 
 		handlers:  make(map[string]InboundHandler),
 		sender:    sender,
 		secrets:   secrets,
-		breaker:   newBreakerRegistry(nowFn),
+		breaker:   newBreakerRegistry(),
 		idgen:     idgen,
 		now:       nowFn,
 		metrics:   observability.NoOp,

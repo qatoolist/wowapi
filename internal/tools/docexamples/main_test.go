@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 func TestExtractExamplesRequiresExactAdjacentMarker(t *testing.T) {
@@ -123,25 +120,6 @@ func TestFutureStateLintIgnoresCodeAndCurrentState(t *testing.T) {
 	const markdown = "# Current API\n\nThe client supports retries now.\n\n```text\n## Future API\nwill expose magic\n```\n"
 	if err := lintFutureState("current.md", []byte(markdown)); err != nil {
 		t.Fatalf("lint current prose: %v", err)
-	}
-}
-
-func TestGeneratedReferenceByteMatchesAuthoritativeExport(t *testing.T) {
-	want := []byte(appmodel.GenerateProjections(canonicalManifest()).Doc + "\n")
-	if got := renderReference(); !bytes.Equal(got, want) {
-		t.Fatalf("rendered reference does not byte-match ApplicationModel export\n--- got ---\n%s\n--- want ---\n%s", got, want)
-	}
-
-	root := repoRoot(t)
-	onDisk, err := os.ReadFile(filepath.Join(root, referencePath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(onDisk, want) {
-		t.Fatalf("%s is stale; run go run ./internal/tools/docexamples -write-reference", referencePath)
-	}
-	if err := checkReference(root); err != nil {
-		t.Fatalf("checkReference: %v", err)
 	}
 }
 

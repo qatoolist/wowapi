@@ -86,7 +86,7 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 	sentinel := errors.New("listener died")
 	failed := make(chan error, 1)
 
-	hook := app.SupervisedHook{
+	hook := app.Hook{
 		Name: "flaky-listener",
 		Start: func(ctx context.Context) error {
 			go func() {
@@ -102,7 +102,7 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- app.RunSupervisedHooks(ctx, log, time.Second, hook) }()
+	go func() { done <- app.RunHooks(ctx, log, time.Second, hook) }()
 
 	select {
 	case err := <-done:
@@ -116,21 +116,9 @@ func TestRunHooksSurfacesAsyncHookFailure(t *testing.T) {
 
 // Closure-review regressions (adversarial closure review 2026-07-17, F-02).
 
-// The v1 Hook shape is frozen: external consumers write unkeyed composite
-// literals, so this test is a COMPILE-TIME guarantee that Hook still has
-// exactly (Name, Start, Stop) in that order.
-func TestHookUnkeyedLiteralCompatibility(t *testing.T) {
-	start := func(context.Context) error { return nil }
-	stop := func(context.Context) error { return nil }
-	h := app.Hook{"api", start, stop} //nolint:govet // unkeyed on purpose: the compatibility contract under test
-	if h.Name != "api" {
-		t.Fatal("unkeyed Hook literal mis-mapped")
-	}
-}
-
-// After an async hook failure, RunSupervisedHooks must still STOP every
+// After an async hook failure, RunHooks must still STOP every
 // started hook (in reverse order) before returning the failure.
-func TestRunSupervisedHooksStopsAllHooksAfterAsyncFailure(t *testing.T) {
+func TestRunHooksStopsAllHooksAfterAsyncFailure(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	sentinel := errors.New("serving loop died")
 	failed := make(chan error, 1)
@@ -144,7 +132,7 @@ func TestRunSupervisedHooksStopsAllHooksAfterAsyncFailure(t *testing.T) {
 			return nil
 		}
 	}
-	hooks := []app.SupervisedHook{
+	hooks := []app.Hook{
 		{Name: "first", Start: func(context.Context) error { return nil }, Stop: recordStop("first")},
 		{Name: "flaky", Start: func(context.Context) error {
 			go func() { failed <- sentinel }()
@@ -154,9 +142,9 @@ func TestRunSupervisedHooksStopsAllHooksAfterAsyncFailure(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	err := app.RunSupervisedHooks(ctx, log, time.Second, hooks...)
+	err := app.RunHooks(ctx, log, time.Second, hooks...)
 	if !errors.Is(err, sentinel) {
-		t.Fatalf("RunSupervisedHooks = %v, want the async failure", err)
+		t.Fatalf("RunHooks = %v, want the async failure", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -180,7 +168,7 @@ func TestSupervisedListenerHookFailsStartOnOccupiedAddress(t *testing.T) {
 
 	srv := &http.Server{Addr: addr}
 	httpFailed := make(chan error, 1)
-	hook := app.SupervisedHook{
+	hook := app.Hook{
 		Name: "http",
 		Start: func(ctx context.Context) error {
 			ln, err := net.Listen("tcp", addr)
@@ -199,8 +187,8 @@ func TestSupervisedListenerHookFailsStartOnOccupiedAddress(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err = app.RunSupervisedHooks(ctx, log, time.Second, hook)
+	err = app.RunHooks(ctx, log, time.Second, hook)
 	if err == nil || !strings.Contains(err.Error(), "bind") {
-		t.Fatalf("RunSupervisedHooks on an occupied address = %v, want a bind Start error", err)
+		t.Fatalf("RunHooks on an occupied address = %v, want a bind Start error", err)
 	}
 }

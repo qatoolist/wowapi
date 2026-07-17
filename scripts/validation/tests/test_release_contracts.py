@@ -180,12 +180,12 @@ class ReleaseContractTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(repo), "config", "user.name", "fixture"], check=True)
         (repo / "value").write_text("first")
         subprocess.run(["git", "-C", str(repo), "add", "value"], check=True)
-        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "first"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qm", "first"], check=True)
         original = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
         subprocess.run(["git", "-C", str(repo), "-c", "tag.gpgSign=false", "tag", "v1.2.3"], check=True)
         self.run_tool("verify-tag", "--repo", str(repo), "--tag", "v1.2.3", "--source-sha", original)
         (repo / "value").write_text("second")
-        subprocess.run(["git", "-C", str(repo), "commit", "-qam", "second"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qam", "second"], check=True)
         subprocess.run(["git", "-C", str(repo), "-c", "tag.gpgSign=false", "tag", "-f", "v1.2.3"], check=True, capture_output=True)
         failure = self.run_tool("verify-tag", "--repo", str(repo), "--tag", "v1.2.3", "--source-sha", original, ok=False)
         self.assertIn("tag target", failure.stderr)
@@ -199,12 +199,12 @@ class ReleaseContractTests(unittest.TestCase):
         (repo / "fail.sh").write_text("#!/bin/sh\nexit 23\n")
         (repo / "fail.sh").chmod(0o755)
         subprocess.run(["git", "-C", str(repo), "add", "fail.sh"], check=True)
-        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed failing gate"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qm", "seed failing gate"], check=True)
         sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
         gates = self.temp / "gates.json"
-        gates.write_text(json.dumps({"schema_version": 1, "completed_wave": 6, "gates": [{
-            "id": "seeded-failure", "job_ref": "fixture", "command": "./fail.sh", "owner": "release-security",
-            "required_from_wave": 0, "timeout_minutes": 1, "evidence_artifact": "seeded-failure.json",
+        gates.write_text(json.dumps({"schema_version": 2, "completed_wave": 6, "gates": [{
+            "id": "seeded-failure", "command": "./fail.sh", "owner": "release-security",
+            "required_from_wave": 0, "timeout_minutes": 1, "evidence_artifact": "gate-evidence/seeded-failure.json",
         }]}, sort_keys=True))
         output = self.temp / "gate-results.json"
         result = self.run_tool("run-gates", "--manifest", str(gates), "--source-sha", sha, "--repo", str(repo), "--output", str(output), ok=False)
@@ -228,17 +228,98 @@ class ReleaseContractTests(unittest.TestCase):
         (repo / "pass.sh").write_text("#!/bin/sh\nprintf ok\n")
         (repo / "pass.sh").chmod(0o755)
         subprocess.run(["git", "-C", str(repo), "add", "pass.sh"], check=True)
-        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed passing gate"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qm", "seed passing gate"], check=True)
         sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
         gates = self.temp / "gates.json"
-        gates.write_text(json.dumps({"schema_version": 1, "completed_wave": 6, "gates": [{
-            "id": "seeded-pass", "job_ref": "fixture", "command": "./pass.sh", "owner": "release-security",
-            "required_from_wave": 0, "timeout_minutes": 1, "evidence_artifact": "seeded-pass.json",
+        gates.write_text(json.dumps({"schema_version": 2, "completed_wave": 6, "gates": [{
+            "id": "seeded-pass", "command": "./pass.sh", "owner": "release-security",
+            "required_from_wave": 0, "timeout_minutes": 1, "evidence_artifact": "gate-evidence/seeded-pass.json",
         }]}, sort_keys=True))
         first, second = self.temp / "first.json", self.temp / "second.json"
         self.run_tool("run-gates", "--manifest", str(gates), "--source-sha", sha, "--repo", str(repo), "--output", str(first))
         self.run_tool("run-gates", "--manifest", str(gates), "--source-sha", sha, "--repo", str(repo), "--output", str(second))
         self.assertEqual(first.read_bytes(), second.read_bytes())
+
+    def test_gate_bundle_rejects_missing_stale_and_modified_evidence(self) -> None:
+        repo = self.temp / "evidence-repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "fixture@example.test"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "fixture"], check=True)
+        (repo / "pass.sh").write_text("#!/bin/sh\nexit 0\n")
+        (repo / "pass.sh").chmod(0o755)
+        subprocess.run(["git", "-C", str(repo), "add", "pass.sh"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qm", "evidence"], check=True)
+        sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        gates = self.temp / "evidence-gates.json"
+        gates.write_text(json.dumps({"schema_version": 2, "completed_wave": 6, "gates": [{
+            "id": "proof", "command": "./pass.sh", "owner": "framework",
+            "required_from_wave": 0, "timeout_minutes": 1,
+            "evidence_artifact": "gate-evidence/proof.json",
+        }]}, sort_keys=True))
+        summary = self.temp / "proof.json"
+        self.run_tool("run-gates", "--manifest", str(gates), "--source-sha", sha,
+                      "--repo", str(repo), "--output", str(summary))
+        bundle = self.temp / "proof-bundle"
+        self.run_tool("verify-gate-bundle", "--manifest", str(gates), "--bundle", str(bundle),
+                      "--source-sha", sha)
+        evidence = bundle / "gate-evidence/proof.json"
+        pristine = evidence.read_bytes()
+        evidence.write_bytes(pristine.replace(sha.encode(), ("b" * 40).encode()))
+        self.assertIn("identity mismatch", self.run_tool(
+            "verify-gate-bundle", "--manifest", str(gates), "--bundle", str(bundle),
+            "--source-sha", sha, ok=False).stderr)
+        evidence.write_bytes(pristine + b" ")
+        self.assertIn("summary", self.run_tool(
+            "verify-gate-bundle", "--manifest", str(gates), "--bundle", str(bundle),
+            "--source-sha", sha, ok=False).stderr)
+        evidence.unlink()
+        self.assertIn("missing", self.run_tool(
+            "verify-gate-bundle", "--manifest", str(gates), "--bundle", str(bundle),
+            "--source-sha", sha, ok=False).stderr)
+
+    def test_release_identity_is_strict_clean_monotonic_and_proxy_bound(self) -> None:
+        repo = self.temp / "identity-repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "fixture@example.test"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "fixture"], check=True)
+        (repo / "go.mod").write_text("module github.com/qatoolist/wowapi\n\ngo 1.26\n")
+        subprocess.run(["git", "-C", str(repo), "add", "go.mod"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgSign=false", "commit", "-qm", "release"], check=True)
+        sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        subprocess.run(["git", "-C", str(repo), "-c", "tag.gpgSign=false", "tag", "v1.2.0"], check=True)
+        policy = self.temp / "policy.json"
+        policy.write_text(json.dumps({
+            "schema_version": 1, "module_path": "github.com/qatoolist/wowapi",
+            "bootstrap_tag": "v1.2.0", "mode": "bootstrap",
+            "supported_predecessor": None, "abandoned_tags": ["v1.0.0", "v1.1.0"],
+        }))
+        proxy = self.temp / "proxy.json"
+        proxy.write_text('{"status":404}')
+        identity = ("verify-release-identity", "--repo", str(repo), "--tag", "v1.2.0",
+                    "--source-sha", sha, "--policy", str(policy), "--proxy-state", str(proxy))
+        self.run_tool(*identity)
+        (repo / "dirty").write_text("dirty")
+        self.assertIn("not clean", self.run_tool(*identity, ok=False).stderr)
+        (repo / "dirty").unlink()
+        proxy.write_text(json.dumps({"status": 200, "info": {
+            "Version": "v1.2.0", "Origin": {"Hash": "f" * 40},
+        }}))
+        self.assertIn("different commit", self.run_tool(*identity, ok=False).stderr)
+
+    def test_future_release_requires_exact_predecessor_mode(self) -> None:
+        policy = self.temp / "policy.json"
+        policy.write_text((ROOT / "ci/release-line.json").read_text())
+        failure = self.run_tool("compatibility-policy", "--policy", str(policy),
+                                "--tag", "v1.2.1", ok=False)
+        self.assertIn("predecessor", failure.stderr)
+        value = json.loads(policy.read_text())
+        value["mode"] = "predecessor"
+        value["supported_predecessor"] = "v1.2.0"
+        policy.write_text(json.dumps(value))
+        result = self.run_tool("compatibility-policy", "--policy", str(policy), "--tag", "v1.2.1")
+        self.assertEqual("v1.2.0", result.stdout.strip())
 
     def test_candidate_rejects_altered_gate_tag_manifest_archive_and_image(self) -> None:
         manifest = self.create_manifest()

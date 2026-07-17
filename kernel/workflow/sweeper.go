@@ -228,31 +228,24 @@ func (rt *Runtime) loadSLAState(ctx context.Context, db database.TenantDB, refs 
 		return nil, kerr.E(kerr.KindNotFound, "workflow_instance_not_found", "workflow instance not found during SLA sweep")
 	}
 
-	defRows, err := db.Query(ctx, `SELECT id, key, version, definition
+	defRows, err := db.Query(ctx, `SELECT id, key, version, applies_to, definition, definition_digest, status
 		FROM workflow_definitions WHERE id = ANY($1::uuid[])`, definitionIDs)
 	if err != nil {
 		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "batch load definitions")
 	}
 	definitions := make(map[uuid.UUID]Definition, len(definitionIDs))
 	for defRows.Next() {
-		var id uuid.UUID
-		var key string
-		var version int
-		var raw []byte
-		if err := defRows.Scan(&id, &key, &version, &raw); err != nil {
+		var row persistedDefinition
+		if err := defRows.Scan(&row.ID, &row.Key, &row.Version, &row.AppliesTo, &row.Raw, &row.Digest, &row.Status); err != nil {
 			defRows.Close()
 			return nil, kerr.Wrapf(err, "workflow.SweepSLA", "scan definition")
 		}
-		def, ok := rt.registry.definition(key, version)
-		if !ok {
-			var err error
-			def, err = rt.parseAndValidateDefinition(raw)
-			if err != nil {
-				defRows.Close()
-				return nil, err
-			}
+		def, err := rt.verifyDefinition(row)
+		if err != nil {
+			defRows.Close()
+			return nil, err
 		}
-		definitions[id] = def
+		definitions[row.ID] = def
 	}
 	defRows.Close()
 	if err := defRows.Err(); err != nil {

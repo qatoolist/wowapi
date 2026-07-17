@@ -66,6 +66,14 @@ func exerciseGoldenConsumerRealInfrastructure(t *testing.T, productDir string, g
 
 	runPipelineStep(t, "migrate generated consumer database", productDir, goEnv,
 		"go", "run", "./cmd/migrate", "up")
+	var workflowDigest string
+	if err := h.Admin.QueryRow(context.Background(), `SELECT definition_digest
+		FROM workflow_definitions WHERE key='catalog.item_review' AND version=1`).Scan(&workflowDigest); err != nil {
+		t.Fatalf("generated migrate did not materialize catalog.item_review: %v", err)
+	}
+	if len(workflowDigest) != 64 || strings.ToLower(workflowDigest) != workflowDigest {
+		t.Fatalf("generated workflow digest is not lowercase SHA-256: %q", workflowDigest)
+	}
 
 	tenantA := testkit.CreateTenant(t, h)
 	tenantB := testkit.CreateTenant(t, h)

@@ -25,12 +25,6 @@ const (
 	// product assembles in Go (generated or hand-written) for compile-time
 	// ownership. Highest static precedence layer.
 	KindGo SourceKind = "go"
-	// KindDBOverlay is reserved for a future opt-in database overlay (B13). No
-	// built-in implementation ships today; the contract reserves the kind and
-	// the final precedence slot so an overlay can be added without a breaking
-	// change. Decision 3: catalogs freeze at boot by default; the overlay is a
-	// separate opt-in concern.
-	KindDBOverlay SourceKind = "db_overlay"
 )
 
 // RawBundle is one locale's worth of messages a Source yields, tagged with the

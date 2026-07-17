@@ -168,7 +168,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
+		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
+		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}

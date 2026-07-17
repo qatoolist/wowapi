@@ -66,8 +66,6 @@ func BuildLayers(root fs.FS, specs []SourceSpec) ([]Layer, error) {
 		case KindGo:
 			src := NewGoSource(s.Go...)
 			goSources = append(goSources, src)
-		case KindDBOverlay:
-			errs = append(errs, "db_overlay source is not supported yet (opt-in overlay is a separate concern, B13); disable it")
 		default:
 			errs = append(errs, "unknown i18n source kind "+string(s.Kind))
 		}

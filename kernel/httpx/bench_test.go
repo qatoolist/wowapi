@@ -35,9 +35,9 @@ func BenchmarkRouterHandle(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		r := httpx.NewRouter()
 		r.Handle("GET", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.list"}, http.NotFound)
-		r.Handle("POST", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.create"}, http.NotFound)
+		r.Handle("POST", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.create", NoRequestBody: true}, http.NotFound)
 		r.Handle("GET", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.read"}, http.NotFound)
-		r.Handle("PATCH", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.update"}, http.NotFound)
+		r.Handle("PATCH", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.update", NoRequestBody: true}, http.NotFound)
 		r.Handle("DELETE", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.deactivate"}, http.NotFound)
 		r.Handle("GET", "/healthz", httpx.RouteMeta{Public: true}, http.NotFound)
 		_ = r.Err()
@@ -53,9 +53,9 @@ func BenchmarkRouterRoutes(b *testing.B) {
 		meta            httpx.RouteMeta
 	}{
 		{"GET", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.list"}},
-		{"POST", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.create"}},
+		{"POST", "/v1/requests", httpx.RouteMeta{Permission: "requests.request.create", NoRequestBody: true}},
 		{"GET", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.read"}},
-		{"PATCH", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.update"}},
+		{"PATCH", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.update", NoRequestBody: true}},
 		{"DELETE", "/v1/requests/{id}", httpx.RouteMeta{Permission: "requests.request.deactivate"}},
 		{"GET", "/healthz", httpx.RouteMeta{Public: true}},
 		{"GET", "/readyz", httpx.RouteMeta{Public: true}},
@@ -228,6 +228,9 @@ func buildDispatchRoutes(n int) *httpx.Router {
 				break
 			}
 			meta := httpx.RouteMeta{Permission: "bench.resource" + strconv.Itoa(res) + "." + v.perm}
+			if v.method == http.MethodPost || v.method == http.MethodPatch {
+				meta.NoRequestBody = true
+			}
 			if v.public {
 				meta = httpx.RouteMeta{Public: true}
 			}

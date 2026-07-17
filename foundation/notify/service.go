@@ -139,7 +139,7 @@ func WithTracer(tr observability.Tracer) Option {
 // durable "notify.legal_delivery" audit event (with the provider's message id
 // as receipt) in the SAME transaction as the 'sent' status update (DATA-08
 // W0-T2, blueprint 07 §5: "importance=legal deliveries additionally write an
-// audit row with provider receipt"). Migration 00011 grants app_platform
+// audit row with provider receipt"). The clean baseline grants app_platform
 // INSERT on events_outbox specifically for this use case. Default: nil (no
 // legal-delivery audit event written) — matches the previous deferred
 // behavior for callers that do not opt in.
@@ -479,7 +479,7 @@ func (s *Service) channelDisabled(ctx context.Context, db database.TenantDB, par
 // NOTE: ImportanceLegal deliveries additionally write a durable
 // "notify.legal_delivery" outbox event carrying the provider's message id as
 // receipt, in the SAME finalize transaction as the 'sent' status update
-// (DATA-08 W0-T2). Migration 00011 grants app_platform INSERT on events_outbox
+// (DATA-08 W0-T2). The clean baseline grants app_platform INSERT on events_outbox
 // for exactly this use case. Requires the Service to be wired with WithOutbox;
 // if no outbox writer is configured, the event is skipped (no error).
 //

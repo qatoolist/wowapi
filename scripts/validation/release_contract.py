@@ -24,8 +24,8 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 WORKFLOW_PREFIX = "https://github.com/qatoolist/wowapi/.github/workflows/release.yml@"
 OIDC_ISSUER = "https://token.actions.githubusercontent.com"
 GATE_REQUIRED = {
-    "id", "job_ref", "command", "owner", "required_from_wave",
-    "timeout_minutes", "evidence_artifact",
+    "id", "command", "owner", "required_from_wave", "timeout_minutes",
+    "evidence_artifact",
 }
 GATE_OPTIONAL = {"requires_services", "security_results"}
 TOP_REQUIRED = {"schema_version", "completed_wave", "gates"}
@@ -81,8 +81,8 @@ def validate_gates_data(data: Any) -> dict[str, Any]:
         raise ContractError(f"gate manifest missing required field: {sorted(missing)[0]}")
     if unknown:
         raise ContractError(f"gate manifest has unknown field: {sorted(unknown)[0]}")
-    if data["schema_version"] != 1:
-        raise ContractError("schema_version must equal 1")
+    if data["schema_version"] != 2:
+        raise ContractError("schema_version must equal 2")
     if not isinstance(data["completed_wave"], int) or data["completed_wave"] < 0:
         raise ContractError("completed_wave must be a non-negative integer")
     gates = data["gates"]
@@ -105,7 +105,7 @@ def validate_gates_data(data: Any) -> dict[str, Any]:
         if gate_id in ids:
             raise ContractError(f"duplicate gate id: {gate_id}")
         ids.add(gate_id)
-        for field in ("job_ref", "command", "owner", "evidence_artifact"):
+        for field in ("command", "owner", "evidence_artifact"):
             if not isinstance(gate[field], str) or not gate[field].strip():
                 raise ContractError(f"gate {gate_id} field {field} must be non-empty")
         if not isinstance(gate["required_from_wave"], int) or gate["required_from_wave"] < 0:
@@ -118,6 +118,10 @@ def validate_gates_data(data: Any) -> dict[str, Any]:
             raise ContractError(f"gate {gate_id} evidence_artifact is unsafe")
         if artifact in evidence:
             raise ContractError(f"duplicate evidence_artifact: {artifact}")
+        if artifact != f"gate-evidence/{gate_id}.json":
+            raise ContractError(
+                f"gate {gate_id} evidence_artifact must equal gate-evidence/{gate_id}.json"
+            )
         evidence.add(artifact)
         if "requires_services" in gate and not isinstance(gate["requires_services"], bool):
             raise ContractError(f"gate {gate_id} requires_services must be boolean")
@@ -170,13 +174,224 @@ def command_verify_tag(args: argparse.Namespace) -> None:
     print(f"release tag target verified: {args.tag} -> {source_sha}")
 
 
+SEMVER = re.compile(
+    r"^v(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\."
+    r"(?P<patch>0|[1-9][0-9]*)(?P<pre>-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+
+
+def semver_key(tag: str) -> tuple[int, int, int, tuple[tuple[int, object], ...]]:
+    match = SEMVER.fullmatch(tag)
+    if not match:
+        raise ContractError(f"release tag is not strict semantic version: {tag}")
+    pre = match.group("pre")
+    # A final release sorts after every prerelease of the same base.
+    parts: tuple[tuple[int, object], ...] = ((2, ""),)
+    if pre:
+        values: list[tuple[int, object]] = []
+        for value in pre[1:].split("."):
+            if value.isdigit():
+                if len(value) > 1 and value.startswith("0"):
+                    raise ContractError(f"numeric prerelease identifier has leading zero: {tag}")
+                values.append((0, int(value)))
+            else:
+                values.append((1, value))
+        parts = ((1, ""), *values)
+    return int(match["major"]), int(match["minor"]), int(match["patch"]), parts
+
+
+def load_release_policy(path: Path) -> dict[str, Any]:
+    policy = load_json(path)
+    required = {
+        "schema_version", "module_path", "bootstrap_tag", "mode",
+        "supported_predecessor", "abandoned_tags",
+    }
+    if not isinstance(policy, dict) or set(policy) != required:
+        raise ContractError("release-line policy has missing or unknown fields")
+    if policy["schema_version"] != 1:
+        raise ContractError("release-line schema_version must equal 1")
+    if policy["module_path"] != "github.com/qatoolist/wowapi":
+        raise ContractError("release-line module_path is not the canonical root module")
+    if policy["mode"] not in {"bootstrap", "predecessor"}:
+        raise ContractError("release-line mode must be bootstrap or predecessor")
+    if not isinstance(policy["abandoned_tags"], list) or len(policy["abandoned_tags"]) != len(set(policy["abandoned_tags"])):
+        raise ContractError("abandoned_tags must be a unique array")
+    semver_key(policy["bootstrap_tag"])
+    for tag in policy["abandoned_tags"]:
+        semver_key(tag)
+    predecessor = policy["supported_predecessor"]
+    if policy["mode"] == "bootstrap" and predecessor is not None:
+        raise ContractError("bootstrap mode must not declare a predecessor")
+    if policy["mode"] == "predecessor":
+        if not isinstance(predecessor, str):
+            raise ContractError("predecessor mode requires supported_predecessor")
+        semver_key(predecessor)
+        if predecessor in policy["abandoned_tags"]:
+            raise ContractError("supported predecessor is abandoned")
+    return policy
+
+
+def command_verify_release_identity(args: argparse.Namespace) -> None:
+    repo = Path(args.repo).resolve()
+    source_sha = exact_commit(repo, args.source_sha)
+    target_key = semver_key(args.tag)
+    if target_key[0] != 1:
+        raise ContractError("root module releases must use semantic major v1")
+    module = (repo / "go.mod").read_text().splitlines()[0].strip()
+    if module != "module github.com/qatoolist/wowapi":
+        raise ContractError("go.mod does not declare the canonical root module")
+    status = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"], text=True,
+        capture_output=True, check=False,
+    )
+    if status.returncode != 0 or status.stdout:
+        raise ContractError("release checkout is not clean")
+    command_verify_tag(argparse.Namespace(repo=str(repo), tag=args.tag, source_sha=source_sha))
+    policy = load_release_policy(Path(args.policy))
+    if args.tag in policy["abandoned_tags"]:
+        raise ContractError("abandoned release tag must never be reused")
+    if policy["mode"] == "bootstrap":
+        if args.tag != policy["bootstrap_tag"]:
+            raise ContractError("bootstrap mode is valid only for the declared first production tag")
+    else:
+        predecessor = policy["supported_predecessor"]
+        if semver_key(predecessor) >= target_key:
+            raise ContractError("supported predecessor must be older than the target tag")
+    tags = subprocess.run(
+        ["git", "-C", str(repo), "tag", "--list", "v*"], text=True,
+        capture_output=True, check=False,
+    )
+    if tags.returncode != 0:
+        raise ContractError("cannot enumerate repository tags")
+    ignored = set(policy["abandoned_tags"]) | {args.tag}
+    for tag in tags.stdout.splitlines():
+        try:
+            key = semver_key(tag)
+        except ContractError:
+            continue
+        if tag not in ignored and key >= target_key:
+            raise ContractError(f"release tag is not monotonic; existing tag is {tag}")
+    proxy = load_json(Path(args.proxy_state))
+    if proxy == {"status": 404}:
+        pass
+    elif isinstance(proxy, dict) and proxy.get("status") == 200:
+        info = proxy.get("info")
+        if not isinstance(info, dict) or info.get("Version") != args.tag:
+            raise ContractError("public proxy returned mismatched version identity")
+        origin = info.get("Origin")
+        if not isinstance(origin, dict) or origin.get("Hash") != source_sha:
+            raise ContractError("public proxy tag was already published from a different commit")
+    else:
+        raise ContractError("public proxy state is unavailable or ambiguous")
+    print(f"strict release identity verified: {args.tag} -> {source_sha}")
+
+
+def command_compatibility_policy(args: argparse.Namespace) -> None:
+    policy = load_release_policy(Path(args.policy))
+    target_key = semver_key(args.tag)
+    if args.tag in policy["abandoned_tags"]:
+        raise ContractError("abandoned release tag must never be reused")
+    if policy["mode"] == "bootstrap":
+        if args.tag != policy["bootstrap_tag"]:
+            raise ContractError("future releases require predecessor compatibility mode")
+        print("bootstrap")
+        return
+    predecessor = policy["supported_predecessor"]
+    if semver_key(predecessor) >= target_key:
+        raise ContractError("supported predecessor must be older than the target tag")
+    print(predecessor)
+
+
+def evidence_record(gate: dict[str, Any], source_sha: str, manifest_sha: str,
+                    status: str, exit_code: int) -> dict[str, Any]:
+    if not SHA40.fullmatch(source_sha) or not SHA256.fullmatch(manifest_sha):
+        raise ContractError("gate evidence source or manifest digest is invalid")
+    if status not in {"passed", "failed"} or not isinstance(exit_code, int):
+        raise ContractError("gate evidence status or exit code is invalid")
+    return {
+        "schema_version": 1,
+        "gate_id": gate["id"],
+        "source_sha": source_sha,
+        "manifest_sha256": manifest_sha,
+        "command_sha256": digest_bytes(gate["command"].encode()),
+        "status": status,
+        "exit_code": exit_code,
+    }
+
+
+def command_write_gate_evidence(args: argparse.Namespace) -> None:
+    manifest_path = Path(args.manifest)
+    manifest = validate_gates_data(load_json(manifest_path))
+    matches = [gate for gate in manifest["gates"] if gate["id"] == args.gate_id]
+    if len(matches) != 1:
+        raise ContractError(f"gate is not declared exactly once: {args.gate_id}")
+    record = evidence_record(matches[0], args.source_sha, digest(manifest_path), args.status, args.exit_code)
+    canonical_write(Path(args.output), record)
+
+
+def verify_and_assemble_gate_bundle(manifest_path: Path, bundle: Path,
+                                    source_sha: str) -> dict[str, Any]:
+    if not SHA40.fullmatch(source_sha):
+        raise ContractError("source SHA must be a full lowercase 40-hex commit SHA")
+    manifest = validate_gates_data(load_json(manifest_path))
+    manifest_sha = digest(manifest_path)
+    results: list[dict[str, Any]] = []
+    expected_paths = {gate["evidence_artifact"] for gate in manifest["gates"]}
+    actual_paths = {
+        str(path.relative_to(bundle)) for path in bundle.rglob("*")
+        if path.is_file() and path.name != "gate-results.json"
+    }
+    if actual_paths != expected_paths:
+        missing = expected_paths - actual_paths
+        extra = actual_paths - expected_paths
+        detail = f"missing {sorted(missing)[0]}" if missing else f"undeclared {sorted(extra)[0]}"
+        raise ContractError(f"gate evidence set mismatch: {detail}")
+    for gate in manifest["gates"]:
+        path = safe_file(bundle, gate["evidence_artifact"])
+        record = load_json(path)
+        expected = evidence_record(gate, source_sha, manifest_sha, record.get("status"), record.get("exit_code"))
+        if record != expected:
+            raise ContractError(f"gate evidence identity mismatch: {gate['id']}")
+        results.append({
+            "id": gate["id"], "status": record["status"],
+            "exit_code": record["exit_code"], "evidence_path": gate["evidence_artifact"],
+            "evidence_sha256": digest(path), "command_sha256": record["command_sha256"],
+        })
+    return {
+        "schema_version": 2, "source_sha": source_sha,
+        "manifest_sha256": manifest_sha, "completed_wave": manifest["completed_wave"],
+        "status": "passed" if all(item["status"] == "passed" for item in results) else "failed",
+        "gates": sorted(results, key=lambda item: item["id"]),
+    }
+
+
+def command_assemble_gate_results(args: argparse.Namespace) -> None:
+    output = verify_and_assemble_gate_bundle(Path(args.manifest), Path(args.bundle), args.source_sha)
+    canonical_write(Path(args.output), output)
+    if output["status"] != "passed":
+        raise ContractError("one or more required gates failed")
+
+
+def command_verify_gate_bundle(args: argparse.Namespace) -> None:
+    bundle = Path(args.bundle)
+    expected = verify_and_assemble_gate_bundle(Path(args.manifest), bundle, args.source_sha)
+    actual = load_json(safe_file(bundle, args.results))
+    if actual != expected:
+        raise ContractError("gate-results summary does not match the evidence bundle")
+    if actual["status"] != "passed":
+        raise ContractError("required gates did not pass")
+    print(f"gate evidence bundle verified for exact SHA {args.source_sha}")
+
+
 
 def command_run_gates(args: argparse.Namespace) -> None:
     manifest_path = Path(args.manifest)
     manifest = validate_gates_data(load_json(manifest_path))
     repo = Path(args.repo).resolve()
     source_sha = exact_commit(repo, args.source_sha)
-    gate_results: list[dict[str, Any]] = []
+    output_path = Path(args.output).resolve()
+    bundle = output_path.parent / f"{output_path.stem}-bundle"
+    manifest_sha = digest(manifest_path)
     with tempfile.TemporaryDirectory(prefix="wowapi-exact-sha-") as work:
         archive = subprocess.Popen(["git", "-C", str(repo), "archive", source_sha], stdout=subprocess.PIPE)
         extract = subprocess.run(["tar", "-x", "-C", work], stdin=archive.stdout, capture_output=True, check=False)
@@ -194,30 +409,18 @@ def command_run_gates(args: argparse.Namespace) -> None:
                     timeout=gate["timeout_minutes"] * 60, check=False,
                 )
                 rc = result.returncode
-                output = (result.stdout + result.stderr).encode()
-            except subprocess.TimeoutExpired as exc:
+            except subprocess.TimeoutExpired:
                 rc = 124
-                output = ((exc.stdout or "") + (exc.stderr or "") + "\ntimeout\n").encode()
-            gate_results.append({
-                "id": gate["id"],
-                "job_ref": gate["job_ref"],
-                "status": "passed" if rc == 0 else "failed",
-                "exit_code": rc,
-                "evidence_artifact": gate["evidence_artifact"],
-                "evidence_sha256": digest_bytes(output),
-            })
-    status = "passed" if all(item["status"] == "passed" for item in gate_results) else "failed"
-    output = {
-        "schema_version": 1,
-        "source_sha": source_sha,
-        "manifest_sha256": digest(manifest_path),
-        "completed_wave": manifest["completed_wave"],
-        "status": status,
-        "gates": gate_results,
-    }
-    canonical_write(Path(args.output), output)
-    if status != "passed":
-        failed = ", ".join(item["id"] for item in gate_results if item["status"] == "failed")
+            record = evidence_record(
+                gate, source_sha, manifest_sha,
+                "passed" if rc == 0 else "failed", rc,
+            )
+            canonical_write(bundle / gate["evidence_artifact"], record)
+    summary = verify_and_assemble_gate_bundle(manifest_path, bundle, source_sha)
+    canonical_write(bundle / "gate-results.json", summary)
+    canonical_write(output_path, summary)
+    if summary["status"] != "passed":
+        failed = ", ".join(item["id"] for item in summary["gates"] if item["status"] == "failed")
         raise ContractError(f"required gates failed: {failed}")
     print(f"required gates passed for exact SHA {source_sha}")
 
@@ -557,6 +760,37 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--tag", required=True)
     item.add_argument("--source-sha", required=True)
     item.set_defaults(func=command_verify_tag)
+    item = sub.add_parser("verify-release-identity")
+    item.add_argument("--repo", required=True)
+    item.add_argument("--tag", required=True)
+    item.add_argument("--source-sha", required=True)
+    item.add_argument("--policy", required=True)
+    item.add_argument("--proxy-state", required=True)
+    item.set_defaults(func=command_verify_release_identity)
+    item = sub.add_parser("compatibility-policy")
+    item.add_argument("--policy", required=True)
+    item.add_argument("--tag", required=True)
+    item.set_defaults(func=command_compatibility_policy)
+    item = sub.add_parser("write-gate-evidence")
+    item.add_argument("--manifest", required=True)
+    item.add_argument("--gate-id", required=True)
+    item.add_argument("--source-sha", required=True)
+    item.add_argument("--status", choices=("passed", "failed"), required=True)
+    item.add_argument("--exit-code", type=int, required=True)
+    item.add_argument("--output", required=True)
+    item.set_defaults(func=command_write_gate_evidence)
+    item = sub.add_parser("assemble-gate-results")
+    item.add_argument("--manifest", required=True)
+    item.add_argument("--bundle", required=True)
+    item.add_argument("--source-sha", required=True)
+    item.add_argument("--output", required=True)
+    item.set_defaults(func=command_assemble_gate_results)
+    item = sub.add_parser("verify-gate-bundle")
+    item.add_argument("--manifest", required=True)
+    item.add_argument("--bundle", required=True)
+    item.add_argument("--source-sha", required=True)
+    item.add_argument("--results", default="gate-results.json")
+    item.set_defaults(func=command_verify_gate_bundle)
     item = sub.add_parser("run-gates")
     item.add_argument("--manifest", required=True)
     item.add_argument("--source-sha", required=True)

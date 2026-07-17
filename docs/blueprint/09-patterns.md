@@ -129,7 +129,7 @@ no framework fork, boilerplate ≈ zero, logic 100% visible.
 - **Data access:** per-aggregate repositories; sqlc/pgx; allowlisted dynamic filters; keyset pagination.
 - **Transaction:** TxManager-as-UoW; one tx per command; `SET LOCAL` tenant+actor; optimistic locking.
 - **Authorization:** deny-default layered RBAC → ReBAC → ABAC policies; capacity-based actors; route metadata.
-- **Workflow:** custom Postgres declarative engine; versioned definitions; tenant overrides.
+- **Workflow:** custom Postgres declarative engine; versioned module definitions synchronized to a digest-bound global catalog.
 - **Rules:** typed rule points; JSON-Schema values; scope-resolution with temporal versions; flags on top.
 - **Events:** transactional outbox → in-process dispatcher → idempotent inbox consumers.
 - **Audit:** append-only, partitioned, same-tx writers, DB-enforced immutability.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/qatoolist/wowapi/foundation/webhook"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // TestUnitHMACVerifier_Envelope proves HMACVerifier returns an Envelope whose
@@ -92,7 +93,7 @@ func TestUnitHMACVerifier_BadSignature(t *testing.T) {
 // on success and a zero Envelope on failure.
 func TestUnitFakeVerifier_Envelope(t *testing.T) {
 	body := []byte(`{"event":"order.created"}`)
-	v := webhook.FakeVerifier{Secret: "open-sesame"}
+	v := fakes.WebhookVerifier{Secret: "open-sesame"}
 
 	env, err := v.Verify("", body, map[string]string{"X-Test-Sig": "open-sesame"})
 	if err != nil {

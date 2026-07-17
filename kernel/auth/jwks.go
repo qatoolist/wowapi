@@ -65,8 +65,8 @@ type JWKSConfig struct {
 	// is ignored.
 	TrustedIssuers []string
 	// Env is the deployment environment. It gates the prod-profile trusted-
-	// issuer check. A zero Env is treated as non-prod, preserving backwards
-	// compatibility for existing callers that do not set it.
+	// issuer check. A zero Env deliberately has local/test posture; generated
+	// production composition always supplies EnvProd explicitly.
 	Env config.Env
 	// Now is the clock, injectable for tests (default time.Now). It drives the
 	// cache TTL and the rotation-refetch throttle.

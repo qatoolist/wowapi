@@ -107,26 +107,3 @@ func (v HMACVerifier) Verify(secret string, body []byte, headers map[string]stri
 		KeyID:            "", // body-only HMAC does not authenticate a key id
 	}, nil
 }
-
-// FakeVerifier is a test double that passes when the header "X-Test-Sig" equals
-// the pre-configured Secret, and fails otherwise.
-type FakeVerifier struct {
-	// Secret is the expected value in the "X-Test-Sig" header.
-	Secret string
-}
-
-// Verify passes when headers["X-Test-Sig"] == v.Secret, fails otherwise.
-// On success it returns an Envelope synthesized from the body and receipt time.
-func (v FakeVerifier) Verify(_ string, body []byte, headers map[string]string) (Envelope, error) {
-	if headers["X-Test-Sig"] == v.Secret {
-		sum := sha256.Sum256(body)
-		return Envelope{
-			CanonicalBody:    body,
-			EventID:          "sha256:" + hex.EncodeToString(sum[:]),
-			OccurredAt:       time.Now(),
-			SignatureVersion: "test",
-			KeyID:            "",
-		}, nil
-	}
-	return Envelope{}, kerr.E(kerr.KindUnauthenticated, "signature_mismatch", "fake verifier: signature does not match")
-}

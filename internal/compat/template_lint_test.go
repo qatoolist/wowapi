@@ -56,6 +56,16 @@ func TestTemplateLintRejectsForbiddenReads(t *testing.T) {
 		}
 	})
 
+	t.Run("literal framework module path fails", func(t *testing.T) {
+		code, out := run(t, "import \"github.com/qatoolist/wowapi/kernel\"\n")
+		if code == 0 {
+			t.Fatalf("lint passed a literal framework module import:\n%s", out)
+		}
+		if !strings.Contains(out, "literal framework module path") {
+			t.Fatalf("lint output does not name the module-path violation:\n%s", out)
+		}
+	})
+
 	t.Run("accessor-only template passes", func(t *testing.T) {
 		code, out := run(t, "mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeAuthz(), booted.RuntimeTx())\nbooted, err := a.Boot(ctx, k, nil)\n")
 		if code != 0 {

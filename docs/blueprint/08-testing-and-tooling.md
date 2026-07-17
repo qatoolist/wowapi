@@ -76,7 +76,6 @@ wowapi migrate create --module requests --name create_requests
 wowapi seed validate                               # schema-check all seeds/*.yaml against registries
 wowapi openapi merge [--check]                     # merge fragments, lint spec, diff against routes
 wowapi lint boundaries                             # import rules; framework repo adds vocabulary denylist
-wowapi lint lifecycle                              # static provider/lifecycle manifest lint (module config completeness)
 wowapi version                                     # prints CLI version + go.mod wowapi version, warns on mismatch
 
 wowapi config init                                 # scaffold configs/{base,<env>}.yaml + typed Config stub
@@ -92,7 +91,7 @@ Config tooling semantics are specified in [12-configuration-and-deployment.md](1
 
 The installed CLI version should match the product's `wowapi` dependency version (it reads `go.mod`
 and warns on mismatch). CI runs `wowapi seed validate`, `wowapi openapi merge --check`,
-`wowapi lint boundaries`, and `wowapi lint lifecycle` directly. `go run github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z <cmd>`
+`wowapi lint boundaries` directly. `go run github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z <cmd>`
 remains a no-install fallback for tightly pinned CI jobs — not the primary developer experience.
 
 Product repos may keep thin Makefile wrappers (source of truth stays the CLI):

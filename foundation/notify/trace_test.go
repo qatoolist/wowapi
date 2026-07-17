@@ -13,6 +13,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // fakeTracer records the carriers passed to Extract and the span names started,
@@ -66,7 +67,7 @@ func TestIntegrationNotifyTracePropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	svc := notify.New(reg, model.UUIDv7(), notify.WithTracer(tr))
 	svc.RegisterSender(notify.ChannelEmail, fake)
 
@@ -133,7 +134,7 @@ func TestIntegrationNotifyTracePropagation(t *testing.T) {
 	}
 }
 
-// TestIntegrationNotifyNoTracerNoContext proves backward compatibility: without a
+// TestIntegrationNotifyNoTracerNoContext proves the supported no-tracer mode: without a
 // tracer, Send stores NULL trace_context (no behavior change) and SendPending
 // still delivers.
 func TestIntegrationNotifyNoTracerNoContext(t *testing.T) {
@@ -149,7 +150,7 @@ func TestIntegrationNotifyNoTracerNoContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	svc := notify.New(reg, model.UUIDv7()) // no tracer
 	svc.RegisterSender(notify.ChannelEmail, fake)
 

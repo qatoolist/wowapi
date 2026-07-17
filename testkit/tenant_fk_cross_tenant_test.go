@@ -17,9 +17,8 @@ import (
 // insert must FAIL on every confirmed tenant-FK edge. RLS proves
 // the child row's own tenant; only a composite FK on (tenant_id, <ref>) pointing
 // at the parent's UNIQUE (tenant_id, id) proves parent and child AGREE — FK
-// lookups bypass RLS by design, so before migrations 00034/00035/00036 a child
-// in tenant B could reference a parent in tenant A (CS-18: "platform-role seeded
-// cross-tenant parent/child insert succeeds today; fails after").
+// lookups bypass RLS by design. The clean baseline therefore creates every
+// tenant-owned relationship as a composite tenant FK.
 //
 // Three probes per edge, deliberately graded by privilege:
 //
@@ -49,7 +48,7 @@ type tenantFKEdge struct {
 	child      string // child table
 	fkCol      string // referencing column on child
 	parent     string // parent table
-	constraint string // composite FK name added by migration 00035
+	constraint string // clean-baseline composite FK name
 
 	// restrictive marks the document_access_grants edge: its RESTRICTIVE
 	// owner-write policy (RLS-bound sub-SELECT on documents) blocks the
@@ -217,8 +216,8 @@ func adminInsert(ctx context.Context, h *DBHandle, table string, cols map[string
 // (BYPASSRLS), app_rt, and app_platform. Every attempt must fail; the admin
 // probe must fail with a pure foreign_key_violation, proving the database's own
 // referential-integrity machinery — not RLS convention — enforces tenant
-// agreement. Before migrations 00034/00035/00036 these inserts succeed (the
-// captured fail-first state).
+// agreement. The historical pre-baseline implementation allowed these inserts;
+// the regression preserves that fail-first proof.
 func TestIntegrationTenantFKCrossTenantInsertBlocked(t *testing.T) {
 	h := NewDB(t)
 

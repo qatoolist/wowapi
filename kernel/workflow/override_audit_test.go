@@ -2,7 +2,6 @@ package workflow_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -52,71 +51,15 @@ func buildRTWithAudit(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, 
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntimeWithCompliance(txm, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), redact))
-}
-
-const ratifyDef = `
-key: requests.ratify
-version: 1
-applies_to: requests.request
-initial_step: manager_review
-ratify_by: approvers
-steps:
-  manager_review:
-    type: approval
-    assignees: [ { kind: resolver, resolver: test.approver } ]
-    on_approve: { next: end_done }
-    on_reject:  { next: end_rejected }
-  end_done:     { type: terminal, outcome: completed }
-  end_rejected: { type: terminal, outcome: rejected }
-`
-
-const ratifyStepDef = `
-key: requests.ratify_step
-version: 1
-applies_to: requests.request
-initial_step: manager_review
-steps:
-  manager_review:
-    type: approval
-    ratify_by: approvers
-    assignees: [ { kind: resolver, resolver: test.approver } ]
-    on_approve: { next: end_done }
-    on_reject:  { next: end_rejected }
-  end_done:     { type: terminal, outcome: completed }
-  end_rejected: { type: terminal, outcome: rejected }
-`
-
-// TestRatifyByDefinitionRejected proves AC-01: ratify_by-declaring definitions
-// are rejected at validation time as an interim, Wave-0-compatible posture.
-func TestRatifyByDefinitionRejected(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-	}{
-		{"definition-level ratify_by", ratifyDef},
-		{"step-level ratify_by", ratifyStepDef},
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatalf("SyncDefinitions: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			def, err := workflow.ParseDefinition([]byte(tc.raw))
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			err = def.Validate(nil, map[string]bool{"test.approver": true})
-			if err == nil {
-				t.Fatal("expected ratify_by definition to be rejected, got nil error")
-			}
-			if !strings.Contains(err.Error(), "ratify_by is not yet supported") {
-				t.Fatalf("expected ratify_by rejection message, got %v", err)
-			}
-		})
-	}
+	return workflow.NewRuntime(txm, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), redact))
 }
 
 // TestOverrideAuditRowPresent proves that a successful override writes a
 // complete audit row (actor, impersonator, grant ID, source/target states,
-// reason, ratification outcome) in the same transaction as the state jump.
+// reason and source/target state) in the same transaction as the state jump.
 func TestOverrideAuditRowPresent(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
@@ -135,7 +78,6 @@ func TestOverrideAuditRowPresent(t *testing.T) {
 	}
 
 	rt := buildRTWithAudit(t, h, cap, h.TxM, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}}, nil, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
@@ -183,9 +125,6 @@ func TestOverrideAuditRowPresent(t *testing.T) {
 	if got := metadata["grant_id"]; got != grantID.String() {
 		t.Fatalf("audit metadata grant_id = %v, want %v", got, grantID)
 	}
-	if got := metadata["ratification_outcome"]; got != "rejected_interim" {
-		t.Fatalf("audit metadata ratification_outcome = %v, want rejected_interim", got)
-	}
 	if got := metadata["source_state"]; got != "manager_review" {
 		t.Fatalf("audit metadata source_state = %v, want manager_review", got)
 	}
@@ -206,7 +145,6 @@ func TestOverrideAuditFailureRollsBack(t *testing.T) {
 
 	a := actor(tn.ID, userID, cap)
 	rt := buildRTWithAudit(t, h, cap, h.TxM, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}}, failingAuditRedactor, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)

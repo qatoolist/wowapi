@@ -58,7 +58,7 @@ func (a *harness) uploadVersion(t *testing.T, class string, sens document.Sensit
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -111,7 +111,7 @@ func TestIntegrationConfirmVerifiesBytes(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -136,7 +136,7 @@ func TestIntegrationMIMEMismatchRejected(t *testing.T) {
 	body := []byte("just some text, not a png")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -317,7 +317,7 @@ func TestIntegrationMIMEEssenceMismatch(t *testing.T) {
 	body := []byte("<!DOCTYPE html><html><body>hi</body></html>")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -339,8 +339,8 @@ func TestIntegrationDistinctUploadKeys(t *testing.T) {
 	a := newHarness(t, document.Class{Key: "core.doc"})
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		s1, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
-		s2, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+		s1, _ := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
+		s2, _ := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 		if s1.StorageKey == s2.StorageKey {
 			t.Fatalf("two upload sessions must not share a storage key: %q", s1.StorageKey)
 		}

@@ -27,7 +27,7 @@ func openapiUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: wowapi openapi merge [flags] [fragment.json ...]
        wowapi openapi diff --baseline <released.json> --current <merged.json>
 
-Merge OpenAPI 3.1 fragments complete-or-loud, or enforce the v1 semantic
+Merge OpenAPI 3.1 fragments complete-or-loud, or enforce the supported-line semantic
 compatibility policy against a previous released merged document.
 
 merge flags:

@@ -11,12 +11,12 @@ import (
 
 	"github.com/qatoolist/wowapi/app"
 	"github.com/qatoolist/wowapi/foundation/notify"
-	"github.com/qatoolist/wowapi/foundation/webhook"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/secrets"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // staticSecrets resolves any ref to a fixed signing secret (webhook HMAC key).
@@ -37,7 +37,7 @@ func TestStartWorkerRunsWebhookRetrySweep(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	const secretRef = "secretref://test/key"
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
 		Pool:          h.Runtime,
 		Platform:      h.Platform,
@@ -161,7 +161,7 @@ func TestStartWorkerRunsNotifySendSweep(t *testing.T) {
 	if err := k.NotifyTemplates.Err(); err != nil {
 		t.Fatalf("register template: %v", err)
 	}
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	k.Notify.RegisterSender(notify.ChannelEmail, fake)
 
 	tn := testkit.CreateTenant(t, h)

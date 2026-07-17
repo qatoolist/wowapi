@@ -54,19 +54,17 @@ func (ti *TokenIssuer) PublicKey() *rsa.PublicKey {
 
 // tokenConfig accumulates TokenOption mutations.
 type tokenConfig struct {
-	issuer       string
-	audience     string
-	expiry       time.Duration
-	grantID      uuid.UUID
-	impersonator uuid.UUID
-	breakGlass   bool
-	authTime     *time.Time
-	acr          string
-	amr          []string
+	issuer   string
+	audience string
+	expiry   time.Duration
+	grantID  uuid.UUID
+	authTime *time.Time
+	acr      string
+	amr      []string
 }
 
 // TokenOption customizes a minted token so tests can drive the verifier's
-// issuer/audience/expiry/impersonation/break-glass checks.
+// issuer/audience/expiry/assurance checks.
 type TokenOption func(*tokenConfig)
 
 // WithIssuer overrides the iss claim (default "wowapi-test").
@@ -85,21 +83,10 @@ func WithExpiry(d time.Duration) TokenOption {
 	return func(c *tokenConfig) { c.expiry = d }
 }
 
-// WithImpersonator sets the impersonator_user_id claim.
-func WithImpersonator(id uuid.UUID) TokenOption {
-	return func(c *tokenConfig) { c.impersonator = id }
-}
-
 // WithGrantID sets the grant_id claim used by the privileged-session resolver
-// (SEC-01 T5). The framework resolves the grant row server-side; the
-// impersonator_user_id and break_glass claims are ignored when grant_id is set.
+// (SEC-01 T5). The framework resolves attribution server-side.
 func WithGrantID(id uuid.UUID) TokenOption {
 	return func(c *tokenConfig) { c.grantID = id }
-}
-
-// WithBreakGlass sets the break_glass claim.
-func WithBreakGlass(on bool) TokenOption {
-	return func(c *tokenConfig) { c.breakGlass = on }
 }
 
 // WithAuthTime sets the standard auth_time claim (OIDC Core §2). When not
@@ -147,13 +134,11 @@ func (ti *TokenIssuer) Issue(subject string, tenantID, capacityID uuid.UUID, opt
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.expiry)),
 		},
-		TenantID:           tenantID,
-		CapacityID:         capacityID,
-		GrantID:            cfg.grantID,
-		ImpersonatorUserID: cfg.impersonator,
-		BreakGlass:         cfg.breakGlass,
-		ACR:                cfg.acr,
-		AMR:                cfg.amr,
+		TenantID:   tenantID,
+		CapacityID: capacityID,
+		GrantID:    cfg.grantID,
+		ACR:        cfg.acr,
+		AMR:        cfg.amr,
 	}
 	if cfg.authTime != nil {
 		claims.AuthTime = jwt.NewNumericDate(*cfg.authTime)

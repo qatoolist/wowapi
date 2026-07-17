@@ -382,6 +382,27 @@ func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
 	}
 }
 
+func TestInitMigrateMainSyncsWorkflowDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/workflow")
+	assertFileContains(t, migratePath, "workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows())")
+	assertParseGo(t, migratePath)
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	workflowIdx := strings.Index(string(content), "workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows())")
+	if ruleIdx == -1 || workflowIdx == -1 || workflowIdx < ruleIdx {
+		t.Fatalf("workflow sync must appear after rule sync (ruleIdx=%d workflowIdx=%d)", ruleIdx, workflowIdx)
+	}
+}
+
 // TestInitAPIMainWiresSeedCatalogsReadinessCheck is the GAP-003/FBL-02 "clear
 // failure mode" acceptance criterion: the generated api main must use
 // app.ReadinessWithCatalogs so that a pod whose migrate step skipped seed sync
@@ -912,6 +933,33 @@ func TestNewModuleBadName(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "must match") {
 		t.Errorf("stderr should mention constraint: %q", errOut)
+	}
+}
+
+func TestWireGeneratedModuleRejectsMarkerlessRegistry(t *testing.T) {
+	root := t.TempDir()
+	wireDir := filepath.Join(root, "internal", "wire")
+	if err := os.MkdirAll(wireDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/product\n\ngo 1.26\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wireDir, "modules.go"), []byte(`package wire
+
+import "github.com/qatoolist/wowapi/module"
+
+func Modules() []module.Module { return nil }
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modDir := filepath.Join(root, "internal", "modules", "widgets")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := wireGeneratedModule(modDir, "widgets"); err == nil || !strings.Contains(err.Error(), "missing wowapi module markers") {
+		t.Fatalf("markerless registry must fail loudly, got %v", err)
 	}
 }
 

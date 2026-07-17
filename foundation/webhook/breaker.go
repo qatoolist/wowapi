@@ -86,14 +86,10 @@ func (b *breakerState) isOpen(now time.Time) bool {
 type breakerRegistry struct {
 	mu    sync.Mutex
 	state map[uuid.UUID]*breakerState
-	nowFn func() time.Time //nolint:unused // reserved for future registry-level use
 }
 
-func newBreakerRegistry(nowFn func() time.Time) *breakerRegistry {
-	return &breakerRegistry{
-		state: make(map[uuid.UUID]*breakerState),
-		nowFn: nowFn,
-	}
+func newBreakerRegistry() *breakerRegistry {
+	return &breakerRegistry{state: make(map[uuid.UUID]*breakerState)}
 }
 
 // get returns the breakerState for endpointID, creating it on first access.

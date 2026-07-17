@@ -16,13 +16,14 @@ import (
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/safety"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // harness bundles everything needed by notify integration tests.
 type harness struct {
 	db     *testkit.DBHandle
 	reg    *notify.Registry
-	fake   *notify.FakeSender
+	fake   *fakes.NotifySender
 	svc    *notify.Service
 	tenant uuid.UUID
 	actor  uuid.UUID
@@ -99,7 +100,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	svc := notify.New(reg, model.UUIDv7())
 	svc.RegisterSender(notify.ChannelEmail, fake)
 
@@ -692,7 +693,7 @@ func TestSendPendingLegalImportanceWritesAuditEvent(t *testing.T) {
 	if err := reg.Err(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	ob := outbox.NewWriter(model.UUIDv7())
 	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
 	svc.RegisterSender(notify.ChannelEmail, fake)
@@ -776,7 +777,7 @@ func TestSendPendingNonLegalImportanceWritesNoAuditEvent(t *testing.T) {
 	if err := reg.Err(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	ob := outbox.NewWriter(model.UUIDv7())
 	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
 	svc.RegisterSender(notify.ChannelEmail, fake)

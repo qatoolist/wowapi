@@ -249,15 +249,12 @@ func (s *Service) ProcessInbound(ctx context.Context, plat database.TxManager, t
 // would look up B's endpoints and sign A's payload with B's secret — a
 // cross-tenant leak. When ev carries a tenant (relay/writer sets it), a
 // disagreeing tenantID is rejected fail-closed (KindValidation); the event's
-// tenant then binds the whole dispatch. A zero ev.TenantID falls back to the
-// passed tenantID (legacy callers that pre-bind the tenant themselves).
+// tenant then binds the whole dispatch. Both identities are mandatory and must
+// match; there is no inference or zero-value fallback.
 func (s *Service) DispatchOutbound(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, ev outbox.Event, now time.Time) error {
-	if ev.TenantID != uuid.Nil {
-		if tenantID != uuid.Nil && tenantID != ev.TenantID {
-			return kerr.E(kerr.KindValidation, "tenant_mismatch",
-				"webhook dispatch tenant does not match event tenant")
-		}
-		tenantID = ev.TenantID
+	if tenantID == uuid.Nil || ev.TenantID == uuid.Nil || tenantID != ev.TenantID {
+		return kerr.E(kerr.KindValidation, "tenant_mismatch",
+			"webhook dispatch requires matching nonzero scope and event tenants")
 	}
 
 	body, err := marshalOutboundBody(ev, tenantID)

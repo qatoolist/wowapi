@@ -19,10 +19,11 @@ const (
 	Maintenance Classification = "maintenance"
 )
 
-// ManifestRequiredVersion is the first migration number that must carry a
-// validated +wowapi:manifest block. Migrations below this number predate the
-// schema and are exempt (opt-in if a block is present).
-const ManifestRequiredVersion = 31
+// ManifestRequiredVersion is the first post-baseline migration number that
+// must carry a validated +wowapi:manifest block. The clean 00001 baseline is
+// exempt; every future incremental kernel migration is governed by the online
+// migration protocol.
+const ManifestRequiredVersion = 2
 
 // Manifest is the parsed, machine-readable declaration for one migration.
 type Manifest struct {

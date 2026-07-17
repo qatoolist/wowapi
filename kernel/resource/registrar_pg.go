@@ -53,12 +53,12 @@ var _ Registrar = (*boundRegistrar)(nil)
 //
 // created_by/updated_by are sourced from the actor bound in ctx
 // (database.ActorIDFrom — the same binding TxManager mirrors into the
-// app.actor_id GUC). A caller that never bound an actor writes an
-// unattributed zero id: this low-level API stays compatible for legacy
-// call sites, while the enforced aggregate write path
-// (kernel/resource/aggregate) always resolves and binds a real actor first.
+// app.actor_id GUC). Missing or zero actor attribution is rejected.
 func (b *boundRegistrar) Upsert(ctx context.Context, ref Ref, orgID *uuid.UUID, label, status string) error {
-	actorID, _ := database.ActorIDFrom(ctx)
+	actorID, ok := database.ActorIDFrom(ctx)
+	if !ok || actorID == uuid.Nil {
+		return kerr.E(kerr.KindValidation, "actor_required", "resource mirror write requires an actor-bound context")
+	}
 	return upsertMirror(ctx, b.db, actorID, ref, orgID, label, status)
 }
 

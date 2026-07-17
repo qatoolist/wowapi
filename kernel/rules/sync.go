@@ -12,7 +12,7 @@ import (
 // introspectable/auditable in the DB"), and the FK rule_versions.rule_key
 // depends on. It is the rule-registry analogue of kernel/seeds.Sync: it must
 // run on a platform-privileged connection (rule_definitions is app_platform
-// SELECT/INSERT/UPDATE, app_rt SELECT-only — migration 00008), and it is
+// SELECT/INSERT/UPDATE, app_rt SELECT-only — clean baseline), and it is
 // idempotent — re-running converges the schema/default/scopes/approval/
 // description columns onto whatever the Go registry currently declares, never
 // producing duplicate rows (ON CONFLICT (key) DO UPDATE).

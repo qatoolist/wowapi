@@ -49,8 +49,7 @@ type Relay struct {
 	metrics  observability.Metrics
 	// hooks overrides RequeueFailed/DispatchOnce in tests (fault injection for
 	// the F-07 recovery-observability regression); nil means the real
-	// implementations. A pointer (not func fields) so Relay stays comparable —
-	// the Go API compatibility gate guards that property of the v1 surface.
+	// implementations.
 	hooks *relayTestHooks
 }
 

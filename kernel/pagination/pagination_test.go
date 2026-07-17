@@ -24,9 +24,9 @@ func TestCursorRoundTrip(t *testing.T) {
 		"name":       "alice",
 		"active":     true,
 	}
-	s, err := pagination.EncodeCursor(in)
+	s, err := pagination.EncodeCursorWithSig("created_at:asc,id:asc", in)
 	if err != nil {
-		t.Fatalf("EncodeCursor: %v", err)
+		t.Fatalf("EncodeCursorWithSig: %v", err)
 	}
 	if s == "" {
 		t.Fatal("expected non-empty cursor")
@@ -59,9 +59,9 @@ func TestCursorRoundTrip(t *testing.T) {
 }
 
 func TestEncodeEmptyCursorIsZero(t *testing.T) {
-	s, err := pagination.EncodeCursor(nil)
+	s, err := pagination.EncodeCursorWithSig("id:asc", nil)
 	if err != nil {
-		t.Fatalf("EncodeCursor(nil): %v", err)
+		t.Fatalf("EncodeCursorWithSig(nil): %v", err)
 	}
 	if s != "" {
 		t.Errorf("empty map should encode to \"\", got %q", s)
@@ -138,7 +138,7 @@ func TestParsePerPageClamping(t *testing.T) {
 }
 
 func TestParseCarriesCursor(t *testing.T) {
-	s, err := pagination.EncodeCursor(map[string]any{"id": int64(7)})
+	s, err := pagination.EncodeCursorWithSig("id:asc", map[string]any{"id": int64(7)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestParseRejectsBadCursor(t *testing.T) {
 }
 
 func TestEncodeUnsupportedType(t *testing.T) {
-	_, err := pagination.EncodeCursor(map[string]any{"bad": struct{ X int }{1}})
+	_, err := pagination.EncodeCursorWithSig("bad:asc", map[string]any{"bad": struct{ X int }{1}})
 	if err == nil {
 		t.Fatal("expected error for unsupported cursor value type")
 	}
@@ -179,13 +179,13 @@ func TestEncodeUnsupportedType(t *testing.T) {
 // silently wrapping negative and corrupting keyset ordering; values at the
 // boundary still round-trip.
 func TestEncodeCursorUnsignedOverflow(t *testing.T) {
-	if _, err := pagination.EncodeCursor(map[string]any{"n": uint64(math.MaxInt64) + 1}); err == nil {
+	if _, err := pagination.EncodeCursorWithSig("n:asc", map[string]any{"n": uint64(math.MaxInt64) + 1}); err == nil {
 		t.Fatal("uint64 > MaxInt64 must be rejected, not wrapped")
 	}
-	if _, err := pagination.EncodeCursor(map[string]any{"n": uint(math.MaxUint64)}); err == nil {
+	if _, err := pagination.EncodeCursorWithSig("n:asc", map[string]any{"n": uint(math.MaxUint64)}); err == nil {
 		t.Fatal("uint > MaxInt64 must be rejected, not wrapped")
 	}
-	s, err := pagination.EncodeCursor(map[string]any{"n": uint64(math.MaxInt64)})
+	s, err := pagination.EncodeCursorWithSig("n:asc", map[string]any{"n": uint64(math.MaxInt64)})
 	if err != nil {
 		t.Fatalf("uint64 == MaxInt64 must encode: %v", err)
 	}

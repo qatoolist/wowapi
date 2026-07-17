@@ -57,7 +57,7 @@ func TestIntegrationJobsTracePropagation(t *testing.T) {
 
 	var ran int64
 	reg := jobs.NewRegistry()
-	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
@@ -118,7 +118,7 @@ func TestIntegrationJobsTracePropagation(t *testing.T) {
 	}
 }
 
-// TestIntegrationJobsNoTracerNoContext proves backward compatibility: without a
+// TestIntegrationJobsNoTracerNoContext proves the supported no-tracer mode: without a
 // tracer the enqueue stores NULL trace_context (no behavior change) and the
 // runner still executes the job.
 func TestIntegrationJobsNoTracerNoContext(t *testing.T) {
@@ -127,7 +127,7 @@ func TestIntegrationJobsNoTracerNoContext(t *testing.T) {
 
 	var ran int64
 	reg := jobs.NewRegistry()
-	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		atomic.AddInt64(&ran, 1)
 		return nil
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())

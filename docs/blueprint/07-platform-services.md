@@ -40,7 +40,7 @@ allocs in framework code; authz evaluate (cached assignments) < 1ms; middleware 
 ```go
 type Job interface { Kind() string }                       // payload struct implements
 type Worker[T Job] interface { Work(ctx context.Context, j T) error }
-type Registry interface { RegisterKind(kind string, w AnyWorker, rp RetryPolicy) }
+type Registry interface { RegisterKind(kind string, w AnyWorker, rp RetryPolicy, idem Idempotency) }
 type Runner interface {                                    // wraps River
     Enqueue(ctx context.Context, db database.TenantDB, j Job, opts ...Opt) error // SAME TX as business write
     EnqueueGlobal(ctx context.Context, j Job, opts ...Opt) error

@@ -9,7 +9,6 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/i18n"
-	"github.com/qatoolist/wowapi/module"
 )
 
 // TestModuleContextAccessorsNilGuards builds a module context with empty deps
@@ -91,7 +90,7 @@ func TestModuleContextBootStateRecording(t *testing.T) {
 	c.Migrations(fstest.MapFS{})
 	c.Seeds(fstest.MapFS{})
 	c.OpenAPI([]byte("openapi: 3.1.0"))
-	c.(module.I18nContext).I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{"mymod.msg.hi": "नमस्कार"}})
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{"mymod.msg.hi": "नमस्कार"}})
 	c.Health("live", func(context.Context) error { return nil })
 	c.RecurringJob("nightly", time.Minute, func(context.Context, database.TenantDB) error { return nil })
 	c.ProvidePort("mymod.clock", 42)
@@ -142,7 +141,7 @@ func TestModuleContextI18nDocExampleBoots(t *testing.T) {
 	boot := newBootState()
 	c := newModuleContext("orders", nil, nil, moduleDeps{boot: boot})
 
-	c.(module.I18nContext).I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
 		"orders.status.shipped": "पाठवले",
 	}})
 
@@ -163,7 +162,7 @@ func TestModuleContextI18nRejectsReservedKernelPrefix(t *testing.T) {
 	boot := newBootState()
 	c := newModuleContext("orders", nil, nil, moduleDeps{boot: boot})
 
-	c.(module.I18nContext).I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
+	c.I18n(i18n.Bundle{Locale: "mr", Messages: map[string]string{
 		i18n.KeyProblemTitle(errors.KindInternal): "should be rejected",
 	}})
 

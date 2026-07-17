@@ -1,9 +1,9 @@
 # Webhooks
 
-`kernel/webhook` is wowapi's webhook subsystem: inbound signature verification + replay protection +
+`foundation/webhook` is wowapi's webhook subsystem: inbound signature verification + replay protection +
 async processing, and outbound signed HTTP delivery with per-endpoint circuit breakers. This page covers
 the outbound delivery path's SSRF protection (backlog B2); for the inbound verify/dedup/process pipeline
-and the `Service` API, read the package doc in `foundation/webhook/webhook.go` (or via the `kernel/webhook` compat shim for backward compatibility).
+and the `Service` API, read the package doc in `foundation/webhook/webhook.go`.
 
 ## Outbound SSRF protection
 
@@ -107,5 +107,5 @@ and to prove real delivery is unaffected.
 - [Configuration](configuration.md) — the full `webhook.outbound.*` key reference.
 - [Building & extending modules](modules.md) — `Webhooks()` on `module.Context`.
 - `foundation/webhook/` — the `Service` API (inbound verify/dedup/process, outbound
-  dispatch/retry, circuit breaker); via compat shim `kernel/webhook` for imports.
+  dispatch/retry, circuit breaker). Import `foundation/webhook` directly.
 - `kernel/httpclient/client.go` — the SSRF guard implementation.

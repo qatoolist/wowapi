@@ -8,8 +8,9 @@
 // github.com/qatoolist/wowapi/kernel/resource/aggregate: a single call performs
 // the business-row write, the resources-mirror upsert, an audit row, and an
 // outbox event in one tenant transaction, so a module cannot commit its
-// business row without also committing the mirror. The low-level Registrar
-// remains available for legacy callers. See blueprint 01 §3, 03 §2, 04 §2.
+// business row without also committing the mirror. The lower-level Registrar
+// remains the module port for callers that already own a tenant transaction;
+// it requires an actor-bound context. See blueprint 01 §3, 03 §2, 04 §2.
 package resource
 
 import (

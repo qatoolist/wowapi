@@ -11,55 +11,7 @@ import (
 
 // expectedFiles lists the kernel SQL migrations in ascending goose order.
 var expectedFiles = []string{
-	"00001_bootstrap.sql",
-	"00002_core_identity.sql",
-	"00003_idempotency.sql",
-	"00004_org_party_capacity.sql",
-	"00005_resource_relationship.sql",
-	"00006_authz.sql",
-	"00007_outbox_jobs.sql",
-	"00008_rules.sql",
-	"00009_workflow.sql",
-	"00010_documents.sql",
-	"00011_notify_webhook_integration.sql",
-	"00012_idempotency_sweep.sql",
-	"00013_dlq_admin.sql",
-	"00014_schedules.sql",
-	"00015_sequences.sql",
-	"00016_bulk_operations.sql",
-	"00017_audit_logs.sql",
-	"00018_audit_chain.sql",
-	"00019_api_keys.sql",
-	"00020_retention_dsr.sql",
-	"00021_artifacts.sql",
-	"00022_notification_channel_prefs.sql",
-	"00023_audit_tx_id.sql",
-	"00024_outbox_trace_context.sql",
-	"00025_jobs_trace_context.sql",
-	"00026_notify_trace_context.sql",
-	"00027_audit_anchors.sql",
-	"00028_jobs_rls.sql",
-	"00029_permissions_step_up.sql",
-	"00030_privileged_services.sql",
-	"00031_seed_sync_runs.sql",
-	"00032_version_counters_and_upload_sessions.sql",
-	"00033_document_upload_session_document_id_index.sql",
-	"00034_tenant_fk_parent_indexes.sql",
-	"00035_tenant_fk_composite_not_valid.sql",
-	"00036_tenant_fk_validate_and_cleanup.sql",
-	"00037_audit_hash_version.sql",
-	"00038_jobs_lease_columns.sql",
-	"00039_identity_grant.sql",
-	"00040_notify_webhook_lease_columns.sql",
-	"00041_bulk_operation_processor_lock.sql",
-	"00042_backfill_checkpoint_lease_columns.sql",
-	"00043_webhook_failed_signature_audit.sql",
-	"00044_bulk_items_lease_and_lifecycle.sql",
-	"00045_goose_version_platform_select.sql",
-	"00046_authz_epoch.sql",
-	"00047_perf04_sweeper_outbox_leases.sql",
-	"00048_rule_versions_resolution_indexes.sql",
-	"00049_backfill_checkpoint_composite_identity.sql",
+	"00001_baseline.sql",
 }
 
 // TestKernelListsExpectedFiles verifies that Kernel() exposes exactly the
@@ -116,41 +68,39 @@ func TestGooseMarkersPresent(t *testing.T) {
 	}
 }
 
-// TestBootstrapContainsAppTenantIDNoForce checks that the bootstrap migration
-// defines app_tenant_id() (required by RLS policies in later migrations) and
-// does NOT contain FORCE ROW LEVEL SECURITY (no tenant tables exist in 00001).
-func TestBootstrapContainsAppTenantIDNoForce(t *testing.T) {
+// TestBaselineCarriesDirectFinalStateContract guards the clean baseline against
+// accidentally reintroducing the abandoned upgrade choreography.
+func TestBaselineCarriesDirectFinalStateContract(t *testing.T) {
 	t.Parallel()
 
 	fsys := migrations.Kernel()
-	data := mustReadFile(t, fsys, "00001_bootstrap.sql")
+	data := mustReadFile(t, fsys, "00001_baseline.sql")
 
 	if !strings.Contains(data, "app_tenant_id") {
-		t.Error("00001_bootstrap.sql: missing app_tenant_id function definition")
+		t.Error("baseline: missing app_tenant_id function definition")
 	}
-	if strings.Contains(data, "FORCE") {
-		t.Error("00001_bootstrap.sql: unexpected FORCE keyword — no tenant tables exist in bootstrap")
+	if !strings.Contains(data, "CREATE TABLE public.workflow_definitions") ||
+		!strings.Contains(data, "definition_digest text NOT NULL") {
+		t.Error("baseline: missing final workflow-definition identity")
+	}
+	if strings.Contains(data, "NOT VALID") || strings.Contains(data, "VALIDATE CONSTRAINT") ||
+		strings.Contains(data, "nn1_compatible") {
+		t.Error("baseline: contains abandoned online-upgrade choreography")
+	}
+	if strings.Contains(data, "DROP COLUMN") || strings.Contains(data, "_catalog_slot_") {
+		t.Error("baseline: reconstructs abandoned physical column history")
 	}
 }
 
-// TestCoreIdentityNoRLSNoPassword verifies that the core-identity migration
-// carries no ROW LEVEL SECURITY directives (these are global tables per
-// docs/blueprint/03 §2 and D-0025) and no plaintext PASSWORD literals (roles
-// are NOLOGIN; passwords must never appear in migration files).
-func TestCoreIdentityNoRLSNoPassword(t *testing.T) {
+func TestBaselineContainsNoPassword(t *testing.T) {
 	t.Parallel()
 
 	fsys := migrations.Kernel()
-	data := mustReadFile(t, fsys, "00002_core_identity.sql")
+	data := mustReadFile(t, fsys, "00001_baseline.sql")
 
-	if strings.Contains(data, "ROW LEVEL SECURITY") {
-		t.Error("00002_core_identity.sql: global tables must not have ROW LEVEL SECURITY")
-	}
-
-	// Case-insensitive scan for PASSWORD to catch any plaintext credential slip.
 	passwordRe := regexp.MustCompile(`(?i)\bPASSWORD\b`)
 	if passwordRe.MatchString(data) {
-		t.Error("00002_core_identity.sql: contains PASSWORD keyword — no credentials in migrations")
+		t.Error("baseline contains PASSWORD keyword — no credentials belong in migrations")
 	}
 }
 
@@ -161,27 +111,27 @@ func TestIdentityGrantMigrationHasRLSAndPartialUniqueIndex(t *testing.T) {
 	t.Parallel()
 
 	fsys := migrations.Kernel()
-	data := mustReadFile(t, fsys, "00039_identity_grant.sql")
+	data := mustReadFile(t, fsys, "00001_baseline.sql")
 
-	if !strings.Contains(data, "CREATE TABLE identity_grant") {
-		t.Error("00039_identity_grant.sql: missing CREATE TABLE identity_grant")
+	if !strings.Contains(data, "CREATE TABLE public.identity_grant") {
+		t.Error("baseline: missing CREATE TABLE identity_grant")
 	}
-	if !strings.Contains(data, "FORCE ROW LEVEL SECURITY") {
-		t.Error("00039_identity_grant.sql: missing FORCE ROW LEVEL SECURITY")
+	if !strings.Contains(data, "ALTER TABLE ONLY public.identity_grant FORCE ROW LEVEL SECURITY") {
+		t.Error("baseline: identity_grant missing FORCE ROW LEVEL SECURITY")
 	}
 	if !strings.Contains(data, "CREATE UNIQUE INDEX identity_grant_one_active_per_actor") {
-		t.Error("00039_identity_grant.sql: missing one-active-grant-per-actor partial unique index")
+		t.Error("baseline: missing one-active-grant-per-actor partial unique index")
 	}
-	if !strings.Contains(data, "WHERE status = 'active'") {
-		t.Error("00039_identity_grant.sql: partial unique index predicate must be status = 'active'")
+	if !strings.Contains(data, "WHERE (status = 'active'::text)") {
+		t.Error("baseline: partial unique index predicate must be status = 'active'")
 	}
-	if !strings.Contains(data, "GRANT SELECT, INSERT, UPDATE ON identity_grant TO app_platform") {
-		t.Error("00039_identity_grant.sql: missing app_platform grants")
+	if !strings.Contains(data, "GRANT SELECT,INSERT,UPDATE ON TABLE public.identity_grant TO app_platform") {
+		t.Error("baseline: missing app_platform grants")
 	}
 
 	// No DELETE grant: lifecycle-only.
 	if strings.Contains(data, "DELETE ON identity_grant") {
-		t.Error("00039_identity_grant.sql: must not grant DELETE on identity_grant")
+		t.Error("baseline: must not grant DELETE on identity_grant")
 	}
 }
 

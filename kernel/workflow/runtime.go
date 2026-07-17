@@ -38,8 +38,6 @@ const (
 	DecisionApprove DecisionType = "approve"
 	// DecisionReject advances via the step's on_reject transition.
 	DecisionReject DecisionType = "reject"
-	// DecisionAbstain records a non-committal vote (vote steps).
-	DecisionAbstain DecisionType = "abstain"
 )
 
 // Decision is the input to Decide: who acted, the outcome, and an optional
@@ -103,19 +101,13 @@ func WithRuntimeMetrics(metrics observability.Metrics) RuntimeOption {
 	}
 }
 
-// NewRuntime preserves the v1 constructor and wires the mandatory audit writer
-// with the supplied ID generator.
-func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen) *Runtime {
-	return NewRuntimeWithCompliance(txm, reg, ev, ob, idgen, audit.New(idgen, nil))
-}
-
-// NewRuntimeWithCompliance wires the runtime. All dependencies, including the authz
+// NewRuntime wires the runtime. All dependencies, including the authz
 // Evaluator and audit Writer, are required: Override's privileged permission
 // check is unconditional, and every override must be durable-audited in the
 // same transaction (blueprint §1.3, review finding SEC-02).
-func NewRuntimeWithCompliance(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen, aud *audit.Writer, opts ...RuntimeOption) *Runtime {
+func NewRuntime(txm database.TxManager, reg *Registry, ev authz.Evaluator, ob outbox.Writer, idgen model.IDGen, aud *audit.Writer, opts ...RuntimeOption) *Runtime {
 	if txm == nil || reg == nil || ev == nil || ob == nil || idgen == nil || aud == nil {
-		panic("workflow.NewRuntimeWithCompliance: txm, registry, authz evaluator, outbox, idgen, and audit writer are required")
+		panic("workflow.NewRuntime: txm, registry, authz evaluator, outbox, idgen, and audit writer are required")
 	}
 	rt := &Runtime{
 		txm: txm, registry: reg, authz: ev, outbox: ob, audit: aud, idgen: idgen,
@@ -150,16 +142,15 @@ func (rt *Runtime) StartIn(ctx context.Context, db database.TenantDB, defKey str
 	if res.IsZero() {
 		return uuid.Nil, kerr.E(kerr.KindValidation, "workflow_start_invalid", "workflow start requires a resource ref")
 	}
-	// Resolve the definition row (for the definition_id FK) + the registered
-	// graph. The version is pinned to the DB row's version.
-	defID, version, err := rt.definitionRow(ctx, db, defKey)
+	// The validated registry is the version source; the database is an exact,
+	// immutable persisted mirror, never a tenant-selected execution source.
+	registered, err := rt.registry.latestValidated(defKey)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	def, ok := rt.registry.definition(defKey, version)
-	if !ok {
-		return uuid.Nil, kerr.E(kerr.KindInternal, "workflow_definition_unregistered",
-			fmt.Sprintf("workflow definition %s v%d is not registered", defKey, version))
+	defID, def, err := rt.loadVerifiedDefinitionByIdentity(ctx, db, registered)
+	if err != nil {
+		return uuid.Nil, err
 	}
 	if def.AppliesTo != "" && def.AppliesTo != res.Type {
 		return uuid.Nil, kerr.E(kerr.KindValidation, "workflow_applies_to_mismatch",
@@ -218,7 +209,7 @@ func (rt *Runtime) Decide(ctx context.Context, taskID uuid.UUID, d Decision) err
 			return err
 		}
 		step := def.Steps[task.StepKey]
-		if step.Type != StepApproval && step.Type != StepVote {
+		if step.Type != StepApproval {
 			return kerr.E(kerr.KindWorkflowState, "not_a_decision_step",
 				fmt.Sprintf("step %q is a %s, not a decision step", task.StepKey, step.Type))
 		}
@@ -229,7 +220,7 @@ func (rt *Runtime) Decide(ctx context.Context, taskID uuid.UUID, d Decision) err
 		var transition *Transition
 		var newStatus, verb string
 		// Fail-closed by design (adjudicated, MATRIX CS-23): the default: arm
-		// rejects DecisionAbstain — and any future unknown decision type — with
+		// rejects any future unknown decision type with
 		// an invalid_decision error. The deny-by-default arm IS the safety
 		// property; do not convert to an exhaustive enumeration.
 		//exhaustive:ignore
@@ -360,10 +351,6 @@ func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until tim
 // Override is a privileged transition: it requires a reason and jumps the
 // instance to a step or terminal, emitting workflow.<def>.overridden. Any open
 // tasks on the current step are marked skipped.
-//
-// Ratification is explicitly rejected as an interim, Wave-0-compatible posture
-// (W03-E05-S001): definitions declaring ratify_by are rejected at validation
-// time, so every override records ratification_outcome="rejected_interim".
 func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID uuid.UUID, to string, reason string) error {
 	if err := rt.requireValidated(); err != nil {
 		return err
@@ -412,10 +399,9 @@ func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID u
 			ActorKind:      string(actor.Kind),
 			ImpersonatorID: actor.ImpersonatorUserID,
 			Metadata: map[string]any{
-				"source_state":         inst.CurrentStep,
-				"target_state":         to,
-				"grant_id":             grantIDStr(actor.GrantID),
-				"ratification_outcome": "rejected_interim",
+				"source_state": inst.CurrentStep,
+				"target_state": to,
+				"grant_id":     grantIDStr(actor.GrantID),
 			},
 		}); err != nil {
 			return kerr.Wrapf(err, "workflow.Override", "audit override")
@@ -456,7 +442,7 @@ func (rt *Runtime) Instance(ctx context.Context, id uuid.UUID) (Instance, error)
 // openTasksSort is the fixed (created_at, id) keyset order for OpenTasksFor.
 // Building it through the filtering allowlist gives the cursor a sort-spec
 // signature so a forged or stale cursor is rejected loudly on decode (roadmap
-// R7/CA-2) instead of the previous legacy unsigned cursor.
+// R7/CA-2); unsigned cursor formats are rejected.
 var openTasksSort = mustSort(filtering.SortAllowlist{
 	"created_at": {Col: "t.created_at"},
 	"id":         {Col: "t.id"},
@@ -549,7 +535,7 @@ func (rt *Runtime) OpenTasksFor(ctx context.Context, a authz.Actor, cur paginati
 // ---------------------------------------------------------------------------
 
 // enterStep performs the work of arriving at a step: create tasks (approval/
-// task/vote), run the action (auto), branch (gateway), or end the instance
+// task), run the action (auto), branch (gateway), or end the instance
 // (terminal). It emits the matching outbox event. It assumes current_step is
 // already set to stepKey (StartIn/Override handle that).
 func (rt *Runtime) enterStep(ctx context.Context, db database.TenantDB, inst *Instance, def Definition, stepKey string, actor uuid.UUID) error {
@@ -558,7 +544,7 @@ func (rt *Runtime) enterStep(ctx context.Context, db database.TenantDB, inst *In
 		return kerr.E(kerr.KindInternal, "unknown_step", "definition has no step "+stepKey)
 	}
 	switch step.Type {
-	case StepApproval, StepTask, StepVote:
+	case StepApproval, StepTask:
 		if err := rt.createTask(ctx, db, inst, stepKey, step, actor); err != nil {
 			return err
 		}
@@ -1003,23 +989,6 @@ func (rt *Runtime) emit(ctx context.Context, db database.TenantDB, inst Instance
 // loaders
 // ---------------------------------------------------------------------------
 
-func (rt *Runtime) definitionRow(ctx context.Context, db database.TenantDB, key string) (uuid.UUID, int, error) {
-	var id uuid.UUID
-	var version int
-	// Prefer a tenant override, else the module template (NULL tenant), highest
-	// version — RLS already scopes visible rows to this tenant + templates.
-	err := db.QueryRow(ctx,
-		`SELECT id, version FROM workflow_definitions
-		  WHERE key = $1 AND status = 'active'
-		  ORDER BY (tenant_id IS NOT NULL) DESC, version DESC
-		  LIMIT 1`, key).Scan(&id, &version)
-	if err != nil {
-		return uuid.Nil, 0, kerr.E(kerr.KindNotFound, "workflow_definition_not_found",
-			"no active workflow definition for key "+key)
-	}
-	return id, version, nil
-}
-
 func (rt *Runtime) loadInstance(ctx context.Context, db database.TenantDB, id uuid.UUID) (Instance, error) {
 	var inst Instance
 	var ctxBytes []byte
@@ -1050,8 +1019,7 @@ func (rt *Runtime) loadInstanceAndDef(ctx context.Context, db database.TenantDB,
 
 // parseAndValidateDefinition parses a PERSISTED definition and validates it
 // against the same semantic rules as registered ones — including the
-// fail-closed gates (vote steps, min_approvals > 1, self_approval:false,
-// ratify_by), transition/graph integrity, gateway condition scalars, and the
+// transition/graph integrity, gateway condition scalars, and the
 // registry's registered auto-action/resolver sets (fifth closure audit
 // 2026-07-17): the database is not a weaker path around validation, and an
 // unsupported historical definition must fail BEFORE any callback or state
@@ -1069,33 +1037,10 @@ func (rt *Runtime) parseAndValidateDefinition(raw []byte) (Definition, error) {
 	return def, nil
 }
 
-// defForInstance resolves the registered Definition for an instance's pinned
-// definition row (falling back to parsing the stored jsonb if the registry does
-// not carry it — the graph is authoritative either way; auto actions/resolvers
-// only exist in the registry).
+// defForInstance resolves and verifies the registered Definition for an
+// instance's pinned persisted identity. There is no persisted-only fallback.
 func (rt *Runtime) defForInstance(ctx context.Context, db database.TenantDB, defID uuid.UUID) (Definition, error) {
-	var key string
-	var version int
-	var raw []byte
-	if err := db.QueryRow(ctx,
-		`SELECT key, version, definition FROM workflow_definitions WHERE id = $1`, defID).
-		Scan(&key, &version, &raw); err != nil {
-		return Definition{}, kerr.E(kerr.KindNotFound, "workflow_definition_not_found",
-			"workflow definition row not found: "+defID.String())
-	}
-	// Resolve the registered graph and the validation check ATOMICALLY (sixth
-	// review, C-02): the executed graph must be the one a single validated
-	// generation covers. A registry hit that is not currently validated is a
-	// program error (the executing methods gate on requireValidated at entry,
-	// but a concurrent mutation could have invalidated since).
-	if def, validated, ok := rt.registry.resolveValidated(key, version); ok {
-		if !validated {
-			return Definition{}, kerr.E(kerr.KindInternal, "workflow_registry_unvalidated",
-				"workflow registry was invalidated during execution: revalidate before running workflows")
-		}
-		return def, nil
-	}
-	return rt.parseAndValidateDefinition(raw)
+	return rt.loadVerifiedDefinitionByID(ctx, db, defID)
 }
 
 func (rt *Runtime) loadTask(ctx context.Context, db database.TenantDB, id uuid.UUID) (Task, error) {

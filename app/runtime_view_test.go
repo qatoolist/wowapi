@@ -30,6 +30,7 @@ func TestUnbootedBootedFailsLoudly(t *testing.T) {
 		"RuntimeTx":         func() { b.RuntimeTx() },
 		"RuntimeEvents":     func() { b.RuntimeEvents() },
 		"RuntimeJobs":       func() { b.RuntimeJobs() },
+		"RuntimeWorkflows":  func() { b.RuntimeWorkflows() },
 		"RuntimeMigrations": func() { _ = b.RuntimeMigrations() },
 		"RuntimeSeeds":      func() { _ = b.RuntimeSeeds() },
 		"RuntimeI18n":       func() { b.RuntimeI18n() },

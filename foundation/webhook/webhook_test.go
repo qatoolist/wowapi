@@ -68,22 +68,36 @@ func seedOutboundEndpoint(t *testing.T, h *testkit.DBHandle, tenantID uuid.UUID,
 	return id
 }
 
+// outboundEvent mirrors the production outbox contract: every tenant-scoped
+// event carries the same nonzero tenant as the dispatch scope. Keeping this in
+// one fixture prevents happy-path tests from accidentally constructing the
+// invalid zero-tenant shape while mismatch tests continue to build malformed
+// events explicitly.
+func outboundEvent(tenantID uuid.UUID, eventType string, payload json.RawMessage) outbox.Event {
+	return outbox.Event{
+		ID:       uuid.New(),
+		TenantID: tenantID,
+		Type:     eventType,
+		Payload:  payload,
+	}
+}
+
 // --- test service constructors ---
 
 // newServiceWithClock wires a Service with an injectable clock and
 // HMACVerifier registered under testProviderKey.
-func newServiceWithClock(t *testing.T, sender *webhook.FakeSender, clk *fakes.Clock) *webhook.Service {
+func newServiceWithClock(t *testing.T, sender *fakes.WebhookSender, clk *fakes.Clock) *webhook.Service {
 	t.Helper()
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
-	svc := webhook.NewWithClock(sender, resolver, model.UUIDv7(), clk.Now)
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
+	svc := webhook.New(sender, resolver, model.UUIDv7(), webhook.WithClock(clk.Now))
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 	return svc
 }
 
 // newService wires a Service with a real (wall) clock.
-func newService(t *testing.T, sender *webhook.FakeSender) *webhook.Service {
+func newService(t *testing.T, sender *fakes.WebhookSender) *webhook.Service {
 	t.Helper()
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
 	svc := webhook.New(sender, resolver, model.UUIDv7())
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 	return svc
@@ -150,7 +164,7 @@ func TestIntegrationHandleInbound_SignatureSuccess(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"event":"order.created"}`)
 	in := webhook.InboundIn{
@@ -185,7 +199,7 @@ func TestIntegrationHandleInbound_BadSignature(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"event":"order.created"}`)
 	in := webhook.InboundIn{
@@ -224,7 +238,7 @@ func TestIntegrationHandleInbound_Replay(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"event":"order.created"}`)
 	makeIn := func() webhook.InboundIn {
@@ -267,7 +281,7 @@ func TestIntegrationHandleInbound_TimestampOutOfWindow(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
 	body := []byte(`{"event":"old"}`)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterVerifier(testProviderKey, envelopeVerifier{envelope: webhook.Envelope{
 		CanonicalBody:    body,
 		EventID:          "ext-old",
@@ -307,7 +321,7 @@ func TestIntegrationProcessInbound_Success(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	var handled []string
 	svc.RegisterHandler("order.created", func(_ context.Context, _ database.TenantDB, e webhook.Event) error {
@@ -346,7 +360,7 @@ func TestIntegrationProcessInbound_HandlerErrorDeadLetters(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterHandler("broken.event", func(_ context.Context, _ database.TenantDB, _ webhook.Event) error {
 		return kerr.E(kerr.KindInternal, "internal", "handler always fails")
 	})
@@ -388,14 +402,10 @@ func TestIntegrationDispatchOutbound_MatchingEndpoint(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/hook")
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
-	ev := outbox.Event{
-		ID:      uuid.New(),
-		Type:    "order.created",
-		Payload: json.RawMessage(`{"order_id":"abc"}`),
-	}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"order_id":"abc"}`))
 	now := time.Now()
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, now); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
@@ -437,14 +447,10 @@ func TestIntegrationDispatchOutbound_NonMatchingEventType(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/hook")
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
-	ev := outbox.Event{
-		ID:      uuid.New(),
-		Type:    "invoice.paid", // not in subscribed_events (order.created only)
-		Payload: json.RawMessage(`{}`),
-	}
+	ev := outboundEvent(tn.ID, "invoice.paid", json.RawMessage(`{}`)) // not subscribed
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
 	}
@@ -468,12 +474,12 @@ func TestIntegrationBreakerOpensAfterNFailures(t *testing.T) {
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/cb")
 
 	clk := fakes.NewClock(time.Now())
-	sender := &webhook.FakeSender{StatusCode: 500}
+	sender := &fakes.WebhookSender{StatusCode: 500}
 	svc := newServiceWithClock(t, sender, clk)
 
 	// Drive BreakerFailureThreshold failures (each with a distinct event ID).
 	for i := 0; i < webhook.BreakerFailureThreshold; i++ {
-		ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+		ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 		if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, clk.Now()); err != nil {
 			t.Fatalf("dispatch[%d]: %v", i, err)
 		}
@@ -484,7 +490,7 @@ func TestIntegrationBreakerOpensAfterNFailures(t *testing.T) {
 
 	// Next attempt — breaker is open, no POST.
 	before := len(sender.Calls)
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, clk.Now()); err != nil {
 		t.Fatalf("dispatch after open: %v", err)
 	}
@@ -501,12 +507,12 @@ func TestIntegrationBreakerHalfOpenAfterCooldown(t *testing.T) {
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/cb2")
 
 	clk := fakes.NewClock(time.Now())
-	sender := &webhook.FakeSender{StatusCode: 500}
+	sender := &fakes.WebhookSender{StatusCode: 500}
 	svc := newServiceWithClock(t, sender, clk)
 
 	// Open the breaker.
 	for i := 0; i < webhook.BreakerFailureThreshold; i++ {
-		ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+		ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 		_ = svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, clk.Now())
 	}
 
@@ -524,7 +530,7 @@ func TestIntegrationBreakerHalfOpenAfterCooldown(t *testing.T) {
 	clk.Advance(webhook.BreakerCooldown + time.Second)
 	sender.StatusCode = 200 // probe succeeds
 
-	probe := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	probe := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	callsBefore := len(sender.Calls)
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, probe, clk.Now()); err != nil {
 		t.Fatalf("probe dispatch: %v", err)
@@ -543,7 +549,7 @@ func TestIntegrationBreakerHalfOpenAfterCooldown(t *testing.T) {
 	}
 
 	// Breaker is now closed — next attempt goes through without waiting.
-	follow := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	follow := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	callsBefore = len(sender.Calls)
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, follow, clk.Now()); err != nil {
 		t.Fatalf("post-probe dispatch: %v", err)
@@ -565,7 +571,7 @@ func TestIntegrationTenantIsolation(t *testing.T) {
 	tnB := testkit.CreateTenant(t, h)
 	epA := seedInboundEndpoint(t, h, tnA.ID)
 
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"x":1}`)
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tnA.ID), func(ctx context.Context, db database.TenantDB) error {
@@ -608,10 +614,10 @@ func TestIntegrationRetryOutbound_RedeliversFailed(t *testing.T) {
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/retry")
 
 	clk := fakes.NewClock(time.Now())
-	sender := &webhook.FakeSender{StatusCode: 500} // first attempt fails
+	sender := &fakes.WebhookSender{StatusCode: 500} // first attempt fails
 	svc := newServiceWithClock(t, sender, clk)
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{"n":1}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"n":1}`))
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, clk.Now()); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
 	}
@@ -650,7 +656,7 @@ func TestIntegrationHandleInbound_IdlessDedup(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"event":"order.created","n":7}`)
 	makeIn := func() webhook.InboundIn {
@@ -692,7 +698,7 @@ func TestIntegrationHandleInbound_FailedSigDoesNotBlockValid(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	body := []byte(`{"event":"order.created"}`)
 
@@ -758,10 +764,10 @@ func TestIntegrationOutboundSignatureCoversTimestamp(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/ts")
 
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{"k":"v"}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"k":"v"}`))
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
 	}
@@ -799,7 +805,7 @@ func TestIntegrationDispatchOutbound_TenantMismatchRejected(t *testing.T) {
 	tnA := testkit.CreateTenant(t, h)
 	tnB := testkit.CreateTenant(t, h)
 	epB := seedOutboundEndpoint(t, h, tnB.ID, "https://b.example.test/hook")
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
 	ev := outbox.Event{
@@ -838,7 +844,7 @@ func TestIntegrationDispatchOutbound_EventTenantAuthoritative(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://ok.example.test/hook")
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
 	ev := outbox.Event{
@@ -860,5 +866,31 @@ func TestIntegrationDispatchOutbound_EventTenantAuthoritative(t *testing.T) {
 	}
 	if status != "delivered" {
 		t.Fatalf("want delivered, got %s", status)
+	}
+}
+
+func TestIntegrationDispatchOutbound_ZeroTenantPairsRejected(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	sender := &fakes.WebhookSender{StatusCode: 200}
+	svc := newService(t, sender)
+	for name, pair := range map[string]struct {
+		scope uuid.UUID
+		event uuid.UUID
+	}{
+		"zero event tenant": {scope: tn.ID, event: uuid.Nil},
+		"zero scope tenant": {scope: uuid.Nil, event: tn.ID},
+		"both zero":         {scope: uuid.Nil, event: uuid.Nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ev := outboundEvent(pair.event, "order.created", json.RawMessage(`{}`))
+			err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, pair.scope, ev, time.Now())
+			if kerr.KindOf(err) != kerr.KindValidation {
+				t.Fatalf("invalid tenant pair must fail with KindValidation, got %v", err)
+			}
+		})
+	}
+	if len(sender.Calls) != 0 {
+		t.Fatalf("invalid tenant pairs caused %d outbound calls", len(sender.Calls))
 	}
 }

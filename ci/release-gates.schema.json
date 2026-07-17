@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "completed_wave", "gates"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "completed_wave": {"type": "integer", "minimum": 0},
     "gates": {
       "type": "array",
@@ -14,10 +14,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "job_ref", "command", "owner", "required_from_wave", "timeout_minutes", "evidence_artifact"],
+        "required": ["id", "command", "owner", "required_from_wave", "timeout_minutes", "evidence_artifact"],
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-          "job_ref": {"type": "string", "minLength": 1},
           "command": {"type": "string", "minLength": 1},
           "owner": {"type": "string", "minLength": 1},
           "required_from_wave": {"type": "integer", "minimum": 0},

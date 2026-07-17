@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // This file closes coverage gap F-2: every tenant-scoped RLS table must have an
@@ -48,7 +50,6 @@ var rlsExcluded = []string{
 	"policies",
 	"roles",
 	"rule_versions",
-	"workflow_definitions",
 	"audit_anchors",
 	// Grant-only tables: app_rt has no direct per-tenant SELECT path; they are
 	// driven by privileged job workers and covered by their own tests.
@@ -74,7 +75,7 @@ func tenantScopedRLSProbeTables() []rlsProbeTable {
 				"scope_kind": "tenant", "granted_by": uuid.Nil, "created_by": uuid.Nil,
 			}
 		}},
-		// NOTE: policies, roles, rule_versions, workflow_definitions and audit_anchors
+		// NOTE: policies, roles, rule_versions and audit_anchors
 		// are intentionally NOT probed here — they are hybrid catalog/config tables
 		// (loose app_tenant_id_or_null / tenant_id IS NULL policies, or a permissive
 		// platform-write policy) rather than simple per-tenant tables. They live in
@@ -470,9 +471,25 @@ func seedRole(t *testing.T, h *DBHandle, tenant uuid.UUID) uuid.UUID {
 
 func seedWorkflowDefinition(t *testing.T, h *DBHandle, tenant uuid.UUID) uuid.UUID {
 	t.Helper()
-	id := uuid.New()
-	execAdmin(t, h, `INSERT INTO workflow_definitions (id, tenant_id, key, version, applies_to, definition, created_by)
-		VALUES ($1,$2,$3,1,'document','{}',$4)`, id, tenant, "wf-"+randHex(8), uuid.Nil)
+	key := "wf-" + randHex(8)
+	reg := workflow.NewRegistry()
+	if err := reg.RegisterDefinition(workflow.Definition{
+		Key: key, Version: 1, AppliesTo: "document", InitialStep: "done",
+		Steps: map[string]workflow.Step{"done": {Type: workflow.StepTerminal, Outcome: "completed"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatal(err)
+	}
+	var id uuid.UUID
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT id FROM workflow_definitions WHERE key = $1 AND version = 1`, key).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 

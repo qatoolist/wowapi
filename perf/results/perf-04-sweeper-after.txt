@@ -1,7 +1,7 @@
 # PERF-04 post-change bounded SweepSLA benchmark
 # Command: WOWAPI_REQUIRE_DB=1 WOWAPI_TEST_DSN=<redacted-local-postgres-dsn> go test ./kernel/workflow -run '^$' -bench '^BenchmarkSweepSLABatch$' -benchmem -benchtime=1x -count=3
 # Environment: darwin/arm64, Apple M3 Max, Go 1.26.5, PostgreSQL 16.9 Docker service on localhost.
-# Note: this is a local relative comparison against perf/reference-v1.json policy, not an absolute SLO claim.
+# Note: this is a local relative comparison against perf/reference-schema1.json policy, not an absolute SLO claim.
 
 goos: darwin
 goarch: arm64

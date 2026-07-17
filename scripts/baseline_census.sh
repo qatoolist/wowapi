@@ -1,25 +1,70 @@
 #!/bin/sh
-# Semantic catalog manifest of framework-owned schema objects — the acceptance
-# oracle the squashed 00001_baseline must reproduce object-for-object. Captures
-# full object semantics (constraint defs incl. FK actions/deferrability/
-# validation, policy roles + permissive mode, function body-hash + return type
-# + language + volatility + strictness + security-definer + config, grants
-# across tables/columns/sequences/functions/schema + grant-option, extension
-# versions + schema, column identity/generated/collation/type) and NORMALIZES
-# environment-owned details (database owner, extension-provided functions via
-# pg_depend deptype='e', generated OIDs, ACL/dump ordering).
+# Emit a deterministic, schema-complete semantic manifest for a freshly
+# migrated framework database.  stdout contains manifest lines only; command
+# diagnostics are preserved on stderr and retained in a temporary directory on
+# failure.
 #
 # Usage: scripts/baseline_census.sh [ADMIN_DSN]
-# Concurrency-safe: a per-invocation scratch DB (PID-suffixed) is created/dropped.
 set -eu
+
 ADMIN="${1:-postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable}"
-SCRATCH="wowapi_baseline_census_$$"
-REF="$(printf '%s' "$ADMIN" | sed -E "s#/[^/?]+(\?|\$)#/${SCRATCH}\1#")"
+DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/wowapi-baseline-census.XXXXXX")
+SUFFIX=$(basename "$WORK" | tr -cd 'a-zA-Z0-9' | tail -c 20)
+SCRATCH="wowapi_baseline_census_$$_$SUFFIX"
+REF=$(printf '%s' "$ADMIN" | sed -E "s#/[^/?]+(\?|$)#/${SCRATCH}\1#")
+CREATED=0
 
-psql "$ADMIN" -c "DROP DATABASE IF EXISTS $SCRATCH" >/dev/null
-psql "$ADMIN" -c "CREATE DATABASE $SCRATCH" >/dev/null
-trap 'psql "$ADMIN" -c "DROP DATABASE IF EXISTS $SCRATCH" >/dev/null 2>&1 || true' EXIT
+cleanup() {
+    status=$?
+    if [ "$CREATED" -eq 1 ]; then
+        psql -X -v ON_ERROR_STOP=1 "$ADMIN" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" \
+            >>"$WORK/cleanup.stdout" 2>>"$WORK/cleanup.stderr" || true
+    fi
+    if [ "$status" -eq 0 ]; then
+        rm -rf "$WORK"
+    else
+        echo "baseline census failed; diagnostics retained at $WORK" >&2
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 
-DATABASE_URL="$REF" go run ./internal/tools/migrate >/dev/null
+run_step() {
+    name=$1
+    shift
+    if "$@" >"$WORK/$name.stdout" 2>"$WORK/$name.stderr"; then
+        if [ -s "$WORK/$name.stderr" ]; then
+            sed "s/^/baseline census [$name]: /" "$WORK/$name.stderr" >&2
+        fi
+        return 0
+    fi
+    echo "baseline census [$name] failed" >&2
+    sed "s/^/  /" "$WORK/$name.stderr" >&2
+    return 1
+}
 
-psql "$REF" -tA -f "$(dirname "$0")/baseline_census.sql"
+run_step create psql -X -v ON_ERROR_STOP=1 "$ADMIN" -qAtc "CREATE DATABASE \"$SCRATCH\""
+CREATED=1
+
+if ! DATABASE_URL="$REF" go run ./internal/tools/migrate \
+    >"$WORK/migrate.stdout" 2>"$WORK/migrate.stderr"; then
+    echo "baseline census [migrate] failed" >&2
+    sed 's/^/  /' "$WORK/migrate.stderr" >&2
+    exit 1
+fi
+if [ -s "$WORK/migrate.stderr" ]; then
+    sed 's/^/baseline census [migrate]: /' "$WORK/migrate.stderr" >&2
+fi
+
+if ! psql -X -v ON_ERROR_STOP=1 -qAt "$REF" -f "$DIR/baseline_census.sql" \
+    >"$WORK/census.stdout" 2>"$WORK/census.stderr"; then
+    echo "baseline census [catalog] failed" >&2
+    sed 's/^/  /' "$WORK/census.stderr" >&2
+    exit 1
+fi
+if [ -s "$WORK/census.stderr" ]; then
+    sed 's/^/baseline census [catalog]: /' "$WORK/census.stderr" >&2
+fi
+
+LC_ALL=C sort "$WORK/census.stdout"

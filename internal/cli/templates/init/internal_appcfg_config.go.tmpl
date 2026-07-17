@@ -11,9 +11,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"{{.FrameworkModule}}/adapters/secrets/envprovider"
+	"{{.FrameworkModule}}/kernel/config"
+	"{{.FrameworkModule}}/kernel/i18n"
 
 	"{{.Module}}/internal/i18n/catalogs"
 )
@@ -28,7 +28,7 @@ type Config struct {
 	// keys authenticate.
 	Auth AuthConfig `conf:"auth" json:"auth"`
 	// Storage configures the S3/MinIO object-storage adapter
-	// (github.com/qatoolist/wowapi/adapters/storage/s3). When Storage.Endpoint
+	// ({{.FrameworkModule}}/adapters/storage/s3). When Storage.Endpoint
 	// is set, cmd/api and cmd/worker wire the adapter as kernel Deps.Storage;
 	// left unset, Deps.Storage stays nil and app.Boot fails closed if a module
 	// registers a document class.

@@ -68,7 +68,6 @@ func TestIntegrationWorkflowCompleteTask(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, cap, taskDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.task", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.task", res, nil)
@@ -105,7 +104,6 @@ func TestIntegrationWorkflowCompleteTaskRejectsNonTaskStep(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, cap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
@@ -127,7 +125,6 @@ func TestIntegrationWorkflowDelegate(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, cap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
@@ -176,7 +173,6 @@ func TestIntegrationWorkflowOverride(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, cap, linearDef) // permissive fake evaluator; mechanics tested here, the gate itself in TestIntegrationOverrideAuthzGate
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
@@ -227,7 +223,6 @@ func TestIntegrationWorkflowOpenTasksForNoSkip(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 
 	rt := buildRuntime(t, h, cap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	testkit.CreateResourceType(t, h, "requests.request")
 
 	// Start 5 instances → 5 open manager_review tasks assigned to `cap`.
@@ -310,7 +305,6 @@ func TestIntegrationWorkflowGatewayRouting(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, cap, gatewayDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.gateway", 1, "requests.request", nil)
 
 	// tier=gold routes to end_gold (completed).
 	simGold := testkit.NewWorkflowSim(t, h, rt)

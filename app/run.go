@@ -1,9 +1,9 @@
 // Startup/shutdown lifecycle skeleton (phase-plan Phase 1).
 //
-// RunHooks provides orderly start-then-stop sequencing for named components
-// (HTTP server, outbox relay, …) wired in as Hook values. Signal wiring
-// (SIGINT/SIGTERM) belongs to the process main via signal.NotifyContext;
-// RunHooks stays testable with a plain context.
+// RunHooks provides supervised start-then-stop sequencing for named components
+// (HTTP server, outbox relay, …). Signal wiring (SIGINT/SIGTERM) belongs to the
+// process main via signal.NotifyContext; RunHooks stays testable with a plain
+// context.
 //
 // Real server construction arrives in Phases 2–3; this skeleton establishes
 // the lifecycle contract that those phases plug into.
@@ -17,35 +17,13 @@ import (
 	"time"
 )
 
-// Hook is one startable/stoppable component: an HTTP server, outbox relay,
-// background sweeper, or any other process-lifetime service.
-//
-// Hook's field set is FROZEN at its v1 shape (Name, Start, Stop): consumers
-// write unkeyed composite literals (app.Hook{"api", start, stop}), and adding
-// any field — exported or not — is a source-incompatible change for them
-// (closure review 2026-07-17, F-02). Components that need to report
-// post-start background failure use SupervisedHook instead.
-type Hook struct {
-	// Name is used in log messages; should be short and unique within a run.
-	Name string
-	// Start launches background work and must return promptly (not block for
-	// the component's lifetime). The ctx is the run context; components should
-	// respect its cancellation on their own internal paths.
-	Start func(ctx context.Context) error
-	// Stop performs a graceful shutdown. nil means nothing to stop. Stop
-	// receives a fresh context bounded by the stopTimeout, independent of
-	// the (already-cancelled) run context.
-	Stop func(ctx context.Context) error
-}
-
-// SupervisedHook is a Hook whose background work can die AFTER a successful
+// Hook is a component whose background work can die AFTER a successful
 // Start (a listener that stopped serving, a loop that crashed) and report it
-// through Failed. RunSupervisedHooks treats a received error like a Start
+// through Failed. RunHooks treats a received error like a Start
 // failure: it stops every started hook and returns the error — the process
 // must never sit alive while a critical serving loop is dead (adversarial
-// review 2026-07-17, F-02). This is a separate type, not a field on Hook, so
-// the frozen v1 Hook shape keeps compiling for unkeyed composite literals.
-type SupervisedHook struct {
+// review 2026-07-17, F-02).
+type Hook struct {
 	// Name is used in log messages; should be short and unique within a run.
 	Name string
 	// Start launches background work and must return promptly.
@@ -57,36 +35,14 @@ type SupervisedHook struct {
 	Stop func(ctx context.Context) error
 }
 
-// Supervised adapts a plain Hook into a SupervisedHook with no failure signal,
-// for mixing legacy hooks into a RunSupervisedHooks call.
-func Supervised(h Hook) SupervisedHook {
-	return SupervisedHook{Name: h.Name, Start: h.Start, Stop: h.Stop}
-}
-
 // RunHooks starts hooks in order and blocks until ctx is cancelled or a Start
-// returns an error. It then stops the successfully-started hooks in reverse
-// order, each bounded by stopTimeout.
-//
-// Errors are handled as follows:
-//   - A Start error aborts the remaining starts and triggers immediate shutdown.
-//   - Stop errors are all collected (never short-circuited) and joined with
-//     any Start error via errors.Join.
-//   - If every Start and Stop succeeds, RunHooks returns nil.
-func RunHooks(ctx context.Context, logger *slog.Logger, stopTimeout time.Duration, hooks ...Hook) error {
-	supervised := make([]SupervisedHook, len(hooks))
-	for i, h := range hooks {
-		supervised[i] = Supervised(h)
-	}
-	return RunSupervisedHooks(ctx, logger, stopTimeout, supervised...)
-}
-
-// RunSupervisedHooks is RunHooks for components that can also die after a
-// successful Start: it additionally blocks on every non-nil Failed channel and
+// returns an error or a started component reports asynchronous failure. It
+// blocks on every non-nil Failed channel and
 // treats a received error like a Start failure — every started hook is stopped
 // (in reverse order, each bounded by stopTimeout) and the error is returned.
-func RunSupervisedHooks(ctx context.Context, logger *slog.Logger, stopTimeout time.Duration, hooks ...SupervisedHook) error {
+func RunHooks(ctx context.Context, logger *slog.Logger, stopTimeout time.Duration, hooks ...Hook) error {
 	var (
-		started  []SupervisedHook
+		started  []Hook
 		startErr error
 	)
 
@@ -109,7 +65,7 @@ func RunSupervisedHooks(ctx context.Context, logger *slog.Logger, stopTimeout ti
 			if h.Failed == nil {
 				continue
 			}
-			go func(h SupervisedHook) {
+			go func(h Hook) {
 				select {
 				case err := <-h.Failed:
 					if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // Booted is the OPAQUE result of App.Boot (V2): modules have registered, the
@@ -124,6 +125,15 @@ func (b *Booted) RuntimeEvents() *outbox.HandlerRegistry {
 func (b *Booted) RuntimeJobs() *jobs.Registry {
 	b.mustBeBooted()
 	return b.runtime.jobs
+}
+
+// RuntimeWorkflows returns the sealed, boot-validated workflow registry used
+// for execution and definition synchronization. The informational kernel
+// aggregate can be reassigned by its caller after Boot; this runtime view
+// remains pinned to the registry Boot validated.
+func (b *Booted) RuntimeWorkflows() *workflow.Registry {
+	b.mustBeBooted()
+	return b.runtimeKernel().Workflows
 }
 
 // RuntimeMigrations returns a fresh copy of the boot-validated migration sets.
@@ -309,13 +319,6 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 
 	boot := newBootState()
 	router := httpx.NewRouter()
-	// FBL-08: boot-time request-contract enforcement is profile-flag gated
-	// (compat-first). The mode must be set BEFORE modules register, since
-	// Router.Handle applies the check at registration time; a rejected route
-	// surfaces through router.Err() below with every other registration error.
-	if k.Cfg.Security.EnforceRouteContracts {
-		router.RequireRequestContracts()
-	}
 	val := validation.New()
 	idgen := model.UUIDv7()
 	events := outbox.NewHandlerRegistry()

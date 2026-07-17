@@ -36,7 +36,7 @@ func TestIntegrationAuthzGateStepUpChallenge(t *testing.T) {
 	capID := testkit.CreateCapacity(t, h, tn.ID, userID)
 
 	router := httpx.NewRouter()
-	router.Handle(http.MethodPost, "/sensitive", httpx.RouteMeta{Permission: "core.thing.approve"},
+	router.Handle(http.MethodPost, "/sensitive", httpx.RouteMeta{Permission: "core.thing.approve", NoRequestBody: true},
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	if err := router.Err(); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestIntegrationAuthzGateAdvertisesPolicyChallenge(t *testing.T) {
 	capID := testkit.CreateCapacity(t, h, tn.ID, userID)
 
 	router := httpx.NewRouter()
-	router.Handle(http.MethodPost, "/vault", httpx.RouteMeta{Permission: "vault.secret.export"},
+	router.Handle(http.MethodPost, "/vault", httpx.RouteMeta{Permission: "vault.secret.export", NoRequestBody: true},
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	if err := router.Err(); err != nil {
 		t.Fatal(err)

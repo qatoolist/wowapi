@@ -17,7 +17,7 @@ FROM base AS dev
 # `go test -race` needs cgo, and Allure Report 2 needs Java plus the
 # `allure-commandline` npm distribution. golurectl converts `go test -json`
 # into Allure result files; its version is pinned by go.mod's tool directive.
-RUN apk add --no-cache gcc musl-dev nodejs npm openjdk21-jre-headless \
+RUN apk add --no-cache gcc musl-dev nodejs npm openjdk21-jre-headless python3 \
     && mkdir -p /opt/allure
 COPY tools/allure/package.json tools/allure/package-lock.json /opt/allure/
 RUN npm ci --omit=dev --prefix /opt/allure \

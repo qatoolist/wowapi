@@ -1037,7 +1037,7 @@ A finding closes only when every proof in its row is attached to the applicable 
 
 ## 14. Measurement budgets and operating envelopes
 
-Avoid universal numbers that are disconnected from a deployment. Establish a dedicated Linux amd64 reference runner and commit `perf/reference-v1.json` plus its workload fixtures. The artifact records CPU/runner image digest, Go version, Postgres image/config, pool size, loopback/network shaping, dataset cardinality, tenant distribution, object sizes, provider latency model, workload seed, warm-up/measurement durations, and every absolute ceiling. Changing environment metadata or a ceiling is a separately reviewed performance-policy change, not an incidental code diff.
+Avoid universal numbers that are disconnected from a deployment. Establish a dedicated Linux amd64 reference runner and commit `perf/reference-schema1.json` plus its workload fixtures. The artifact records CPU/runner image digest, Go version, Postgres image/config, pool size, loopback/network shaping, dataset cardinality, tenant distribution, object sizes, provider latency model, workload seed, warm-up/measurement durations, and every absolute ceiling. Changing environment metadata or a ceiling is a separately reviewed performance-policy change, not an incidental code diff.
 
 The initial baseline procedure is machine-defined:
 

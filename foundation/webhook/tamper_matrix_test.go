@@ -12,6 +12,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // =============================================================================
@@ -85,7 +86,7 @@ func TestIntegrationHandleInbound_TamperedKeyID(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterVerifier(testKeyedProviderKey, keyedVerifier{})
 
 	body := []byte(`{"event":"order.created"}`)
@@ -134,7 +135,7 @@ func TestIntegrationHandleInbound_TamperedSignatureVersion(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterVerifier(testKeyedProviderKey, keyedVerifier{})
 
 	body := []byte(`{"event":"order.created"}`)

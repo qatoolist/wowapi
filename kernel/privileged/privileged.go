@@ -10,10 +10,10 @@
 // modules run as:
 //
 //   - relationships — a granted_via edge is an AUTHORIZATION INPUT, so app_rt
-//     holds SELECT only; writes are app_platform (migration 00005).
+//     holds SELECT only; writes are app_platform (clean baseline).
 //   - rule_versions — ACTIVATION changes runtime behavior, so app_rt holds
 //     SELECT,INSERT (propose drafts) only; activation UPDATE is app_platform
-//     (migration 00008).
+//     (clean baseline).
 //
 // A product that needs to grant an edge or activate a tenant rule version could
 // previously only bridge the gap with a per-product SECURITY DEFINER function,
@@ -41,7 +41,7 @@
 // and it relies on the existing DB invariants — RLS tenant isolation, the
 // rule_versions one-active-per-instant EXCLUDE constraint, row locks — for the
 // concurrency guarantees the bridges depended on. No new GRANT is added to any
-// table; the security posture of migration 00005/00008 is untouched.
+// table; the clean-baseline security posture is unchanged.
 package privileged
 
 import (

@@ -117,7 +117,7 @@ func (e *engine) Evaluate(ctx context.Context, db database.TenantDB, a Actor, pe
 	// acceptance criterion that a CredentialUser-scoped permission rejects a
 	// valid API-key actor. ---
 	if len(pdef.AllowedSchemes) > 0 {
-		scheme := defaultCredentialScheme(a)
+		scheme := a.CredentialScheme
 		allowed := false
 		for _, s := range pdef.AllowedSchemes {
 			if s == scheme {

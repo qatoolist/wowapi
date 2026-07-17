@@ -356,11 +356,11 @@ A green host suite can be hollow if DB tests silently skip — always trust `mak
 
 ## Versioning & stability
 
-- **Stable v1.** Current: `v1.1.0`. Per [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog), as of `v1.0.0`
-  the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
-  is stable: it stays backward-compatible throughout v1, and an incompatible change requires a `/v2`
-  module path. See the [upgrade & deprecation policy](docs/operations/upgrade-and-deprecation-policy.md)
-  for the full v1/N-1 support rules.
+- **Clean v1 baseline.** Target: `v1.2.0`, the first supported release. Published `v1.0.0` and
+  `v1.1.0` are abandoned identities and are never compatibility baselines. From `v1.2.0`, the public
+  surface (`kernel` / `foundation` / `module` / `app` / `adapters` / `testkit` / `migrations` +
+  `cmd/wowapi`) stays backward-compatible throughout v1; an incompatible change requires `/v2`.
+  See the [upgrade & deprecation policy](docs/operations/upgrade-and-deprecation-policy.md).
 - **Product pinning.** A product pins an **exact** `wowapi` version in its `go.mod` — never `@latest`. The
   module contract-test suite (`testkit.RunModuleContract`) is the upgrade tripwire: run it in CI against a
   new framework version before upgrading.

@@ -66,7 +66,7 @@ func (a *hookedHarness) prepared(t *testing.T, db database.TenantDB, ctx context
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sess, err := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+	sess, err := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 	if err != nil {
 		t.Fatalf("Initiate: %v", err)
 	}
@@ -321,18 +321,14 @@ func TestIntegrationHookEffectsAtomicOrDeduplicatedAcrossRetry(t *testing.T) {
 	var mu sync.Mutex
 	var deliveries []string // external (non-Tx) effect log — survives rollback
 	hooks := &document.Hooks{}
-	hooks.OnFileUpload(func(ctx context.Context, _ document.UploadEvent) error {
-		d, ok := document.UploadDeliveryFromContext(ctx)
-		if !ok {
-			return errors.New("hook invoked without a delivery context")
-		}
+	hooks.OnFileUpload(func(ctx context.Context, e document.UploadEvent) error {
 		mu.Lock()
-		deliveries = append(deliveries, d.DeliveryID)
+		deliveries = append(deliveries, e.DeliveryID)
 		mu.Unlock()
 		// Tx-bound effect: enqueue the scan through the confirming transaction.
-		return scanWriter.Write(ctx, d.Tx, outbox.Event{
+		return scanWriter.Write(ctx, e.Tx, outbox.Event{
 			Type:    "document.scan.requested",
-			Payload: map[string]any{"delivery_id": d.DeliveryID},
+			Payload: map[string]any{"delivery_id": e.DeliveryID},
 		})
 	})
 	svc := document.New(reg, store, nil, outbox.NewWriter(model.UUIDv7()), hooks, model.UUIDv7())
@@ -348,7 +344,7 @@ func TestIntegrationHookEffectsAtomicOrDeduplicatedAcrossRetry(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err = svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, err = svc.InitiateUpload(ctx, db, docID, sum(body))
 		if err != nil {
 			return err
 		}
@@ -492,19 +488,4 @@ func TestIntegrationConfirmVersusRetentionBothLockOrders(t *testing.T) {
 			t.Fatalf("after confirm-then-sweep: doc=%q version=%q, want both voided", docStatus, verStatus)
 		}
 	})
-}
-
-// Compile-time compatibility contract (third closure audit 2026-07-17):
-// UploadEvent's v1 field set is FROZEN. External consumers write unkeyed
-// composite literals like the one below; if this stops compiling, a field was
-// added or reordered — a source-incompatible change for a stable post-v1.0
-// API. Transactional delivery metadata travels on the context
-// (UploadDeliveryFromContext), never as new event fields.
-func TestUploadEventUnkeyedLiteralCompatibility(t *testing.T) {
-	e := document.UploadEvent{
-		"doc-id", "core.doc", 1, "storage/key", "text/plain", int64(42), document.SensitivityInternal,
-	}
-	if e.DocumentID != "doc-id" || e.VersionNo != 1 || e.SizeBytes != 42 {
-		t.Fatalf("positional literal mapped unexpectedly: %+v", e)
-	}
 }

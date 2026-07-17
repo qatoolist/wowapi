@@ -84,7 +84,7 @@ tracing against real services — not mocks.
 
 ## Object storage (S3/MinIO)
 
-The document framework (`kernel/document`, exposed via `module.Context.DocumentClasses()`) talks to blob
+The document framework (`foundation/document`, exposed via `module.Context.DocumentClasses()`) talks to blob
 storage through the `storage.Adapter` port (`kernel/storage/storage.go`), never directly to S3/MinIO. Two
 adapters satisfy that port:
 

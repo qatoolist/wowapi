@@ -37,13 +37,8 @@ type Handlers struct {
 }
 
 // Create handles POST /requests.
-func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) Create(w http.ResponseWriter, r *http.Request, req CreateRequest) {
 	ctx := r.Context()
-	req, err := httpx.BindAndValidate[CreateRequest](r, h.val, 64*1024)
-	if err != nil {
-		httpx.WriteError(ctx, w, err)
-		return
-	}
 	id := h.idgen.New()
 	if err := h.writer.Write(ctx, aggregate.Write{
 		Resource: resource.Ref{Type: "requests.request", ID: id},

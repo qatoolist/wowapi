@@ -10,10 +10,12 @@ migration reversible.
 cycle on an isolated database and asserts the head version is reproduced. It runs in `make ci-container`
 (DB tests forced), so a migration whose `-- +goose Down` block is missing or wrong fails CI.
 
-This drill already caught a real defect: migration 00010 created the `app_actor_id()` function but its
-Down did not drop it, so a re-apply failed with "function already exists". Rule of thumb it enforces:
+The clean baseline was generated only after the historical chain exposed a missing function teardown
+that made re-apply fail with "function already exists". The standing rule is:
 **every object your Up creates (table, function, type, policy, index), your Down must drop** — and only
-those; never drop cluster-scoped objects (roles, extensions) that sibling databases share.
+those. Cluster roles survive because sibling databases can share them. Database-scoped extensions also
+survive framework reset because other schemas or product modules in the same database may depend on
+them; extension removal is operator-owned.
 
 ### Schema-snapshot diffing (B-4)
 

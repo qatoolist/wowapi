@@ -206,16 +206,16 @@ The HTTP gate's `WWW-Authenticate: step_up="…"` always reflects the actual pol
 free — it does not need to re-verify the bearer token to recover `amr` itself.
 
 **Implementing the factor that produces `amr`** is a separate concern from step-up itself, and lives in
-`kernel/mfa`: reusable, standards-compliant TOTP (RFC 6238) and HOTP (RFC 4226) code generation/verification,
+`foundation/mfa`: reusable, standards-compliant TOTP (RFC 6238) and HOTP (RFC 4226) code generation/verification,
 numeric OTP generation with salted constant-time hashing, and pure TTL/attempt-limit challenge-policy helpers,
 plus `Sender` delivery-port interfaces (SMS/email) with log/fake adapters. There is no import relationship
-between the two packages — `kernel/authz` never imports `kernel/mfa` and vice versa. The connection is a
-convention: a product's own auth/MFA service uses `kernel/mfa` to verify a TOTP or delivered-OTP code, and
+between the two packages — `kernel/authz` never imports `foundation/mfa` and vice versa. The connection is a
+convention: a product's own auth/MFA service uses `foundation/mfa` to verify a TOTP or delivered-OTP code, and
 *on success* appends the corresponding factor (e.g. `"mfa"`, `"otp"`) to the `amr` slice it puts on the
-authenticated actor — at which point `kernel/authz`'s step-up check (above) is satisfied. `kernel/mfa`
+authenticated actor — at which point `kernel/authz`'s step-up check (above) is satisfied. `foundation/mfa`
 deliberately does not know about `amr`, permissions, or which actions require which factor: enrollment UX,
 factor storage schema, delivery-provider selection, and factor-to-permission policy are all product-owned.
-See the `kernel/mfa` package doc for the exact API (`GenerateTOTPSecret`, `TOTPCodeAt`/`VerifyTOTPAt`,
+See the `foundation/mfa` package doc for the exact API (`GenerateTOTPSecret`, `TOTPCodeAt`/`VerifyTOTPAt`,
 `HOTPCode`, `GenerateOTPCode`/`HashOTPCode`/`VerifyOTPCode`, `ChallengePolicy`, `Sender`).
 
 ## Testing auth
@@ -236,9 +236,8 @@ req.Header.Set("Authorization", "Bearer "+tok)
 
 **Privileged sessions.** `ImpersonatorUserID` and `BreakGlass` on `authz.Actor` are populated only
 from a verified `identity_grant` row looked up by the token's `grant_id` claim (SEC-01 T5). The
-legacy `impersonator_user_id` and `break_glass` claims are ignored when `grant_id` is absent, so
-`WithImpersonator`/`WithBreakGlass` are no longer sufficient to exercise those paths in new code.
-Use `WithGrantID` and seed the matching grant row instead.
+token contract has no impersonator or break-glass claims. Use `WithGrantID` in tests and seed the
+matching grant row; direct claim-based privileged state is not accepted.
 
 **Assurance freshness (SEC-01 T6).** `auth_time`, `acr`, and `amr` are bound into the framework's
 assurance model. A permission's `StepUpPolicy.MaxAge` (or `Options.StepUpMaxAge` for the plain
@@ -250,10 +249,8 @@ now. A stale `auth_time` with an otherwise-valid `amr` still fails step-up. A ze
 via `AllowedSchemes`: `user`, `api_key`, `webhook`, or `internal`. A permission scoped to
 `CredentialUser` rejects a valid API-key actor even when the key carries the required scope. The
 authenticators set the actor's `CredentialScheme` explicitly (`auth.Verifier.Actor` for JWT users,
-`apikey.Authenticator` for API keys). Actors constructed without an explicit scheme have one
-derived from `ActorKind`/`Scopes` for backward compatibility. This mechanism is a candidate for
-reconciliation with the future DX-03 module-DSL `CredentialScheme` design (W06-E01-S001); treat it
-as provisional until that design lands.
+`apikey.Authenticator` for API keys). A restricted permission rejects an actor with a missing
+scheme; actor kind or scopes are never used to infer how authentication occurred.
 
 See [Testing](testing.md) for the full harness.
 

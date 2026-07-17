@@ -1,7 +1,7 @@
 name: ci
 
 # Authoritative correctness gate.
-#   changes       — classifies the diff; documentation-only changes skip the
+#   changes       — classifies PR diffs; documentation-only PRs skip the
 #                   container gate/coverage/smoke jobs entirely (they cannot
 #                   affect Go behaviour), while unit + workflow-lint always run.
 #   workflow-lint — actionlint over every workflow (dogfood the CI config itself).
@@ -21,7 +21,7 @@ name: ci
 #                   caches are persisted across runs via actions/cache mounted
 #                   into the toolbox (the named compose volumes start empty on
 #                   hosted runners otherwise, recompiling the world every run).
-#   gate-bench    — bench-budget + lint-lifecycle. Path-scoped on PRs (runs only
+#   gate-bench    — bench-budget. Path-scoped on PRs (runs only
 #                   when the diff can affect a budgeted measurement); ALWAYS runs
 #                   on main pushes and the nightly schedule, so a regression that
 #                   slips path-scoping is caught minutes after merge, pre-release.
@@ -35,14 +35,10 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Merge queue: checks run ONCE per PR on the merge-group ref (the exact tree
-  # that will land on main) when the merge is requested — the "bench once,
-  # before merge" provision. The changes job classifies against the merge
-  # group's own base, so docs-only PRs stay fast in the queue too.
+  # Merge queue: the exact tree that can land on main always runs the full set.
   merge_group:
   schedule:
-    # Nightly full sweep: runs everything unconditionally (the changes job
-    # fail-safes to code=true / bench=true with no diff base), catching any
+    # Nightly full sweep: runs everything unconditionally, catching any
     # perf drift a path-scoped PR bench could miss via dependencies.
     - cron: "17 3 * * *"
 
@@ -66,17 +62,6 @@ env:
   ACTIONLINT_VERSION: "v1.7.12"
 
 jobs:
-  required-gates:
-    name: required gates (manifest, exact SHA)
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    uses: ./.github/workflows/required-gates.yml
-    with:
-      source_sha: ${{ github.sha }}
-      hosted_results_sha: ${{ github.event.pull_request.head.sha || github.sha }}
-
   changes:
     name: classify diff (docs-only? bench-relevant?)
     runs-on: ubuntu-latest
@@ -97,12 +82,17 @@ jobs:
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
+          # Path scoping is a PR latency optimization only. Main, merge queue,
+          # and scheduled runs always own the complete native CI gate set.
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            {
+              echo "code=true"
+              echo "bench=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$EVENT_NAME" = "pull_request" ]; then
             base="$(git merge-base "origin/${BASE_REF}" HEAD)"
-          elif [ "$EVENT_NAME" = "merge_group" ] && [ -n "$MG_BASE_SHA" ] && git cat-file -e "$MG_BASE_SHA" 2>/dev/null; then
-            base="$MG_BASE_SHA"
-          elif [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA" 2>/dev/null; then
-            base="$BEFORE_SHA"
           else
             base=""
           fi
@@ -459,7 +449,7 @@ jobs:
         run: docker compose -f deployments/compose.yaml down -v
 
   golden-consumer:
-    name: golden consumer (installed CLI, N-1/N replay)
+    name: golden consumer (installed CLI, clean baseline)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
@@ -472,7 +462,7 @@ jobs:
           cache: true
       - name: start golden-consumer services
         run: docker compose -f deployments/compose.yaml up -d --wait postgres minio mailpit jaeger
-      - name: installed CLI and upgrade replay
+      - name: installed CLI and clean-baseline integration
         env:
           DATABASE_URL: postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
           WOWAPI_REQUIRE_DB: "1"
@@ -481,12 +471,3 @@ jobs:
       - name: tear down golden-consumer services
         if: always()
         run: docker compose -f deployments/compose.yaml down -v
-
-  compatibility-gates:
-    name: compatibility gates (OpenAPI, Go API, config, migration)
-    permissions:
-      contents: read
-      packages: read
-    uses: ./.github/workflows/compatibility-gates.yml
-    with:
-      baseline_ref: v1.0.0

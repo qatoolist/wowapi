@@ -191,19 +191,12 @@ type Context interface {
 	Webhooks() *webhook.Service
 	IntegrationProviders() *integration.Registry
 	Integrations() *integration.Store
-}
 
-// I18nContext is the additive v1 registration extension for localized bundles.
-// Modules that use it should type-assert their Context so legacy Context
-// implementations remain source-compatible.
-type I18nContext interface {
-	Context
+	// I18n registers a localized message bundle during module registration.
 	I18n(bundle i18n.Bundle)
-}
 
-// PrivilegedContext is the additive v1 extension for scoped platform services.
-type PrivilegedContext interface {
-	Context
+	// Privileged returns module-scoped platform services. The returned facade
+	// enforces the module's declared ownership and dependency boundaries.
 	Privileged() *privileged.Services
 }
 

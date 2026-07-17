@@ -13,6 +13,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // ---------------------------------------------------------------------------
@@ -81,7 +82,7 @@ func assertPanics(t *testing.T, name string, fn func()) {
 // ---------------------------------------------------------------------------
 
 func TestFakeSenderReset(t *testing.T) {
-	f := &notify.FakeSender{}
+	f := &fakes.NotifySender{}
 	if _, err := f.Send(context.Background(), notify.Delivery{ID: uuid.New()}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}

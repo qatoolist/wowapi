@@ -66,7 +66,7 @@ func EnsureCheckpointTable(ctx context.Context, conn *pgx.Conn) error {
 	// Identity is (job_id, tenant_id): a tenant-scoped job checkpoints per
 	// tenant; global jobs use the all-zeros sentinel (adversarial review
 	// 2026-07-17, F-03 — a job_id-only key made a second tenant's checkpoint
-	// collide with the first's). Mirrors migration 00049.
+	// collide with the first's). The clean baseline creates this final shape.
 	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS migration.backfill_checkpoint (
 			job_id text NOT NULL,

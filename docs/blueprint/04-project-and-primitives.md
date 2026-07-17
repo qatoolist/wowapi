@@ -67,10 +67,9 @@ This direction keeps the public package graph acyclic: `kernel` at the base, `mo
 ## 2. Kernel package map
 
 All paths below are **public** packages under `github.com/qatoolist/wowapi/` — importable by
-product modules. Several heavyweight packages have been refactored into a `foundation/` layer with
-thin v1 API stability shims in `kernel/` for backward compatibility (e.g., `kernel/webhook` re-exports
-`foundation/webhook`). Where a package has implementation in `internal/`, it is wired by `app` and not
-directly public to product modules.
+product modules. Stateful framework capabilities live in the canonical `foundation/` packages;
+there are no parallel `kernel/` forwarding packages. Where a package has implementation in
+`internal/`, it is wired by `app` and is not directly public to product modules.
 
 | Package | Responsibility / key exports | Must not import | Modules may import |
 |---|---|---|---|
@@ -86,10 +85,10 @@ directly public to product modules.
 | `kernel/audit` | `Writer` iface + pg impl, audit middleware helpers | — | ✅ (Writer) |
 | `kernel/outbox` | `Writer`, relay, dispatcher, `processed_events` inbox helper | — | ✅ (Writer) |
 | `kernel/jobs` | `Runner`, `Registry`, worker pool wrapper over River, retry/backoff/DLQ | — | ✅ (register kinds) |
-| `foundation/document` | document/file service, presign, scan hooks, grants (via `kernel/document` compat shim) | — | ✅ |
-| `foundation/notify` | templates, dispatcher, channel adapters iface, preferences (via `kernel/notify` compat shim) | — | ✅ (send API) |
-| `foundation/webhook` | inbound verify/ingest, outbound deliver, replay protection (via `kernel/webhook` compat shim) | — | ✅ |
-| `foundation/integration` | provider registry, credential refs, circuit breaker (via `kernel/integration` compat shim) | — | ✅ |
+| `foundation/document` | document/file service, presign, scan hooks, grants | — | ✅ |
+| `foundation/notify` | templates, dispatcher, channel adapters iface, preferences | — | ✅ (send API) |
+| `foundation/webhook` | inbound verify/ingest, outbound deliver, replay protection | — | ✅ |
+| `foundation/integration` | provider registry, credential refs, circuit breaker | — | ✅ |
 | `kernel/httpx` | handler helpers, middleware chain, route metadata, server | modules | ✅ |
 | `kernel/errors` | error taxonomy, codes, wrapping, HTTP mapping | http types beyond status codes | ✅ |
 | `kernel/validation` | validator wrapper, field errors | — | ✅ |
@@ -104,14 +103,12 @@ directly public to product modules.
 | `kernel/httpclient` | SSRF-safe HTTP client, dial guard, allowlist escapes | — | ✅ |
 | `kernel/i18n` | localization support | — | ✅ |
 | `kernel/lease` | distributed lease/fencing mechanism | — | ✅ |
-| `kernel/lifecycle` | module/provider lifecycle hooks | — | ✅ |
-| `foundation/mfa` | multi-factor auth (TOTP enrolment/verification) (via `kernel/mfa` compat shim) | — | ✅ |
-| `foundation/artifact` | immutable versioned artifacts (via `kernel/artifact` compat shim) | — | ✅ |
-| `foundation/attachment` | attachment lifecycle over object storage (via `kernel/attachment` compat shim) | — | ✅ |
-| `foundation/bulk` | bulk-operation framework (via `kernel/bulk` compat shim) | — | ✅ |
-| `foundation/comment` | generic comment threads (via `kernel/comment` compat shim) | — | ✅ |
+| `foundation/mfa` | multi-factor auth (TOTP enrolment/verification) | — | ✅ |
+| `foundation/artifact` | immutable versioned artifacts | — | ✅ |
+| `foundation/attachment` | attachment lifecycle over object storage | — | ✅ |
+| `foundation/bulk` | bulk-operation framework | — | ✅ |
+| `foundation/comment` | generic comment threads | — | ✅ |
 | `kernel/migration` | database migration runner, goose integration | — | ✅ |
-| `kernel/port` | inter-module port registry (declared service boundaries) | — | via module SDK (`module.Context` port lookup) |
 | `kernel/privileged` | privileged operation markers (audit, taints) | — | ✅ |
 | `kernel/retry` | retry/backoff strategies | — | ✅ |
 | `kernel/safety` | atomic/idempotent write guards | — | ✅ |

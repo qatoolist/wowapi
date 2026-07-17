@@ -17,7 +17,10 @@ package workflow
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strings"
@@ -39,8 +42,6 @@ const (
 	StepAuto StepType = "auto"
 	// StepGateway branches on a simple predicate over the instance context.
 	StepGateway StepType = "gateway"
-	// StepVote is a quorum/threshold decision over an electorate.
-	StepVote StepType = "vote"
 	// StepTerminal ends the instance with an outcome.
 	StepTerminal StepType = "terminal"
 )
@@ -48,7 +49,7 @@ const (
 // validStepTypes is the closed step-type set for validation.
 var validStepTypes = map[StepType]bool{
 	StepApproval: true, StepTask: true, StepAuto: true,
-	StepGateway: true, StepVote: true, StepTerminal: true,
+	StepGateway: true, StepTerminal: true,
 }
 
 // Assignee spec kinds (closed set). These describe how a step's assignees are
@@ -69,85 +70,61 @@ var validSpecKinds = map[string]bool{
 // Definition is the JSON/YAML workflow definition: a versioned, seedable graph
 // of steps. It is immutable per (Key, Version); running instances pin a version.
 type Definition struct {
-	Key         string          `yaml:"key"`
-	Version     int             `yaml:"version"`
-	AppliesTo   string          `yaml:"applies_to"`
-	InitialStep string          `yaml:"initial_step"`
-	Steps       map[string]Step `yaml:"steps"`
-	// RatifyBy is the role required to ratify a privileged override. It is
-	// parsed but explicitly rejected at validation time as an interim,
-	// Wave-0-compatible posture until the ratification state machine is
-	// implemented (SEC-02 T4, W03-E05-S001).
-	RatifyBy string `yaml:"ratify_by,omitempty"`
+	Key         string          `json:"key" yaml:"key"`
+	Version     int             `json:"version" yaml:"version"`
+	AppliesTo   string          `json:"applies_to" yaml:"applies_to"`
+	InitialStep string          `json:"initial_step" yaml:"initial_step"`
+	Steps       map[string]Step `json:"steps" yaml:"steps"`
 }
 
 // Step is one node in the definition graph. Which fields are meaningful depends
 // on Type; validation and the runtime read only the relevant ones.
 type Step struct {
-	Type      StepType       `yaml:"type"`
-	Assignees []AssigneeSpec `yaml:"assignees,omitempty"`
-	Policy    *Policy        `yaml:"policy,omitempty"`
-	SLA       *SLA           `yaml:"sla,omitempty"`
+	Type      StepType       `json:"type" yaml:"type"`
+	Assignees []AssigneeSpec `json:"assignees,omitempty" yaml:"assignees,omitempty"`
+	SLA       *SLA           `json:"sla,omitempty" yaml:"sla,omitempty"`
 
-	// approval / vote transitions.
-	OnApprove *Transition `yaml:"on_approve,omitempty"`
-	OnReject  *Transition `yaml:"on_reject,omitempty"`
+	// approval transitions.
+	OnApprove *Transition `json:"on_approve,omitempty" yaml:"on_approve,omitempty"`
+	OnReject  *Transition `json:"on_reject,omitempty" yaml:"on_reject,omitempty"`
 
 	// task / auto / gateway default transition.
-	Next *Transition `yaml:"next,omitempty"`
+	Next *Transition `json:"next,omitempty" yaml:"next,omitempty"`
 
 	// auto step.
-	Action  string      `yaml:"action,omitempty"`
-	OnError *Transition `yaml:"on_error,omitempty"`
+	Action  string      `json:"action,omitempty" yaml:"action,omitempty"`
+	OnError *Transition `json:"on_error,omitempty" yaml:"on_error,omitempty"`
 
 	// gateway step.
-	Branches []Branch `yaml:"branches,omitempty"`
-
-	// vote step (minimal).
-	Electorate *Electorate `yaml:"electorate,omitempty"`
-	Quorum     *Fraction   `yaml:"quorum,omitempty"`
-	Pass       *Fraction   `yaml:"pass,omitempty"`
-	Window     string      `yaml:"window,omitempty"`
+	Branches []Branch `json:"branches,omitempty" yaml:"branches,omitempty"`
 
 	// terminal step.
-	Outcome string `yaml:"outcome,omitempty"`
-
-	// RatifyBy is the role required to ratify a privileged override on this
-	// step. It is parsed but explicitly rejected at validation time as an
-	// interim, Wave-0-compatible posture until the ratification state machine
-	// is implemented (SEC-02 T4, W03-E05-S001).
-	RatifyBy string `yaml:"ratify_by,omitempty"`
+	Outcome string `json:"outcome,omitempty" yaml:"outcome,omitempty"`
 }
 
 // AssigneeSpec describes one source of assignees for a step.
 type AssigneeSpec struct {
-	Kind     string `yaml:"kind"`
-	Actor    string `yaml:"actor,omitempty"`    // capacity id (kind=actor)
-	Role     string `yaml:"role,omitempty"`     // role key (kind=role)
-	Scope    string `yaml:"scope,omitempty"`    // scope hint (kind=role)
-	Rel      string `yaml:"rel,omitempty"`      // relationship type (kind=relationship)
-	Resolver string `yaml:"resolver,omitempty"` // resolver key (kind=resolver)
-}
-
-// Policy governs an approval/vote step's decision rules.
-type Policy struct {
-	MinApprovals int   `yaml:"min_approvals,omitempty"`
-	SelfApproval *bool `yaml:"self_approval,omitempty"` // pointer: distinguish unset from explicit false
+	Kind     string `json:"kind" yaml:"kind"`
+	Actor    string `json:"actor,omitempty" yaml:"actor,omitempty"`       // capacity id (kind=actor)
+	Role     string `json:"role,omitempty" yaml:"role,omitempty"`         // role key (kind=role)
+	Scope    string `json:"scope,omitempty" yaml:"scope,omitempty"`       // scope hint (kind=role)
+	Rel      string `json:"rel,omitempty" yaml:"rel,omitempty"`           // relationship type (kind=relationship)
+	Resolver string `json:"resolver,omitempty" yaml:"resolver,omitempty"` // resolver key (kind=resolver)
 }
 
 // SLA carries the reminder/escalation timings for a step (ISO-8601 durations).
 type SLA struct {
-	Due         string `yaml:"due,omitempty"`
-	RemindAfter string `yaml:"remind_after,omitempty"`
-	EscalateTo  string `yaml:"escalate_to,omitempty"` // "step:key" or "key"
+	Due         string `json:"due,omitempty" yaml:"due,omitempty"`
+	RemindAfter string `json:"remind_after,omitempty" yaml:"remind_after,omitempty"`
+	EscalateTo  string `json:"escalate_to,omitempty" yaml:"escalate_to,omitempty"` // "step:key" or "key"
 }
 
 // Transition is an edge to another step (Next) with optional decision flags.
 type Transition struct {
-	Next           string `yaml:"next,omitempty"`
-	RequireComment bool   `yaml:"require_comment,omitempty"`
-	Retry          string `yaml:"retry,omitempty"` // auto on_error retry policy (advisory)
-	Then           string `yaml:"then,omitempty"`  // auto on_error target step
+	Next           string `json:"next,omitempty" yaml:"next,omitempty"`
+	RequireComment bool   `json:"require_comment,omitempty" yaml:"require_comment,omitempty"`
+	Retry          string `json:"retry,omitempty" yaml:"retry,omitempty"` // auto on_error retry policy (advisory)
+	Then           string `json:"then,omitempty" yaml:"then,omitempty"`   // auto on_error target step
 }
 
 // target returns the step key this transition points at (Next, or Then for
@@ -164,27 +141,14 @@ func (t *Transition) target() string {
 
 // Branch is one gateway edge. A nil When is the default (fallthrough).
 type Branch struct {
-	When *Condition `yaml:"when,omitempty"`
-	Next string     `yaml:"next"`
+	When *Condition `json:"when,omitempty" yaml:"when,omitempty"`
+	Next string     `json:"next" yaml:"next"`
 }
 
 // Condition is a minimal equality predicate over the instance context.
 type Condition struct {
-	Key    string `yaml:"key"`
-	Equals any    `yaml:"equals"`
-}
-
-// Electorate describes the voter set for a vote step (minimal).
-type Electorate struct {
-	Kind string `yaml:"kind"`
-	Rel  string `yaml:"rel,omitempty"`
-	Of   string `yaml:"of,omitempty"`
-}
-
-// Fraction is a "n/d" quorum or pass threshold, e.g. "2/3".
-type Fraction struct {
-	Kind  string `yaml:"kind,omitempty"`
-	Value string `yaml:"value,omitempty"`
+	Key    string `json:"key" yaml:"key"`
+	Equals any    `json:"equals" yaml:"equals"`
 }
 
 // scalarConditionValue reports whether v is one of the immutable scalar kinds
@@ -192,6 +156,9 @@ type Fraction struct {
 // value is meaningless (a default branch omits When entirely).
 func scalarConditionValue(v any) bool {
 	switch f := v.(type) {
+	case json.Number:
+		_, err := json.Marshal(f)
+		return err == nil
 	case float32:
 		return !math.IsNaN(float64(f)) && !math.IsInf(float64(f), 0)
 	case float64:
@@ -212,10 +179,55 @@ func stripStepPrefix(s string) string { return strings.TrimPrefix(s, "step:") }
 // silently dropping a step or transition. JSON is a subset of YAML, so this one
 // path covers both.
 func ParseDefinition(raw []byte) (Definition, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		dec := json.NewDecoder(bytes.NewReader(trimmed))
+		dec.DisallowUnknownFields()
+		dec.UseNumber()
+		var d Definition
+		if err := dec.Decode(&d); err != nil {
+			return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+				"invalid workflow definition: "+err.Error())
+		}
+		var trailing any
+		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+			if err == nil {
+				err = fmt.Errorf("multiple JSON values are not allowed")
+			}
+			return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+				"invalid workflow definition: "+err.Error())
+		}
+		return d, nil
+	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
 	var d Definition
 	if err := dec.Decode(&d); err != nil {
+		return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+			"invalid workflow definition: "+err.Error())
+	}
+	// A definition is exactly one document. Accepting a valid first document
+	// and ignoring trailing content would make the persisted digest cover less
+	// than the input a caller believed it registered.
+	var trailing any
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = fmt.Errorf("multiple documents are not allowed")
+		}
+		return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+			"invalid workflow definition: "+err.Error())
+	}
+	// Round-trip through JSON once so Condition.Equals uses the same immutable
+	// scalar representation whether the source was YAML or JSON. UseNumber
+	// preserves integer boundaries instead of converting through float64.
+	b, err := json.Marshal(d)
+	if err != nil {
+		return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
+			"invalid workflow definition: "+err.Error())
+	}
+	jd := json.NewDecoder(bytes.NewReader(b))
+	jd.UseNumber()
+	if err := jd.Decode(&d); err != nil {
 		return Definition{}, kerr.E(kerr.KindValidation, "workflow_definition_parse",
 			"invalid workflow definition: "+err.Error())
 	}
@@ -239,9 +251,6 @@ func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
 	}
 	if d.Version <= 0 {
 		add("version must be a positive integer")
-	}
-	if d.RatifyBy != "" {
-		add("ratify_by is not yet supported; declare it only when the ratification state machine is implemented (interim Wave-0-compatible rejection)")
 	}
 	if len(d.Steps) == 0 {
 		add("definition has no steps")
@@ -278,26 +287,7 @@ func (d Definition) Validate(autoActions, resolvers map[string]bool) error {
 				add("auto step %q references unregistered auto-action %q", name, step.Action)
 			}
 		}
-		// FAIL-CLOSED on gating the runtime does not yet enforce (review
-		// findings SEC-36/37/38). Rather than silently mis-tally, a definition
-		// that RELIES on unimplemented gating is rejected at boot so no
-		// authorization decision can depend on an unenforced control:
-		//   - vote steps (quorum/pass/window are parsed but not tallied),
-		//   - approval min_approvals > 1 (advances on the first approval),
-		//   - self_approval:false (the submitter-exclusion is not enforced).
-		if step.Type == StepVote {
-			add("step %q: vote steps are not yet tallied by the runtime and are rejected until implemented (fail-closed)", name)
-		}
-		if step.RatifyBy != "" {
-			add("step %q: ratify_by is not yet supported; declare it only when the ratification state machine is implemented (interim Wave-0-compatible rejection)", name)
-		}
 		if step.Type == StepApproval {
-			if step.Policy != nil && step.Policy.MinApprovals > 1 {
-				add("step %q: policy.min_approvals > 1 is not yet enforced by the runtime (fail-closed)", name)
-			}
-			if step.Policy != nil && step.Policy.SelfApproval != nil && !*step.Policy.SelfApproval {
-				add("step %q: policy.self_approval:false is not yet enforced by the runtime (fail-closed)", name)
-			}
 			// An approval step must define BOTH decision transitions, or a
 			// reject would dead-end at runtime (review finding ARCH-64).
 			if step.OnApprove == nil || step.OnApprove.target() == "" {
@@ -370,7 +360,7 @@ func (s Step) outgoing() []string {
 	// missed case. Do not convert to an exhaustive enumeration.
 	//exhaustive:ignore
 	switch s.Type {
-	case StepApproval, StepVote:
+	case StepApproval:
 		push(s.OnApprove)
 		push(s.OnReject)
 	case StepTask:

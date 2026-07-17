@@ -192,8 +192,8 @@ type Deps struct {
 
 // newArtifactWriter builds the production DSR artifact writer from environment
 // variables. The key is read from WOWAPI_DSR_ARTIFACT_KEY (hex, 32 bytes);
-// when absent a deterministic test key is used so local/test boots succeed, but
-// deployments must set the variable to avoid a shared fallback key.
+// production rejects a missing or malformed key. Local/dev uses a deterministic
+// key only as an explicitly warned convenience.
 func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer, env config.Env) (retention.ArtifactWriter, error) {
 	dir := os.Getenv("WOWAPI_ARTIFACT_DIR")
 	if dir == "" {
@@ -217,7 +217,16 @@ func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer, env config.Env) (
 	}
 	log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY missing or invalid; using deterministic TEST key (non-production only)",
 		"environment", string(env), "decode_err", decodeErr)
-	return retention.NewFileArtifactWriter(dir, retention.TestKey(), audit), nil
+	return retention.NewFileArtifactWriter(dir, nonProductionArtifactKey(), audit), nil
+}
+
+func nonProductionArtifactKey() []byte {
+	return []byte{
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+	}
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -303,7 +312,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 
 	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
 	wfReg := workflow.NewRegistry()
-	wfRuntime := workflow.NewRuntimeWithCompliance(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
+	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
 
 	// Documents: the class registry + hook set modules register into, plus the
 	// service (only when an object-storage adapter is wired). The two document
@@ -316,7 +325,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	retEngine := retention.NewEngineWithCompliance(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
+	retEngine := retention.NewEngine(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
 
 	docClasses := document.NewRegistry()
 	docHooks := document.NewHooks()

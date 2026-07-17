@@ -52,13 +52,6 @@ type faultyStore struct {
 	failDelete bool
 }
 
-func (f *faultyStore) PresignPut(ctx context.Context, key string, ttl time.Duration) (storage.PresignedURL, error) {
-	if f.failPut {
-		return storage.PresignedURL{}, errors.New("presign put backend down")
-	}
-	return f.Memory.PresignPut(ctx, key, ttl)
-}
-
 func (f *faultyStore) PresignPutChecksum(ctx context.Context, key, checksum string, ttl time.Duration) (storage.PresignedURL, error) {
 	if f.failPut {
 		return storage.PresignedURL{}, errors.New("presign put backend down")
@@ -280,7 +273,7 @@ func TestIntegrationCreateWithResourceAnchor(t *testing.T) {
 func TestIntegrationInitiateUploadNotFound(t *testing.T) {
 	a := newHarness(t, document.Class{Key: "core.doc"})
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
-		_, e := a.svc.InitiateUploadChecksum(ctx, db, uuid.New(), sum(nil))
+		_, e := a.svc.InitiateUpload(ctx, db, uuid.New(), sum(nil))
 		if kerr.KindOf(e) != kerr.KindNotFound {
 			t.Fatalf("missing document must be NotFound, got %v", e)
 		}
@@ -299,7 +292,7 @@ func TestIntegrationInitiateUploadOnVoidedDoc(t *testing.T) {
 		t.Fatalf("sweep: n=%d err=%v", n, err)
 	}
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
-		_, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+		_, e := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 		if kerr.KindOf(e) != kerr.KindConflict {
 			t.Fatalf("upload to a voided document must conflict, got %v", e)
 		}
@@ -335,7 +328,7 @@ func TestIntegrationConfirmUploadMissingObject(t *testing.T) {
 	a := newHarness(t, document.Class{Key: "core.doc"})
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 		// Never Put the bytes → Stat returns NotFound → upload_missing validation.
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -356,7 +349,7 @@ func TestIntegrationConfirmUploadSizeMismatch(t *testing.T) {
 	body := []byte("actual bytes")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -377,7 +370,7 @@ func TestIntegrationConfirmUploadTooLarge(t *testing.T) {
 	body := []byte("way over the four byte ceiling")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -398,7 +391,7 @@ func TestIntegrationConfirmUploadMIMENotAllowed(t *testing.T) {
 	body := []byte("plain text, not a pdf")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
 			SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo, StorageKey: sess.StorageKey,
@@ -422,7 +415,7 @@ func TestIntegrationConfirmUploadOctetStreamTrustsDeclared(t *testing.T) {
 	var verID uuid.UUID
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		var e error
 		verID, e = a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
@@ -450,10 +443,10 @@ func TestIntegrationConfirmUploadDuplicateVersion(t *testing.T) {
 		if docID, e = a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"}); e != nil {
 			return e
 		}
-		if s1, e = a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body)); e != nil {
+		if s1, e = a.svc.InitiateUpload(ctx, db, docID, sum(body)); e != nil {
 			return e
 		}
-		s2, e = a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		s2, e = a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		return e
 	}); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -755,7 +748,7 @@ func TestIntegrationSweepMultipleDocsAndReRun(t *testing.T) {
 	// Add a second version to d1.
 	if err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		body := []byte("d1v2")
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, d1, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, d1, sum(body))
 		if e != nil {
 			return e
 		}
@@ -796,7 +789,7 @@ func TestIntegrationInitiateUploadPresignFault(t *testing.T) {
 	}
 	fs.failPut = true
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
-		_, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(nil))
+		_, e := a.svc.InitiateUpload(ctx, db, docID, sum(nil))
 		if e == nil {
 			t.Fatal("a presign-put failure must surface as an error")
 		}
@@ -812,7 +805,7 @@ func TestIntegrationConfirmUploadStatFault(t *testing.T) {
 	body := []byte("payload")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		fs.failStat = true
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
@@ -834,7 +827,7 @@ func TestIntegrationConfirmUploadPeekFault(t *testing.T) {
 	body := []byte("payload")
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		fs.failPeek = true // stat succeeds, the MIME-sniff peek fails
 		_, e := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
@@ -887,7 +880,7 @@ func TestIntegrationConfirmUploadUnregisteredClass(t *testing.T) {
 			 VALUES ($1, app_tenant_id(), 'core.ghost', 'T', 'internal', $2)`, docID, a.actor); e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -917,7 +910,7 @@ func TestIntegrationConfirmUploadEmptyDeclaredMIME(t *testing.T) {
 	var verID uuid.UUID
 	err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
 		docID, _ := a.svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
-		sess, _ := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, _ := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		a.store.Put(sess.StorageKey, body)
 		var e error
 		verID, e = a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
@@ -990,7 +983,7 @@ func TestIntegrationAccessHookAllows(t *testing.T) {
 			return e
 		}
 		body := []byte("hook allows")
-		sess, e := svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}

@@ -71,7 +71,9 @@ func TestSealedExtensionModelRejectsEveryPostBootRegistration(t *testing.T) {
 		{"Permissions.Register", func() { retained.Permissions().Register(authz.Permission{}) }},
 		{"Resources.Register", func() { retained.Resources().Register("widgets", resource.TypeSpec{}) }},
 		{"Events.Subscribe", func() { retained.Events().Subscribe("late.event", "late", nil) }},
-		{"Jobs.RegisterKind", func() { retained.Jobs().RegisterKind("late.kind", nil, jobs.RetryPolicy{}) }},
+		{"Jobs.RegisterKind", func() {
+			retained.Jobs().RegisterKind("late.kind", nil, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{})
+		}},
 		{"Rules.Register", func() { retained.Rules().Register("widgets", rules.Point{}) }},
 		{"Workflows.RegisterDefinition", func() { _ = retained.Workflows().RegisterDefinition(workflow.Definition{}) }},
 		{"Workflows.RegisterAutoAction", func() { retained.Workflows().RegisterAutoAction("late", nil) }},
@@ -87,7 +89,9 @@ func TestSealedExtensionModelRejectsEveryPostBootRegistration(t *testing.T) {
 			booted.RuntimeRouter().Handle(http.MethodGet, "/late2", httpx.RouteMeta{}, noopHandler)
 		}},
 		{"Booted.Events.Subscribe", func() { booted.RuntimeEvents().Subscribe("late.event2", "late2", nil) }},
-		{"Booted.Jobs.RegisterKind", func() { booted.RuntimeJobs().RegisterKind("late.kind2", nil, jobs.RetryPolicy{}) }},
+		{"Booted.Jobs.RegisterKind", func() {
+			booted.RuntimeJobs().RegisterKind("late.kind2", nil, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.RetryPolicy{})
+		}},
 	}
 	for _, m := range mutations {
 		t.Run(m.name, func(t *testing.T) {

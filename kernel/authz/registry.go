@@ -29,7 +29,8 @@ type Permission struct {
 	Sensitive  bool
 	GrantedVia string // relationship type key, or "" for none
 	// AllowedSchemes restricts which credential schemes may satisfy this
-	// permission. Empty/nil means all schemes are allowed (backward compatible).
+	// permission. Empty/nil deliberately means the permission is independent of
+	// authentication method and therefore accepts every explicit scheme.
 	// A permission scoped to CredentialUser rejects API-key, webhook, and
 	// internal actors even when they are otherwise authorized (SEC-01 T7).
 	AllowedSchemes []CredentialScheme

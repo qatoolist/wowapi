@@ -180,7 +180,7 @@ func (r *Registry) RegisterDefinition(def Definition) error {
 
 // clone returns a deep copy of d down to every nested step map, slice, and
 // pointer: the registry must not alias a caller's Definition — a module
-// mutating the value it registered (its Steps map, a Transition, a Policy)
+// mutating the value it registered (its Steps map, a Transition, or SLA)
 // must never alter the validated graph running instances resolve against
 // (second closure audit 2026-07-17, F-10).
 func (d Definition) clone() Definition {
@@ -198,14 +198,6 @@ func (s Step) clone() Step {
 	out := s
 	if s.Assignees != nil {
 		out.Assignees = append([]AssigneeSpec(nil), s.Assignees...)
-	}
-	if s.Policy != nil {
-		p := *s.Policy
-		if s.Policy.SelfApproval != nil {
-			b := *s.Policy.SelfApproval
-			p.SelfApproval = &b
-		}
-		out.Policy = &p
 	}
 	if s.SLA != nil {
 		sla := *s.SLA
@@ -225,18 +217,6 @@ func (s Step) clone() Step {
 			}
 			out.Branches[i] = nb
 		}
-	}
-	if s.Electorate != nil {
-		e := *s.Electorate
-		out.Electorate = &e
-	}
-	if s.Quorum != nil {
-		q := *s.Quorum
-		out.Quorum = &q
-	}
-	if s.Pass != nil {
-		p := *s.Pass
-		out.Pass = &p
 	}
 	return out
 }
@@ -352,7 +332,49 @@ func (r *Registry) resolveValidated(key string, version int) (def Definition, va
 		return Definition{}, false, false
 	}
 	d, ok := r.defs[defKey(key, version)]
-	return d, true, ok
+	return d.clone(), true, ok
+}
+
+// latestValidated resolves the latest registered definition for key while
+// proving under the same read lock that the current registry generation is the
+// one that passed validation. StartIn uses this as the source of version truth;
+// the database catalog is only an immutable persisted mirror.
+func (r *Registry) latestValidated(key string) (Definition, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.validated || r.validatedGen != r.gen {
+		return Definition{}, kerr.E(kerr.KindInternal, "workflow_registry_unvalidated",
+			"workflow registry has not completed validation for its current generation")
+	}
+	version, ok := r.latest[key]
+	if !ok {
+		return Definition{}, kerr.E(kerr.KindNotFound, "workflow_definition_not_found",
+			"no registered workflow definition for key "+key)
+	}
+	return r.defs[defKey(key, version)].clone(), nil
+}
+
+// validatedSnapshot returns a deep immutable copy of all definitions covered
+// by the registry's current successful validation generation. Synchronization
+// must never assemble its input through separately locked Keys/Get calls.
+func (r *Registry) validatedSnapshot() ([]Definition, uint64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.validated || r.validatedGen != r.gen {
+		return nil, 0, kerr.E(kerr.KindInternal, "workflow_registry_unvalidated",
+			"workflow registry has not completed validation for its current generation")
+	}
+	defs := make([]Definition, 0, len(r.defs))
+	for _, def := range r.defs {
+		defs = append(defs, def.clone())
+	}
+	return defs, r.gen, nil
+}
+
+func (r *Registry) snapshotStillValidated(generation uint64) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.gen == generation && r.validated && r.validatedGen == generation
 }
 
 // callbackKeys returns the registered auto-action and resolver key sets, for
@@ -377,7 +399,7 @@ func (r *Registry) definition(key string, version int) (Definition, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	d, ok := r.defs[defKey(key, version)]
-	return d, ok
+	return d.clone(), ok
 }
 
 // latestVersion returns the highest registered version for a key.

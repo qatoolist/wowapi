@@ -167,11 +167,11 @@ func TestStepUpFreshnessDefaultMaxAgeForShorthand(t *testing.T) {
 	}
 }
 
-// TestStepUpFreshnessNoMaxAgeAllowsBackwardCompatibility proves that when no
+// TestStepUpFreshnessNoMaxAgeUsesAMROnly proves that when no
 // MaxAge is configured (neither per-policy nor deployment default), a zero
 // AuthTime still allows step-up as long as AMR is satisfied. This preserves
 // the pre-T6 behavior for deployments that do not enable freshness.
-func TestStepUpFreshnessNoMaxAgeAllowsBackwardCompatibility(t *testing.T) {
+func TestStepUpFreshnessNoMaxAgeUsesAMROnly(t *testing.T) {
 	const perm = "billing.export.read"
 	reg := registry(t, authz.Permission{Key: perm, StepUp: true})
 	store := &fakeStore{

@@ -23,7 +23,7 @@ func BenchmarkJobClaimFinalize(b *testing.B) {
 	tenant := testkit.CreateTenantTB(b, h)
 	ctx := testkit.TenantCtx(tenant.ID)
 	registry := jobs.NewRegistry()
-	registry.RegisterKindWithIdempotency(benchmarkJob{}.Kind(),
+	registry.RegisterKind(benchmarkJob{}.Kind(),
 		func(context.Context, database.TenantDB, []byte) error { return nil },
 		jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := registry.Err(); err != nil {

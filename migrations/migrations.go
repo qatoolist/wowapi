@@ -11,15 +11,10 @@
 // docs/blueprint/11 §4). The ordering contract is: apply the "wowapi" source
 // first, then each module's source in dependency-graph order.
 //
-// # File naming
-//
-// goose requires numeric-ascending file names. The blueprint's "000/001"
-// logical names map to on-disk "00001/00002":
-//
-//	Blueprint 000 → 00001_bootstrap.sql    (extensions, roles, app_tenant_id)
-//	Blueprint 001 → 00002_core_identity.sql (tenants, users, user_tenant_access)
-//
-// Phase 2 ships only these two migrations (see decision D-0025).
+// The clean v1.2.0 line starts at 00001_baseline.sql. Future kernel migrations
+// resume at 00002 and use the generic online-migration manifest machinery when
+// their rollout requires it; abandoned pre-v1.2 migration history is not an
+// upgrade source.
 package migrations
 
 import (

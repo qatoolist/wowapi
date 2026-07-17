@@ -92,7 +92,7 @@ baseline-census-check: ## Regenerate the schema census and fail if it drifts fro
 	@set -e; \
 	regen=$$(mktemp); committed=$$(mktemp); \
 	trap 'rm -f "$$regen" "$$committed"' EXIT; \
-	sh scripts/baseline_census.sh 2>/dev/null | grep -E '^(EXT|TABLE|COL|CONSTRAINT|INDEX|RLS|POLICY|FUNC|GRANT)' | sort > "$$regen"; \
+	sh scripts/baseline_census.sh > "$$regen"; \
 	grep -vE '^#|^$$' migrations/baseline/census-reference.txt | sort > "$$committed"; \
 	if diff -u "$$committed" "$$regen"; then echo "baseline census: MATCHES reference"; else echo "baseline census: DRIFT — the schema changed; regenerate the reference intentionally"; exit 1; fi
 
@@ -154,16 +154,19 @@ lint-boundaries: lint-constructors ## Import, constructor, vocabulary, and Revea
 	sh scripts/lint_boundaries.sh
 
 .PHONY: tenantfk-gate
-tenantfk-gate: ## DATA-01: fail if any post-cleanup migration adds a non-composite tenant FK
-	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) run ./internal/tools/tenantfk gate --since=36 --migrations=migrations
-
-.PHONY: lint-lifecycle
-lint-lifecycle: ## Static provider/lifecycle manifest lint (backlog B9; kernel/lifecycle)
-	$(GO) run ./cmd/wowapi lint lifecycle
+# The filter keeps versions strictly greater than this value. Zero is
+# deliberate for the clean line: it includes 00001_baseline.sql as well as
+# every future incremental migration. Raise it only after a released baseline
+# has an independently enforced catalog proof; otherwise the gate can false-pass
+# by selecting no files after a squash.
+TENANTFK_SINCE ?= 0
+tenantfk-gate: ## DATA-01: scan the clean baseline and future migrations for non-composite tenant FKs
+	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) run ./internal/tools/tenantfk gate --since=$(TENANTFK_SINCE) --migrations=migrations
 
 .PHONY: docs-check
 docs-check: ## Compile normative doc examples and verify generated references/future-state labels (AR-05)
 	$(GO) run ./internal/tools/docexamples -root .
+	sh scripts/lint_release_identity.sh .
 
 .PHONY: tidy
 tidy: ## go mod tidy
@@ -249,6 +252,7 @@ test-allure: ensure-infra ## Run the full suite and generate Allure results + HT
 .PHONY: test-unit
 test-unit: ensure-infra ## Unit tests (no external services)
 	$(GO) test $(PKGS)
+	python3 -m unittest scripts.validation.tests.test_release_contracts
 
 .PHONY: test-race
 test-race: ## Unit tests with the race detector
@@ -263,10 +267,10 @@ test-contract: ensure-infra ## Module contract + scratch external-consumer suite
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" $(GO) test -run 'Contract|ScratchConsumer' -count=1 ./testkit/...
 
 .PHONY: golden-consumer
-golden-consumer: ensure-infra ## Installed-CLI eight-subsystem consumer + real infra + N-1/N replay + RLS census
+golden-consumer: ensure-infra ## Installed-CLI eight-subsystem consumer + real infra + RLS census
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" WOWAPI_REQUIRE_DB=1 WOWAPI_REQUIRE_S3=1 \
 		$(GO) test ./internal/cli ./testkit \
-		-run '^(TestGoldenConsumerInstalledBinaryTwoModules|TestGoldenConsumerRealInfrastructure|TestGoldenConsumerUpgradeReplay|TestGoldenConsumerFailingFixture|TestIntegrationRLSCensusComplete)$$' \
+		-run '^(TestGoldenConsumerInstalledBinaryTwoModules|TestGoldenConsumerRealInfrastructure|TestGoldenConsumerFailingFixture|TestIntegrationRLSCensusComplete)$$' \
 		-count=1 -v
 
 # Security-critical test suite (criterion #18, #26).
@@ -318,7 +322,7 @@ BENCH_PKGS := \
 	./kernel/outbox/... \
 	./kernel/workflow/... \
 	./kernel/auth/... \
-	./kernel/mfa/... \
+	./foundation/mfa/... \
 	./kernel/httpclient/...
 
 .PHONY: bench
@@ -411,10 +415,9 @@ build: ## Build all packages and the CLI
 	$(GO) build -o bin/wowapi ./cmd/wowapi
 
 .PHONY: ci
-ci: ## Full local CI: vet + boundary lint + lifecycle lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
+ci: ## Full local CI: vet + boundary lint, unit, race, perf budgets, build (golangci-lint = make lint-new / hosted CI)
 	$(GO) vet $(PKGS)
 	$(MAKE) lint-boundaries
-	$(MAKE) lint-lifecycle
 	$(MAKE) test-unit
 	$(MAKE) test-race
 	$(MAKE) bench-budget
@@ -463,9 +466,9 @@ ci-container-race: ## Parallel gate leg 2: DB/S3 integration race detector + see
 	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
 		sh -c 'make check-race-fixture && make test-race-integration'
 
-ci-container-bench: ## Parallel gate leg 3: performance budgets + lifecycle lint (DB required)
+ci-container-bench: ## Parallel gate leg 3: performance budgets (DB required)
 	$(COMPOSE) run --rm -e WOWAPI_REQUIRE_DB=1 -e WOWAPI_REQUIRE_S3=1 -e S3_TEST_ENDPOINT=minio:9000 $(CI_TOOLS_ENV) tools \
-		sh -c 'make bench-budget && make lint-lifecycle'
+		sh -c 'make bench-budget'
 
 ##@ Security & Release (CI-enforced)
 

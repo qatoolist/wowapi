@@ -102,7 +102,7 @@ func TestLogRecordWithoutSpanOmitsCorrelationKeys(t *testing.T) {
 	}
 }
 
-// Compatibility constraint from story.md "Security considerations": the
+// Correlation contract: the
 // correlation wrapper must not interfere with the existing redactAttr
 // defense-in-depth — sensitive attrs stay redacted while correlation attrs are
 // injected on the same record.

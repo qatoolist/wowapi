@@ -175,22 +175,12 @@ func (s *Service) Create(ctx context.Context, db database.TenantDB, in CreateInp
 	return id, nil
 }
 
-// InitiateUpload is retained as a fail-closed compatibility entry point.
-// Framework uploads must provide the checksum before a URL can be signed.
-func (s *Service) InitiateUpload(_ context.Context, _ database.TenantDB, _ uuid.UUID) (UploadSession, error) {
-	return UploadSession{}, kerr.E(kerr.KindValidation, "upload_checksum_required", "upload SHA-256 is required at initiation")
-}
-
-// InitiateUploadChecksum reserves the next version number and returns a PUT
+// InitiateUpload reserves the next version number and returns a PUT
 // whose signed headers bind S3's canonical SHA-256 metadata to the upload.
-func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.TenantDB, docID uuid.UUID, checksumSHA256 string) (UploadSession, error) {
+func (s *Service) InitiateUpload(ctx context.Context, db database.TenantDB, docID uuid.UUID, checksumSHA256 string) (UploadSession, error) {
 	rawChecksum, checksumErr := hex.DecodeString(checksumSHA256)
 	if checksumErr != nil || len(rawChecksum) != sha256.Size || checksumSHA256 != strings.ToLower(checksumSHA256) {
 		return UploadSession{}, kerr.E(kerr.KindValidation, "invalid_upload_checksum", "upload checksum must be lowercase-hex SHA-256")
-	}
-	uploader, ok := s.store.(storage.ChecksumUploader)
-	if !ok {
-		return UploadSession{}, kerr.E(kerr.KindInternal, "checksum_upload_unsupported", "storage adapter does not support checksum-enforcing uploads")
 	}
 	var status string
 	err := db.QueryRow(ctx, `SELECT status FROM documents WHERE id = $1`, docID).Scan(&status)
@@ -220,7 +210,7 @@ func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.Tenant
 	// unreferenced blob (swept by a future storage GC).
 	tenantID, _ := database.TenantIDFrom(ctx)
 	key := tenantID.String() + "/" + docID.String() + "/" + s.idgen.New().String()
-	url, err := uploader.PresignPutChecksum(ctx, key, checksumSHA256, s.putTTL)
+	url, err := s.store.PresignPutChecksum(ctx, key, checksumSHA256, s.putTTL)
 	if err != nil {
 		return UploadSession{}, kerr.Wrapf(err, "document.InitiateUpload", "presign put")
 	}
@@ -366,16 +356,14 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	// and wrong-version attempts triggered scan-enqueue and other external hook
 	// effects for confirmations that were then rejected). A hook error returns
 	// before any version effect and rolls the CAS back with the caller's tx.
-	// The hook context carries the confirming tx and a retry-stable idempotency
+	// The hook event carries the confirming tx and a retry-stable idempotency
 	// identifier (DeliveryID = the session id) so hook effects can be atomic
 	// with the confirmation or deduplicated across a post-hook rollback+retry
-	// (second closure audit 2026-07-17, F-05). Delivered via the context —
-	// UploadDeliveryFromContext — because UploadEvent's v1 field set is frozen
-	// for unkeyed-literal source compatibility (third closure audit).
-	hookCtx := withUploadDelivery(ctx, UploadDelivery{DeliveryID: in.SessionID.String(), Tx: db})
-	if err := s.hooks.runUpload(hookCtx, UploadEvent{
+	// (second closure audit 2026-07-17, F-05).
+	if err := s.hooks.runUpload(ctx, UploadEvent{
 		DocumentID: confirmed.documentID.String(), Class: class, VersionNo: confirmed.versionNo,
 		StorageKey: confirmed.storageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
+		DeliveryID: in.SessionID.String(), Tx: db,
 	}); err != nil {
 		return uuid.Nil, err
 	}
@@ -830,7 +818,7 @@ func actorFromCtx(ctx context.Context) uuid.UUID {
 func actorAuthz(ctx context.Context) authz.Actor {
 	id := actorFromCtx(ctx)
 	tid, _ := database.TenantIDFrom(ctx)
-	return authz.Actor{CapacityID: id, UserID: id, TenantID: tid}
+	return authz.Actor{Kind: authz.ActorUser, CapacityID: id, UserID: id, TenantID: tid, CredentialScheme: authz.CredentialUser}
 }
 
 func actorID(a authz.Actor) string {

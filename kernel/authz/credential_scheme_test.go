@@ -71,10 +71,9 @@ func TestCredentialSchemeUserPermissionAllowsUser(t *testing.T) {
 	}
 }
 
-// TestCredentialSchemeBackwardCompatibilityNoRestriction proves that a
-// permission with no AllowedSchemes continues to allow all schemes (backward
-// compatible). An API-key actor is authorized by its scope as before.
-func TestCredentialSchemeBackwardCompatibilityNoRestriction(t *testing.T) {
+// TestCredentialSchemeNoRestrictionAllowsAnyScheme proves that a permission
+// with no AllowedSchemes intentionally allows every explicit scheme.
+func TestCredentialSchemeNoRestrictionAllowsAnyScheme(t *testing.T) {
 	const perm = "gate.device.read"
 	reg := registry(t, authz.Permission{Key: perm})
 	store := &fakeStore{}
@@ -98,10 +97,9 @@ func TestCredentialSchemeBackwardCompatibilityNoRestriction(t *testing.T) {
 	}
 }
 
-// TestCredentialSchemeDerivedFromKind proves that an actor constructed without
-// an explicit CredentialScheme gets a scheme derived from ActorKind/Scopes for
-// backward compatibility: ActorSystem with Scopes → CredentialAPIKey.
-func TestCredentialSchemeDerivedFromKind(t *testing.T) {
+// TestCredentialSchemeMissingRejected proves that restricted permissions do
+// not infer an authentication method from ActorKind or Scopes.
+func TestCredentialSchemeMissingRejected(t *testing.T) {
 	const perm = "hr.payroll.export"
 	reg := registry(t, authz.Permission{
 		Key:            perm,
@@ -111,7 +109,7 @@ func TestCredentialSchemeDerivedFromKind(t *testing.T) {
 	e := newEval(t, store, reg, nil, nil)
 	target := authz.Target{Scope: authz.ScopeTenant}
 
-	// No explicit CredentialScheme; len(Scopes) > 0 → derived CredentialAPIKey.
+	// No explicit CredentialScheme: scopes do not imply an authentication method.
 	apiKeyActor := authz.Actor{
 		Kind:     authz.ActorSystem,
 		System:   "apikey:payroll-bot",
@@ -123,8 +121,8 @@ func TestCredentialSchemeDerivedFromKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !d.Allowed {
-		t.Fatalf("CredentialAPIKey perm + derived api-key actor = %+v, want allowed", d)
+	if d.Allowed || d.Reason != "credential_scheme_mismatch" {
+		t.Fatalf("missing scheme must be denied, got %+v", d)
 	}
 }
 
