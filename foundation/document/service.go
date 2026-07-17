@@ -241,16 +241,29 @@ func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.Tenant
 // limits), runs OnFileUpload hooks, and writes the immutable version row.
 func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in ConfirmInput) (uuid.UUID, error) {
 	var (
-		class string
-		sens  string
+		class     string
+		sens      string
+		docStatus string
 	)
-	err := db.QueryRow(ctx, `SELECT document_class, sensitivity FROM documents WHERE id = $1`, in.DocumentID).
-		Scan(&class, &sens)
+	// Lock the authoritative document row for the whole confirmation and require
+	// it to still be ACTIVE (closure review 2026-07-17, F-05): without the lock
+	// and status predicate, a retention sweep could void the document between
+	// this read and the version insert, and the confirmation would attach a new
+	// ACTIVE version beneath a voided document — which later retention sweeps
+	// (SELECT ... WHERE status = 'active') would never revisit. FOR UPDATE
+	// serializes confirmation against retention's own documents-row update in a
+	// single-row, deadlock-free order.
+	err := db.QueryRow(ctx, `SELECT document_class, sensitivity, status FROM documents WHERE id = $1 FOR UPDATE`, in.DocumentID).
+		Scan(&class, &sens, &docStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "document not found")
 	}
 	if err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "load document")
+	}
+	if docStatus != "active" {
+		return uuid.Nil, kerr.E(kerr.KindConflict, "document_not_active",
+			"document is "+docStatus+"; a terminal document cannot acquire new versions")
 	}
 	cl, ok := s.registry.Get(class)
 	if !ok {
@@ -291,13 +304,6 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		return uuid.Nil, kerr.E(kerr.KindValidation, "mime_not_allowed", "MIME type not permitted for this document class: "+mime)
 	}
 
-	if err := s.hooks.runUpload(ctx, UploadEvent{
-		DocumentID: in.DocumentID.String(), Class: class, VersionNo: in.VersionNo,
-		StorageKey: in.StorageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
-	}); err != nil {
-		return uuid.Nil, err
-	}
-
 	// CAS confirm the durable session, predicated on the COMPLETE reserved
 	// identity — session id, pending status, document, version, storage key,
 	// checksum — AND the validity window (adversarial review 2026-07-17, F-05:
@@ -328,6 +334,21 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	}
 	if err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "confirm session")
+	}
+
+	// Hooks run ONLY after the CAS has established that this confirmation is
+	// pending, unexpired, and bound to the reserved document/version/key — and
+	// the event carries the AUTHORITATIVE values, never caller input (closure
+	// review 2026-07-17, F-05: hooks previously fired before the CAS with
+	// caller-supplied identity, so cross-document, expired, replayed, wrong-key
+	// and wrong-version attempts triggered scan-enqueue and other external hook
+	// effects for confirmations that were then rejected). A hook error returns
+	// before any version effect and rolls the CAS back with the caller's tx.
+	if err := s.hooks.runUpload(ctx, UploadEvent{
+		DocumentID: confirmed.documentID.String(), Class: class, VersionNo: confirmed.versionNo,
+		StorageKey: confirmed.storageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
+	}); err != nil {
+		return uuid.Nil, err
 	}
 
 	verID := s.idgen.New()

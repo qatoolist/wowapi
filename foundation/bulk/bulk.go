@@ -103,6 +103,11 @@ type Service struct {
 	batchSize   int
 	leaseTTL    time.Duration
 	maxAttempts int
+	// cancelInterceptor is a test-only fault-injection seam invoked between
+	// Cancel's aggregate transition and its pending-item cleanup, INSIDE the
+	// same tenant transaction — the F-04 atomicity regression proves a failure
+	// there rolls back both writes. nil in production.
+	cancelInterceptor func(ctx context.Context, db database.TenantDB) error
 }
 
 // New builds the service. idgen mints operation and item ids.
@@ -268,15 +273,34 @@ func (s *Service) Resume(ctx context.Context, txm database.TxManager, tenantID, 
 }
 
 // Cancel stops a pending, running, or paused operation and marks all pending
-// items as cancelled. In-flight items finish under their existing leases;
-// subsequent Process calls will not claim new items. Terminal operations
-// cannot be re-cancelled or reopened.
+// items as cancelled — atomically: the aggregate transition and the item
+// cleanup share ONE tenant transaction, so a failure between them rolls both
+// back and Cancel stays retryable (closure review 2026-07-17: the previous
+// two-transaction form could commit a terminal aggregate and then fail the
+// item sweep, leaving pending items stranded under a cancelled operation with
+// no legal repair transition). Retrying Cancel on an ALREADY-cancelled
+// aggregate is idempotent: it re-runs only the pending-item cleanup instead of
+// rejecting the transition, so an interrupted cancellation can always be
+// completed. Completed operations remain terminal and un-cancellable.
+// In-flight items finish under their existing leases; subsequent Process calls
+// will not claim new items.
 func (s *Service) Cancel(ctx context.Context, txm database.TxManager, tenantID, bulkID uuid.UUID) error {
 	tctx := database.WithTenantID(ctx, tenantID)
-	if err := s.transition(tctx, txm, bulkID, "cancelled", "pending", "running", "paused"); err != nil {
-		return err
-	}
 	return txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+		current, err := s.transitionIn(ctx, db, bulkID, "cancelled", "pending", "running", "paused")
+		if err != nil {
+			if kerr.KindOf(err) == kerr.KindConflict && current == "cancelled" {
+				// Idempotent retry of an interrupted cancellation: the aggregate
+				// is already terminal-cancelled; finish the item cleanup.
+			} else {
+				return err
+			}
+		}
+		if s.cancelInterceptor != nil {
+			if err := s.cancelInterceptor(ctx, db); err != nil {
+				return err
+			}
+		}
 		if _, err := db.Exec(ctx,
 			`UPDATE bulk_items SET status = 'cancelled' WHERE bulk_id = $1 AND status = 'pending'`, bulkID); err != nil {
 			return kerr.Wrapf(err, "bulk.Cancel", "cancel pending items")
@@ -519,26 +543,37 @@ func (s *Service) cancelPending(ctx context.Context, txm database.TxManager, bul
 // (KindConflict). No unconditional status label exists anymore (F-04).
 func (s *Service) transition(ctx context.Context, txm database.TxManager, bulkID uuid.UUID, to string, from ...string) error {
 	return txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
-		tag, err := db.Exec(ctx,
-			`UPDATE bulk_operations SET status = $2, updated_at = now()
-			  WHERE id = $1 AND status = ANY($3)`, bulkID, to, from)
-		if err != nil {
-			return kerr.Wrapf(err, "bulk.transition", "set status %s", to)
-		}
-		if tag.RowsAffected() == 1 {
-			return nil
-		}
-		var current string
-		err = db.QueryRow(ctx, `SELECT status FROM bulk_operations WHERE id = $1`, bulkID).Scan(&current)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return kerr.E(kerr.KindNotFound, "not_found", "bulk operation not found")
-		}
-		if err != nil {
-			return kerr.Wrapf(err, "bulk.transition", "read status")
-		}
-		return kerr.E(kerr.KindConflict, "invalid_transition",
-			fmt.Sprintf("bulk operation is %s; cannot transition to %s", current, to))
+		_, err := s.transitionIn(ctx, db, bulkID, to, from...)
+		return err
 	})
+}
+
+// transitionIn is the tx-scoped compare-and-swap core of transition: it runs on
+// the CALLER's TenantDB so multi-write lifecycle operations (Cancel) can compose
+// it with further writes atomically (F-04: cancellation must never leave a
+// terminal aggregate with unswept pending items). On an illegal source state it
+// returns the current status alongside the KindConflict error so callers can
+// implement idempotent retry paths.
+func (s *Service) transitionIn(ctx context.Context, db database.TenantDB, bulkID uuid.UUID, to string, from ...string) (string, error) {
+	tag, err := db.Exec(ctx,
+		`UPDATE bulk_operations SET status = $2, updated_at = now()
+		  WHERE id = $1 AND status = ANY($3)`, bulkID, to, from)
+	if err != nil {
+		return "", kerr.Wrapf(err, "bulk.transition", "set status %s", to)
+	}
+	if tag.RowsAffected() == 1 {
+		return to, nil
+	}
+	var current string
+	err = db.QueryRow(ctx, `SELECT status FROM bulk_operations WHERE id = $1`, bulkID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", kerr.E(kerr.KindNotFound, "not_found", "bulk operation not found")
+	}
+	if err != nil {
+		return "", kerr.Wrapf(err, "bulk.transition", "read status")
+	}
+	return current, kerr.E(kerr.KindConflict, "invalid_transition",
+		fmt.Sprintf("bulk operation is %s; cannot transition to %s", current, to))
 }
 
 // completeIfDrained marks the operation completed ONLY when no pending or
