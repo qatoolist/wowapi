@@ -395,11 +395,27 @@ func (c *moduleContext) rejectDuplicate(what string, exists bool) bool {
 	return exists
 }
 
+// isNilLikeFS reports whether fsys is nil OR an interface holding a typed nil
+// (fourth closure audit 2026-07-17): an fs.FS containing (*customFS)(nil)
+// compares unequal to nil, passes registration, and panics only inside
+// fs.WalkDir at materialization or use.
+func isNilLikeFS(fsys fs.FS) bool {
+	if fsys == nil {
+		return true
+	}
+	v := reflect.ValueOf(fsys)
+	if (v.Kind() == reflect.Ptr || v.Kind() == reflect.Map || v.Kind() == reflect.Slice ||
+		v.Kind() == reflect.Func || v.Kind() == reflect.Chan || v.Kind() == reflect.Interface) && v.IsNil() {
+		return true
+	}
+	return false
+}
+
 func (c *moduleContext) Migrations(fsys fs.FS) {
 	c.mustBeUnsealed("Migrations")
-	if fsys == nil {
+	if isNilLikeFS(fsys) {
 		c.boot.portErrs = append(c.boot.portErrs,
-			fmt.Errorf("module %q: Migrations registered a nil fs.FS", c.name))
+			fmt.Errorf("module %q: Migrations registered a nil (or typed-nil) fs.FS", c.name))
 		return
 	}
 	if _, dup := c.boot.migrations[c.name]; c.rejectDuplicate("Migrations", dup) {
@@ -410,9 +426,9 @@ func (c *moduleContext) Migrations(fsys fs.FS) {
 
 func (c *moduleContext) Seeds(fsys fs.FS) {
 	c.mustBeUnsealed("Seeds")
-	if fsys == nil {
+	if isNilLikeFS(fsys) {
 		c.boot.portErrs = append(c.boot.portErrs,
-			fmt.Errorf("module %q: Seeds registered a nil fs.FS", c.name))
+			fmt.Errorf("module %q: Seeds registered a nil (or typed-nil) fs.FS", c.name))
 		return
 	}
 	if _, dup := c.boot.seeds[c.name]; c.rejectDuplicate("Seeds", dup) {

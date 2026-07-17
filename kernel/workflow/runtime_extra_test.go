@@ -32,6 +32,19 @@ type fakeEvaluator struct {
 	err   error
 }
 
+// validatedEmptyRegistry returns an empty registry whose validation has
+// COMPLETED (Err() ran clean): the runtime refuses to execute against an
+// unvalidated registry (fourth closure audit 2026-07-17), and the DB-parsed
+// definition fallback tests legitimately run with no registered definitions.
+func validatedEmptyRegistry(t *testing.T) *workflow.Registry {
+	t.Helper()
+	reg := workflow.NewRegistry()
+	if err := reg.Err(); err != nil {
+		t.Fatalf("empty registry failed validation: %v", err)
+	}
+	return reg
+}
+
 func (f fakeEvaluator) Evaluate(_ context.Context, _ database.TenantDB, _ authz.Actor, perm string, _ authz.Target) (authz.Decision, error) {
 	if f.err != nil {
 		return authz.Decision{}, f.err
@@ -980,7 +993,7 @@ func TestIntegrationDefFallbackSuccess(t *testing.T) {
 	instID, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.task", taskDef, storedJSON, "do_work")
 
 	// A registry-less runtime: definitions must come from the persisted JSON.
-	rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	rtB := workflow.NewRuntimeWithCompliance(h.TxM, validatedEmptyRegistry(t), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 	if err := rtB.CompleteTask(testkit.TenantCtx(tn.ID), taskID, nil); err != nil {
 		t.Fatalf("CompleteTask via parsed def: %v", err)
 	}
@@ -1010,7 +1023,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"manager_review":{"type":"approval","on_approve":{"next":"ghost"},"on_reject":{"next":"end_rejected"}},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+		rtB := workflow.NewRuntimeWithCompliance(h.TxM, validatedEmptyRegistry(t), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindInternal {
 			t.Fatalf("dangling transition target must be an internal error, got %v", err)
@@ -1030,7 +1043,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"manager_review":{"type":"approval","on_approve":{"next":"end_done"}},` +
 			`"end_done":{"type":"terminal","outcome":"completed"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+		rtB := workflow.NewRuntimeWithCompliance(h.TxM, validatedEmptyRegistry(t), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionReject})
 		if kerr.KindOf(err) != kerr.KindWorkflowState {
 			t.Fatalf("missing transition must be a workflow-state error, got %v", err)
@@ -1052,7 +1065,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"end_done":{"type":"terminal","outcome":"completed"},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+		rtB := workflow.NewRuntimeWithCompliance(h.TxM, validatedEmptyRegistry(t), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindInternal {
 			t.Fatalf("unregistered auto action must be an internal error, got %v", err)
@@ -1074,7 +1087,7 @@ func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
 			`"end_done":{"type":"terminal","outcome":"completed"},` +
 			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
 		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+		rtB := workflow.NewRuntimeWithCompliance(h.TxM, validatedEmptyRegistry(t), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
 		if kerr.KindOf(err) != kerr.KindValidation {
 			t.Fatalf("unknown assignee kind must be a validation error, got %v", err)

@@ -209,7 +209,7 @@ func run(ctx context.Context) error {
 	auth := httpx.Composite(apiKeyAuth, userAuth)
 	// RuntimeRouter is the boot-validated router; unlike the informational
 	// Router field it cannot have been reassigned after boot.
-	mux := booted.RuntimeRouter().SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
+	mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeKernel().Authz, booted.RuntimeKernel().Tx)
 
 	// Health endpoints are Public infrastructure, mounted directly.
 	// ReadinessWithCatalogs registers the framework-level "seed_catalogs"

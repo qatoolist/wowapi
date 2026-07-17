@@ -1494,3 +1494,18 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Affected:** scripts/migration_reversibility_drill.sh, scripts/pitr_restore_drill.sh,
   scripts/object_storage_restore_drill.sh, internal/tools/migrate/main.go, Makefile (drill-* targets),
   docs/operations/{migrations,backup-restore}.md.
+
+## D-0091 — Booted is opaque-by-construction (accepted stable-v1 exception)
+
+**Date:** 2026-07-17 · **Context:** fourth adversarial closure audit.
+Adding the unexported `runtime` field to `app.Booted` breaks external
+POSITIONAL composite literals of `Booted`, and hand-constructed values now
+fail loudly (`ErrNotBooted` / accessor panics) instead of silently operating.
+**Decision:** accept the break. A `Booted` that did not come from `App.Boot`
+never passed boot validation; silently operating on one was the F-10
+two-sources-of-truth defect itself. The alternative — preserving positional
+constructibility — would preserve the vulnerability. Recorded in the
+CHANGELOG as a breaking change with migration guidance (obtain `Booted` only
+from `App.Boot`); the stable-v1 positional-literal freeze
+(`internal/compat/stable_v1_consumer_test.go`) intentionally covers
+`app.Hook` and `document.UploadEvent` but NOT `app.Booted`.

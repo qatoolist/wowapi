@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -70,6 +71,12 @@ type Registry struct {
 	resolvers map[string]AssigneeResolver
 	errs      []error
 	sealed    bool
+	// validated is set when Err() last ran clean. The runtime refuses to
+	// execute against a registry that has not completed validation (fourth
+	// closure audit 2026-07-17): the public API path — RegisterDefinition
+	// without ever consulting Err() — must not be an equivalent route around
+	// the boot gates.
+	validated bool
 }
 
 // Seal freezes the registry once boot validation completes: any later
@@ -111,6 +118,28 @@ func (r *Registry) RegisterDefinition(def Definition) error {
 			"workflow definition registered more than once: "+k)
 		r.errs = append(r.errs, err)
 		return err
+	}
+	// Gateway condition values are validated SYNCHRONOUSLY, before storage
+	// (fourth closure audit 2026-07-17): full graph validation is deferred to
+	// Err() because it needs the complete auto-action/resolver sets, but a
+	// mutable Equals value must never be STORED — a caller on the public API
+	// path that ignores Err() would otherwise retain an alias into the
+	// registry's cloned definition and could steer gateway routing after
+	// registration.
+	for _, name := range sortedStepKeys(def.Steps) {
+		step := def.Steps[name]
+		for i, b := range step.Branches {
+			if b.When == nil {
+				continue
+			}
+			if b.When.Key == "" || !scalarConditionValue(b.When.Equals) {
+				err := kerr.E(kerr.KindValidation, "workflow_condition_invalid",
+					fmt.Sprintf("definition %s step %q branch[%d]: when requires a key and an immutable scalar equals value (string, bool, or number), not %T",
+						def.Key, name, i, b.When.Equals))
+				r.errs = append(r.errs, err)
+				return err
+			}
+		}
 	}
 	r.defs[k] = def.clone()
 	if def.Version > r.latest[def.Key] {
@@ -248,11 +277,19 @@ func (r *Registry) Err() error {
 		}
 	}
 	if len(msgs) == 0 {
+		// Validation completed clean: the runtime may execute against this
+		// registry (fourth closure audit 2026-07-17).
+		r.validated = true
 		return nil
 	}
+	r.validated = false
 	return kerr.E(kerr.KindInternal, "workflow_registration_failed",
 		"workflow registration failed: "+strings.Join(msgs, "; "))
 }
+
+// validatedOK reports whether Err() last completed clean; the runtime refuses
+// to execute otherwise.
+func (r *Registry) validatedOK() bool { return r.validated }
 
 // definition returns the registered definition for (key, version).
 func (r *Registry) definition(key string, version int) (Definition, bool) {

@@ -111,6 +111,31 @@ changes to it require a new major version.
   providers are collected boot errors. A boundary lint prohibits generated templates from
   reading informational `Booted` fields; `docs/reference/invariant-ledger.md` records
   each framework invariant's enforcement, consumer classes, and guarding regression.
+- The PUBLIC workflow API enforces the same invariants as the boot path (fourth closure
+  audit): `RegisterDefinition` rejects non-scalar gateway condition values synchronously
+  before storage, and every executing `Runtime` method refuses a registry that has not
+  completed validation (`Registry.Err()` — `App.Boot`'s gate — must have run clean).
+  Gateway comparison is now type-preserving and canonical: string/bool/number values
+  compare by kind (never `fmt.Sprint`, never a `Stringer` invocation), and instance
+  context is canonical JSON at every ingestion point, so routing is identical before and
+  after a reload.
+- The kernel aggregate joins the runtime view (fourth closure audit): `Boot` captures a
+  struct copy; `Booted.RuntimeKernel()` is what `StartWorker`, the readiness detail
+  providers, and the generated api process consume — neither reassigning the
+  informational `Kernel` field nor mutating the caller-owned kernel's fields after boot
+  changes the running dependencies. `Booted.Migrations` (the informational mirror) is now
+  also populated from the boot-materialized snapshots, and typed-nil `fs.FS` values are
+  rejected like nil ones.
+
+### Changed (BREAKING for hand-constructed `app.Booted` — decision D-0091)
+- `app.Booted` gained an unexported runtime field: external POSITIONAL composite
+  literals of `Booted` no longer compile, and a hand-constructed `Booted` now fails
+  loudly (`ErrNotBooted` from `StartWorker`, panics from `Runtime*` accessors) instead
+  of silently operating on unvalidated state. This is a deliberate, documented exception
+  to stable-v1 source compatibility: a `Booted` that did not come from `App.Boot` never
+  passed boot validation, and operating on one silently was itself the F-10 defect.
+  Migration: obtain `Booted` exclusively from `App.Boot`. See
+  `docs/implementation/decisions.md` D-0091.
 
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.

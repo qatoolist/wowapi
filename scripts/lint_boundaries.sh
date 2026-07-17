@@ -186,15 +186,9 @@ if [ -n "$unallowlisted" ]; then
   fail=1
 fi
 
-# Generated templates must consume ONLY the boot-validated runtime accessors
-# (Runtime*), never Booted's informational mirror fields: a field can be
-# reassigned after boot, so a template reading it would serve unvalidated
-# state (third closure audit 2026-07-17, F-10). booted.Kernel is a live
-# runtime object and stays allowed.
-tmpl_bad=$(grep -rnE 'booted\.(Seeds|I18n|Router|Migrations|Health|Events|Jobs|Recurring|OpenAPI)\b' internal/cli/templates/ 2>/dev/null || true)
-if [ -n "$tmpl_bad" ]; then
-  echo "BOUNDARY VIOLATION (generated template reads an informational Booted field; use the Runtime* accessor):"
-  echo "$tmpl_bad" | sed 's/^/  /'
+# Template consumer-path lint (extracted to its own script so a negative
+# fixture test can prove forbidden reads actually fail the gate).
+if ! sh scripts/lint_templates.sh internal/cli/templates; then
   fail=1
 fi
 

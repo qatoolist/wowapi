@@ -42,6 +42,9 @@ type slaState struct {
 //     workflow.<def>.escalated event is emitted, and if its step declares an
 //     escalate_to step an escalation task is created there.
 func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.Time) (reminders, escalations int, err error) {
+	if err := rt.requireValidated(); err != nil {
+		return 0, 0, err
+	}
 	started := time.Now()
 	maxLag := time.Duration(0)
 	defer func() {

@@ -315,8 +315,10 @@ func TestBootRejectsNilAndEmptyDeclarations(t *testing.T) {
 		reg  func(mc module.Context)
 		want string
 	}{
-		"nil migrations FS": {func(mc module.Context) { mc.Migrations(nil) }, "nil fs.FS"},
-		"nil seeds FS":      {func(mc module.Context) { mc.Seeds(nil) }, "nil fs.FS"},
+		"nil migrations FS":       {func(mc module.Context) { mc.Migrations(nil) }, "nil (or typed-nil) fs.FS"},
+		"nil seeds FS":            {func(mc module.Context) { mc.Seeds(nil) }, "nil (or typed-nil) fs.FS"},
+		"typed-nil migrations FS": {func(mc module.Context) { mc.Migrations((*fstest.MapFS)(nil)) }, "typed-nil"},
+		"typed-nil seeds FS":      {func(mc module.Context) { mc.Seeds((*fstest.MapFS)(nil)) }, "typed-nil"},
 		"empty health name": {func(mc module.Context) {
 			mc.Health("", func(context.Context) error { return nil })
 		}, "non-empty check name"},
@@ -334,5 +336,54 @@ func TestBootRejectsNilAndEmptyDeclarations(t *testing.T) {
 				t.Fatalf("boot error %v does not explain %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Fourth closure-audit regression (2026-07-17): the KERNEL aggregate is inside
+// the ownership boundary. Boot captures a struct copy; neither reassigning the
+// informational Kernel field nor mutating the caller-owned kernel's fields
+// after boot can change the dependencies the worker and readiness paths run
+// with. StartWorker is exercised with booted.Kernel = nil — the pre-fix code
+// read the field and would nil-panic.
+func TestKernelReplacementAndMutationCannotAlterRuntimeDependencies(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM,
+	})
+	if err != nil {
+		t.Fatalf("kernel.New: %v", err)
+	}
+	a := app.New()
+	a.Register(funcModule{name: "widgets"})
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	captured := booted.RuntimeKernel()
+	origPerms, origTx, origPlatform := captured.Perms, captured.Tx, captured.Platform
+
+	// Sabotage both paths: replace the informational field AND gut the
+	// caller-owned aggregate boot was given.
+	booted.Kernel = nil
+	k.Perms = nil
+	k.Tx = nil
+	k.Platform = nil
+
+	got := booted.RuntimeKernel()
+	if got == nil || got.Perms != origPerms || got.Tx == nil || got.Platform == nil {
+		t.Fatalf("RuntimeKernel follows post-boot kernel mutation/replacement: %+v", got)
+	}
+	if got.Tx != origTx || got.Platform != origPlatform {
+		t.Fatal("RuntimeKernel lost the boot-captured dependencies")
+	}
+
+	// The worker must run off the captured view: with booted.Kernel nil, a
+	// field-reading StartWorker would nil-panic before its first loop.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := app.StartWorker(ctx, booted, app.WorkerConfigOpts{ShutdownDrain: 5 * time.Second}); err != nil {
+		t.Fatalf("StartWorker off the captured kernel view: %v", err)
 	}
 }

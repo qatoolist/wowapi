@@ -46,7 +46,9 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	if b == nil || !b.runtime.set {
 		return ErrNotBooted
 	}
-	k := b.Kernel
+	// The boot-captured dependency view, never the reassignable Kernel field
+	// (fourth closure audit 2026-07-17).
+	k := b.RuntimeKernel()
 	if k.Platform == nil {
 		return errNoPlatformPool
 	}

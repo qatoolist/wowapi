@@ -72,20 +72,20 @@ func ReadinessWithCatalogs(b *Booted, fingerprint config.Fingerprint, db databas
 		return "seed_catalog_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.Kernel == nil || b.Kernel.Rules == nil {
+		if b.RuntimeKernel().Rules == nil {
 			return "", nil
 		}
-		hash := RuleHash(b.Kernel.Rules)
+		hash := RuleHash(b.RuntimeKernel().Rules)
 		if hash == "" {
 			return "", nil
 		}
 		return "rule_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.Kernel == nil || b.Kernel.ModelHash == "" {
+		if b.RuntimeKernel().ModelHash == "" {
 			return "", nil
 		}
-		return "model_hash", b.Kernel.ModelHash
+		return "model_hash", b.RuntimeKernel().ModelHash
 	})
 
 	return h

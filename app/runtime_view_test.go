@@ -70,6 +70,7 @@ func TestUnbootedBootedFailsLoudly(t *testing.T) {
 
 	for name, fn := range map[string]func(){
 		"RuntimeRouter":     func() { b.RuntimeRouter() },
+		"RuntimeKernel":     func() { b.RuntimeKernel() },
 		"RuntimeEvents":     func() { b.RuntimeEvents() },
 		"RuntimeJobs":       func() { b.RuntimeJobs() },
 		"RuntimeMigrations": func() { _ = b.RuntimeMigrations() },

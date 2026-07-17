@@ -29,14 +29,22 @@ import (
 // start serving (or to migrate/seed). Modules have registered; the whole graph
 // and registries are validated; nothing has started yet.
 //
-// The exported collector fields (Router, Events, Jobs, OpenAPI, Health,
-// Migrations, Recurring) are INFORMATIONAL MIRRORS kept for inspection and v1
-// API compatibility: the framework's own consumers — StartWorker, the
-// Readiness builders, and the generated api/migrate processes via the
-// Runtime* accessors — read an unexported boot-validated view captured inside
-// Boot, so reassigning these fields after boot cannot alter validated runtime
-// state (second closure audit 2026-07-17, F-10). The registries themselves are
+// The exported fields (Kernel, Router, Events, Jobs, OpenAPI, Health,
+// Migrations, Seeds, Recurring, I18n) are INFORMATIONAL MIRRORS kept for
+// inspection: the framework's own consumers — StartWorker, the Readiness
+// builders, and the generated api/migrate processes via the Runtime*
+// accessors — read an unexported boot-validated view captured inside Boot, so
+// reassigning these fields after boot cannot alter validated runtime state
+// (closure audits 2026-07-17, F-10). The registries themselves are
 // additionally sealed: their registration mutators panic after boot.
+//
+// COMPATIBILITY DECISION (fourth closure audit, D-0091): the unexported
+// runtime field makes external POSITIONAL literals of Booted uncompilable,
+// and hand-constructed Booted values now fail loudly instead of operating.
+// This is a deliberate, documented source/behavior break for that construction
+// pattern: a hand-constructed Booted never passed boot validation, and
+// operating on one silently was itself the F-10 defect. Migration: obtain
+// Booted only from App.Boot.
 type Booted struct {
 	Kernel     *kernel.Kernel
 	Router     *httpx.Router
@@ -72,6 +80,7 @@ type runtimeView struct {
 	// must NOT be the signal: a product with zero recurring jobs would
 	// otherwise be indistinguishable from an unbooted value.
 	set        bool
+	kernel     *kernel.Kernel
 	router     *httpx.Router
 	events     *outbox.HandlerRegistry
 	jobs       *jobs.Registry
@@ -92,6 +101,20 @@ func (b *Booted) mustBeBooted() {
 	if b == nil || !b.runtime.set {
 		panic(ErrNotBooted.Error())
 	}
+}
+
+// RuntimeKernel returns the boot-captured kernel dependency view: a struct
+// copy of the *kernel.Kernel taken when Boot validated the application, so
+// neither reassigning the informational Kernel field nor mutating the fields
+// of the caller-owned kernel aggregate after boot can change which pools,
+// transaction managers, registries, or authorization services the framework's
+// consumers (StartWorker, the Readiness builders, generated processes) run
+// with (fourth closure audit 2026-07-17). The services themselves are the
+// live singletons boot validated — that is the point; only the AGGREGATE's
+// field set is frozen.
+func (b *Booted) RuntimeKernel() *kernel.Kernel {
+	b.mustBeBooted()
+	return b.runtime.kernel
 }
 
 // RuntimeRouter returns the boot-validated (sealed) router a serving process
@@ -540,12 +563,20 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	for k, v := range boot.health {
 		health[k] = v
 	}
-	migrationsFS := make(map[string]fs.FS, len(boot.migrations))
-	for k, v := range boot.migrations {
+	// The public Migrations mirror is populated from the MATERIALIZED
+	// snapshots too (fourth closure audit 2026-07-17): a derived migrator that
+	// still reads the informational field must not stay attached to
+	// module-owned mutable filesystems. Independent outer map; same immutable
+	// snapshot values as the runtime view.
+	migrationsFS := make(map[string]fs.FS, len(materialized))
+	for k, v := range materialized {
 		migrationsFS[k] = v
 	}
 	recurring := append([]RecurringJob(nil), boot.recurring...)
 	catalog := boot.i18n.Catalog()
+	// A STRUCT COPY of the kernel aggregate: the caller retains *k and could
+	// reassign its fields after boot; the runtime view must not follow.
+	kernelView := *k
 
 	return &Booted{
 		Kernel:     k,
@@ -560,6 +591,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		I18n:       catalog,
 		runtime: runtimeView{
 			set:        true,
+			kernel:     &kernelView,
 			router:     router,
 			events:     events,
 			jobs:       jobReg,

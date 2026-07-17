@@ -182,7 +182,7 @@
 
   Question -- based on failures, what pattern do you see in implementation thats causing these failures? what development recommendations would you give to ensure each one of these and similar issues are handled well in advance?
 
-  Answer - 
+  Answer -
   • The dominant pattern is an incomplete ownership boundary.
 
   The implementation often validates and “seals” the obvious registry object, but does not establish exclusive ownership of

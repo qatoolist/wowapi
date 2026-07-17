@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,10 +123,26 @@ func NewRuntimeWithCompliance(txm database.TxManager, reg *Registry, ev authz.Ev
 	return rt
 }
 
+// requireValidated refuses to execute against a registry that has not
+// completed validation (fourth closure audit 2026-07-17): RegisterDefinition
+// defers full graph validation to Err(), so a caller on the public API path
+// who never consults Err() must not be able to run instances over an
+// unvalidated (or invalid) graph. App.Boot calls Err() as a boot gate.
+func (rt *Runtime) requireValidated() error {
+	if !rt.registry.validatedOK() {
+		return kerr.E(kerr.KindInternal, "workflow_registry_unvalidated",
+			"workflow registry has not completed validation: call Registry.Err() (App.Boot's boot gate does) before executing workflows")
+	}
+	return nil
+}
+
 // StartIn creates an instance and enters its initial step INSIDE the caller's
 // tenant transaction, so a business write and its workflow start commit or roll
 // back together (blueprint §1.3).
 func (rt *Runtime) StartIn(ctx context.Context, db database.TenantDB, defKey string, res resource.Ref, input map[string]any) (uuid.UUID, error) {
+	if err := rt.requireValidated(); err != nil {
+		return uuid.Nil, err
+	}
 	if res.IsZero() {
 		return uuid.Nil, kerr.E(kerr.KindValidation, "workflow_start_invalid", "workflow start requires a resource ref")
 	}
@@ -163,7 +180,14 @@ func (rt *Runtime) StartIn(ctx context.Context, db database.TenantDB, defKey str
 		return uuid.Nil, kerr.Wrapf(err, "workflow.StartIn", "insert instance")
 	}
 
-	inst := Instance{ID: instanceID, DefinitionID: defID, Resource: res, CurrentStep: def.InitialStep, Status: "running", Context: input, Version: 1}
+	// Execute over the CANONICAL context — the JSON just persisted — never the
+	// caller-owned map (fourth closure audit 2026-07-17: pre- vs post-reload
+	// routing equivalence, and no retained caller alias).
+	var canonical map[string]any
+	if err := json.Unmarshal(ctxJSON, &canonical); err != nil {
+		return uuid.Nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context does not round-trip JSON")
+	}
+	inst := Instance{ID: instanceID, DefinitionID: defID, Resource: res, CurrentStep: def.InitialStep, Status: "running", Context: canonical, Version: 1}
 	if err := rt.enterStep(ctx, db, &inst, def, def.InitialStep, actor); err != nil {
 		return uuid.Nil, err
 	}
@@ -173,6 +197,9 @@ func (rt *Runtime) StartIn(ctx context.Context, db database.TenantDB, defKey str
 // Decide records an approve/reject on a task and drives the resulting
 // transition, in its own tenant transaction.
 func (rt *Runtime) Decide(ctx context.Context, taskID uuid.UUID, d Decision) error {
+	if err := rt.requireValidated(); err != nil {
+		return err
+	}
 	return rt.txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		task, err := rt.loadTask(ctx, db, taskID)
 		if err != nil {
@@ -232,6 +259,9 @@ func (rt *Runtime) Decide(ctx context.Context, taskID uuid.UUID, d Decision) err
 // CompleteTask marks a `task`-type task done (with optional output) and advances
 // via the step's next transition, in its own tenant transaction.
 func (rt *Runtime) CompleteTask(ctx context.Context, taskID uuid.UUID, output map[string]any) error {
+	if err := rt.requireValidated(); err != nil {
+		return err
+	}
 	return rt.txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		task, err := rt.loadTask(ctx, db, taskID)
 		if err != nil {
@@ -258,9 +288,15 @@ func (rt *Runtime) CompleteTask(ctx context.Context, taskID uuid.UUID, output ma
 		}); err != nil {
 			return err
 		}
-		// Merge output into instance context so downstream gateways can branch.
+		// Merge output into instance context so downstream gateways can branch —
+		// canonicalized first, so routing before and after a reload evaluates
+		// the same JSON-shaped values (fourth closure audit 2026-07-17).
 		if len(output) > 0 {
-			for k, v := range output {
+			canonOut, err := canonicalizeContext(output)
+			if err != nil {
+				return err
+			}
+			for k, v := range canonOut {
 				inst.Context[k] = v
 			}
 			if err := rt.saveContext(ctx, db, &inst); err != nil {
@@ -275,6 +311,9 @@ func (rt *Runtime) CompleteTask(ctx context.Context, taskID uuid.UUID, output ma
 // delegate is ADDED as an assignee so the original assignee retains visibility.
 // The task stays open (blueprint §1.3).
 func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until time.Time) error {
+	if err := rt.requireValidated(); err != nil {
+		return err
+	}
 	return rt.txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		task, err := rt.loadTask(ctx, db, taskID)
 		if err != nil {
@@ -318,6 +357,9 @@ func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until tim
 // (W03-E05-S001): definitions declaring ratify_by are rejected at validation
 // time, so every override records ratification_outcome="rejected_interim".
 func (rt *Runtime) Override(ctx context.Context, actor authz.Actor, instanceID uuid.UUID, to string, reason string) error {
+	if err := rt.requireValidated(); err != nil {
+		return err
+	}
 	if reason == "" {
 		return kerr.E(kerr.KindValidation, "override_reason_required", "override requires a reason")
 	}
@@ -574,7 +616,11 @@ func (rt *Runtime) runAuto(ctx context.Context, db database.TenantDB, inst *Inst
 		return rt.advance(ctx, db, inst, def, step.OnError, actor)
 	}
 	if len(out) > 0 {
-		for k, v := range out {
+		canonOut, err := canonicalizeContext(out)
+		if err != nil {
+			return err
+		}
+		for k, v := range canonOut {
 			inst.Context[k] = v
 		}
 		if err := rt.saveContext(ctx, db, inst); err != nil {
@@ -623,11 +669,82 @@ func (rt *Runtime) gatewayTarget(step Step, ctxMap map[string]any) string {
 			def = b.Next
 			continue
 		}
-		if fmt.Sprint(ctxMap[b.When.Key]) == fmt.Sprint(b.When.Equals) {
+		if conditionMatches(ctxMap[b.When.Key], b.When.Equals) {
 			return b.Next
 		}
 	}
 	return def
+}
+
+// conditionMatches compares a context value against a validated scalar
+// condition value with TYPE-PRESERVING semantics (fourth closure audit
+// 2026-07-17): fmt.Sprint equality made string "1" match number 1 and "true"
+// match true, and invoked arbitrary Stringer implementations during routing
+// decisions. Strings match only string-kinded values, bools only bools, and
+// numeric kinds compare by value across int/uint/float — the instance context
+// is canonical JSON (see canonicalizeContext), where every number is float64,
+// so cross-numeric equality is what makes pre- and post-reload routing
+// identical. No method on either value is ever invoked.
+func conditionMatches(ctxVal, equals any) bool {
+	cv, ok := canonicalScalar(ctxVal)
+	if !ok {
+		return false
+	}
+	ev, ok := canonicalScalar(equals)
+	if !ok {
+		return false
+	}
+	// Interface equality here is same-dynamic-type equality: after
+	// canonicalScalar the dynamic types are exactly string, bool, or float64,
+	// so a string can never equal a number or a bool.
+	return cv == ev
+}
+
+// canonicalScalar reduces a value to its canonical scalar representation
+// (string, bool, or float64) by KIND, so named scalar types (type Tier
+// string) compare equal to their canonical JSON form. Anything non-scalar
+// reports false and can never match a condition.
+func canonicalScalar(v any) (any, bool) {
+	if v == nil {
+		return nil, false
+	}
+	rv := reflect.ValueOf(v)
+	k := rv.Kind()
+	switch {
+	case k == reflect.String:
+		return rv.String(), true
+	case k == reflect.Bool:
+		return rv.Bool(), true
+	case k >= reflect.Int && k <= reflect.Int64:
+		return float64(rv.Int()), true
+	case k >= reflect.Uint && k <= reflect.Uint64:
+		return float64(rv.Uint()), true
+	case k == reflect.Float32 || k == reflect.Float64:
+		return rv.Float(), true
+	default:
+		return nil, false
+	}
+}
+
+// canonicalizeContext round-trips a context map through its JSON
+// representation — the exact bytes persisted — so immediate routing and
+// post-reload routing evaluate IDENTICAL values (fourth closure audit
+// 2026-07-17): executing over the caller-owned map let a custom marshaler or
+// retained mutable value select a different branch before vs after reload,
+// and retained the caller's map in the instance.
+func canonicalizeContext(m map[string]any) (map[string]any, error) {
+	if len(m) == 0 {
+		return map[string]any{}, nil
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context not JSON-encodable")
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context does not round-trip JSON")
+	}
+	return out, nil
 }
 
 // createTask inserts a task and its resolved assignees, applying the step SLA.
