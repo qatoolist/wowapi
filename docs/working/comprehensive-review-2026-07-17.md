@@ -99,3 +99,44 @@ Evidence retained: migrations/baseline/census-reference.txt (framework-owned
 schema inventory of the proven 49-chain head, with PG/extension versions,
 source commit, normalization rules; regenerated + drift-guarded by
 scripts/baseline_census.sh via `make baseline-census-check`).
+
+
+## Design-blocker resolutions (2026-07-17)
+
+### Blocker 1 — tenant workflow-definition overrides: REMOVE (clean-V1 decision)
+
+Verified: `workflow_definitions.tenant_id` exists (NULL=module template,
+non-NULL=tenant override) and `definitionRow` prefers overrides
+(`ORDER BY (tenant_id IS NOT NULL) DESC`). But there is NO production writer for
+overrides (no SyncDefinitions; only testkit seeds), the registry has no tenant
+dimension, and no product requirement is evidenced. A global SyncDefinitions
+cannot produce or validate tenant-specific definitions.
+
+DECISION: remove tenant workflow-definition overrides. Registered module
+definitions are the SOLE canonical source; `workflow_definitions` becomes a
+global platform catalog like `rule_definitions`. Schema delta (folded into the
+baseline): drop `workflow_definitions.tenant_id` and its RLS policy; simplify
+`definitionRow` to `WHERE key=$1 AND status='active' ORDER BY version DESC`.
+The instance→definition binding stays immutable via `workflow_instances.
+definition_id` (FK) plus the C-03 digest.
+
+### Blocker 2 — census strengthened into a semantic manifest
+
+The first census counted objects only; it could not prove object-for-object
+equivalence and wrongly counted 238 functions (98% extension-provided). The
+strengthened census (scripts/baseline_census.sql, shared by the check and the
+mutation harness) captures: extension name+version+schema; column full type +
+identity + generated + collation; constraint full def (FK actions, referenced
+cols, check exprs) + validated/deferrable/deferred; policy cmd + permissive +
+roles + using + check; function signature + return + language + volatility +
+strict + security-definer + config + body-md5, EXCLUDING extension-provided
+functions via pg_depend (now 3 framework functions, not 238); grants across
+table/column/sequence/function/schema with grant-option. Concurrency-safe
+(PID-suffixed scratch DB, mktemp).
+
+NEGATIVE PROOF (make baseline-census-discriminates,
+scripts/baseline_census_discriminates.sh): mutating one object per class —
+FK deferrability, policy role, function security-definer, an added grant, an
+added extension, a generated column — changes the manifest in every case. The
+oracle is therefore genuinely discriminating, not an "equal counts" false pass.
+`make baseline-census-check` is now sound as the squash equivalence guard.
