@@ -87,6 +87,12 @@ seed:
 
 ##@ Operational drills (backup/restore & migration reversibility)
 
+.PHONY: baseline-census-check
+baseline-census-check: ## Regenerate the schema census and fail if it drifts from migrations/baseline/census-reference.txt (equivalence guard for the squash). Needs psql+go+DB.
+	@sh scripts/baseline_census.sh 2>/dev/null | grep -E '^(TABLE|COL|INDEX|POLICY|RLS|FUNC|GRANT|CONSTRAINT|EXT) ' | sort > /tmp/wowapi-census-regen.txt
+	@grep -vE '^#|^$$' migrations/baseline/census-reference.txt | sort > /tmp/wowapi-census-committed.txt
+	@diff -u /tmp/wowapi-census-committed.txt /tmp/wowapi-census-regen.txt && echo "baseline census: MATCHES reference" || { echo "baseline census: DRIFT — the schema changed; regenerate the reference intentionally"; exit 1; }
+
 .PHONY: drill-reversibility
 drill-reversibility: ## O2/B-4: up->down->up on a scratch DB, DIFF the schema snapshots (fails on asymmetric Down). Needs pg_dump+go+DB.
 	DATABASE_URL="$${DATABASE_URL:-$(TEST_DSN)}" scripts/migration_reversibility_drill.sh

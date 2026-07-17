@@ -61,3 +61,41 @@ Gates: full host suite, ci-container, mechanical batch green.
   on product decisions (MFA scope, checksum-repair scope, clean-DB policy) and
   all coupled to the identity decision. A staged programme, not an autonomous
   sweep — the report's own phase 1 is "decide the release identity."
+
+## C-03 lifecycle trace + canonical-source decision (2026-07-17)
+
+Exhaustive trace of the workflow_definitions lifecycle (per the sequencing
+correction — C-03 precedes the baseline):
+
+- **Registration/declaration:** in-memory `workflow.Registry` (boot-validated,
+  RWMutex + generation-keyed). Source of truth for the graph.
+- **Seed/sync source:** NONE in production. `kernel/rules.SyncDefinitions`
+  syncs the rule registry → `rule_definitions` (wired in the generated migrate
+  main, cmd_migrate_main.go.tmpl:193). There is NO `workflow.SyncDefinitions`
+  and the generated migrate main does not sync workflow definitions.
+- **Production insert/update ownership:** NONE. `00009_workflow.sql:72` GRANTs
+  INSERT/UPDATE on workflow_definitions to app_platform, but no code writes it.
+  Only `testkit.SeedWorkflowDefinition` inserts rows (test-only).
+- **Instance creation (StartIn):** reads `SELECT id, version FROM
+  workflow_definitions WHERE key=$1 ORDER BY version DESC` (definitionRow) —
+  would return NO rows in a real product, failing StartIn.
+- **Runtime reload (defForInstance):** `SELECT key, version, definition WHERE
+  id=$1`, prefers the registry def, falls back to parseAndValidateDefinition.
+- **SLA sweep:** batch-reads definitions the same way.
+- **Generated-product provisioning:** nothing syncs workflow definitions.
+
+**Decision (canonical source of truth):** registered module workflow
+definitions are canonical, and the production writer is a MISSING INTEGRATION,
+not a testkit gap. Tests mask it by seeding rows directly. C-03 is therefore:
+(1) implement `workflow.SyncDefinitions(registry → workflow_definitions)`
+mirroring rules, computing an immutable canonical digest at sync; (2) wire it
+into the generated migrate main after rules sync; (3) add a definition_digest
+column (schema delta folded into the baseline); (4) verify the digest at
+StartIn, reload, task execution, and SLA sweep, rejecting before state
+mutation on missing/mismatched identity; (5) cross-tenant and
+same-key/version-divergent regressions.
+
+Evidence retained: migrations/baseline/census-reference.txt (framework-owned
+schema inventory of the proven 49-chain head, with PG/extension versions,
+source commit, normalization rules; regenerated + drift-guarded by
+scripts/baseline_census.sh via `make baseline-census-check`).

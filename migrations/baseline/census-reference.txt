@@ -1,0 +1,1398 @@
+# Catalog-equivalence reference for the clean-V1 (v1.2.0) schema baseline
+# The squashed 00001_baseline must reproduce these framework-owned objects.
+# Regenerate + verify: make baseline-census-check (scripts/baseline_census.sh).
+#
+# Provenance:
+#   migration_head:    49 (source 'wowapi', pre-squash chain)
+#   source_commit:     13861868ab2ca8f7ea8c2e98123646684548b56b
+#   postgres_version:  16.14
+#   extensions:        btree_gist=1.7 citext=1.6 plpgsql=1.0 
+#   normalization:     framework-owned only; excludes goose_% tables, owner,
+#                      generated OIDs, ACL/dump ordering; quals whitespace-
+#                      collapsed; objects sorted lexically.
+#   summary:           60 tables, 600 columns, 129 indexes, 61 policies, 233 grants, 238 functions.
+#
+COL acting_capacities.created_at timestamp with time zone null=NO def=now()
+COL acting_capacities.created_by uuid null=NO def=-
+COL acting_capacities.id uuid null=NO def=-
+COL acting_capacities.label text null=NO def=-
+COL acting_capacities.party_id uuid null=YES def=-
+COL acting_capacities.status text null=NO def='active'::text
+COL acting_capacities.tenant_id uuid null=NO def=-
+COL acting_capacities.updated_at timestamp with time zone null=YES def=-
+COL acting_capacities.updated_by uuid null=YES def=-
+COL acting_capacities.user_id uuid null=NO def=-
+COL acting_capacities.valid_from timestamp with time zone null=NO def=now()
+COL acting_capacities.valid_to timestamp with time zone null=YES def=-
+COL acting_capacities.version integer null=NO def=1
+COL actor_assignments.capacity_id uuid null=YES def=-
+COL actor_assignments.created_at timestamp with time zone null=NO def=now()
+COL actor_assignments.created_by uuid null=NO def=-
+COL actor_assignments.delegated_from uuid null=YES def=-
+COL actor_assignments.granted_by uuid null=NO def=-
+COL actor_assignments.id uuid null=NO def=-
+COL actor_assignments.reason text null=YES def=-
+COL actor_assignments.role_id uuid null=NO def=-
+COL actor_assignments.scope_id uuid null=YES def=-
+COL actor_assignments.scope_kind text null=NO def=-
+COL actor_assignments.scope_type text null=YES def=-
+COL actor_assignments.system_actor text null=YES def=-
+COL actor_assignments.tenant_id uuid null=NO def=-
+COL actor_assignments.valid_from timestamp with time zone null=NO def=now()
+COL actor_assignments.valid_to timestamp with time zone null=YES def=-
+COL actor_assignments.version integer null=NO def=1
+COL api_keys.created_at timestamp with time zone null=NO def=now()
+COL api_keys.created_by uuid null=YES def=-
+COL api_keys.expires_at timestamp with time zone null=YES def=-
+COL api_keys.id uuid null=NO def=-
+COL api_keys.key_hash text null=NO def=-
+COL api_keys.key_prefix text null=NO def=-
+COL api_keys.last_used_at timestamp with time zone null=YES def=-
+COL api_keys.name text null=NO def=-
+COL api_keys.revoked_at timestamp with time zone null=YES def=-
+COL api_keys.scopes ARRAY null=NO def='{}'::text[]
+COL api_keys.tenant_id uuid null=NO def=-
+COL artifacts.content bytea null=NO def=-
+COL artifacts.content_hash text null=NO def=-
+COL artifacts.content_type text null=NO def='application/pdf'::text
+COL artifacts.created_at timestamp with time zone null=NO def=now()
+COL artifacts.created_by uuid null=YES def=-
+COL artifacts.effective_date timestamp with time zone null=YES def=-
+COL artifacts.id uuid null=NO def=-
+COL artifacts.kind text null=NO def=-
+COL artifacts.sidecar jsonb null=NO def='{}'::jsonb
+COL artifacts.template_version text null=YES def=-
+COL artifacts.tenant_id uuid null=NO def=-
+COL artifacts.version integer null=NO def=-
+COL attachments.comment_id uuid null=YES def=-
+COL attachments.created_at timestamp with time zone null=NO def=now()
+COL attachments.created_by uuid null=NO def=-
+COL attachments.document_version_id uuid null=NO def=-
+COL attachments.id uuid null=NO def=-
+COL attachments.resource_id uuid null=NO def=-
+COL attachments.resource_type text null=NO def=-
+COL attachments.status text null=NO def='active'::text
+COL attachments.tenant_id uuid null=NO def=-
+COL attachments.version integer null=NO def=1
+COL attachments.workflow_task_id uuid null=YES def=-
+COL audit_anchors.anchor_seq bigint null=NO def=-
+COL audit_anchors.chain_head_hash text null=NO def=-
+COL audit_anchors.created_at timestamp with time zone null=NO def=now()
+COL audit_anchors.id bigint null=NO def=-
+COL audit_anchors.row_count bigint null=NO def=-
+COL audit_anchors.tenant_id uuid null=NO def=-
+COL audit_chain.head_hash text null=NO def=''::text
+COL audit_chain.next_seq bigint null=NO def=1
+COL audit_chain.tenant_id uuid null=NO def=-
+COL audit_logs.action text null=NO def=-
+COL audit_logs.actor_id uuid null=YES def=-
+COL audit_logs.actor_kind text null=YES def=-
+COL audit_logs.entity_id uuid null=YES def=-
+COL audit_logs.entity_type text null=YES def=-
+COL audit_logs.field text null=YES def=-
+COL audit_logs.hash_version smallint null=NO def=1
+COL audit_logs.id uuid null=NO def=-
+COL audit_logs.impersonator_id uuid null=YES def=-
+COL audit_logs.metadata jsonb null=NO def='{}'::jsonb
+COL audit_logs.new_value text null=YES def=-
+COL audit_logs.occurred_at timestamp with time zone null=NO def=now()
+COL audit_logs.old_value text null=YES def=-
+COL audit_logs.prev_hash text null=NO def=''::text
+COL audit_logs.reason text null=YES def=-
+COL audit_logs.request_id text null=YES def=-
+COL audit_logs.row_hash text null=NO def=-
+COL audit_logs.seq bigint null=NO def=-
+COL audit_logs.tenant_id uuid null=NO def=-
+COL audit_logs.tx_id text null=YES def=-
+COL authz_epoch.epoch integer null=NO def=1
+COL authz_epoch.tenant_id uuid null=NO def=-
+COL bulk_items.attempts integer null=NO def=0
+COL bulk_items.bulk_id uuid null=NO def=-
+COL bulk_items.id uuid null=NO def=-
+COL bulk_items.idempotency_key uuid null=YES def=-
+COL bulk_items.last_error text null=YES def=-
+COL bulk_items.lease_expires_at timestamp with time zone null=YES def=-
+COL bulk_items.lease_generation bigint null=NO def=0
+COL bulk_items.lease_token text null=YES def=-
+COL bulk_items.payload jsonb null=NO def='{}'::jsonb
+COL bulk_items.processed_at timestamp with time zone null=YES def=-
+COL bulk_items.seq integer null=NO def=-
+COL bulk_items.status text null=NO def='pending'::text
+COL bulk_items.tenant_id uuid null=NO def=-
+COL bulk_operations.created_at timestamp with time zone null=NO def=now()
+COL bulk_operations.created_by uuid null=YES def=-
+COL bulk_operations.id uuid null=NO def=-
+COL bulk_operations.kind text null=NO def=-
+COL bulk_operations.max_attempts integer null=NO def=3
+COL bulk_operations.status text null=NO def='pending'::text
+COL bulk_operations.tenant_id uuid null=NO def=-
+COL bulk_operations.total_items integer null=NO def=0
+COL bulk_operations.updated_at timestamp with time zone null=YES def=-
+COL comments.author_capacity_id uuid null=NO def=-
+COL comments.body text null=NO def=-
+COL comments.created_at timestamp with time zone null=NO def=now()
+COL comments.created_by uuid null=NO def=-
+COL comments.id uuid null=NO def=-
+COL comments.parent_comment_id uuid null=YES def=-
+COL comments.resource_id uuid null=NO def=-
+COL comments.resource_type text null=NO def=-
+COL comments.status text null=NO def='active'::text
+COL comments.tenant_id uuid null=NO def=-
+COL comments.updated_at timestamp with time zone null=YES def=-
+COL comments.updated_by uuid null=YES def=-
+COL comments.version integer null=NO def=1
+COL document_access_grants.access text null=NO def=-
+COL document_access_grants.created_at timestamp with time zone null=NO def=now()
+COL document_access_grants.created_by uuid null=NO def=-
+COL document_access_grants.document_id uuid null=NO def=-
+COL document_access_grants.grantee_kind text null=NO def=-
+COL document_access_grants.grantee_ref text null=NO def=-
+COL document_access_grants.id uuid null=NO def=-
+COL document_access_grants.tenant_id uuid null=NO def=-
+COL document_access_grants.valid_from timestamp with time zone null=NO def=now()
+COL document_access_grants.valid_to timestamp with time zone null=YES def=-
+COL document_access_grants.version integer null=NO def=1
+COL document_upload_sessions.checksum_sha256 text null=YES def=-
+COL document_upload_sessions.created_at timestamp with time zone null=NO def=now()
+COL document_upload_sessions.document_id uuid null=NO def=-
+COL document_upload_sessions.expires_at timestamp with time zone null=NO def=-
+COL document_upload_sessions.id uuid null=NO def=-
+COL document_upload_sessions.mime_type text null=YES def=-
+COL document_upload_sessions.size_bytes bigint null=YES def=-
+COL document_upload_sessions.status text null=NO def='pending'::text
+COL document_upload_sessions.storage_key text null=NO def=-
+COL document_upload_sessions.tenant_id uuid null=NO def=-
+COL document_upload_sessions.version_no integer null=NO def=-
+COL document_versions.checksum_sha256 text null=NO def=-
+COL document_versions.created_at timestamp with time zone null=NO def=now()
+COL document_versions.document_id uuid null=NO def=-
+COL document_versions.id uuid null=NO def=-
+COL document_versions.mime_type text null=NO def=-
+COL document_versions.scan_status text null=NO def='pending'::text
+COL document_versions.size_bytes bigint null=NO def=-
+COL document_versions.status text null=NO def='active'::text
+COL document_versions.storage_key text null=NO def=-
+COL document_versions.tenant_id uuid null=NO def=-
+COL document_versions.uploaded_by uuid null=NO def=-
+COL document_versions.version_no integer null=NO def=-
+COL document_versions.voided_at timestamp with time zone null=YES def=-
+COL documents.created_at timestamp with time zone null=NO def=now()
+COL documents.created_by uuid null=NO def=-
+COL documents.document_class text null=NO def=-
+COL documents.id uuid null=NO def=-
+COL documents.legal_hold boolean null=NO def=false
+COL documents.resource_id uuid null=YES def=-
+COL documents.resource_type text null=YES def=-
+COL documents.retention_until timestamp with time zone null=YES def=-
+COL documents.sensitivity text null=NO def='internal'::text
+COL documents.status text null=NO def='active'::text
+COL documents.tenant_id uuid null=NO def=-
+COL documents.title text null=NO def=-
+COL documents.updated_at timestamp with time zone null=YES def=-
+COL documents.updated_by uuid null=YES def=-
+COL documents.version integer null=NO def=1
+COL dsr_requests.completed_at timestamp with time zone null=YES def=-
+COL dsr_requests.id uuid null=NO def=-
+COL dsr_requests.kind text null=NO def=-
+COL dsr_requests.override_reason text null=YES def=-
+COL dsr_requests.requested_at timestamp with time zone null=NO def=now()
+COL dsr_requests.requested_by uuid null=YES def=-
+COL dsr_requests.status text null=NO def='pending'::text
+COL dsr_requests.subject_ref text null=NO def=-
+COL dsr_requests.tenant_id uuid null=NO def=-
+COL events_outbox.actor jsonb null=NO def='{}'::jsonb
+COL events_outbox.attempts integer null=NO def=0
+COL events_outbox.created_by uuid null=NO def=-
+COL events_outbox.dispatch_status text null=NO def='pending'::text
+COL events_outbox.dispatched_at timestamp with time zone null=YES def=-
+COL events_outbox.event_type text null=NO def=-
+COL events_outbox.failed_at timestamp with time zone null=YES def=-
+COL events_outbox.id uuid null=NO def=-
+COL events_outbox.last_error text null=YES def=-
+COL events_outbox.lease_expires_at timestamp with time zone null=YES def=-
+COL events_outbox.lease_generation bigint null=NO def=0
+COL events_outbox.lease_token text null=YES def=-
+COL events_outbox.max_attempts integer null=NO def=10
+COL events_outbox.occurred_at timestamp with time zone null=NO def=now()
+COL events_outbox.payload jsonb null=NO def='{}'::jsonb
+COL events_outbox.resource_id uuid null=YES def=-
+COL events_outbox.resource_type text null=YES def=-
+COL events_outbox.schema_version integer null=NO def=1
+COL events_outbox.tenant_id uuid null=NO def=-
+COL events_outbox.trace_context text null=YES def=-
+COL idempotency_keys.actor_scope text null=NO def=-
+COL idempotency_keys.created_at timestamp with time zone null=NO def=now()
+COL idempotency_keys.expires_at timestamp with time zone null=NO def=-
+COL idempotency_keys.idem_key text null=NO def=-
+COL idempotency_keys.request_hash text null=NO def=-
+COL idempotency_keys.response_body bytea null=YES def=-
+COL idempotency_keys.response_status integer null=YES def=-
+COL idempotency_keys.status text null=NO def='in_progress'::text
+COL idempotency_keys.tenant_id uuid null=NO def=-
+COL identity_grant.activated_at timestamp with time zone null=YES def=-
+COL identity_grant.actor_id uuid null=NO def=-
+COL identity_grant.approver_id uuid null=YES def=-
+COL identity_grant.expires_at timestamp with time zone null=YES def=-
+COL identity_grant.id uuid null=NO def=-
+COL identity_grant.impersonated_user_id uuid null=YES def=-
+COL identity_grant.reason text null=YES def=-
+COL identity_grant.revoked_at timestamp with time zone null=YES def=-
+COL identity_grant.status text null=NO def=-
+COL identity_grant.tenant_id uuid null=NO def=-
+COL integration_providers.config jsonb null=NO def='{}'::jsonb
+COL integration_providers.created_at timestamp with time zone null=NO def=now()
+COL integration_providers.created_by uuid null=NO def=-
+COL integration_providers.credential_ref text null=YES def=-
+COL integration_providers.id uuid null=NO def=-
+COL integration_providers.key text null=NO def=-
+COL integration_providers.kind text null=NO def=-
+COL integration_providers.status text null=NO def='active'::text
+COL integration_providers.tenant_id uuid null=YES def=-
+COL integration_providers.updated_at timestamp with time zone null=YES def=-
+COL integration_providers.updated_by uuid null=YES def=-
+COL integration_providers.version integer null=NO def=1
+COL job_runs.error text null=YES def=-
+COL job_runs.finished_at timestamp with time zone null=YES def=-
+COL job_runs.id uuid null=NO def=-
+COL job_runs.job_id bigint null=YES def=-
+COL job_runs.job_kind text null=NO def=-
+COL job_runs.progress jsonb null=YES def=-
+COL job_runs.started_at timestamp with time zone null=NO def=now()
+COL job_runs.status text null=NO def=-
+COL job_runs.tenant_id uuid null=YES def=-
+COL jobs_queue.attempts integer null=NO def=0
+COL jobs_queue.created_at timestamp with time zone null=NO def=now()
+COL jobs_queue.finished_at timestamp with time zone null=YES def=-
+COL jobs_queue.id bigint null=NO def=-
+COL jobs_queue.kind text null=NO def=-
+COL jobs_queue.last_error text null=YES def=-
+COL jobs_queue.lease_expires_at timestamp with time zone null=YES def=-
+COL jobs_queue.lease_generation bigint null=NO def=0
+COL jobs_queue.lease_token text null=YES def=-
+COL jobs_queue.locked_at timestamp with time zone null=YES def=-
+COL jobs_queue.max_attempts integer null=NO def=5
+COL jobs_queue.payload jsonb null=NO def='{}'::jsonb
+COL jobs_queue.run_at timestamp with time zone null=NO def=now()
+COL jobs_queue.status text null=NO def='available'::text
+COL jobs_queue.tenant_id uuid null=YES def=-
+COL jobs_queue.trace_context text null=YES def=-
+COL legal_entities.jurisdiction text null=YES def=-
+COL legal_entities.legal_name text null=NO def=-
+COL legal_entities.party_id uuid null=NO def=-
+COL legal_entities.registration_no text null=YES def=-
+COL legal_entities.tenant_id uuid null=NO def=-
+COL legal_holds.entity_id uuid null=NO def=-
+COL legal_holds.entity_type text null=NO def=-
+COL legal_holds.id uuid null=NO def=-
+COL legal_holds.placed_at timestamp with time zone null=NO def=now()
+COL legal_holds.placed_by uuid null=YES def=-
+COL legal_holds.reason text null=NO def=-
+COL legal_holds.released_at timestamp with time zone null=YES def=-
+COL legal_holds.released_by uuid null=YES def=-
+COL legal_holds.tenant_id uuid null=NO def=-
+COL notification_channel_prefs.channel text null=NO def=-
+COL notification_channel_prefs.enabled boolean null=NO def=true
+COL notification_channel_prefs.party_id uuid null=NO def=-
+COL notification_channel_prefs.tenant_id uuid null=NO def=-
+COL notification_channel_prefs.updated_at timestamp with time zone null=NO def=now()
+COL notification_deliveries.attempts integer null=NO def=0
+COL notification_deliveries.channel text null=NO def=-
+COL notification_deliveries.created_at timestamp with time zone null=NO def=now()
+COL notification_deliveries.destination text null=NO def=-
+COL notification_deliveries.id uuid null=NO def=-
+COL notification_deliveries.last_error text null=YES def=-
+COL notification_deliveries.lease_expires_at timestamp with time zone null=YES def=-
+COL notification_deliveries.lease_generation bigint null=NO def=0
+COL notification_deliveries.lease_token text null=YES def=-
+COL notification_deliveries.next_attempt_at timestamp with time zone null=YES def=-
+COL notification_deliveries.notification_id uuid null=NO def=-
+COL notification_deliveries.provider_message_id text null=YES def=-
+COL notification_deliveries.status text null=NO def='queued'::text
+COL notification_deliveries.tenant_id uuid null=NO def=-
+COL notification_deliveries.trace_context text null=YES def=-
+COL notification_deliveries.updated_at timestamp with time zone null=YES def=-
+COL notification_templates.body text null=NO def=-
+COL notification_templates.channel text null=NO def=-
+COL notification_templates.created_at timestamp with time zone null=NO def=now()
+COL notification_templates.created_by uuid null=NO def=-
+COL notification_templates.id uuid null=NO def=-
+COL notification_templates.key text null=NO def=-
+COL notification_templates.locale text null=NO def='en'::text
+COL notification_templates.status text null=NO def='active'::text
+COL notification_templates.subject text null=YES def=-
+COL notification_templates.tenant_id uuid null=YES def=-
+COL notification_templates.updated_at timestamp with time zone null=YES def=-
+COL notification_templates.updated_by uuid null=YES def=-
+COL notification_templates.version integer null=NO def=1
+COL notifications.created_at timestamp with time zone null=NO def=now()
+COL notifications.created_by uuid null=NO def=-
+COL notifications.id uuid null=NO def=-
+COL notifications.importance text null=NO def='normal'::text
+COL notifications.recipient_party_id uuid null=NO def=-
+COL notifications.resource_id uuid null=YES def=-
+COL notifications.resource_type text null=YES def=-
+COL notifications.status text null=NO def='pending'::text
+COL notifications.template_key text null=NO def=-
+COL notifications.tenant_id uuid null=NO def=-
+COL notifications.variables jsonb null=NO def='{}'::jsonb
+COL organizations.created_at timestamp with time zone null=NO def=now()
+COL organizations.created_by uuid null=NO def=-
+COL organizations.id uuid null=NO def=-
+COL organizations.kind text null=NO def='org'::text
+COL organizations.name text null=NO def=-
+COL organizations.parent_org_id uuid null=YES def=-
+COL organizations.status text null=NO def='active'::text
+COL organizations.tenant_id uuid null=NO def=-
+COL organizations.updated_at timestamp with time zone null=YES def=-
+COL organizations.updated_by uuid null=YES def=-
+COL organizations.version integer null=NO def=1
+COL parties.created_at timestamp with time zone null=NO def=now()
+COL parties.created_by uuid null=NO def=-
+COL parties.display_name text null=NO def=-
+COL parties.id uuid null=NO def=-
+COL parties.kind text null=NO def=-
+COL parties.status text null=NO def='active'::text
+COL parties.tenant_id uuid null=NO def=-
+COL parties.updated_at timestamp with time zone null=YES def=-
+COL parties.updated_by uuid null=YES def=-
+COL parties.version integer null=NO def=1
+COL party_contacts.created_at timestamp with time zone null=NO def=now()
+COL party_contacts.created_by uuid null=NO def=-
+COL party_contacts.id uuid null=NO def=-
+COL party_contacts.is_primary boolean null=NO def=false
+COL party_contacts.kind text null=NO def=-
+COL party_contacts.party_id uuid null=NO def=-
+COL party_contacts.tenant_id uuid null=NO def=-
+COL party_contacts.updated_at timestamp with time zone null=YES def=-
+COL party_contacts.updated_by uuid null=YES def=-
+COL party_contacts.value text null=NO def=-
+COL party_contacts.verified_at timestamp with time zone null=YES def=-
+COL party_contacts.version integer null=NO def=1
+COL permissions.description text null=NO def=-
+COL permissions.key text null=NO def=-
+COL permissions.module text null=NO def=-
+COL permissions.sensitive boolean null=NO def=false
+COL permissions.step_up boolean null=NO def=false
+COL persons.dob date null=YES def=-
+COL persons.family_name text null=YES def=-
+COL persons.given_name text null=NO def=-
+COL persons.locale text null=YES def=-
+COL persons.party_id uuid null=NO def=-
+COL persons.tenant_id uuid null=NO def=-
+COL policies.applies_to_permission text null=YES def=-
+COL policies.applies_to_resource_type text null=YES def=-
+COL policies.created_at timestamp with time zone null=NO def=now()
+COL policies.created_by uuid null=NO def=-
+COL policies.effect text null=NO def=-
+COL policies.id uuid null=NO def=-
+COL policies.key text null=NO def=-
+COL policies.priority integer null=NO def=100
+COL policies.status text null=NO def='active'::text
+COL policies.tenant_id uuid null=YES def=-
+COL policies.updated_at timestamp with time zone null=YES def=-
+COL policies.updated_by uuid null=YES def=-
+COL policies.version integer null=NO def=1
+COL policy_conditions.attribute text null=NO def=-
+COL policy_conditions.id uuid null=NO def=-
+COL policy_conditions.op text null=NO def=-
+COL policy_conditions.policy_id uuid null=NO def=-
+COL policy_conditions.value jsonb null=NO def=-
+COL processed_events.event_id uuid null=NO def=-
+COL processed_events.handler text null=NO def=-
+COL processed_events.processed_at timestamp with time zone null=NO def=now()
+COL processed_events.tenant_id uuid null=NO def=-
+COL relationship_types.cardinality text null=NO def='many'::text
+COL relationship_types.description text null=NO def=-
+COL relationship_types.key text null=NO def=-
+COL relationship_types.module text null=NO def=-
+COL relationship_types.object_kind text null=NO def=-
+COL relationship_types.subject_kind text null=NO def=-
+COL relationships.attributes jsonb null=NO def='{}'::jsonb
+COL relationships.created_at timestamp with time zone null=NO def=now()
+COL relationships.created_by uuid null=NO def=-
+COL relationships.id uuid null=NO def=-
+COL relationships.object_id uuid null=NO def=-
+COL relationships.object_kind text null=NO def=-
+COL relationships.rel_type text null=NO def=-
+COL relationships.subject_id uuid null=NO def=-
+COL relationships.subject_kind text null=NO def=-
+COL relationships.tenant_id uuid null=NO def=-
+COL relationships.updated_at timestamp with time zone null=YES def=-
+COL relationships.updated_by uuid null=YES def=-
+COL relationships.valid_from timestamp with time zone null=NO def=now()
+COL relationships.valid_to timestamp with time zone null=YES def=-
+COL relationships.version integer null=NO def=1
+COL resource_types.created_at timestamp with time zone null=NO def=now()
+COL resource_types.description text null=NO def=-
+COL resource_types.key text null=NO def=-
+COL resource_types.module text null=NO def=-
+COL resources.created_at timestamp with time zone null=NO def=now()
+COL resources.created_by uuid null=NO def=-
+COL resources.id uuid null=NO def=-
+COL resources.label text null=NO def=-
+COL resources.org_id uuid null=YES def=-
+COL resources.resource_type text null=NO def=-
+COL resources.status text null=NO def='active'::text
+COL resources.tenant_id uuid null=NO def=-
+COL resources.updated_at timestamp with time zone null=YES def=-
+COL resources.updated_by uuid null=YES def=-
+COL resources.version integer null=NO def=1
+COL role_permissions.permission_key text null=NO def=-
+COL role_permissions.role_id uuid null=NO def=-
+COL roles.created_at timestamp with time zone null=NO def=now()
+COL roles.created_by uuid null=NO def=-
+COL roles.id uuid null=NO def=-
+COL roles.is_system boolean null=NO def=false
+COL roles.key text null=NO def=-
+COL roles.name text null=NO def=-
+COL roles.status text null=NO def='active'::text
+COL roles.tenant_id uuid null=YES def=-
+COL roles.updated_at timestamp with time zone null=YES def=-
+COL roles.updated_by uuid null=YES def=-
+COL roles.version integer null=NO def=1
+COL rule_definitions.allowed_scopes ARRAY null=NO def='{platform,tenant,org}'::text[]
+COL rule_definitions.created_at timestamp with time zone null=NO def=now()
+COL rule_definitions.default_value jsonb null=NO def=-
+COL rule_definitions.description text null=NO def=-
+COL rule_definitions.key text null=NO def=-
+COL rule_definitions.module text null=NO def=-
+COL rule_definitions.requires_approval boolean null=NO def=false
+COL rule_definitions.value_schema jsonb null=NO def=-
+COL rule_versions.approved_by uuid null=YES def=-
+COL rule_versions.created_at timestamp with time zone null=NO def=now()
+COL rule_versions.created_by uuid null=NO def=-
+COL rule_versions.effective_from timestamp with time zone null=NO def=-
+COL rule_versions.effective_to timestamp with time zone null=YES def=-
+COL rule_versions.id uuid null=NO def=-
+COL rule_versions.rule_key text null=NO def=-
+COL rule_versions.scope_id uuid null=YES def=-
+COL rule_versions.scope_kind text null=NO def=-
+COL rule_versions.status text null=NO def='draft'::text
+COL rule_versions.tenant_id uuid null=YES def=-
+COL rule_versions.value jsonb null=NO def=-
+COL rule_versions.workflow_instance_id uuid null=YES def=-
+COL schedules.enabled boolean null=NO def=true
+COL schedules.interval_seconds integer null=NO def=-
+COL schedules.last_run_at timestamp with time zone null=YES def=-
+COL schedules.name text null=NO def=-
+COL schedules.next_run_at timestamp with time zone null=NO def=now()
+COL seed_sync_runs.actor text null=NO def=''::text
+COL seed_sync_runs.counts jsonb null=NO def='{}'::jsonb
+COL seed_sync_runs.created_at timestamp with time zone null=NO def=now()
+COL seed_sync_runs.error text null=YES def=-
+COL seed_sync_runs.id uuid null=NO def=gen_random_uuid()
+COL seed_sync_runs.manifest_hash text null=NO def=-
+COL seed_sync_runs.outcome text null=NO def=-
+COL seed_sync_runs.version_label text null=NO def=''::text
+COL sequence_allocations.allocated_at timestamp with time zone null=NO def=now()
+COL sequence_allocations.allocated_by uuid null=YES def=-
+COL sequence_allocations.id uuid null=NO def=-
+COL sequence_allocations.series_key text null=NO def=-
+COL sequence_allocations.tenant_id uuid null=NO def=-
+COL sequence_allocations.value bigint null=NO def=-
+COL sequence_allocations.void_reason text null=YES def=-
+COL sequence_allocations.voided_at timestamp with time zone null=YES def=-
+COL sequences.next_value bigint null=NO def=0
+COL sequences.series_key text null=NO def=-
+COL sequences.tenant_id uuid null=NO def=-
+COL tenants.created_at timestamp with time zone null=NO def=now()
+COL tenants.created_by uuid null=NO def=-
+COL tenants.display_name text null=NO def=-
+COL tenants.id uuid null=NO def=-
+COL tenants.parent_tenant_id uuid null=YES def=-
+COL tenants.settings jsonb null=NO def='{}'::jsonb
+COL tenants.slug text null=NO def=-
+COL tenants.status text null=NO def='active'::text
+COL tenants.updated_at timestamp with time zone null=YES def=-
+COL tenants.updated_by uuid null=YES def=-
+COL tenants.version integer null=NO def=1
+COL user_tenant_access.created_at timestamp with time zone null=NO def=now()
+COL user_tenant_access.created_by uuid null=NO def=-
+COL user_tenant_access.id uuid null=NO def=-
+COL user_tenant_access.kind text null=NO def='member'::text
+COL user_tenant_access.status text null=NO def='active'::text
+COL user_tenant_access.tenant_id uuid null=NO def=-
+COL user_tenant_access.user_id uuid null=NO def=-
+COL user_tenant_access.valid_from timestamp with time zone null=NO def=now()
+COL user_tenant_access.valid_to timestamp with time zone null=YES def=-
+COL users.created_at timestamp with time zone null=NO def=now()
+COL users.created_by uuid null=NO def=-
+COL users.email USER-DEFINED null=NO def=-
+COL users.id uuid null=NO def=-
+COL users.idp_subject text null=NO def=-
+COL users.person_party_id uuid null=YES def=-
+COL users.status text null=NO def='active'::text
+COL users.updated_at timestamp with time zone null=YES def=-
+COL users.updated_by uuid null=YES def=-
+COL users.version integer null=NO def=1
+COL version_counters.scope text null=NO def=-
+COL version_counters.tenant_id uuid null=NO def=-
+COL version_counters.value integer null=NO def=0
+COL webhook_endpoints.created_at timestamp with time zone null=NO def=now()
+COL webhook_endpoints.created_by uuid null=NO def=-
+COL webhook_endpoints.direction text null=NO def=-
+COL webhook_endpoints.id uuid null=NO def=-
+COL webhook_endpoints.provider_id uuid null=YES def=-
+COL webhook_endpoints.secret_ref text null=NO def=-
+COL webhook_endpoints.signature_scheme text null=NO def='hmac-sha256'::text
+COL webhook_endpoints.status text null=NO def='active'::text
+COL webhook_endpoints.subscribed_events ARRAY null=YES def=-
+COL webhook_endpoints.tenant_id uuid null=NO def=-
+COL webhook_endpoints.updated_at timestamp with time zone null=YES def=-
+COL webhook_endpoints.updated_by uuid null=YES def=-
+COL webhook_endpoints.url text null=YES def=-
+COL webhook_endpoints.version integer null=NO def=1
+COL webhook_events.attempts integer null=NO def=0
+COL webhook_events.delivery_status text null=NO def='pending'::text
+COL webhook_events.direction text null=NO def=-
+COL webhook_events.endpoint_id uuid null=NO def=-
+COL webhook_events.event_type text null=NO def=-
+COL webhook_events.external_event_id text null=YES def=-
+COL webhook_events.id uuid null=NO def=-
+COL webhook_events.last_error text null=YES def=-
+COL webhook_events.lease_expires_at timestamp with time zone null=YES def=-
+COL webhook_events.lease_generation bigint null=NO def=0
+COL webhook_events.lease_token text null=YES def=-
+COL webhook_events.next_attempt_at timestamp with time zone null=YES def=-
+COL webhook_events.payload jsonb null=NO def=-
+COL webhook_events.received_at timestamp with time zone null=NO def=now()
+COL webhook_events.signature_ok boolean null=YES def=-
+COL webhook_events.tenant_id uuid null=NO def=-
+COL webhook_failed_signature_audit.endpoint_id uuid null=NO def=-
+COL webhook_failed_signature_audit.event_type text null=NO def=-
+COL webhook_failed_signature_audit.failure_reason text null=NO def=-
+COL webhook_failed_signature_audit.id uuid null=NO def=-
+COL webhook_failed_signature_audit.received_at timestamp with time zone null=NO def=now()
+COL webhook_failed_signature_audit.signature_header text null=YES def=-
+COL webhook_failed_signature_audit.tenant_id uuid null=NO def=-
+COL workflow_definitions.applies_to text null=NO def=-
+COL workflow_definitions.created_at timestamp with time zone null=NO def=now()
+COL workflow_definitions.created_by uuid null=NO def=-
+COL workflow_definitions.definition jsonb null=NO def=-
+COL workflow_definitions.id uuid null=NO def=-
+COL workflow_definitions.key text null=NO def=-
+COL workflow_definitions.status text null=NO def='active'::text
+COL workflow_definitions.tenant_id uuid null=YES def=-
+COL workflow_definitions.version integer null=NO def=-
+COL workflow_instances.context jsonb null=NO def='{}'::jsonb
+COL workflow_instances.created_at timestamp with time zone null=NO def=now()
+COL workflow_instances.created_by uuid null=NO def=-
+COL workflow_instances.current_step text null=NO def=-
+COL workflow_instances.definition_id uuid null=NO def=-
+COL workflow_instances.ended_at timestamp with time zone null=YES def=-
+COL workflow_instances.id uuid null=NO def=-
+COL workflow_instances.resource_id uuid null=NO def=-
+COL workflow_instances.resource_type text null=NO def=-
+COL workflow_instances.started_by uuid null=NO def=-
+COL workflow_instances.status text null=NO def='running'::text
+COL workflow_instances.tenant_id uuid null=NO def=-
+COL workflow_instances.updated_at timestamp with time zone null=YES def=-
+COL workflow_instances.updated_by uuid null=YES def=-
+COL workflow_instances.version integer null=NO def=1
+COL workflow_task_assignees.assignee_kind text null=NO def=-
+COL workflow_task_assignees.assignee_ref text null=NO def=-
+COL workflow_task_assignees.task_id uuid null=NO def=-
+COL workflow_task_assignees.tenant_id uuid null=NO def=-
+COL workflow_tasks.created_at timestamp with time zone null=NO def=now()
+COL workflow_tasks.created_by uuid null=NO def=-
+COL workflow_tasks.decided_at timestamp with time zone null=YES def=-
+COL workflow_tasks.decided_by uuid null=YES def=-
+COL workflow_tasks.decision_comment text null=YES def=-
+COL workflow_tasks.delegated_to uuid null=YES def=-
+COL workflow_tasks.due_at timestamp with time zone null=YES def=-
+COL workflow_tasks.id uuid null=NO def=-
+COL workflow_tasks.instance_id uuid null=NO def=-
+COL workflow_tasks.last_reminded_at timestamp with time zone null=YES def=-
+COL workflow_tasks.output jsonb null=YES def=-
+COL workflow_tasks.remind_after timestamp with time zone null=YES def=-
+COL workflow_tasks.status text null=NO def='open'::text
+COL workflow_tasks.step_key text null=NO def=-
+COL workflow_tasks.task_type text null=NO def=-
+COL workflow_tasks.tenant_id uuid null=NO def=-
+COL workflow_tasks.updated_at timestamp with time zone null=YES def=-
+COL workflow_tasks.updated_by uuid null=YES def=-
+COL workflow_tasks.version integer null=NO def=1
+EXT btree_gist
+EXT citext
+EXT plpgsql
+FUNC app_actor_id()
+FUNC app_tenant_id_or_null()
+FUNC app_tenant_id()
+FUNC cash_dist(money, money)
+FUNC citext_cmp(citext, citext)
+FUNC citext_eq(citext, citext)
+FUNC citext_ge(citext, citext)
+FUNC citext_gt(citext, citext)
+FUNC citext_hash_extended(citext, bigint)
+FUNC citext_hash(citext)
+FUNC citext_larger(citext, citext)
+FUNC citext_le(citext, citext)
+FUNC citext_lt(citext, citext)
+FUNC citext_ne(citext, citext)
+FUNC citext_pattern_cmp(citext, citext)
+FUNC citext_pattern_ge(citext, citext)
+FUNC citext_pattern_gt(citext, citext)
+FUNC citext_pattern_le(citext, citext)
+FUNC citext_pattern_lt(citext, citext)
+FUNC citext_smaller(citext, citext)
+FUNC citext(boolean)
+FUNC citext(character)
+FUNC citext(inet)
+FUNC citextin(cstring)
+FUNC citextout(citext)
+FUNC citextrecv(internal)
+FUNC citextsend(citext)
+FUNC date_dist(date, date)
+FUNC float4_dist(real, real)
+FUNC float8_dist(double precision, double precision)
+FUNC gbt_bit_compress(internal)
+FUNC gbt_bit_consistent(internal, bit, smallint, oid, internal)
+FUNC gbt_bit_penalty(internal, internal, internal)
+FUNC gbt_bit_picksplit(internal, internal)
+FUNC gbt_bit_same(gbtreekey_var, gbtreekey_var, internal)
+FUNC gbt_bit_union(internal, internal)
+FUNC gbt_bool_compress(internal)
+FUNC gbt_bool_consistent(internal, boolean, smallint, oid, internal)
+FUNC gbt_bool_fetch(internal)
+FUNC gbt_bool_penalty(internal, internal, internal)
+FUNC gbt_bool_picksplit(internal, internal)
+FUNC gbt_bool_same(gbtreekey2, gbtreekey2, internal)
+FUNC gbt_bool_union(internal, internal)
+FUNC gbt_bpchar_compress(internal)
+FUNC gbt_bpchar_consistent(internal, character, smallint, oid, internal)
+FUNC gbt_bytea_compress(internal)
+FUNC gbt_bytea_consistent(internal, bytea, smallint, oid, internal)
+FUNC gbt_bytea_penalty(internal, internal, internal)
+FUNC gbt_bytea_picksplit(internal, internal)
+FUNC gbt_bytea_same(gbtreekey_var, gbtreekey_var, internal)
+FUNC gbt_bytea_union(internal, internal)
+FUNC gbt_cash_compress(internal)
+FUNC gbt_cash_consistent(internal, money, smallint, oid, internal)
+FUNC gbt_cash_distance(internal, money, smallint, oid, internal)
+FUNC gbt_cash_fetch(internal)
+FUNC gbt_cash_penalty(internal, internal, internal)
+FUNC gbt_cash_picksplit(internal, internal)
+FUNC gbt_cash_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_cash_union(internal, internal)
+FUNC gbt_date_compress(internal)
+FUNC gbt_date_consistent(internal, date, smallint, oid, internal)
+FUNC gbt_date_distance(internal, date, smallint, oid, internal)
+FUNC gbt_date_fetch(internal)
+FUNC gbt_date_penalty(internal, internal, internal)
+FUNC gbt_date_picksplit(internal, internal)
+FUNC gbt_date_same(gbtreekey8, gbtreekey8, internal)
+FUNC gbt_date_union(internal, internal)
+FUNC gbt_decompress(internal)
+FUNC gbt_enum_compress(internal)
+FUNC gbt_enum_consistent(internal, anyenum, smallint, oid, internal)
+FUNC gbt_enum_fetch(internal)
+FUNC gbt_enum_penalty(internal, internal, internal)
+FUNC gbt_enum_picksplit(internal, internal)
+FUNC gbt_enum_same(gbtreekey8, gbtreekey8, internal)
+FUNC gbt_enum_union(internal, internal)
+FUNC gbt_float4_compress(internal)
+FUNC gbt_float4_consistent(internal, real, smallint, oid, internal)
+FUNC gbt_float4_distance(internal, real, smallint, oid, internal)
+FUNC gbt_float4_fetch(internal)
+FUNC gbt_float4_penalty(internal, internal, internal)
+FUNC gbt_float4_picksplit(internal, internal)
+FUNC gbt_float4_same(gbtreekey8, gbtreekey8, internal)
+FUNC gbt_float4_union(internal, internal)
+FUNC gbt_float8_compress(internal)
+FUNC gbt_float8_consistent(internal, double precision, smallint, oid, internal)
+FUNC gbt_float8_distance(internal, double precision, smallint, oid, internal)
+FUNC gbt_float8_fetch(internal)
+FUNC gbt_float8_penalty(internal, internal, internal)
+FUNC gbt_float8_picksplit(internal, internal)
+FUNC gbt_float8_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_float8_union(internal, internal)
+FUNC gbt_inet_compress(internal)
+FUNC gbt_inet_consistent(internal, inet, smallint, oid, internal)
+FUNC gbt_inet_penalty(internal, internal, internal)
+FUNC gbt_inet_picksplit(internal, internal)
+FUNC gbt_inet_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_inet_union(internal, internal)
+FUNC gbt_int2_compress(internal)
+FUNC gbt_int2_consistent(internal, smallint, smallint, oid, internal)
+FUNC gbt_int2_distance(internal, smallint, smallint, oid, internal)
+FUNC gbt_int2_fetch(internal)
+FUNC gbt_int2_penalty(internal, internal, internal)
+FUNC gbt_int2_picksplit(internal, internal)
+FUNC gbt_int2_same(gbtreekey4, gbtreekey4, internal)
+FUNC gbt_int2_union(internal, internal)
+FUNC gbt_int4_compress(internal)
+FUNC gbt_int4_consistent(internal, integer, smallint, oid, internal)
+FUNC gbt_int4_distance(internal, integer, smallint, oid, internal)
+FUNC gbt_int4_fetch(internal)
+FUNC gbt_int4_penalty(internal, internal, internal)
+FUNC gbt_int4_picksplit(internal, internal)
+FUNC gbt_int4_same(gbtreekey8, gbtreekey8, internal)
+FUNC gbt_int4_union(internal, internal)
+FUNC gbt_int8_compress(internal)
+FUNC gbt_int8_consistent(internal, bigint, smallint, oid, internal)
+FUNC gbt_int8_distance(internal, bigint, smallint, oid, internal)
+FUNC gbt_int8_fetch(internal)
+FUNC gbt_int8_penalty(internal, internal, internal)
+FUNC gbt_int8_picksplit(internal, internal)
+FUNC gbt_int8_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_int8_union(internal, internal)
+FUNC gbt_intv_compress(internal)
+FUNC gbt_intv_consistent(internal, interval, smallint, oid, internal)
+FUNC gbt_intv_decompress(internal)
+FUNC gbt_intv_distance(internal, interval, smallint, oid, internal)
+FUNC gbt_intv_fetch(internal)
+FUNC gbt_intv_penalty(internal, internal, internal)
+FUNC gbt_intv_picksplit(internal, internal)
+FUNC gbt_intv_same(gbtreekey32, gbtreekey32, internal)
+FUNC gbt_intv_union(internal, internal)
+FUNC gbt_macad_compress(internal)
+FUNC gbt_macad_consistent(internal, macaddr, smallint, oid, internal)
+FUNC gbt_macad_fetch(internal)
+FUNC gbt_macad_penalty(internal, internal, internal)
+FUNC gbt_macad_picksplit(internal, internal)
+FUNC gbt_macad_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_macad_union(internal, internal)
+FUNC gbt_macad8_compress(internal)
+FUNC gbt_macad8_consistent(internal, macaddr8, smallint, oid, internal)
+FUNC gbt_macad8_fetch(internal)
+FUNC gbt_macad8_penalty(internal, internal, internal)
+FUNC gbt_macad8_picksplit(internal, internal)
+FUNC gbt_macad8_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_macad8_union(internal, internal)
+FUNC gbt_numeric_compress(internal)
+FUNC gbt_numeric_consistent(internal, numeric, smallint, oid, internal)
+FUNC gbt_numeric_penalty(internal, internal, internal)
+FUNC gbt_numeric_picksplit(internal, internal)
+FUNC gbt_numeric_same(gbtreekey_var, gbtreekey_var, internal)
+FUNC gbt_numeric_union(internal, internal)
+FUNC gbt_oid_compress(internal)
+FUNC gbt_oid_consistent(internal, oid, smallint, oid, internal)
+FUNC gbt_oid_distance(internal, oid, smallint, oid, internal)
+FUNC gbt_oid_fetch(internal)
+FUNC gbt_oid_penalty(internal, internal, internal)
+FUNC gbt_oid_picksplit(internal, internal)
+FUNC gbt_oid_same(gbtreekey8, gbtreekey8, internal)
+FUNC gbt_oid_union(internal, internal)
+FUNC gbt_text_compress(internal)
+FUNC gbt_text_consistent(internal, text, smallint, oid, internal)
+FUNC gbt_text_penalty(internal, internal, internal)
+FUNC gbt_text_picksplit(internal, internal)
+FUNC gbt_text_same(gbtreekey_var, gbtreekey_var, internal)
+FUNC gbt_text_union(internal, internal)
+FUNC gbt_time_compress(internal)
+FUNC gbt_time_consistent(internal, time without time zone, smallint, oid, internal)
+FUNC gbt_time_distance(internal, time without time zone, smallint, oid, internal)
+FUNC gbt_time_fetch(internal)
+FUNC gbt_time_penalty(internal, internal, internal)
+FUNC gbt_time_picksplit(internal, internal)
+FUNC gbt_time_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_time_union(internal, internal)
+FUNC gbt_timetz_compress(internal)
+FUNC gbt_timetz_consistent(internal, time with time zone, smallint, oid, internal)
+FUNC gbt_ts_compress(internal)
+FUNC gbt_ts_consistent(internal, timestamp without time zone, smallint, oid, internal)
+FUNC gbt_ts_distance(internal, timestamp without time zone, smallint, oid, internal)
+FUNC gbt_ts_fetch(internal)
+FUNC gbt_ts_penalty(internal, internal, internal)
+FUNC gbt_ts_picksplit(internal, internal)
+FUNC gbt_ts_same(gbtreekey16, gbtreekey16, internal)
+FUNC gbt_ts_union(internal, internal)
+FUNC gbt_tstz_compress(internal)
+FUNC gbt_tstz_consistent(internal, timestamp with time zone, smallint, oid, internal)
+FUNC gbt_tstz_distance(internal, timestamp with time zone, smallint, oid, internal)
+FUNC gbt_uuid_compress(internal)
+FUNC gbt_uuid_consistent(internal, uuid, smallint, oid, internal)
+FUNC gbt_uuid_fetch(internal)
+FUNC gbt_uuid_penalty(internal, internal, internal)
+FUNC gbt_uuid_picksplit(internal, internal)
+FUNC gbt_uuid_same(gbtreekey32, gbtreekey32, internal)
+FUNC gbt_uuid_union(internal, internal)
+FUNC gbt_var_decompress(internal)
+FUNC gbt_var_fetch(internal)
+FUNC gbtreekey_var_in(cstring)
+FUNC gbtreekey_var_out(gbtreekey_var)
+FUNC gbtreekey16_in(cstring)
+FUNC gbtreekey16_out(gbtreekey16)
+FUNC gbtreekey2_in(cstring)
+FUNC gbtreekey2_out(gbtreekey2)
+FUNC gbtreekey32_in(cstring)
+FUNC gbtreekey32_out(gbtreekey32)
+FUNC gbtreekey4_in(cstring)
+FUNC gbtreekey4_out(gbtreekey4)
+FUNC gbtreekey8_in(cstring)
+FUNC gbtreekey8_out(gbtreekey8)
+FUNC int2_dist(smallint, smallint)
+FUNC int4_dist(integer, integer)
+FUNC int8_dist(bigint, bigint)
+FUNC interval_dist(interval, interval)
+FUNC max(citext)
+FUNC min(citext)
+FUNC oid_dist(oid, oid)
+FUNC regexp_match(citext, citext, text)
+FUNC regexp_match(citext, citext)
+FUNC regexp_matches(citext, citext, text)
+FUNC regexp_matches(citext, citext)
+FUNC regexp_replace(citext, citext, text, text)
+FUNC regexp_replace(citext, citext, text)
+FUNC regexp_split_to_array(citext, citext, text)
+FUNC regexp_split_to_array(citext, citext)
+FUNC regexp_split_to_table(citext, citext, text)
+FUNC regexp_split_to_table(citext, citext)
+FUNC replace(citext, citext, citext)
+FUNC split_part(citext, citext, integer)
+FUNC strpos(citext, citext)
+FUNC texticlike(citext, citext)
+FUNC texticlike(citext, text)
+FUNC texticnlike(citext, citext)
+FUNC texticnlike(citext, text)
+FUNC texticregexeq(citext, citext)
+FUNC texticregexeq(citext, text)
+FUNC texticregexne(citext, citext)
+FUNC texticregexne(citext, text)
+FUNC time_dist(time without time zone, time without time zone)
+FUNC translate(citext, citext, text)
+FUNC ts_dist(timestamp without time zone, timestamp without time zone)
+FUNC tstz_dist(timestamp with time zone, timestamp with time zone)
+GRANT app_platform DELETE ON document_upload_sessions
+GRANT app_platform DELETE ON events_outbox
+GRANT app_platform DELETE ON idempotency_keys
+GRANT app_platform DELETE ON jobs_queue
+GRANT app_platform DELETE ON policy_conditions
+GRANT app_platform DELETE ON role_permissions
+GRANT app_platform DELETE ON schedules
+GRANT app_platform INSERT ON actor_assignments
+GRANT app_platform INSERT ON audit_anchors
+GRANT app_platform INSERT ON audit_chain
+GRANT app_platform INSERT ON audit_logs
+GRANT app_platform INSERT ON authz_epoch
+GRANT app_platform INSERT ON document_upload_sessions
+GRANT app_platform INSERT ON document_versions
+GRANT app_platform INSERT ON events_outbox
+GRANT app_platform INSERT ON identity_grant
+GRANT app_platform INSERT ON integration_providers
+GRANT app_platform INSERT ON job_runs
+GRANT app_platform INSERT ON jobs_queue
+GRANT app_platform INSERT ON notification_deliveries
+GRANT app_platform INSERT ON notification_templates
+GRANT app_platform INSERT ON permissions
+GRANT app_platform INSERT ON policies
+GRANT app_platform INSERT ON policy_conditions
+GRANT app_platform INSERT ON relationship_types
+GRANT app_platform INSERT ON relationships
+GRANT app_platform INSERT ON resource_types
+GRANT app_platform INSERT ON role_permissions
+GRANT app_platform INSERT ON roles
+GRANT app_platform INSERT ON rule_definitions
+GRANT app_platform INSERT ON rule_versions
+GRANT app_platform INSERT ON schedules
+GRANT app_platform INSERT ON seed_sync_runs
+GRANT app_platform INSERT ON tenants
+GRANT app_platform INSERT ON user_tenant_access
+GRANT app_platform INSERT ON users
+GRANT app_platform INSERT ON version_counters
+GRANT app_platform INSERT ON webhook_endpoints
+GRANT app_platform INSERT ON webhook_events
+GRANT app_platform INSERT ON webhook_failed_signature_audit
+GRANT app_platform INSERT ON workflow_definitions
+GRANT app_platform SELECT ON acting_capacities
+GRANT app_platform SELECT ON actor_assignments
+GRANT app_platform SELECT ON api_keys
+GRANT app_platform SELECT ON audit_anchors
+GRANT app_platform SELECT ON audit_chain
+GRANT app_platform SELECT ON audit_logs
+GRANT app_platform SELECT ON authz_epoch
+GRANT app_platform SELECT ON document_upload_sessions
+GRANT app_platform SELECT ON document_versions
+GRANT app_platform SELECT ON documents
+GRANT app_platform SELECT ON events_outbox
+GRANT app_platform SELECT ON idempotency_keys
+GRANT app_platform SELECT ON identity_grant
+GRANT app_platform SELECT ON integration_providers
+GRANT app_platform SELECT ON job_runs
+GRANT app_platform SELECT ON jobs_queue
+GRANT app_platform SELECT ON notification_deliveries
+GRANT app_platform SELECT ON notification_templates
+GRANT app_platform SELECT ON notifications
+GRANT app_platform SELECT ON permissions
+GRANT app_platform SELECT ON policies
+GRANT app_platform SELECT ON policy_conditions
+GRANT app_platform SELECT ON relationship_types
+GRANT app_platform SELECT ON relationships
+GRANT app_platform SELECT ON resource_types
+GRANT app_platform SELECT ON resources
+GRANT app_platform SELECT ON role_permissions
+GRANT app_platform SELECT ON roles
+GRANT app_platform SELECT ON rule_definitions
+GRANT app_platform SELECT ON rule_versions
+GRANT app_platform SELECT ON schedules
+GRANT app_platform SELECT ON seed_sync_runs
+GRANT app_platform SELECT ON tenants
+GRANT app_platform SELECT ON user_tenant_access
+GRANT app_platform SELECT ON users
+GRANT app_platform SELECT ON version_counters
+GRANT app_platform SELECT ON webhook_endpoints
+GRANT app_platform SELECT ON webhook_events
+GRANT app_platform SELECT ON webhook_failed_signature_audit
+GRANT app_platform SELECT ON workflow_definitions
+GRANT app_platform UPDATE ON actor_assignments
+GRANT app_platform UPDATE ON api_keys
+GRANT app_platform UPDATE ON audit_chain
+GRANT app_platform UPDATE ON authz_epoch
+GRANT app_platform UPDATE ON document_upload_sessions
+GRANT app_platform UPDATE ON document_versions
+GRANT app_platform UPDATE ON documents
+GRANT app_platform UPDATE ON events_outbox
+GRANT app_platform UPDATE ON identity_grant
+GRANT app_platform UPDATE ON integration_providers
+GRANT app_platform UPDATE ON job_runs
+GRANT app_platform UPDATE ON jobs_queue
+GRANT app_platform UPDATE ON notification_deliveries
+GRANT app_platform UPDATE ON notification_templates
+GRANT app_platform UPDATE ON notifications
+GRANT app_platform UPDATE ON permissions
+GRANT app_platform UPDATE ON policies
+GRANT app_platform UPDATE ON policy_conditions
+GRANT app_platform UPDATE ON relationship_types
+GRANT app_platform UPDATE ON relationships
+GRANT app_platform UPDATE ON resource_types
+GRANT app_platform UPDATE ON role_permissions
+GRANT app_platform UPDATE ON roles
+GRANT app_platform UPDATE ON rule_definitions
+GRANT app_platform UPDATE ON rule_versions
+GRANT app_platform UPDATE ON schedules
+GRANT app_platform UPDATE ON tenants
+GRANT app_platform UPDATE ON user_tenant_access
+GRANT app_platform UPDATE ON users
+GRANT app_platform UPDATE ON version_counters
+GRANT app_platform UPDATE ON webhook_endpoints
+GRANT app_platform UPDATE ON webhook_events
+GRANT app_platform UPDATE ON workflow_definitions
+GRANT app_rt DELETE ON idempotency_keys
+GRANT app_rt DELETE ON notification_channel_prefs
+GRANT app_rt DELETE ON workflow_task_assignees
+GRANT app_rt INSERT ON acting_capacities
+GRANT app_rt INSERT ON api_keys
+GRANT app_rt INSERT ON artifacts
+GRANT app_rt INSERT ON attachments
+GRANT app_rt INSERT ON audit_chain
+GRANT app_rt INSERT ON audit_logs
+GRANT app_rt INSERT ON authz_epoch
+GRANT app_rt INSERT ON bulk_items
+GRANT app_rt INSERT ON bulk_operations
+GRANT app_rt INSERT ON comments
+GRANT app_rt INSERT ON document_access_grants
+GRANT app_rt INSERT ON document_upload_sessions
+GRANT app_rt INSERT ON document_versions
+GRANT app_rt INSERT ON documents
+GRANT app_rt INSERT ON dsr_requests
+GRANT app_rt INSERT ON events_outbox
+GRANT app_rt INSERT ON idempotency_keys
+GRANT app_rt INSERT ON jobs_queue
+GRANT app_rt INSERT ON legal_entities
+GRANT app_rt INSERT ON legal_holds
+GRANT app_rt INSERT ON notification_channel_prefs
+GRANT app_rt INSERT ON notification_deliveries
+GRANT app_rt INSERT ON notifications
+GRANT app_rt INSERT ON organizations
+GRANT app_rt INSERT ON parties
+GRANT app_rt INSERT ON party_contacts
+GRANT app_rt INSERT ON persons
+GRANT app_rt INSERT ON processed_events
+GRANT app_rt INSERT ON resources
+GRANT app_rt INSERT ON rule_versions
+GRANT app_rt INSERT ON sequence_allocations
+GRANT app_rt INSERT ON sequences
+GRANT app_rt INSERT ON version_counters
+GRANT app_rt INSERT ON webhook_events
+GRANT app_rt INSERT ON webhook_failed_signature_audit
+GRANT app_rt INSERT ON workflow_instances
+GRANT app_rt INSERT ON workflow_task_assignees
+GRANT app_rt INSERT ON workflow_tasks
+GRANT app_rt SELECT ON acting_capacities
+GRANT app_rt SELECT ON actor_assignments
+GRANT app_rt SELECT ON api_keys
+GRANT app_rt SELECT ON artifacts
+GRANT app_rt SELECT ON attachments
+GRANT app_rt SELECT ON audit_anchors
+GRANT app_rt SELECT ON audit_chain
+GRANT app_rt SELECT ON audit_logs
+GRANT app_rt SELECT ON authz_epoch
+GRANT app_rt SELECT ON bulk_items
+GRANT app_rt SELECT ON bulk_operations
+GRANT app_rt SELECT ON comments
+GRANT app_rt SELECT ON document_access_grants
+GRANT app_rt SELECT ON document_upload_sessions
+GRANT app_rt SELECT ON document_versions
+GRANT app_rt SELECT ON documents
+GRANT app_rt SELECT ON dsr_requests
+GRANT app_rt SELECT ON events_outbox
+GRANT app_rt SELECT ON idempotency_keys
+GRANT app_rt SELECT ON integration_providers
+GRANT app_rt SELECT ON legal_entities
+GRANT app_rt SELECT ON legal_holds
+GRANT app_rt SELECT ON notification_channel_prefs
+GRANT app_rt SELECT ON notification_deliveries
+GRANT app_rt SELECT ON notification_templates
+GRANT app_rt SELECT ON notifications
+GRANT app_rt SELECT ON organizations
+GRANT app_rt SELECT ON parties
+GRANT app_rt SELECT ON party_contacts
+GRANT app_rt SELECT ON permissions
+GRANT app_rt SELECT ON persons
+GRANT app_rt SELECT ON policies
+GRANT app_rt SELECT ON policy_conditions
+GRANT app_rt SELECT ON processed_events
+GRANT app_rt SELECT ON relationship_types
+GRANT app_rt SELECT ON relationships
+GRANT app_rt SELECT ON resource_types
+GRANT app_rt SELECT ON resources
+GRANT app_rt SELECT ON role_permissions
+GRANT app_rt SELECT ON roles
+GRANT app_rt SELECT ON rule_definitions
+GRANT app_rt SELECT ON rule_versions
+GRANT app_rt SELECT ON sequence_allocations
+GRANT app_rt SELECT ON sequences
+GRANT app_rt SELECT ON version_counters
+GRANT app_rt SELECT ON webhook_endpoints
+GRANT app_rt SELECT ON webhook_events
+GRANT app_rt SELECT ON webhook_failed_signature_audit
+GRANT app_rt SELECT ON workflow_definitions
+GRANT app_rt SELECT ON workflow_instances
+GRANT app_rt SELECT ON workflow_task_assignees
+GRANT app_rt SELECT ON workflow_tasks
+GRANT app_rt UPDATE ON acting_capacities
+GRANT app_rt UPDATE ON api_keys
+GRANT app_rt UPDATE ON attachments
+GRANT app_rt UPDATE ON audit_chain
+GRANT app_rt UPDATE ON authz_epoch
+GRANT app_rt UPDATE ON bulk_items
+GRANT app_rt UPDATE ON bulk_operations
+GRANT app_rt UPDATE ON comments
+GRANT app_rt UPDATE ON document_access_grants
+GRANT app_rt UPDATE ON document_upload_sessions
+GRANT app_rt UPDATE ON dsr_requests
+GRANT app_rt UPDATE ON idempotency_keys
+GRANT app_rt UPDATE ON legal_entities
+GRANT app_rt UPDATE ON legal_holds
+GRANT app_rt UPDATE ON notification_channel_prefs
+GRANT app_rt UPDATE ON organizations
+GRANT app_rt UPDATE ON parties
+GRANT app_rt UPDATE ON party_contacts
+GRANT app_rt UPDATE ON persons
+GRANT app_rt UPDATE ON resources
+GRANT app_rt UPDATE ON sequence_allocations
+GRANT app_rt UPDATE ON sequences
+GRANT app_rt UPDATE ON version_counters
+GRANT app_rt UPDATE ON workflow_instances
+GRANT app_rt UPDATE ON workflow_task_assignees
+GRANT app_rt UPDATE ON workflow_tasks
+INDEX acting_capacities_pkey CREATE UNIQUE INDEX acting_capacities_pkey ON public.acting_capacities USING btree (id)
+INDEX actor_assignments_pkey CREATE UNIQUE INDEX actor_assignments_pkey ON public.actor_assignments USING btree (id)
+INDEX api_keys_key_prefix_key CREATE UNIQUE INDEX api_keys_key_prefix_key ON public.api_keys USING btree (key_prefix)
+INDEX api_keys_pkey CREATE UNIQUE INDEX api_keys_pkey ON public.api_keys USING btree (id)
+INDEX api_keys_tenant CREATE INDEX api_keys_tenant ON public.api_keys USING btree (tenant_id, created_at DESC)
+INDEX artifacts_kind CREATE INDEX artifacts_kind ON public.artifacts USING btree (tenant_id, kind, version DESC)
+INDEX artifacts_pkey CREATE UNIQUE INDEX artifacts_pkey ON public.artifacts USING btree (id)
+INDEX artifacts_tenant_id_kind_version_key CREATE UNIQUE INDEX artifacts_tenant_id_kind_version_key ON public.artifacts USING btree (tenant_id, kind, version)
+INDEX asg_actor CREATE INDEX asg_actor ON public.actor_assignments USING btree (tenant_id, capacity_id, valid_from, valid_to)
+INDEX asg_scope CREATE INDEX asg_scope ON public.actor_assignments USING btree (tenant_id, scope_kind, scope_id, valid_to)
+INDEX asg_system CREATE INDEX asg_system ON public.actor_assignments USING btree (tenant_id, system_actor, valid_from, valid_to)
+INDEX att_resource CREATE INDEX att_resource ON public.attachments USING btree (tenant_id, resource_type, resource_id)
+INDEX attachments_pkey CREATE UNIQUE INDEX attachments_pkey ON public.attachments USING btree (id)
+INDEX audit_anchors_pkey CREATE UNIQUE INDEX audit_anchors_pkey ON public.audit_anchors USING btree (id)
+INDEX audit_anchors_tenant_seq CREATE INDEX audit_anchors_tenant_seq ON public.audit_anchors USING btree (tenant_id, anchor_seq)
+INDEX audit_chain_pkey CREATE UNIQUE INDEX audit_chain_pkey ON public.audit_chain USING btree (tenant_id)
+INDEX audit_logs_actor CREATE INDEX audit_logs_actor ON public.audit_logs USING btree (tenant_id, actor_id, occurred_at DESC)
+INDEX audit_logs_chain CREATE UNIQUE INDEX audit_logs_chain ON public.audit_logs USING btree (tenant_id, seq)
+INDEX audit_logs_entity CREATE INDEX audit_logs_entity ON public.audit_logs USING btree (tenant_id, entity_type, entity_id, occurred_at DESC)
+INDEX audit_logs_pkey CREATE UNIQUE INDEX audit_logs_pkey ON public.audit_logs USING btree (id)
+INDEX authz_epoch_pkey CREATE UNIQUE INDEX authz_epoch_pkey ON public.authz_epoch USING btree (tenant_id)
+INDEX bulk_items_bulk_id_seq_key CREATE UNIQUE INDEX bulk_items_bulk_id_seq_key ON public.bulk_items USING btree (bulk_id, seq)
+INDEX bulk_items_pending CREATE INDEX bulk_items_pending ON public.bulk_items USING btree (bulk_id) WHERE (status = 'pending'::text)
+INDEX bulk_items_pkey CREATE UNIQUE INDEX bulk_items_pkey ON public.bulk_items USING btree (id)
+INDEX bulk_operations_pkey CREATE UNIQUE INDEX bulk_operations_pkey ON public.bulk_operations USING btree (id)
+INDEX cap_active CREATE UNIQUE INDEX cap_active ON public.acting_capacities USING btree (tenant_id, user_id, label) WHERE (valid_to IS NULL)
+INDEX cap_user CREATE INDEX cap_user ON public.acting_capacities USING btree (tenant_id, user_id) WHERE (valid_to IS NULL)
+INDEX cmt_resource CREATE INDEX cmt_resource ON public.comments USING btree (tenant_id, resource_type, resource_id, created_at DESC)
+INDEX comments_pkey CREATE UNIQUE INDEX comments_pkey ON public.comments USING btree (id)
+INDEX contacts_party CREATE INDEX contacts_party ON public.party_contacts USING btree (tenant_id, party_id)
+INDEX doc_class CREATE INDEX doc_class ON public.documents USING btree (tenant_id, document_class)
+INDEX doc_resource CREATE INDEX doc_resource ON public.documents USING btree (tenant_id, resource_type, resource_id)
+INDEX doc_retention CREATE INDEX doc_retention ON public.documents USING btree (tenant_id, retention_until) WHERE ((status = 'active'::text) AND (legal_hold = false))
+INDEX docgrant_doc CREATE INDEX docgrant_doc ON public.document_access_grants USING btree (tenant_id, document_id)
+INDEX document_access_grants_pkey CREATE UNIQUE INDEX document_access_grants_pkey ON public.document_access_grants USING btree (id)
+INDEX document_upload_sessions_confirmed_version CREATE UNIQUE INDEX document_upload_sessions_confirmed_version ON public.document_upload_sessions USING btree (document_id, version_no) WHERE (status = 'confirmed'::text)
+INDEX document_upload_sessions_document_id_idx CREATE INDEX document_upload_sessions_document_id_idx ON public.document_upload_sessions USING btree (document_id)
+INDEX document_upload_sessions_gc CREATE INDEX document_upload_sessions_gc ON public.document_upload_sessions USING btree (tenant_id, expires_at) WHERE (status = 'pending'::text)
+INDEX document_upload_sessions_pkey CREATE UNIQUE INDEX document_upload_sessions_pkey ON public.document_upload_sessions USING btree (id)
+INDEX document_versions_document_id_version_no_key CREATE UNIQUE INDEX document_versions_document_id_version_no_key ON public.document_versions USING btree (document_id, version_no)
+INDEX document_versions_pkey CREATE UNIQUE INDEX document_versions_pkey ON public.document_versions USING btree (id)
+INDEX document_versions_tenant_id_id_uidx CREATE UNIQUE INDEX document_versions_tenant_id_id_uidx ON public.document_versions USING btree (tenant_id, id)
+INDEX documents_pkey CREATE UNIQUE INDEX documents_pkey ON public.documents USING btree (id)
+INDEX documents_tenant_id_id_uidx CREATE UNIQUE INDEX documents_tenant_id_id_uidx ON public.documents USING btree (tenant_id, id)
+INDEX docver_doc CREATE INDEX docver_doc ON public.document_versions USING btree (tenant_id, document_id, version_no DESC)
+INDEX dsr_requests_pkey CREATE UNIQUE INDEX dsr_requests_pkey ON public.dsr_requests USING btree (id)
+INDEX dsr_requests_subject CREATE INDEX dsr_requests_subject ON public.dsr_requests USING btree (tenant_id, subject_ref, requested_at DESC)
+INDEX events_outbox_pkey CREATE UNIQUE INDEX events_outbox_pkey ON public.events_outbox USING btree (id)
+INDEX idempotency_keys_expiry CREATE INDEX idempotency_keys_expiry ON public.idempotency_keys USING btree (expires_at)
+INDEX idempotency_keys_pkey CREATE UNIQUE INDEX idempotency_keys_pkey ON public.idempotency_keys USING btree (tenant_id, actor_scope, idem_key)
+INDEX identity_grant_one_active_per_actor CREATE UNIQUE INDEX identity_grant_one_active_per_actor ON public.identity_grant USING btree (actor_id) WHERE (status = 'active'::text)
+INDEX identity_grant_pkey CREATE UNIQUE INDEX identity_grant_pkey ON public.identity_grant USING btree (id)
+INDEX integration_providers_key CREATE UNIQUE INDEX integration_providers_key ON public.integration_providers USING btree (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), key)
+INDEX integration_providers_pkey CREATE UNIQUE INDEX integration_providers_pkey ON public.integration_providers USING btree (id)
+INDEX job_runs_kind CREATE INDEX job_runs_kind ON public.job_runs USING btree (job_kind, started_at)
+INDEX job_runs_pkey CREATE UNIQUE INDEX job_runs_pkey ON public.job_runs USING btree (id)
+INDEX jobs_available CREATE INDEX jobs_available ON public.jobs_queue USING btree (run_at) WHERE (status = 'available'::text)
+INDEX jobs_queue_pkey CREATE UNIQUE INDEX jobs_queue_pkey ON public.jobs_queue USING btree (id)
+INDEX legal_entities_pkey CREATE UNIQUE INDEX legal_entities_pkey ON public.legal_entities USING btree (party_id)
+INDEX legal_holds_active CREATE UNIQUE INDEX legal_holds_active ON public.legal_holds USING btree (tenant_id, entity_type, entity_id) WHERE (released_at IS NULL)
+INDEX legal_holds_pkey CREATE UNIQUE INDEX legal_holds_pkey ON public.legal_holds USING btree (id)
+INDEX notif_recipient CREATE INDEX notif_recipient ON public.notifications USING btree (tenant_id, recipient_party_id, created_at DESC)
+INDEX notifdel_pending CREATE INDEX notifdel_pending ON public.notification_deliveries USING btree (tenant_id, next_attempt_at) WHERE (status = ANY (ARRAY['queued'::text, 'failed'::text]))
+INDEX notification_channel_prefs_pkey CREATE UNIQUE INDEX notification_channel_prefs_pkey ON public.notification_channel_prefs USING btree (tenant_id, party_id, channel)
+INDEX notification_deliveries_pkey CREATE UNIQUE INDEX notification_deliveries_pkey ON public.notification_deliveries USING btree (id)
+INDEX notification_templates_key CREATE UNIQUE INDEX notification_templates_key ON public.notification_templates USING btree (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), key, channel, locale)
+INDEX notification_templates_pkey CREATE UNIQUE INDEX notification_templates_pkey ON public.notification_templates USING btree (id)
+INDEX notifications_pkey CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)
+INDEX org_parent CREATE INDEX org_parent ON public.organizations USING btree (tenant_id, parent_org_id)
+INDEX organizations_pkey CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)
+INDEX organizations_tenant_id_id_uidx CREATE UNIQUE INDEX organizations_tenant_id_id_uidx ON public.organizations USING btree (tenant_id, id)
+INDEX organizations_tenant_id_parent_org_id_name_key CREATE UNIQUE INDEX organizations_tenant_id_parent_org_id_name_key ON public.organizations USING btree (tenant_id, parent_org_id, name)
+INDEX outbox_aggregate CREATE INDEX outbox_aggregate ON public.events_outbox USING btree (tenant_id, resource_type, resource_id, occurred_at)
+INDEX outbox_pending CREATE INDEX outbox_pending ON public.events_outbox USING btree (occurred_at) WHERE (dispatch_status = 'pending'::text)
+INDEX parties_pkey CREATE UNIQUE INDEX parties_pkey ON public.parties USING btree (id)
+INDEX parties_tenant_id_id_uidx CREATE UNIQUE INDEX parties_tenant_id_id_uidx ON public.parties USING btree (tenant_id, id)
+INDEX party_contacts_pkey CREATE UNIQUE INDEX party_contacts_pkey ON public.party_contacts USING btree (id)
+INDEX party_contacts_tenant_id_party_id_kind_value_key CREATE UNIQUE INDEX party_contacts_tenant_id_party_id_kind_value_key ON public.party_contacts USING btree (tenant_id, party_id, kind, value)
+INDEX permissions_pkey CREATE UNIQUE INDEX permissions_pkey ON public.permissions USING btree (key)
+INDEX persons_pkey CREATE UNIQUE INDEX persons_pkey ON public.persons USING btree (party_id)
+INDEX policies_pkey CREATE UNIQUE INDEX policies_pkey ON public.policies USING btree (id)
+INDEX policy_conditions_pkey CREATE UNIQUE INDEX policy_conditions_pkey ON public.policy_conditions USING btree (id)
+INDEX processed_events_pkey CREATE UNIQUE INDEX processed_events_pkey ON public.processed_events USING btree (handler, event_id)
+INDEX rel_obj CREATE INDEX rel_obj ON public.relationships USING btree (tenant_id, object_kind, object_id, rel_type, valid_from, valid_to)
+INDEX rel_sub CREATE INDEX rel_sub ON public.relationships USING btree (tenant_id, subject_kind, subject_id, rel_type, valid_from, valid_to)
+INDEX relationship_types_pkey CREATE UNIQUE INDEX relationship_types_pkey ON public.relationship_types USING btree (key)
+INDEX relationships_pkey CREATE UNIQUE INDEX relationships_pkey ON public.relationships USING btree (id)
+INDEX res_by_type CREATE INDEX res_by_type ON public.resources USING btree (tenant_id, resource_type, status)
+INDEX resource_types_pkey CREATE UNIQUE INDEX resource_types_pkey ON public.resource_types USING btree (key)
+INDEX resources_pkey CREATE UNIQUE INDEX resources_pkey ON public.resources USING btree (id)
+INDEX role_permissions_pkey CREATE UNIQUE INDEX role_permissions_pkey ON public.role_permissions USING btree (role_id, permission_key)
+INDEX roles_key CREATE UNIQUE INDEX roles_key ON public.roles USING btree (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), key)
+INDEX roles_pkey CREATE UNIQUE INDEX roles_pkey ON public.roles USING btree (id)
+INDEX rule_definitions_pkey CREATE UNIQUE INDEX rule_definitions_pkey ON public.rule_definitions USING btree (key)
+INDEX rule_versions_history_resolution_idx CREATE INDEX rule_versions_history_resolution_idx ON public.rule_versions USING btree (rule_key, scope_kind, scope_id, tenant_id, effective_from DESC) WHERE (status = ANY (ARRAY['active'::text, 'superseded'::text]))
+INDEX rule_versions_pkey CREATE UNIQUE INDEX rule_versions_pkey ON public.rule_versions USING btree (id)
+INDEX rule_versions_rule_key_scope_kind_coalesce_coalesce1_tstzr_excl CREATE INDEX rule_versions_rule_key_scope_kind_coalesce_coalesce1_tstzr_excl ON public.rule_versions USING gist (rule_key, scope_kind, COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), tstzrange(effective_from, effective_to)) WHERE (status = 'active'::text)
+INDEX schedules_pkey CREATE UNIQUE INDEX schedules_pkey ON public.schedules USING btree (name)
+INDEX seed_sync_runs_created_at_idx CREATE INDEX seed_sync_runs_created_at_idx ON public.seed_sync_runs USING btree (created_at DESC)
+INDEX seed_sync_runs_hash_idx CREATE INDEX seed_sync_runs_hash_idx ON public.seed_sync_runs USING btree (manifest_hash)
+INDEX seed_sync_runs_pkey CREATE UNIQUE INDEX seed_sync_runs_pkey ON public.seed_sync_runs USING btree (id)
+INDEX sequence_allocations_pkey CREATE UNIQUE INDEX sequence_allocations_pkey ON public.sequence_allocations USING btree (id)
+INDEX sequence_allocations_tenant_id_series_key_value_key CREATE UNIQUE INDEX sequence_allocations_tenant_id_series_key_value_key ON public.sequence_allocations USING btree (tenant_id, series_key, value)
+INDEX sequences_pkey CREATE UNIQUE INDEX sequences_pkey ON public.sequences USING btree (tenant_id, series_key)
+INDEX tenants_pkey CREATE UNIQUE INDEX tenants_pkey ON public.tenants USING btree (id)
+INDEX tenants_slug_key CREATE UNIQUE INDEX tenants_slug_key ON public.tenants USING btree (slug)
+INDEX user_tenant_access_pkey CREATE UNIQUE INDEX user_tenant_access_pkey ON public.user_tenant_access USING btree (id)
+INDEX users_email_key CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)
+INDEX users_idp_subject_key CREATE UNIQUE INDEX users_idp_subject_key ON public.users USING btree (idp_subject)
+INDEX users_pkey CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+INDEX uta_active CREATE UNIQUE INDEX uta_active ON public.user_tenant_access USING btree (user_id, tenant_id, kind) WHERE (valid_to IS NULL)
+INDEX version_counters_pkey CREATE UNIQUE INDEX version_counters_pkey ON public.version_counters USING btree (tenant_id, scope)
+INDEX webhook_endpoints_pkey CREATE UNIQUE INDEX webhook_endpoints_pkey ON public.webhook_endpoints USING btree (id)
+INDEX webhook_endpoints_tenant_id_id_uidx CREATE UNIQUE INDEX webhook_endpoints_tenant_id_id_uidx ON public.webhook_endpoints USING btree (tenant_id, id)
+INDEX webhook_events_dedup CREATE UNIQUE INDEX webhook_events_dedup ON public.webhook_events USING btree (endpoint_id, external_event_id) WHERE (external_event_id IS NOT NULL)
+INDEX webhook_events_pkey CREATE UNIQUE INDEX webhook_events_pkey ON public.webhook_events USING btree (id)
+INDEX webhook_failed_signature_audit_pkey CREATE UNIQUE INDEX webhook_failed_signature_audit_pkey ON public.webhook_failed_signature_audit USING btree (id)
+INDEX wfi_open CREATE INDEX wfi_open ON public.workflow_instances USING btree (tenant_id, status) WHERE (status = 'running'::text)
+INDEX wfi_resource CREATE INDEX wfi_resource ON public.workflow_instances USING btree (tenant_id, resource_type, resource_id)
+INDEX wfsa_endpoint CREATE INDEX wfsa_endpoint ON public.webhook_failed_signature_audit USING btree (tenant_id, endpoint_id, received_at DESC)
+INDEX wft_due CREATE INDEX wft_due ON public.workflow_tasks USING btree (tenant_id, status, due_at) WHERE (status = 'open'::text)
+INDEX wft_remind_after CREATE INDEX wft_remind_after ON public.workflow_tasks USING btree (tenant_id, remind_after, id) WHERE ((status = 'open'::text) AND (remind_after IS NOT NULL) AND ((last_reminded_at IS NULL) OR (last_reminded_at < remind_after)))
+INDEX whep_direction CREATE INDEX whep_direction ON public.webhook_endpoints USING btree (tenant_id, direction, status)
+INDEX whev_pending CREATE INDEX whev_pending ON public.webhook_events USING btree (tenant_id, delivery_status, next_attempt_at) WHERE (delivery_status = ANY (ARRAY['pending'::text, 'failed'::text]))
+INDEX workflow_definitions_key CREATE UNIQUE INDEX workflow_definitions_key ON public.workflow_definitions USING btree (key, version, COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid))
+INDEX workflow_definitions_pkey CREATE UNIQUE INDEX workflow_definitions_pkey ON public.workflow_definitions USING btree (id)
+INDEX workflow_instances_pkey CREATE UNIQUE INDEX workflow_instances_pkey ON public.workflow_instances USING btree (id)
+INDEX workflow_task_assignees_pkey CREATE UNIQUE INDEX workflow_task_assignees_pkey ON public.workflow_task_assignees USING btree (task_id, assignee_kind, assignee_ref)
+INDEX workflow_tasks_pkey CREATE UNIQUE INDEX workflow_tasks_pkey ON public.workflow_tasks USING btree (id)
+POLICY acting_capacities acting_capacities_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY actor_assignments actor_assignments_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY api_keys api_keys_platform_all ALL true / true
+POLICY api_keys api_keys_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY artifacts artifacts_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY attachments attachments_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY audit_anchors audit_anchors_platform_write ALL true / true
+POLICY audit_anchors audit_anchors_tenant_read SELECT (tenant_id = app_tenant_id()) / -
+POLICY audit_chain audit_chain_platform_read SELECT true / -
+POLICY audit_chain audit_chain_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY audit_logs audit_logs_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY authz_epoch authz_epoch_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY bulk_items bulk_items_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY bulk_operations bulk_operations_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY comments comments_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY document_access_grants document_access_grants_owner_write ALL true / (EXISTS ( SELECT 1 FROM documents d WHERE ((d.id = document_access_grants.document_id) AND (d.created_by = app_actor_id()))))
+POLICY document_access_grants document_access_grants_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY document_upload_sessions document_upload_sessions_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY document_versions document_versions_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY documents documents_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY dsr_requests dsr_requests_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY events_outbox outbox_relay_all ALL true / true
+POLICY events_outbox outbox_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY idempotency_keys idempotency_keys_platform_sweep ALL true / true
+POLICY idempotency_keys idempotency_keys_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY identity_grant identity_grant_platform_all ALL true / true
+POLICY identity_grant identity_grant_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY integration_providers integration_providers_platform_write ALL true / ((tenant_id IS NOT NULL) OR (app_tenant_id_or_null() IS NULL))
+POLICY integration_providers integration_providers_tenant ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY job_runs job_runs_platform_all ALL true / true
+POLICY job_runs job_runs_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY jobs_queue jobs_queue_platform_all ALL true / true
+POLICY jobs_queue jobs_queue_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY legal_entities legal_entities_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY legal_holds legal_holds_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY notification_channel_prefs notification_channel_prefs_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY notification_deliveries notification_deliveries_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY notification_templates notification_templates_platform_write ALL true / ((tenant_id IS NOT NULL) OR (app_tenant_id_or_null() IS NULL))
+POLICY notification_templates notification_templates_tenant ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY notifications notifications_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY organizations organizations_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY parties parties_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY party_contacts party_contacts_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY persons persons_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY policies policies_tenant_read ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY processed_events processed_events_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY relationships relationships_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY resources resources_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY roles roles_tenant_read ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY rule_versions rule_versions_platform_all ALL true / true
+POLICY rule_versions rule_versions_tenant ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY sequence_allocations sequence_allocations_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY sequences sequences_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY version_counters version_counters_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY webhook_endpoints webhook_endpoints_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY webhook_events webhook_events_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY webhook_failed_signature_audit webhook_failed_signature_audit_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY workflow_definitions workflow_definitions_tenant ALL ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null())) / ((tenant_id IS NULL) OR (tenant_id = app_tenant_id_or_null()))
+POLICY workflow_instances workflow_instances_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY workflow_task_assignees workflow_task_assignees_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+POLICY workflow_tasks workflow_tasks_tenant_isolation ALL (tenant_id = app_tenant_id()) / (tenant_id = app_tenant_id())
+RLS acting_capacities enabled=true forced=true
+RLS actor_assignments enabled=true forced=true
+RLS api_keys enabled=true forced=true
+RLS artifacts enabled=true forced=true
+RLS attachments enabled=true forced=true
+RLS audit_anchors enabled=true forced=true
+RLS audit_chain enabled=true forced=true
+RLS audit_logs enabled=true forced=true
+RLS authz_epoch enabled=true forced=true
+RLS bulk_items enabled=true forced=true
+RLS bulk_operations enabled=true forced=true
+RLS comments enabled=true forced=true
+RLS document_access_grants enabled=true forced=true
+RLS document_upload_sessions enabled=true forced=true
+RLS document_versions enabled=true forced=true
+RLS documents enabled=true forced=true
+RLS dsr_requests enabled=true forced=true
+RLS events_outbox enabled=true forced=true
+RLS idempotency_keys enabled=true forced=true
+RLS identity_grant enabled=true forced=true
+RLS integration_providers enabled=true forced=true
+RLS job_runs enabled=true forced=true
+RLS jobs_queue enabled=true forced=true
+RLS legal_entities enabled=true forced=true
+RLS legal_holds enabled=true forced=true
+RLS notification_channel_prefs enabled=true forced=true
+RLS notification_deliveries enabled=true forced=true
+RLS notification_templates enabled=true forced=true
+RLS notifications enabled=true forced=true
+RLS organizations enabled=true forced=true
+RLS parties enabled=true forced=true
+RLS party_contacts enabled=true forced=true
+RLS permissions enabled=false forced=false
+RLS persons enabled=true forced=true
+RLS policies enabled=true forced=true
+RLS policy_conditions enabled=false forced=false
+RLS processed_events enabled=true forced=true
+RLS relationship_types enabled=false forced=false
+RLS relationships enabled=true forced=true
+RLS resource_types enabled=false forced=false
+RLS resources enabled=true forced=true
+RLS role_permissions enabled=false forced=false
+RLS roles enabled=true forced=true
+RLS rule_definitions enabled=false forced=false
+RLS rule_versions enabled=true forced=true
+RLS schedules enabled=false forced=false
+RLS seed_sync_runs enabled=false forced=false
+RLS sequence_allocations enabled=true forced=true
+RLS sequences enabled=true forced=true
+RLS tenants enabled=false forced=false
+RLS user_tenant_access enabled=false forced=false
+RLS users enabled=false forced=false
+RLS version_counters enabled=true forced=true
+RLS webhook_endpoints enabled=true forced=true
+RLS webhook_events enabled=true forced=true
+RLS webhook_failed_signature_audit enabled=true forced=true
+RLS workflow_definitions enabled=true forced=true
+RLS workflow_instances enabled=true forced=true
+RLS workflow_task_assignees enabled=true forced=true
+RLS workflow_tasks enabled=true forced=true
+TABLE acting_capacities
+TABLE actor_assignments
+TABLE api_keys
+TABLE artifacts
+TABLE attachments
+TABLE audit_anchors
+TABLE audit_chain
+TABLE audit_logs
+TABLE authz_epoch
+TABLE bulk_items
+TABLE bulk_operations
+TABLE comments
+TABLE document_access_grants
+TABLE document_upload_sessions
+TABLE document_versions
+TABLE documents
+TABLE dsr_requests
+TABLE events_outbox
+TABLE idempotency_keys
+TABLE identity_grant
+TABLE integration_providers
+TABLE job_runs
+TABLE jobs_queue
+TABLE legal_entities
+TABLE legal_holds
+TABLE notification_channel_prefs
+TABLE notification_deliveries
+TABLE notification_templates
+TABLE notifications
+TABLE organizations
+TABLE parties
+TABLE party_contacts
+TABLE permissions
+TABLE persons
+TABLE policies
+TABLE policy_conditions
+TABLE processed_events
+TABLE relationship_types
+TABLE relationships
+TABLE resource_types
+TABLE resources
+TABLE role_permissions
+TABLE roles
+TABLE rule_definitions
+TABLE rule_versions
+TABLE schedules
+TABLE seed_sync_runs
+TABLE sequence_allocations
+TABLE sequences
+TABLE tenants
+TABLE user_tenant_access
+TABLE users
+TABLE version_counters
+TABLE webhook_endpoints
+TABLE webhook_events
+TABLE webhook_failed_signature_audit
+TABLE workflow_definitions
+TABLE workflow_instances
+TABLE workflow_task_assignees
+TABLE workflow_tasks
