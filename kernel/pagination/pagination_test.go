@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/pagination"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/pagination"
 )
 
 func TestCursorRoundTrip(t *testing.T) {

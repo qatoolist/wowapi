@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/policy"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/policy"
 )
 
 // TestStepUpFreshnessStaleAuthTimeFails proves SEC-01 T6: a stale auth_time

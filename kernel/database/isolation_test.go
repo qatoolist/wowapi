@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 func TestIntegration_TenantIsolation_Adversarial(t *testing.T) {

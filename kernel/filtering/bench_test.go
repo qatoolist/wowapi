@@ -8,8 +8,8 @@ package filtering_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/filtering"
-	"github.com/qatoolist/wowapi/v2/kernel/pagination"
+	"github.com/qatoolist/wowapi/kernel/filtering"
+	"github.com/qatoolist/wowapi/kernel/pagination"
 )
 
 var benchAllow = filtering.Allowlist{

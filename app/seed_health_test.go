@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/app"
-	"github.com/qatoolist/wowapi/v2/kernel/seeds"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel/seeds"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationCatalogsSeededEmptyDBFailsClearly is the GAP-003 "clear failure

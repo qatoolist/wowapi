@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 type cAuth struct {

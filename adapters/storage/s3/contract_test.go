@@ -19,8 +19,8 @@ import (
 
 	"github.com/google/uuid"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/storage"
 )
 
 // storagePutter is satisfied by storage.Memory (a synthetic Put standing in

@@ -57,15 +57,15 @@ linters:
             # kernel/jobs/chaos is a chaos test utility package and is exempt
             - "!**/kernel/jobs/chaos/*.go"
           deny:
-            - pkg: github.com/qatoolist/wowapi/v2/module
+            - pkg: github.com/qatoolist/wowapi/module
               desc: "kernel must not import module (04 §1 import law)"
-            - pkg: github.com/qatoolist/wowapi/v2/app
+            - pkg: github.com/qatoolist/wowapi/app
               desc: "kernel must not import app (04 §1 import law)"
-            - pkg: github.com/qatoolist/wowapi/v2/adapters
+            - pkg: github.com/qatoolist/wowapi/adapters
               desc: "kernel must not import adapters (04 §1 import law)"
-            - pkg: github.com/qatoolist/wowapi/v2/foundation
+            - pkg: github.com/qatoolist/wowapi/foundation
               desc: "kernel must not import foundation (FBL-01 layering)"
-            - pkg: github.com/qatoolist/wowapi/v2/testkit
+            - pkg: github.com/qatoolist/wowapi/testkit
               desc: "production code must not import testkit"
         foundation:
           list-mode: lax
@@ -73,11 +73,11 @@ linters:
             - "**/foundation/**/*.go"
             - "!**/foundation/**/*_test.go"
           deny:
-            - pkg: github.com/qatoolist/wowapi/v2/app
+            - pkg: github.com/qatoolist/wowapi/app
               desc: "foundation must not import app (04 §1 import law)"
-            - pkg: github.com/qatoolist/wowapi/v2/adapters
+            - pkg: github.com/qatoolist/wowapi/adapters
               desc: "foundation must not import adapters (04 §1 import law)"
-            - pkg: github.com/qatoolist/wowapi/v2/testkit
+            - pkg: github.com/qatoolist/wowapi/testkit
               desc: "production code must not import testkit"
   exclusions:
     # Tests commonly ignore errors (t.Fatal paths, best-effort cleanup) and use

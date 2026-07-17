@@ -86,7 +86,7 @@ If your module builds its own outbound HTTP sender (rather than using `kernel.We
 `kernel/httpclient` directly instead of a bare `http.Client`:
 
 ```go
-import "github.com/qatoolist/wowapi/v2/kernel/httpclient"
+import "github.com/qatoolist/wowapi/kernel/httpclient"
 
 client := httpclient.New(httpclient.Config{
     AllowedHosts: []string{"partner-api.example.com"},

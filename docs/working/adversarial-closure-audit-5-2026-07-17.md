@@ -1,5 +1,13 @@
 # Fifth adversarial closure audit (2026-07-17) — register and remediation
 
+> SUPERSEDED FRAMING (2026-07-17): this record describes the interim `/v2`
+> module cutover. The product decision is now a CLEAN V1 RESET on the root
+> module `github.com/qatoolist/wowapi` (next unused version v1.2.0; v1.0.0/
+> v1.1.0 abandoned). The correctness/opacity fixes below stand unchanged; only
+> the module path reverted from `/v2` to root. See
+> docs/working/comprehensive-review-2026-07-17.md.
+
+
 Verdict received: NO-PUSH at 51701f8, revised by the product owner's directive
 that V1 is discarded (no compatibility obligations) and the reviewer's
 follow-up: evaluate strictly as V2 — high bar for correctness, immutable
@@ -96,7 +104,7 @@ invoked exactly once; task row and merged context carry the same bytes).
 
 ### Finding 7 — EXECUTED (the V2 cutover)
 
-- Module path github.com/qatoolist/wowapi/v2 across the repo, templates,
+- Module path github.com/qatoolist/wowapi across the repo, templates,
   release tooling, and the golden/e2e harness (synthetic versions v2.0.0-*;
   the local-replace pseudo-version is v2-family).
 - app.Booted is OPAQUE: all informational mirror fields deleted; capabilities

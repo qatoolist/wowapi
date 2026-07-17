@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // maxCursorLen bounds the encoded cursor string an attacker can submit. A keyset

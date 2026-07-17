@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/qatoolist/wowapi/v2/kernel/secrets"
+	"github.com/qatoolist/wowapi/kernel/secrets"
 )
 
 // Provider resolves "secretref://env/<VAR>" from the process environment.

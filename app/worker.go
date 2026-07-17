@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/kernel/outbox"
 )
 
 // WorkerConfigOpts tunes the worker loops.

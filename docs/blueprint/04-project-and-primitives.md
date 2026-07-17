@@ -7,7 +7,7 @@ everything a product module must import is a public package; `internal/` holds o
 implementation guts. (The earlier draft's all-`internal` layout is superseded — Go forbids external
 modules from importing `internal/` packages, so consumer-facing contracts cannot live there.)
 
-### Framework repository — `github.com/qatoolist/wowapi/v2`
+### Framework repository — `github.com/qatoolist/wowapi`
 
 ```text
 /kernel/...         # PUBLIC L1: primitives + service contracts (package map below)
@@ -33,7 +33,7 @@ package or stay in `internal/` — no grab-bag `shared` package.
 ### Product application repository (e.g. `example.com/acme-ops`)
 
 ```text
-go.mod              # require github.com/qatoolist/wowapi/v2 vX.Y.Z
+go.mod              # require github.com/qatoolist/wowapi vX.Y.Z
 /cmd/api            # thin main: config → app.RunAPI(cfg, modules…)
 /cmd/worker         # app.RunWorker — outbox relay + job runner + schedulers
 /cmd/migrate        # app.RunMigrate — kernel migrations (from wowapi) + embedded module migrations
@@ -66,7 +66,7 @@ This direction keeps the public package graph acyclic: `kernel` at the base, `mo
 
 ## 2. Kernel package map
 
-All paths below are **public** packages under `github.com/qatoolist/wowapi/v2/` — importable by
+All paths below are **public** packages under `github.com/qatoolist/wowapi/` — importable by
 product modules. Several heavyweight packages have been refactored into a `foundation/` layer with
 thin v1 API stability shims in `kernel/` for backward compatibility (e.g., `kernel/webhook` re-exports
 `foundation/webhook`). Where a package has implementation in `internal/`, it is wired by `app` and not

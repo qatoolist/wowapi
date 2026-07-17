@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // IdempotencyHeader is the client header carrying the idempotency key.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/module"
 )
 
 type fakeModule struct {

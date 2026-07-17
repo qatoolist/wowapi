@@ -6,7 +6,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	"github.com/qatoolist/wowapi/kernel/storage"
 )
 
 // BackfillOptions describes one bounded, resumable legacy-checksum batch.

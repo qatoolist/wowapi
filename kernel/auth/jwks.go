@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // jwks.go implements the production KeySource: a JWKS-over-HTTPS adapter that

@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/auth"
+	"github.com/qatoolist/wowapi/kernel/auth"
 )
 
 // TestTokenOptionsDriveClaims proves each TokenOption is applied to the minted

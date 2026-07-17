@@ -20,11 +20,12 @@ and scheduler, HTTP primitives, configuration, observability, and a set of compl
 resources, permissions, routes, workflows, events, jobs, seeds, and migrations **without touching kernel
 code**.
 
-> Status: **V2** (module path `github.com/qatoolist/wowapi/v2`). V1 was discarded before any
-> production consumer existed; V2 carries no V1 compatibility obligations. From the first tagged
-> `v2.x` release the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` /
-> `migrations` + `cmd/wowapi`) is stable: breaking changes to it require a new major version
-> (`/v3`). See [Versioning](#versioning--stability).
+> Status: **clean V1 line** on the root module `github.com/qatoolist/wowapi`. The earlier
+> `v1.0.0`/`v1.1.0` releases are abandoned and unsupported (reserved, never reused); the clean
+> line starts at the next unused version (**v1.2.0**) with NO compatibility to them. From that
+> first clean tag the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` /
+> `migrations` + `cmd/wowapi`) is stable: breaking changes require a new major version (`/v2`).
+> See [Versioning](#versioning--stability).
 >
 > **Production-readiness note:** an active architecture-review programme
 > ([architecture directive](docs/implementation/architecture-directive-2026-07-11.md) →
@@ -185,7 +186,7 @@ You consume `wowapi` from a **separate product repository**. The `wowapi` CLI sc
 **1. Get the `wowapi` CLI.** Either install a published version:
 
 ```bash
-go install github.com/qatoolist/wowapi/v2/cmd/wowapi@latest   # pin an exact tag; see Versioning below
+go install github.com/qatoolist/wowapi/cmd/wowapi@latest   # pin an exact tag (>= v1.2.0); see Versioning below
 ```
 
 (`@latest` is discouraged — the [upgrade policy](docs/operations/upgrade-and-deprecation-policy.md) requires

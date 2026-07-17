@@ -7,15 +7,15 @@ import (
 
 	"github.com/google/uuid"
 
-	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/privileged"
-	"github.com/qatoolist/wowapi/v2/kernel/relationship"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/privileged"
+	"github.com/qatoolist/wowapi/kernel/relationship"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // These integration tests pin, framework-side, the behaviour the product

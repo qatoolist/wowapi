@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/foundation/webhook"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/foundation/webhook"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // =============================================================================

@@ -19,7 +19,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/qatoolist/wowapi/v2/kernel/i18n"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 func i18nUsage(w io.Writer) {

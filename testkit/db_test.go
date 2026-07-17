@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/migrations"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/migrations"
 )
 
 // TestIntegrationMigrateFreshAndIdempotent drives Migrate against a genuinely

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/qatoolist/wowapi/v2/internal/compatcli"
+	"github.com/qatoolist/wowapi/internal/compatcli"
 )
 
 func main() {

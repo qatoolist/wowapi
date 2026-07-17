@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qatoolist/wowapi/v2/foundation/document"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // Closure-review regressions (adversarial closure review 2026-07-17, F-05):

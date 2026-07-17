@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // UploadEvent is passed to OnFileUpload hooks after a version's bytes are

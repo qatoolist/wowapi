@@ -11,14 +11,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/qatoolist/wowapi/v2/kernel/auth"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
-	"github.com/qatoolist/wowapi/v2/kernel/policy"
-	"github.com/qatoolist/wowapi/v2/kernel/seeds"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/auth"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/policy"
+	"github.com/qatoolist/wowapi/kernel/seeds"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // dbPrincipalStore satisfies auth.PrincipalStore over real Postgres with the

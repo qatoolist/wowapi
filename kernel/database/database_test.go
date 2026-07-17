@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
 )
 
 func TestTenantContextRoundtrip(t *testing.T) {

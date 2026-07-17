@@ -16,7 +16,7 @@ WhatsApp/push providers, malware scanner, external IdP (token minting faked), pa
 
 ## 2. `wowapi/testkit` layout & helpers
 
-The testkit is a **public package** (`github.com/qatoolist/wowapi/v2/testkit`) precisely so external
+The testkit is a **public package** (`github.com/qatoolist/wowapi/testkit`) precisely so external
 product repositories can integration-test their modules with the same fixtures, fakes, and
 assertions the framework uses on itself. Framework-repo-only helpers stay in its `_test.go` files
 or `internal/`; anything a product module's tests need is exported here.
@@ -65,7 +65,7 @@ marker per kind.
 Installable, cross-platform (macOS/Linux/Windows), also shipped as goreleaser release binaries:
 
 ```text
-go install github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z
+go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z
 
 wowapi init --module example.com/acme-ops --wowapi-version vX.Y.Z
                                                    # scaffold a new product repo; flags make it repeatable
@@ -92,7 +92,7 @@ Config tooling semantics are specified in [12-configuration-and-deployment.md](1
 
 The installed CLI version should match the product's `wowapi` dependency version (it reads `go.mod`
 and warns on mismatch). CI runs `wowapi seed validate`, `wowapi openapi merge --check`,
-`wowapi lint boundaries`, and `wowapi lint lifecycle` directly. `go run github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z <cmd>`
+`wowapi lint boundaries`, and `wowapi lint lifecycle` directly. `go run github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z <cmd>`
 remains a no-install fallback for tightly pinned CI jobs — not the primary developer experience.
 
 Product repos may keep thin Makefile wrappers (source of truth stays the CLI):

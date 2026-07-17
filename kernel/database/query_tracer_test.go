@@ -16,9 +16,9 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
+	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
 )
 
 // attrValue returns the string value of key on the span stub, or "" when absent.

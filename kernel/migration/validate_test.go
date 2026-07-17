@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestValidationArtifactSchema proves that a zero-mismatch validation report

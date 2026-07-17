@@ -92,7 +92,7 @@ type FieldError struct {
 Construct one with `errors.E`:
 
 ```go
-import kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+import kerr "github.com/qatoolist/wowapi/kernel/errors"
 
 // simple
 return kerr.E(kerr.KindNotFound, "not_found", "request not found")

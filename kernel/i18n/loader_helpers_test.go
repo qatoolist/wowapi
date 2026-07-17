@@ -1,6 +1,6 @@
 package i18n_test
 
-import "github.com/qatoolist/wowapi/v2/kernel/errors"
+import "github.com/qatoolist/wowapi/kernel/errors"
 
 // kindNotFound returns errors.KindNotFound, whose KeyProblemTitle key
 // ("kernel.problem.not_found") is a stable framework key present in the embedded

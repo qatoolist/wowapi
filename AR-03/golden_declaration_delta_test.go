@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 // TestGoldenDeclarationDelta proves that a manifest change deterministically produces

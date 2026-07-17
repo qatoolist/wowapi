@@ -10,11 +10,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/lease"
-	"github.com/qatoolist/wowapi/v2/kernel/observability"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/lease"
+	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
 // Relay claims pending outbox events and dispatches them to registered handlers.

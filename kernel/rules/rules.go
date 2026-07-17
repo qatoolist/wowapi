@@ -51,9 +51,9 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // ScopeKind is the level a rule value applies at.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestExpandPhaseOldReaderCompatibility proves that an expand-phase migration

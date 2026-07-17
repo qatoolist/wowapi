@@ -7,15 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/app"
-	"github.com/qatoolist/wowapi/v2/kernel"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/module"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 type pingJob struct{}

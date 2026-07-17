@@ -18,8 +18,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/i18n"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 // tagToCode maps common go-playground/validator tag names to the stable

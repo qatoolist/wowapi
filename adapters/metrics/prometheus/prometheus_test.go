@@ -10,8 +10,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	promadapter "github.com/qatoolist/wowapi/v2/adapters/metrics/prometheus"
-	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 // Compile-time assertion: *Prometheus implements observability.Metrics.

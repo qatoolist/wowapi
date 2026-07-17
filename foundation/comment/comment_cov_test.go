@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/foundation/comment"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/foundation/comment"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // fixedIDGen always mints the same id. Used to force a duplicate primary-key

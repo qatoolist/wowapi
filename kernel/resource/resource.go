@@ -5,7 +5,7 @@
 // (same id) via a Registrar, declaring the resource type.
 //
 // The preferred write path is the aggregate.Writer in
-// github.com/qatoolist/wowapi/v2/kernel/resource/aggregate: a single call performs
+// github.com/qatoolist/wowapi/kernel/resource/aggregate: a single call performs
 // the business-row write, the resources-mirror upsert, an audit row, and an
 // outbox event in one tenant transaction, so a module cannot commit its
 // business row without also committing the mirror. The low-level Registrar
@@ -16,11 +16,11 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
 	"github.com/google/uuid"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Ref is a kernel-wide pointer to any domain object: its registered type key

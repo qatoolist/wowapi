@@ -3,7 +3,7 @@ package pagination_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/pagination"
+	"github.com/qatoolist/wowapi/kernel/pagination"
 )
 
 func TestCursorSigRoundTrip(t *testing.T) {

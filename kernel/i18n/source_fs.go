@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"gopkg.in/yaml.v3"
 )
 

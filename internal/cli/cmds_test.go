@@ -161,7 +161,7 @@ func TestCheckBoundariesClean(t *testing.T) {
 }
 
 func TestCheckBoundariesFrameworkLayering(t *testing.T) {
-	const mod = "github.com/qatoolist/wowapi/v2"
+	const mod = "github.com/qatoolist/wowapi"
 	imports := map[string][]string{
 		mod + "/kernel/config": {mod + "/app", "fmt"}, // kernel importing app — illegal
 	}

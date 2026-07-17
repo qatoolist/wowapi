@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/authz"
 )
 
 // A StepUp permission challenges an otherwise-allowed actor that lacks a strong

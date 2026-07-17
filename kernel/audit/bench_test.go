@@ -15,10 +15,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/audit"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/audit"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // BenchmarkAuditRecord measures one field-level audit append inside a tenant

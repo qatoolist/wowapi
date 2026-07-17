@@ -15,9 +15,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Sensitivity ranks how protected a document is. Ordered; the download scan-gate

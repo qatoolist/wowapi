@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Engine implements authz.PolicyEngine. It is stateless and safe for concurrent

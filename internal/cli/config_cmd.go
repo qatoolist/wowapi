@@ -17,8 +17,8 @@ import (
 	"sort"
 	"text/tabwriter"
 
-	"github.com/qatoolist/wowapi/v2/adapters/secrets/envprovider"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 // configUsage prints help for `wowapi config` and its subcommands.

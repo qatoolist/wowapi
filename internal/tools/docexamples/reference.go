@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 const referencePath = "docs/reference/application-model.md"

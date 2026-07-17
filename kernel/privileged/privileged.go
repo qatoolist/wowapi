@@ -48,11 +48,11 @@ import (
 	"context"
 	"strings"
 
-	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/rules"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/rules"
 )
 
 // Services is the per-module bundle of scoped privileged services handed to a

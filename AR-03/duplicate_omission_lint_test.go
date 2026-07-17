@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 // TestLint_DuplicateIdentities asserts the lint rule fails on duplicate routes,

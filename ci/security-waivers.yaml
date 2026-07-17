@@ -8,7 +8,7 @@
       "owner": "release-security",
       "rationale": "The development/toolbox stage requires root; published CLI stages declare USER 65532.",
       "expires": "2026-08-13",
-      "remediation_link": "https://github.com/qatoolist/wowapi/v2/blob/main/impl/waves/wave-06-contracts-compatibility-release/epics/epic-003-release-gating/stories/story-003-blocking-security-scans/tasks/task-001-trivy-blocking-flip.md"
+      "remediation_link": "https://github.com/qatoolist/wowapi/blob/main/impl/waves/wave-06-contracts-compatibility-release/epics/epic-003-release-gating/stories/story-003-blocking-security-scans/tasks/task-001-trivy-blocking-flip.md"
     },
     {
       "id": "AVD-DS-0002",
@@ -17,7 +17,7 @@
       "owner": "release-security",
       "rationale": "The GitHub development container is intentionally a root-capable build environment, not a published runtime image.",
       "expires": "2026-08-13",
-      "remediation_link": "https://github.com/qatoolist/wowapi/v2/blob/main/impl/waves/wave-06-contracts-compatibility-release/epics/epic-003-release-gating/stories/story-003-blocking-security-scans/tasks/task-001-trivy-blocking-flip.md"
+      "remediation_link": "https://github.com/qatoolist/wowapi/blob/main/impl/waves/wave-06-contracts-compatibility-release/epics/epic-003-release-gating/stories/story-003-blocking-security-scans/tasks/task-001-trivy-blocking-flip.md"
     }
   ]
 }

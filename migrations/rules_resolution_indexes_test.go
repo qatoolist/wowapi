@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 func TestRuleVersionResolutionIndexes(t *testing.T) {

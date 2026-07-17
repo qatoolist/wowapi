@@ -1,7 +1,7 @@
 # wowapi — Software Requirements Specification (SRS)
 
 - **Product:** `wowapi` — a reusable, domain-agnostic enterprise backend framework ("platform kernel") in Go.
-- **Module path:** `github.com/qatoolist/wowapi/v2`
+- **Module path:** `github.com/qatoolist/wowapi`
 - **Status:** stable `v1` line (v1.0.0 shipped 2026-07-06; current v1.1.0); public API additive-frozen as of `v1.0.0`.
 - **Document status:** Living. Synthesized from the original prompt/vision files (`Goal.md`, `Goal 1.1.md`, `Goal 1.2.md`, `Goal 2.md`), the authoritative design blueprint (`docs/blueprint/00–12`), the hardening tranche (`ROADMAP-wowapi.md`, `CHANGELOG.md`, `VERIFICATION-wowapi-hardening.md`), and cross-checked against the implemented code (50 commits; 251 Go files; 108 test files; 24 migrations; Go 1.26).
 - **Companion:** [GOALS-TRACKER.md](GOALS-TRACKER.md) — what is done / deferred / pending, with the full backlog.
@@ -54,8 +54,8 @@ society-specific concept may live in the kernel.
 ## 2. Overall Description
 
 ### 2.1 Product Perspective
-`wowapi` is distributed as a Go module (`go get github.com/qatoolist/wowapi/v2@vX.Y.Z`) plus an installable CLI
-(`go install github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z`). A product application lives in **its own repository**,
+`wowapi` is distributed as a Go module (`go get github.com/qatoolist/wowapi@vX.Y.Z`) plus an installable CLI
+(`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`). A product application lives in **its own repository**,
 imports the public packages, registers its domain modules through the module SDK, and ships one binary set
 (`api`, `worker`, `migrate`) against **one PostgreSQL database**.
 

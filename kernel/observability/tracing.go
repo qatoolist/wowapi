@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
-	"github.com/qatoolist/wowapi/v2/kernel/tracing"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/tracing"
 )
 
 // Tracer is wowapi's distributed-tracing port (roadmap O1), a sibling of

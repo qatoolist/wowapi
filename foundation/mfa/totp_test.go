@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/foundation/mfa"
+	"github.com/qatoolist/wowapi/foundation/mfa"
 )
 
 // RFC 6238 Appendix B published test vectors: three seeds (SHA1: 20 ASCII

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 // serveMW runs a single request through a middleware-wrapped 200 handler.

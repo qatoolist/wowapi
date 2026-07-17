@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/qatoolist/wowapi/v2/foundation/document"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // F-05 regressions (adversarial-framework-review-2026-07-17): a pending and

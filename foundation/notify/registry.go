@@ -15,13 +15,13 @@ import (
 	"strings"
 	"text/template/parse"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
 	htmltemplate "html/template"
 
 	texttemplate "text/template"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Channel is a notification delivery channel.

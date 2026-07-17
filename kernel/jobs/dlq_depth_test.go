@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // depthMetrics is a fake observability.Metrics that records dlq_depth gauge sets

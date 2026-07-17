@@ -28,15 +28,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/app"
-	"github.com/qatoolist/wowapi/v2/foundation/document"
-	"github.com/qatoolist/wowapi/v2/kernel"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/seeds"
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
-	"github.com/qatoolist/wowapi/v2/module"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/seeds"
+	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // docClassAttachment is the test-local document class key, namespaced under

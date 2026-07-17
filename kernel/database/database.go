@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 // DBTX is the query surface sqlc-generated code targets. Both TenantDB and

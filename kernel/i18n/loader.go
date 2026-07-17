@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // SourceKind names a first-class catalog source. It is part of the stable

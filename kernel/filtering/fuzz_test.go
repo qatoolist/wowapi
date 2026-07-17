@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/filtering"
+	"github.com/qatoolist/wowapi/kernel/filtering"
 )
 
 // The filter DSL takes untrusted client input (query params) and turns it into a

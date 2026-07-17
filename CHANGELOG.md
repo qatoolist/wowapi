@@ -5,11 +5,14 @@ kernel distributed as a third-party dependency (`go get github.com/qatoolist/wow
 CLI (`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com) and this project follows
-[Semantic Versioning](https://semver.org). **The framework ships as V2**
-(module path `github.com/qatoolist/wowapi/v2`): V1 was discarded before any production consumer
-existed, so V2 carries no V1 compatibility obligations. From the first tagged `v2.x` release the
-public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
-is stable; breaking changes to it require `/v3`.
+[Semantic Versioning](https://semver.org). **The framework ships on the root module**
+`github.com/qatoolist/wowapi` as a CLEAN V1 line. The earlier `v1.0.0` and `v1.1.0` releases are
+ABANDONED and UNSUPPORTED — they are treated as reserved/immutable Go-proxy identities and are
+never reused. The clean line starts at the first never-published version above them (**v1.2.0**,
+confirmed by a Go-proxy/checksum preflight at tag time) and provides NO API, generated-project,
+schema-upgrade, or behavioral compatibility with the discarded releases. From that first clean tag
+the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` +
+`cmd/wowapi`) is stable; an incompatible public change would require `/v2`.
 
 ## [Unreleased]
 
@@ -127,9 +130,10 @@ is stable; breaking changes to it require `/v3`.
   also populated from the boot-materialized snapshots, and typed-nil `fs.FS` values are
   rejected like nil ones.
 
-### Changed (V2 — module path `/v2`, opaque boot result; decision D-0091)
-- The module path is `github.com/qatoolist/wowapi/v2`; generated products import `/v2`, and the
-  golden/e2e gates build V2 consumers exclusively.
+### Changed (clean V1 reset — root module, opaque boot result; decision D-0091)
+- The module path is the root `github.com/qatoolist/wowapi`; generated products import it, and the
+  golden/e2e gates build clean-line consumers exclusively. The abandoned `v1.0.0`/`v1.1.0`
+  identities are never reused.
 - `app.Booted` is OPAQUE (D-0091 — the V2 opacity decision): it has no informational mirror
   fields at all. Every capability flows through accessors backed by the boot-validated runtime
   view (`RuntimeRouter`, `RuntimeAuthz`, `RuntimeTx`, `RuntimeEvents`, `RuntimeJobs`,

@@ -2,8 +2,8 @@
 package artifact
 
 import (
-	"github.com/qatoolist/wowapi/v2/foundation/artifact"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/foundation/artifact"
+	"github.com/qatoolist/wowapi/kernel/model"
 )
 
 type (

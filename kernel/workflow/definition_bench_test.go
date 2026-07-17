@@ -3,7 +3,7 @@ package workflow_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/workflow"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
 // BenchmarkDefinitionValidate measures the graph/reference validation that

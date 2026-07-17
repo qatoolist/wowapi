@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/audit"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/kernel/workflow"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/audit"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/workflow"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // failingAuditRedactor mutates an audit Entry so that Record's downstream

@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/app"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/privileged"
-	"github.com/qatoolist/wowapi/v2/kernel/relationship"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
-	"github.com/qatoolist/wowapi/v2/module"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/privileged"
+	"github.com/qatoolist/wowapi/kernel/relationship"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationModuleContextPrivilegedWired is the GAP-006 wiring regression:

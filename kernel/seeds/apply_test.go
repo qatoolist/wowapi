@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/seeds"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/seeds"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // baseBundlePerm returns a minimal, deterministic bundle for apply tests.

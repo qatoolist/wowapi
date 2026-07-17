@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/resource"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 )
 
 // Second closure-audit regression (2026-07-17, F-10): Definition carries a

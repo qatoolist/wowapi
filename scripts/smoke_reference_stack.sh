@@ -41,7 +41,7 @@ mkdir -p "$PRODUCT"
 
 echo "==> wiring local framework + go mod tidy"
 ( cd "$PRODUCT" \
-    && go mod edit -replace "github.com/qatoolist/wowapi/v2=$REPO_ROOT" \
+    && go mod edit -replace "github.com/qatoolist/wowapi=$REPO_ROOT" \
     && GOFLAGS=-mod=mod go mod tidy )
 
 echo "==> building linux static api + migrate binaries"

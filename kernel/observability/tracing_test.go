@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 type fakeSpan struct {

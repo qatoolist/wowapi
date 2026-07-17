@@ -3,8 +3,8 @@ package filtering_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/filtering"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/filtering"
 )
 
 func sortAllow() filtering.SortAllowlist {

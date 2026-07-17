@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 // Sixth review regression (2026-07-17, C-05): a missing or malformed DSR

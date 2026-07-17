@@ -28,7 +28,7 @@ the [contributor working layer](../working/README.md).
 ## Two mental models
 
 - **Framework consumer** (most readers): you build a product in *your own repo* that depends on
-  `github.com/qatoolist/wowapi/v2`. The CLI scaffolds it; you write modules. Start with
+  `github.com/qatoolist/wowapi`. The CLI scaffolds it; you write modules. Start with
   [Getting Started](getting-started.md).
 - **Framework contributor**: you work on *this* repo. Use `make ci-container` as the gate and follow the
   [working layer](../working/README.md).
@@ -36,5 +36,5 @@ the [contributor working layer](../working/README.md).
 ## Conventions in this guide
 
 - `$ command` blocks are copy-paste-ready; product-repo commands assume you ran `wowapi init` first.
-- "Framework repo" = a clone of `github.com/qatoolist/wowapi/v2`. "Product repo" = what `wowapi init` scaffolds.
+- "Framework repo" = a clone of `github.com/qatoolist/wowapi`. "Product repo" = what `wowapi init` scaffolds.
 - **Gaps/manual steps are labeled explicitly** so you never mistake a recommendation for a shipped feature.

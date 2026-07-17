@@ -91,7 +91,7 @@ adapters satisfy that port:
 | Adapter | Package | Use |
 |---|---|---|
 | In-memory | `kernel/storage` (`storage.NewMemory()`) | Tests and local dev without a real object store. |
-| S3/MinIO | `github.com/qatoolist/wowapi/v2/adapters/storage/s3` | Production and any local dev pointed at real MinIO. |
+| S3/MinIO | `github.com/qatoolist/wowapi/adapters/storage/s3` | Production and any local dev pointed at real MinIO. |
 
 If your module registers a document class but the kernel has no storage adapter wired, `app.Boot` fails
 closed: *"document classes are registered (…) but no storage adapter is wired: pass kernel.Deps.Storage"*.

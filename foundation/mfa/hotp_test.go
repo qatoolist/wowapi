@@ -3,7 +3,7 @@ package mfa_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/foundation/mfa"
+	"github.com/qatoolist/wowapi/foundation/mfa"
 )
 
 // TestHOTP_RFC4226Vectors pins HOTPCode against RFC 4226 Appendix D's published

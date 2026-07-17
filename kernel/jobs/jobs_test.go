@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/jobs"
 )
 
 // sampleJob is a payload struct that implements jobs.Job.

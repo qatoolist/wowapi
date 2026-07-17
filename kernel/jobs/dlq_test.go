@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // seedDiscardedJob inserts a dead-lettered job via the admin pool and returns id.

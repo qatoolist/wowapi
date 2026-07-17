@@ -4,9 +4,9 @@ package webhook
 import (
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/foundation/webhook"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/foundation/webhook"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/observability"
 )
 
 type (

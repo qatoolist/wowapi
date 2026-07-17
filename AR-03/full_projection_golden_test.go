@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 // TestFullProjectionGolden verifies that the combined output of all 9 projections

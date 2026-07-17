@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/app"
-	"github.com/qatoolist/wowapi/v2/kernel"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/module"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 type recurringModule struct{}

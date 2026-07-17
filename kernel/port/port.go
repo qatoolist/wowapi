@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 // Key represents a typed port key.

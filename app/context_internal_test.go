@@ -6,10 +6,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/i18n"
-	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/module"
 )
 
 // TestModuleContextAccessorsNilGuards builds a module context with empty deps

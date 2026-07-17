@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 // CapturedKernelConfig exposes the boot-captured kernel view's config for the

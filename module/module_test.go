@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/module"
 )
 
 // TestValidName pins the module-name grammar (^[a-z][a-z0-9_]{0,63}$) that

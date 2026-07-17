@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationSchedulerOnRunAndTaskError proves the OnRun observer fires after

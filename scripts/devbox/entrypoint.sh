@@ -14,7 +14,7 @@ printf 'export PATH="/wowapi/scripts/devbox:%s:$PATH"\n' "$GOBIN_DIR" > /etc/pro
 # version so `wowapi init` emits a parseable `require ... v0.0.0-dev` (wow-link
 # then points that at the local source via a replace directive).
 echo "devbox: installing the wowapi CLI from /wowapi ..."
-( cd /wowapi && go install -ldflags "-X github.com/qatoolist/wowapi/v2/internal/buildinfo.version=v0.0.0-dev" ./cmd/wowapi )
+( cd /wowapi && go install -ldflags "-X github.com/qatoolist/wowapi/internal/buildinfo.version=v0.0.0-dev" ./cmd/wowapi )
 
 # If a command was passed (e.g. `docker compose run devbox -lc '...'`), run it
 # after the setup above instead of the interactive shell — handy for scripting.

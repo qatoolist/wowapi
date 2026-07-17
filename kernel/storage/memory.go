@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Memory is an in-process Adapter for tests and local dev. Presigned URLs are

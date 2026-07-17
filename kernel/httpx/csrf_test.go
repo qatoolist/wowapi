@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 // ---------- CSRFProtect (double-submit-cookie; backlog B7) ----------

@@ -26,16 +26,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/kernel/policy"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/kernel/policy"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 var workloadProfiles = []string{

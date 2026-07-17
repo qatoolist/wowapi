@@ -3,7 +3,7 @@ package httpx
 import (
 	"context"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/authz"
 )
 
 // Request-scoped values that the middleware chain sets and handlers/helpers

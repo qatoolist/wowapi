@@ -3,7 +3,7 @@ package authz_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/authz"
 )
 
 func TestRegistryValidatesKeys(t *testing.T) {

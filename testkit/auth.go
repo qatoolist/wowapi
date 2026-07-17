@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/auth"
+	"github.com/qatoolist/wowapi/kernel/auth"
 )
 
 // Default token parameters the auth.Verifier is expected to accept. Tests

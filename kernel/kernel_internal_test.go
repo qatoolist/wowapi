@@ -11,13 +11,13 @@ import (
 
 	"github.com/google/uuid"
 
-	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/secrets"
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/kernel/storage"
 )
 
 // stubProvider is a secrets.Provider double so we can exercise secretRefResolver

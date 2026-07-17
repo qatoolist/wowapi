@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/database"
 )
 
 // DATA-01 / MATRIX CS-18 adversarial matrix: a seeded cross-tenant parent/child

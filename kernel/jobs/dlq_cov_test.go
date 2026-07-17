@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/jobs"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/kernel/jobs"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationListDeadDefaultLimit proves ListDead applies the default limit

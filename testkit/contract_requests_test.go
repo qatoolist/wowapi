@@ -3,8 +3,8 @@ package testkit_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/internal/testmodules/requests"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/internal/testmodules/requests"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationRequestsModuleContract runs the framework's own module

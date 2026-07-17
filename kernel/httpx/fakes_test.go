@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/kernel/database"
 )
 
 // Shared in-memory test doubles that let the httpx transaction-wrapping paths

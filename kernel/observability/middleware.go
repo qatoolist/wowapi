@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 // Requests returns a httpx.Middleware that records RED (Rate, Errors, Duration)

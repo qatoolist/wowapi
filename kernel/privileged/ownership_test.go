@@ -6,13 +6,13 @@ import (
 
 	"github.com/google/uuid"
 
-	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/privileged"
-	"github.com/qatoolist/wowapi/v2/kernel/relationship"
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	kaudit "github.com/qatoolist/wowapi/kernel/audit"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/privileged"
+	"github.com/qatoolist/wowapi/kernel/relationship"
+	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationGrantAllowListRelType proves a module can manage a NON-prefixed

@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/qatoolist/wowapi/v2/internal/compat"
+	"github.com/qatoolist/wowapi/internal/compat"
 )
 
 // Run executes the compatibility gate CLI and returns a process exit code.

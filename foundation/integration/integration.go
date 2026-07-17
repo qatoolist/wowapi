@@ -17,10 +17,10 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/qatoolist/wowapi/v2/internal/sealer"
+	"github.com/qatoolist/wowapi/internal/sealer"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/config"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Kind classifies a provider; the set is closed so a typo fails registration.

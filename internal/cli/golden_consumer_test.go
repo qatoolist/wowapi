@@ -17,7 +17,7 @@ const goldenConsumerModulePath = "example.com/wowapi-golden-consumer"
 // module index is path-keyed and immutable-by-assumption, so only a new
 // version path gets a fresh index.
 func goldenConsumerFrameworkVersion(t *testing.T) string {
-	return "v2.0.0-golden-" + frameworkSourceSuffix(t)
+	return "v1.2.0-golden-" + frameworkSourceSuffix(t)
 }
 
 func goldenConsumerScaffold(t *testing.T) string {
@@ -28,7 +28,7 @@ func goldenConsumerScaffold(t *testing.T) string {
 	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
 	install := exec.Command(
 		"go", "install", "-buildvcs=false",
-		"github.com/qatoolist/wowapi/v2/cmd/wowapi@"+goldenConsumerFrameworkVersion(t),
+		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion(t),
 	)
 	install.Dir = wowapiCheckoutRoot(t)
 	install.Env = append(os.Environ(), goEnv...)
@@ -41,7 +41,7 @@ func goldenConsumerScaffold(t *testing.T) string {
 	cli := filepath.Join(gobin, "wowapi")
 	provenance := runPipelineStep(t, "verify installed CLI provenance", install.Dir, goEnv,
 		"go", "version", "-m", cli)
-	if !strings.Contains(provenance, "github.com/qatoolist/wowapi/v2/cmd/wowapi") ||
+	if !strings.Contains(provenance, "github.com/qatoolist/wowapi/cmd/wowapi") ||
 		!strings.Contains(provenance, goldenConsumerFrameworkVersion(t)) {
 		t.Fatalf("installed CLI provenance does not name versioned wowapi module:\n%s", provenance)
 	}
@@ -156,7 +156,7 @@ func TestGoldenConsumerInstalledBinaryTwoModules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi/v2") {
+	if strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi") {
 		t.Fatal("golden consumer must resolve wowapi as a versioned dependency, not a checkout replace")
 	}
 }

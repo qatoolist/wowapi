@@ -6,7 +6,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/model"
 )
 
 // ---------------------------------------------------------------------------

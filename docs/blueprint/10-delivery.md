@@ -119,7 +119,7 @@ templates, jobs (billing generation), reports. Elections/AGM voting reuse the ge
 
 Build the walking skeleton in this order; each lands with its tests:
 
-All paths are in the framework repo `github.com/qatoolist/wowapi/v2` (public packages — see
+All paths are in the framework repo `github.com/qatoolist/wowapi` (public packages — see
 [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md)):
 
 1. `go.mod`, `Makefile`, `.golangci.yml`, `deployments/compose.yaml` — E1 (public layout from day one).

@@ -29,9 +29,9 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/observability"
-	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/kernel/storage"
 )
 
 // defaultPresignTTL matches the kernel document service's put TTL.

@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/kernel/resource"
+	"github.com/qatoolist/wowapi/kernel/resource"
 )
 
 // registry_test.go — QA G5 (framework contract): the resource-type Registry is a

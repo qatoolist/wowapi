@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/v2/foundation/webhook"
-	"github.com/qatoolist/wowapi/v2/kernel/httpclient"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/foundation/webhook"
+	"github.com/qatoolist/wowapi/kernel/httpclient"
+	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestHTTPSenderBlocksLoopbackByDefault proves NewHTTPSender is SSRF-safe by

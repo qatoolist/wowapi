@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 func TestStateTransitions(t *testing.T) {

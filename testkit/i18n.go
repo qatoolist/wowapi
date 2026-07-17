@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
-	"github.com/qatoolist/wowapi/v2/kernel/i18n"
+	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 // AssertNegotiatedLocale asserts that Accept-Language header value acceptLang,

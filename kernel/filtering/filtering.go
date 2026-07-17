@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // Op is a filter comparison operator. The set is closed.

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/foundation/mfa"
+	"github.com/qatoolist/wowapi/foundation/mfa"
 )
 
 // Default challenge policy values.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/config"
-	"github.com/qatoolist/wowapi/v2/kernel/logging"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/logging"
 )
 
 // TestJSONFormatProducesValidJSON verifies that Format:"json" emits valid JSON lines.

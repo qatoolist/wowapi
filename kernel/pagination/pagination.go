@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // PageResponse is the offset-page envelope (admin/small lists). TotalCount is

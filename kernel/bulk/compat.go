@@ -2,8 +2,8 @@
 package bulk
 
 import (
-	"github.com/qatoolist/wowapi/v2/foundation/bulk"
-	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/foundation/bulk"
+	"github.com/qatoolist/wowapi/kernel/model"
 )
 
 type (

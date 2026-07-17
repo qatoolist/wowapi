@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/outbox"
-	"github.com/qatoolist/wowapi/v2/testkit"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestIntegrationDLQListDefaultLimit covers ListDeadEvents' limit<=0 default

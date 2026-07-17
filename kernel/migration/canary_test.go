@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestCanaryNAndNMinusOne proves both explicitly-required canary legs:

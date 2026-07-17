@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/qatoolist/wowapi/v2/adapters/secrets/envprovider"
-	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/kernel/config"
 )
 
 // delegateConfigCheck runs the product-local tools/configcheck for mode when it

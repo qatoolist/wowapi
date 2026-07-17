@@ -9,7 +9,7 @@ import (
 	"context"
 	"time"
 
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
 // PresignedURL is a time-boxed request the client sends directly to storage.

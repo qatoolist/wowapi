@@ -3,7 +3,7 @@ package i18n_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/i18n"
+	"github.com/qatoolist/wowapi/kernel/i18n"
 )
 
 // Registry.Freeze must seal the underlying catalog so request-time reads never

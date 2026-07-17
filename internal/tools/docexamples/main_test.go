@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/kernel/appmodel"
 )
 
 func TestExtractExamplesRequiresExactAdjacentMarker(t *testing.T) {

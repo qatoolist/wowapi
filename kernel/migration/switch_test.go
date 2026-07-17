@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/testkit"
+	"github.com/qatoolist/wowapi/testkit"
 )
 
 // TestSwitchRollbackAfterSwitch proves application rollback after switch with

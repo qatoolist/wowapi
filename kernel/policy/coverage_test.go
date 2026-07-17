@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/authz"
-	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
-	"github.com/qatoolist/wowapi/v2/kernel/policy"
+	"github.com/qatoolist/wowapi/kernel/authz"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/policy"
 )
 
 // rawCond builds a condition with an exact raw JSON operand, letting a test feed

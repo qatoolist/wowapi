@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/foundation/mfa"
+	"github.com/qatoolist/wowapi/foundation/mfa"
 )
 
 func TestFakeSender_RecordsDeliveries(t *testing.T) {

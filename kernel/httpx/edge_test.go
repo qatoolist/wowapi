@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 // ---------- SecureHeaders (blueprint 07 §1: nosniff, frame-ancestors 'none', HSTS) ----------

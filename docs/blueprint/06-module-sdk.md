@@ -49,7 +49,7 @@ re-exported via a tiny `modules/x/port` package to keep the import surface expli
 
 ## 2. Module registration contract (`wowapi/module` — public)
 
-The SDK is a public package: product repos import `github.com/qatoolist/wowapi/v2/module` (plus the
+The SDK is a public package: product repos import `github.com/qatoolist/wowapi/module` (plus the
 `wowapi/kernel/*` contracts it references). The embedded-asset methods (`Migrations(fs)`,
 `Seeds(fs)`, `OpenAPI(fragment)`) are public contracts precisely so *external* modules can hand
 their `embed.FS` assets to the framework.
@@ -129,7 +129,7 @@ type Context interface {
 <!-- doc-example: illustrative -->
 ```go
 // <product-repo>/internal/modules/requests/module.go — complete wiring example
-import "github.com/qatoolist/wowapi/v2/module"
+import "github.com/qatoolist/wowapi/module"
 
 func (m Module) Register(mc module.Context) error {
     repo := store.NewRequestRepo()
@@ -198,7 +198,7 @@ func (a *App) StartAPI(ctx) error / StartWorker(ctx) error / Shutdown(ctx) error
 import (
     "context"
 
-    "github.com/qatoolist/wowapi/v2/app"
+    "github.com/qatoolist/wowapi/app"
 
     "example.com/acme-ops/internal/appcfg"       // product-owned Config type, scaffolded by `wowapi init`
     "example.com/acme-ops/internal/modules/assets"

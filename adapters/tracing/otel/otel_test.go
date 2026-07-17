@@ -7,7 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
+	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
 )
 
 func TestOtelTracerRecordsSpanAndPropagates(t *testing.T) {

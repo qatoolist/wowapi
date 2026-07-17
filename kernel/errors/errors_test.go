@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/kernel/errors"
 )
 
 func TestKindMappingClosedSet(t *testing.T) {

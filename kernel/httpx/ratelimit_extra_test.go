@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/kernel/httpx"
 )
 
 // TestNewTokenBucketDefaults exercises the production constructor (real clock).
