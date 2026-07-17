@@ -1,12 +1,30 @@
 package document
 
-import "context"
+import (
+	"context"
+	"errors"
+
+	"github.com/qatoolist/wowapi/internal/sealer"
+
+	"github.com/qatoolist/wowapi/kernel/database"
+	kerr "github.com/qatoolist/wowapi/kernel/errors"
+)
 
 // UploadEvent is passed to OnFileUpload hooks after a version's bytes are
 // verified but before the version row is committed. A hook returning an error
 // aborts the confirm (the version is not written). The canonical hook enqueues
 // an async malware scan; the version lands scan_status=pending and downloads of
 // confidential+ documents block until the scan clears it.
+//
+// Effect contract (second closure audit 2026-07-17, F-05): the hook runs
+// INSIDE the confirming transaction, which can still roll back after the hook
+// returns (a later insert/update/outbox write or the commit itself can fail),
+// and the same reserved upload is then retryable — so a hook effect is exactly
+// once ONLY if it is written through Tx (it commits and rolls back atomically
+// with the confirmation; the canonical scan enqueue is an outbox write through
+// Tx). An effect delivered OUTSIDE the transaction may be re-delivered on
+// retry and MUST be idempotent keyed on DeliveryID, which is stable across
+// retries of the same reserved upload.
 type UploadEvent struct {
 	DocumentID  string
 	Class       string
@@ -15,6 +33,15 @@ type UploadEvent struct {
 	MIME        string
 	SizeBytes   int64
 	Sensitivity Sensitivity
+	// DeliveryID is the durable idempotency identifier for this upload's hook
+	// effects: the upload session's id, identical on every retry of the same
+	// reserved (document, version, key) confirmation. External (non-Tx) effects
+	// must deduplicate on it.
+	DeliveryID string
+	// Tx is the confirming transaction's tenant handle. Effects written through
+	// it are atomic with the confirmation: they are never visible if the
+	// confirmation rolls back, and land exactly once when it commits.
+	Tx database.TenantDB
 }
 
 // AccessEvent is passed to OnDocumentAccess hooks after authorization succeeds
@@ -37,6 +64,7 @@ type (
 type Hooks struct {
 	onUpload []UploadHook
 	onAccess []AccessHook
+	errs     []error
 	sealed   bool
 }
 
@@ -46,7 +74,10 @@ func NewHooks() *Hooks { return &Hooks{} }
 // Seal freezes the hook set once boot validation completes: any later
 // registration panics rather than silently attaching a hook the boot gates
 // never saw (closure review 2026-07-17, F-10).
-func (h *Hooks) Seal() { h.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (h *Hooks) Seal(sealer.Authority) { h.sealed = true }
 
 func (h *Hooks) mustBeUnsealed() {
 	if h.sealed {
@@ -54,16 +85,35 @@ func (h *Hooks) mustBeUnsealed() {
 	}
 }
 
-// OnFileUpload registers a confirm-time hook.
+// OnFileUpload registers a confirm-time hook. A nil hook is a collected boot
+// error (second closure audit 2026-07-17, F-10): it would otherwise panic only
+// when the first confirmation invokes it.
 func (h *Hooks) OnFileUpload(fn UploadHook) {
 	h.mustBeUnsealed()
+	if fn == nil {
+		h.errs = append(h.errs, kerr.E(kerr.KindInternal, "invalid_hook",
+			"OnFileUpload registered a nil hook"))
+		return
+	}
 	h.onUpload = append(h.onUpload, fn)
 }
 
-// OnDocumentAccess registers a download-time hook.
+// OnDocumentAccess registers a download-time hook. A nil hook is a collected
+// boot error, like OnFileUpload.
 func (h *Hooks) OnDocumentAccess(fn AccessHook) {
 	h.mustBeUnsealed()
+	if fn == nil {
+		h.errs = append(h.errs, kerr.E(kerr.KindInternal, "invalid_hook",
+			"OnDocumentAccess registered a nil hook"))
+		return
+	}
 	h.onAccess = append(h.onAccess, fn)
+}
+
+// Err returns accumulated registration errors joined, or nil; app.Boot gates
+// on it like every other registry Err.
+func (h *Hooks) Err() error {
+	return errors.Join(h.errs...)
 }
 
 func (h *Hooks) runUpload(ctx context.Context, e UploadEvent) error {

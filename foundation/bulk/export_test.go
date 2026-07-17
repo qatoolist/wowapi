@@ -12,3 +12,11 @@ import (
 func SetCancelInterceptor(s *Service, fn func(ctx context.Context, db database.TenantDB) error) {
 	s.cancelInterceptor = fn
 }
+
+// SetCancelCommitInterceptor wires the test-only seam invoked AFTER Cancel's
+// pending-item sweep, inside the still-uncommitted transaction — the commit
+// window the second closure audit's F-04 race regressions hold open. Compiled
+// only into test binaries.
+func SetCancelCommitInterceptor(s *Service, fn func(ctx context.Context, db database.TenantDB) error) {
+	s.cancelCommitInterceptor = fn
+}

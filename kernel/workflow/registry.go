@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/resource"
 )
@@ -73,7 +75,10 @@ type Registry struct {
 // Seal freezes the registry once boot validation completes: any later
 // registration panics rather than silently adding a definition, auto-action,
 // or resolver the boot gates never saw (closure review 2026-07-17, F-10).
-func (r *Registry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -107,11 +112,82 @@ func (r *Registry) RegisterDefinition(def Definition) error {
 		r.errs = append(r.errs, err)
 		return err
 	}
-	r.defs[k] = def
+	r.defs[k] = def.clone()
 	if def.Version > r.latest[def.Key] {
 		r.latest[def.Key] = def.Version
 	}
 	return nil
+}
+
+// clone returns a deep copy of d down to every nested step map, slice, and
+// pointer: the registry must not alias a caller's Definition — a module
+// mutating the value it registered (its Steps map, a Transition, a Policy)
+// must never alter the validated graph running instances resolve against
+// (second closure audit 2026-07-17, F-10).
+func (d Definition) clone() Definition {
+	out := d
+	if d.Steps != nil {
+		out.Steps = make(map[string]Step, len(d.Steps))
+		for k, s := range d.Steps {
+			out.Steps[k] = s.clone()
+		}
+	}
+	return out
+}
+
+func (s Step) clone() Step {
+	out := s
+	if s.Assignees != nil {
+		out.Assignees = append([]AssigneeSpec(nil), s.Assignees...)
+	}
+	if s.Policy != nil {
+		p := *s.Policy
+		if s.Policy.SelfApproval != nil {
+			b := *s.Policy.SelfApproval
+			p.SelfApproval = &b
+		}
+		out.Policy = &p
+	}
+	if s.SLA != nil {
+		sla := *s.SLA
+		out.SLA = &sla
+	}
+	out.OnApprove = s.OnApprove.clone()
+	out.OnReject = s.OnReject.clone()
+	out.Next = s.Next.clone()
+	out.OnError = s.OnError.clone()
+	if s.Branches != nil {
+		out.Branches = make([]Branch, len(s.Branches))
+		for i, b := range s.Branches {
+			nb := b
+			if b.When != nil {
+				w := *b.When
+				nb.When = &w
+			}
+			out.Branches[i] = nb
+		}
+	}
+	if s.Electorate != nil {
+		e := *s.Electorate
+		out.Electorate = &e
+	}
+	if s.Quorum != nil {
+		q := *s.Quorum
+		out.Quorum = &q
+	}
+	if s.Pass != nil {
+		p := *s.Pass
+		out.Pass = &p
+	}
+	return out
+}
+
+func (t *Transition) clone() *Transition {
+	if t == nil {
+		return nil
+	}
+	c := *t
+	return &c
 }
 
 // RegisterAutoAction binds a Go action to an auto step's action key.

@@ -207,7 +207,9 @@ func run(ctx context.Context) error {
 	// (deny-by-default: AuthN -> bind tenant/actor -> AuthZ(permission)): API keys
 	// first, then the user (OIDC) leg above.
 	auth := httpx.Composite(apiKeyAuth, userAuth)
-	mux := booted.Router.SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
+	// RuntimeRouter is the boot-validated router; unlike the informational
+	// Router field it cannot have been reassigned after boot.
+	mux := booted.RuntimeRouter().SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
 
 	// Health endpoints are Public infrastructure, mounted directly.
 	// ReadinessWithCatalogs registers the framework-level "seed_catalogs"

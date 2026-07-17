@@ -51,6 +51,8 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -107,7 +109,10 @@ func NewRegistry() *Registry { return &Registry{points: map[string]Point{}} }
 // Seal freezes the registry once boot validation completes: any later Register
 // panics rather than silently adding a rule point the boot gates never saw
 // (closure review 2026-07-17, F-10).
-func (r *Registry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
 
 // Register adds a rule point. Malformed keys, a module-prefix mismatch, a
 // missing schema/default, a schema that is malformed or names an unknown
@@ -144,11 +149,37 @@ func (r *Registry) Register(module string, p Point) {
 	if len(p.AllowedScopes) == 0 {
 		p.AllowedScopes = []ScopeKind{ScopePlatform, ScopeTenant, ScopeOrg}
 	}
-	r.points[p.Key] = p
+	r.points[p.Key] = p.clone()
 }
 
-// Get returns the registered point.
-func (r *Registry) Get(key string) (Point, bool) { p, ok := r.points[key]; return p, ok }
+// clone returns a deep copy of p. The registry must not share nested mutable
+// state (ValueSchema/Default bytes, AllowedScopes) with callers in either
+// direction: a retained registration value or a mutated Get/Points result must
+// never alter the validated schema a rule resolves against (second closure
+// audit 2026-07-17, F-10).
+func (p Point) clone() Point {
+	out := p
+	if p.ValueSchema != nil {
+		out.ValueSchema = append(json.RawMessage(nil), p.ValueSchema...)
+	}
+	if p.Default != nil {
+		out.Default = append(json.RawMessage(nil), p.Default...)
+	}
+	if p.AllowedScopes != nil {
+		out.AllowedScopes = append([]ScopeKind(nil), p.AllowedScopes...)
+	}
+	return out
+}
+
+// Get returns the registered point (a deep copy — mutating its nested fields
+// cannot alter the registry).
+func (r *Registry) Get(key string) (Point, bool) {
+	p, ok := r.points[key]
+	if !ok {
+		return Point{}, false
+	}
+	return p.clone(), true
+}
 
 // Keys returns registered keys, sorted.
 func (r *Registry) Keys() []string {
@@ -160,12 +191,13 @@ func (r *Registry) Keys() []string {
 	return out
 }
 
-// Points returns a COPY of the registered points keyed by key — a snapshot,
-// never the registry's backing map (closure review 2026-07-17, F-10).
+// Points returns a DEEP COPY of the registered points keyed by key — a
+// snapshot down to the nested schema bytes and scope slices, never the
+// registry's backing map or its aliases (closure reviews 2026-07-17, F-10).
 func (r *Registry) Points() map[string]Point {
 	out := make(map[string]Point, len(r.points))
 	for k, v := range r.points {
-		out[k] = v
+		out[k] = v.clone()
 	}
 	return out
 }

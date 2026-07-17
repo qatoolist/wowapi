@@ -49,7 +49,14 @@ import (
 // e2eReleaseVersion is a release version that does not collide with any
 // published tag or module-cache entry, so the released-CLI path is forced to
 // resolve the framework from the local file proxy packaged from this checkout.
-const e2eReleaseVersion = "v0.2.0-w06shared.1"
+// BUMP the numeric suffix whenever the checkout's package SET changes (a
+// package added or removed): the go command caches a per-module package index
+// keyed by the extracted directory path, which it assumes immutable — the
+// harness's staleness purge re-extracts sources but cannot invalidate that
+// index, so a same-version re-serve resolves imports against the OLD package
+// list (observed 2026-07-17: a new internal/sealer package was invisible until
+// the version changed).
+const e2eReleaseVersion = "v0.2.0-w06shared.2"
 
 // buildWowapiCLI compiles cmd/wowapi into a temp dir and returns the binary
 // path. ldflagsVersion != "" stamps a release version exactly as the release

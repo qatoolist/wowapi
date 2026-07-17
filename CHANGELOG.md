@@ -48,6 +48,13 @@ changes to it require a new major version.
   itself — that broke unkeyed composite literals (`app.Hook{"api", start, stop}`)
   and was withdrawn before release; `Hook`'s v1 field set (Name, Start, Stop) is
   frozen and guarded by a compile-time compatibility test.
+- `document.UploadEvent` gains two additive fields (second closure audit, F-05): `Tx`, the
+  confirming transaction's tenant handle (effects written through it commit and roll back
+  atomically with the confirmation), and `DeliveryID`, a durable idempotency identifier
+  (the upload session id, stable across retries of the same reserved upload) that
+  external hook effects must deduplicate on. The hook-effect contract is documented on
+  the type: the confirming transaction can still fail after a hook returns, so non-Tx
+  effects may be re-delivered on retry.
 
 ### Changed (behavior; misuse surface only)
 - `kernel/pagination.Parse` now returns a `KindInternal` error when `Defaults.PerPage` is
@@ -60,7 +67,33 @@ changes to it require a new major version.
   `Booted.Router/Events/Jobs` pointers — panics instead of silently taking effect against
   the running server/worker (closure review 2026-07-17, F-10). Registration during module
   `Register` (the supported pattern) is unaffected; registries constructed outside `Boot`
-  are never sealed.
+  are never sealed. Sealing authority is framework-internal: `Seal` takes an
+  `internal/sealer.Authority` token, so a product module cannot prematurely seal shared
+  registries during `Register` (second closure audit, F-10).
+- `Booted`'s exported collector fields (Router, Events, Jobs, Health, Migrations,
+  Recurring) are now informational mirrors: the framework's consumers (`StartWorker`, the
+  Readiness builders, and the generated api/migrate processes via the new
+  `Booted.RuntimeRouter()`/`Booted.RuntimeMigrations()` accessors, plus
+  `RuntimeEvents()`/`RuntimeJobs()`) read a boot-validated internal view, so reassigning
+  the fields after boot cannot alter validated runtime state (second closure audit, F-10).
+- Registry declarations with nested mutable data (`authz.Permission`, `document.Class`,
+  `rules.Point`, `notify.TemplateSpec`, `workflow.Definition`) are deep-copied at
+  registration and at every exported getter — a retained registration value or a mutated
+  getter result can no longer change validated runtime behavior or race live readers
+  (second closure audit, F-10).
+- `module.Context.RecurringJob` declarations are boot-validated: empty names, nonpositive
+  intervals, nil callbacks, and duplicate names are collected boot errors (duplicates
+  previously shared one scheduler row and starved each other; nil callbacks panicked when
+  first due). Nil `DocumentHooks` registrations are likewise collected boot errors
+  (second closure audit, F-10).
+- `foundation/bulk`: a CANCELLED aggregate can no longer regain pending items through any
+  recovery path — a retryable worker failure and lease reclamation now land items in
+  `cancelled` when the aggregate is cancelled, and `Process` sweeps stray pending items
+  when it observes a cancelled aggregate (second closure audit, F-04).
+- `foundation/document.ConfirmUpload`: object-store Stat/Peek run before the documents row
+  lock (unlocked fast-fail read → object I/O → `FOR UPDATE` + locked active recheck), so
+  slow storage no longer blocks retention or peer confirmations (second closure audit,
+  F-05 Medium).
 
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.

@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	goldenConsumerModulePath       = "example.com/wowapi-golden-consumer"
-	goldenConsumerFrameworkVersion = "v1.2.0-w06e01s002.11"
+	goldenConsumerModulePath = "example.com/wowapi-golden-consumer"
+	// BUMP the numeric suffix whenever the checkout's package SET changes — see
+	// e2eReleaseVersion's comment (the go module index is path-keyed and
+	// immutable-by-assumption; only a new version path gets a fresh index).
+	goldenConsumerFrameworkVersion = "v1.2.0-w06e01s002.12"
 )
 
 func goldenConsumerScaffold(t *testing.T) string {

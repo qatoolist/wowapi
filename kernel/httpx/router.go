@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/qatoolist/wowapi/kernel/authz"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
@@ -89,7 +91,10 @@ type Router struct {
 // Seal freezes the router once boot validation completes: any later Handle
 // call panics rather than silently adding a route whose permission was never
 // boot-validated (closure review 2026-07-17, F-10).
-func (r *Router) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Router) Seal(sealer.Authority) { r.sealed = true }
 
 // NewRouter returns an empty Router.
 func NewRouter() *Router {

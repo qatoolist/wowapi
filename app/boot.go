@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -25,6 +27,15 @@ import (
 // Booted is the result of App.Boot: everything the process layer needs to
 // start serving (or to migrate/seed). Modules have registered; the whole graph
 // and registries are validated; nothing has started yet.
+//
+// The exported collector fields (Router, Events, Jobs, OpenAPI, Health,
+// Migrations, Recurring) are INFORMATIONAL MIRRORS kept for inspection and v1
+// API compatibility: the framework's own consumers — StartWorker, the
+// Readiness builders, and the generated api/migrate processes via the
+// Runtime* accessors — read an unexported boot-validated view captured inside
+// Boot, so reassigning these fields after boot cannot alter validated runtime
+// state (second closure audit 2026-07-17, F-10). The registries themselves are
+// additionally sealed: their registration mutators panic after boot.
 type Booted struct {
 	Kernel     *kernel.Kernel
 	Router     *httpx.Router
@@ -40,6 +51,91 @@ type Booted struct {
 	// localize (GAP-001). Never nil — at minimum it carries the framework's
 	// English catalog.
 	I18n *i18n.Catalog
+
+	// runtime is the boot-validated extension state the framework's own
+	// consumers read. It aliases bootState's collections, which are unreachable
+	// after Boot (retained module contexts are sealed), so it cannot be altered
+	// through any exported surface.
+	runtime runtimeView
+}
+
+// runtimeView holds the boot-validated collectors Boot captured before
+// returning. Zero (never set) only when a Booted was hand-constructed rather
+// than produced by Boot; the accessors then fall back to the exported fields —
+// such a Booted never passed boot validation in the first place.
+type runtimeView struct {
+	// set marks a view captured by Boot. The nil-ness of individual members
+	// must NOT be the fallback signal: a product with zero recurring jobs would
+	// otherwise fall back to the replaceable exported field — exactly the
+	// bypass this view closes.
+	set        bool
+	router     *httpx.Router
+	events     *outbox.HandlerRegistry
+	jobs       *jobs.Registry
+	health     map[string]func(context.Context) error
+	migrations map[string]fs.FS
+	recurring  []RecurringJob
+}
+
+// RuntimeRouter returns the boot-validated (sealed) router a serving process
+// must mount. Unlike the informational Router field, it cannot be reassigned;
+// the generated api process uses it.
+func (b *Booted) RuntimeRouter() *httpx.Router {
+	if b.runtime.set {
+		return b.runtime.router
+	}
+	return b.Router
+}
+
+// RuntimeEvents returns the boot-validated event-subscription registry the
+// relay dispatches from (used by StartWorker).
+func (b *Booted) RuntimeEvents() *outbox.HandlerRegistry {
+	if b.runtime.set {
+		return b.runtime.events
+	}
+	return b.Events
+}
+
+// RuntimeJobs returns the boot-validated job-kind registry the worker pools
+// dispatch from (used by StartWorker).
+func (b *Booted) RuntimeJobs() *jobs.Registry {
+	if b.runtime.set {
+		return b.runtime.jobs
+	}
+	return b.Jobs
+}
+
+// RuntimeMigrations returns a fresh copy of the boot-validated migration sets;
+// the generated migrate process uses it. Reassigning the Migrations field does
+// not affect it.
+func (b *Booted) RuntimeMigrations() map[string]fs.FS {
+	src := b.Migrations
+	if b.runtime.set {
+		src = b.runtime.migrations
+	}
+	out := make(map[string]fs.FS, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// runtimeHealth returns the boot-validated health-check set the Readiness
+// builders consume.
+func (b *Booted) runtimeHealth() map[string]func(context.Context) error {
+	if b.runtime.set {
+		return b.runtime.health
+	}
+	return b.Health
+}
+
+// runtimeRecurring returns the boot-validated recurring jobs the worker
+// scheduler runs.
+func (b *Booted) runtimeRecurring() []RecurringJob {
+	if b.runtime.set {
+		return b.runtime.recurring
+	}
+	return b.Recurring
 }
 
 // RecurringJob is a leader-safe per-tenant recurring job a module registered via
@@ -271,6 +367,13 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if err := k.DocumentClasses.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
+	// Nil upload/access hooks are boot errors like every other registration
+	// defect — they would otherwise panic on first invocation (F-10).
+	if k.DocumentHooks != nil {
+		if err := k.DocumentHooks.Err(); err != nil {
+			regErrs = append(regErrs, err)
+		}
+	}
 	// A module that registered a document class needs a document service to use
 	// it; the service is nil when no object-storage adapter was wired. Fail boot
 	// loudly rather than hand modules a nil Documents() at runtime.
@@ -323,30 +426,33 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	// record class, document class/hook, template, or provider after the boot
 	// gates above have validated the model. (RetentionClasses/DocumentHooks are
 	// nil-guarded: unlike the others they are not required by the Err() gates.)
-	router.Seal()
-	events.Seal()
-	jobReg.Seal()
-	k.Perms.Seal()
-	k.Resources.Seal()
-	k.Rules.Seal()
-	k.Workflows.Seal()
-	k.DocumentClasses.Seal()
-	k.NotifyTemplates.Seal()
-	k.IntegrationProviders.Seal()
+	sealAuth := sealer.Grant()
+	router.Seal(sealAuth)
+	events.Seal(sealAuth)
+	jobReg.Seal(sealAuth)
+	k.Perms.Seal(sealAuth)
+	k.Resources.Seal(sealAuth)
+	k.Rules.Seal(sealAuth)
+	k.Workflows.Seal(sealAuth)
+	k.DocumentClasses.Seal(sealAuth)
+	k.NotifyTemplates.Seal(sealAuth)
+	k.IntegrationProviders.Seal(sealAuth)
 	if k.RetentionClasses != nil {
-		k.RetentionClasses.Seal()
+		k.RetentionClasses.Seal(sealAuth)
 	}
 	if k.DocumentHooks != nil {
-		k.DocumentHooks.Seal()
+		k.DocumentHooks.Seal(sealAuth)
 	}
 
-	// Booted carries SNAPSHOTS of the boot-time collectors, not the backing
-	// structures (closure review 2026-07-17, F-10): the maps/slice handed out
-	// here are fresh copies, so neither a retained module context nor a caller
-	// mutating Booted's fields can alter the sealed extension state the runtime
-	// (health handler, worker scheduler, migration runner) actually consumes —
-	// and the reverse aliasing (Booted mutation racing a live reader) is
-	// structurally impossible.
+	// Booted's exported fields carry SNAPSHOTS of the boot-time collectors, not
+	// the backing structures (closure review 2026-07-17, F-10): the maps/slice
+	// handed out here are fresh copies. The unexported runtime view below holds
+	// the boot-validated originals; the framework's own consumers (StartWorker,
+	// the Readiness builders, the Runtime* accessors used by generated
+	// processes) read THAT view, so neither mutating nor wholesale REPLACING
+	// the exported fields can alter what the runtime actually consumes (second
+	// closure audit 2026-07-17, F-10: field assignment bypassed the registry
+	// seal).
 	openapi := make(map[string][]byte, len(boot.openapi))
 	for k, v := range boot.openapi {
 		openapi[k] = append([]byte(nil), v...)
@@ -372,5 +478,14 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		Seeds:      bundle,
 		Recurring:  recurring,
 		I18n:       boot.i18n.Catalog(),
+		runtime: runtimeView{
+			set:        true,
+			router:     router,
+			events:     events,
+			jobs:       jobReg,
+			health:     boot.health,
+			migrations: boot.migrations,
+			recurring:  boot.recurring,
+		},
 	}, nil
 }

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -71,6 +73,26 @@ type StepUpPolicy struct {
 	Challenge string
 }
 
+// clone returns a deep copy of p. The registry must not share nested mutable
+// state (AllowedSchemes, StepUpPolicy and its RequiredAMR) with callers in
+// EITHER direction: a module mutating a retained registration value, or the
+// nested fields of a Get result, must never alter validated authz behavior or
+// race live readers (second closure audit 2026-07-17, F-10).
+func (p Permission) clone() Permission {
+	out := p
+	if p.AllowedSchemes != nil {
+		out.AllowedSchemes = append([]CredentialScheme(nil), p.AllowedSchemes...)
+	}
+	if p.StepUpPolicy != nil {
+		sp := *p.StepUpPolicy
+		if sp.RequiredAMR != nil {
+			sp.RequiredAMR = append([]string(nil), sp.RequiredAMR...)
+		}
+		out.StepUpPolicy = &sp
+	}
+	return out
+}
+
 // Registry is the boot-time permission catalog. Evaluating a permission absent
 // from the registry is a programming error, so registration is validated and
 // its Err() must gate boot — an unknown permission can never silently allow.
@@ -86,7 +108,10 @@ func NewRegistry() *Registry { return &Registry{perms: map[string]Permission{}} 
 // Seal freezes the registry once boot validation completes: any later Register
 // panics rather than silently adding a permission the boot gates never saw
 // (closure review 2026-07-17, F-10).
-func (r *Registry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
 
 // Register adds a permission. Malformed keys, unknown action verbs, and
 // duplicates are recorded as errors surfaced by Err().
@@ -110,14 +135,21 @@ func (r *Registry) Register(p Permission) {
 			"permission registered more than once: "+p.Key))
 		return
 	}
-	r.perms[p.Key] = p
+	r.perms[p.Key] = p.clone()
 }
 
 // Has reports whether key is registered.
 func (r *Registry) Has(key string) bool { _, ok := r.perms[key]; return ok }
 
-// Get returns the permission definition.
-func (r *Registry) Get(key string) (Permission, bool) { p, ok := r.perms[key]; return p, ok }
+// Get returns the permission definition (a deep copy — mutating its nested
+// fields cannot alter the registry).
+func (r *Registry) Get(key string) (Permission, bool) {
+	p, ok := r.perms[key]
+	if !ok {
+		return Permission{}, false
+	}
+	return p.clone(), true
+}
 
 // Keys returns all registered permission keys, sorted (for seed sync + tests).
 func (r *Registry) Keys() []string {

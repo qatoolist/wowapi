@@ -281,11 +281,38 @@ func (c *moduleContext) Jobs() *jobs.Registry {
 
 // RecurringJob collects a leader-safe per-tenant recurring job; the worker's
 // scheduler runs it (roadmap E5/CA-5). The name is module-prefixed to avoid
-// collisions with kernel maintenance tasks and other modules.
+// collisions with kernel maintenance tasks and other modules. Declarations are
+// boot-validated (second closure audit 2026-07-17, F-10): an empty name, a
+// nonpositive interval, a nil callback, or a duplicate full name is a
+// collected boot error — a duplicate would silently share one scheduler row
+// (one declaration advances the schedule while the other starves), and a nil
+// callback would panic only when first due.
 func (c *moduleContext) RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error) {
 	c.mustBeUnsealed("RecurringJob")
+	full := c.name + "." + name
+	switch {
+	case name == "":
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: RecurringJob requires a non-empty name", c.name))
+		return
+	case every <= 0:
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: recurring job %q has nonpositive interval %v", c.name, full, every))
+		return
+	case fn == nil:
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: recurring job %q has a nil callback (would panic when due)", c.name, full))
+		return
+	}
+	for _, existing := range c.boot.recurring {
+		if existing.Name == full {
+			c.boot.portErrs = append(c.boot.portErrs,
+				fmt.Errorf("module %q: recurring job %q declared more than once (duplicates share one scheduler row and starve each other)", c.name, full))
+			return
+		}
+	}
 	c.boot.recurring = append(c.boot.recurring, RecurringJob{
-		Name:  c.name + "." + name,
+		Name:  full,
 		Every: every,
 		Run:   fn,
 	})

@@ -27,7 +27,9 @@ import (
 // worker mains (blueprint 07 §9).
 func Readiness(b *Booted, fingerprint config.Fingerprint, extra map[string]httpx.HealthCheck) *httpx.Health {
 	h := httpx.NewHealth(fingerprint.String())
-	for name, chk := range b.Health {
+	// Read the boot-validated view, not the reassignable Health field (second
+	// closure audit 2026-07-17, F-10).
+	for name, chk := range b.runtimeHealth() {
 		h.Register("module."+name, chk)
 	}
 	for name, chk := range extra {

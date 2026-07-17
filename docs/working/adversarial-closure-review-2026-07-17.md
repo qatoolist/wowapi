@@ -298,9 +298,17 @@
 
 ## Remediation addendum (2026-07-17, closure-blockers branch)
 
-Every blocker and every "missing or misleading regression evidence" item was
-remediated on `fix/closure-blockers-2026-07-17` with regressions that failed
-(or could not compile) before each fix:
+> Correction (2026-07-17, after the second closure audit): the audit recorded
+> at `adversarial-closure-audit-2-2026-07-17.md` found the claims below
+> incomplete for F-04 (post-cancel recovery paths), F-05 (hook-effect
+> atomicity), and F-10 (Booted field replacement, nested aliases, recurring/
+> hook validation, seal authority), and one regression
+> (the former TestBootedMutationCannotAlterRuntimeState) non-discriminating.
+> Those items are remediated in commit 3 and precisely scoped in that file's
+> addendum; read this section as the state after commit 2 only.
+
+The blockers and "missing or misleading regression evidence" items below were
+remediated on `fix/closure-blockers-2026-07-17`:
 
 - Blocker 1 (F-05 hooks): ConfirmUpload's hooks run only after the session CAS,
   with authoritative RETURNING values; counting-hook regression proves zero

@@ -2,7 +2,9 @@ package document_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -93,10 +95,17 @@ func TestIntegrationRejectedConfirmationsInvokeNoHooks(t *testing.T) {
 		wrongVersion.VersionNo += 7
 		wrongKey := base
 		wrongKey.StorageKey = sess.StorageKey + "-forged"
+		// A VALID object exists under the forged key (same bytes), so wrong-key
+		// passes every object check (stat, size, checksum, MIME) and the session
+		// CAS itself is the discriminator — the historical pre-CAS hook location
+		// would have fired here (second closure audit 2026-07-17: the earlier
+		// missing-object variant exited during Stat, before either hook location).
+		a.store.Put(wrongKey.StorageKey, body)
 
 		for name, in := range map[string]document.ConfirmInput{
 			"cross-document": crossDoc,
 			"wrong-version":  wrongVersion,
+			"wrong-key":      wrongKey,
 		} {
 			if _, err := a.svc.ConfirmUpload(ctx, db, in); err == nil {
 				t.Fatalf("%s confirmation succeeded", name)
@@ -104,13 +113,6 @@ func TestIntegrationRejectedConfirmationsInvokeNoHooks(t *testing.T) {
 			if got := a.calls.Load(); got != 0 {
 				t.Fatalf("%s confirmation invoked the upload hook %d time(s); rejected confirmations must invoke zero hooks", name, got)
 			}
-		}
-		// wrong-key fails the object stat (forged key has no object) — also zero hooks.
-		if _, err := a.svc.ConfirmUpload(ctx, db, wrongKey); err == nil {
-			t.Fatal("wrong-key confirmation succeeded")
-		}
-		if got := a.calls.Load(); got != 0 {
-			t.Fatalf("wrong-key confirmation invoked the upload hook %d time(s)", got)
 		}
 
 		// Expired session: also zero hooks.
@@ -218,6 +220,7 @@ func TestIntegrationConfirmVersusRetentionRaceInvariant(t *testing.T) {
 		database.WithRole("app_platform"), database.WithRLSGuard())
 	tenantID, _ := database.TenantIDFrom(a.ctx)
 
+	confirmWon, sweepWon := 0, 0
 	for round := range 6 {
 		body := []byte(fmt.Sprintf("race payload %d", round))
 		var docID uuid.UUID
@@ -286,5 +289,203 @@ func TestIntegrationConfirmVersusRetentionRaceInvariant(t *testing.T) {
 				t.Fatalf("round %d: confirm succeeded, doc voided, but version status is %q", round, vs)
 			}
 		}
+		// Record which lock order this round actually took; the deterministic
+		// BothLockOrders subtests force each order regardless of what the racy
+		// rounds happened to produce.
+		if confirmErr == nil {
+			confirmWon++
+		} else {
+			sweepWon++
+		}
 	}
+	t.Logf("racy rounds outcome: confirm-first=%d sweep-first=%d (both orders forced deterministically in TestIntegrationConfirmVersusRetentionBothLockOrders)", confirmWon, sweepWon)
+}
+
+// Second closure-audit regression (2026-07-17, F-05): the hook runs inside the
+// confirming transaction, which can fail AFTER the hook returns; the reserved
+// upload is then retryable. The event's Tx and DeliveryID must make hook
+// effects safe on that path — a Tx-bound effect (the canonical outbox scan
+// enqueue) is never delivered before commit and lands exactly once, and an
+// external effect is re-delivered only with an IDENTICAL DeliveryID so an
+// idempotent consumer deduplicates it.
+func TestIntegrationHookEffectsAtomicOrDeduplicatedAcrossRetry(t *testing.T) {
+	h := testkit.NewDB(t)
+	reg := document.NewRegistry()
+	reg.Register("core", document.Class{Key: "core.doc"})
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	store := storage.NewMemory()
+	scanWriter := outbox.NewWriter(model.UUIDv7())
+
+	var mu sync.Mutex
+	var deliveries []string // external (non-Tx) effect log — survives rollback
+	hooks := &document.Hooks{}
+	hooks.OnFileUpload(func(ctx context.Context, e document.UploadEvent) error {
+		mu.Lock()
+		deliveries = append(deliveries, e.DeliveryID)
+		mu.Unlock()
+		// Tx-bound effect: enqueue the scan through the confirming transaction.
+		return scanWriter.Write(ctx, e.Tx, outbox.Event{
+			Type:    "document.scan.requested",
+			Payload: map[string]any{"delivery_id": e.DeliveryID},
+		})
+	})
+	svc := document.New(reg, store, nil, outbox.NewWriter(model.UUIDv7()), hooks, model.UUIDv7())
+	tn := testkit.CreateTenant(t, h).ID
+	ctx := database.WithActorID(testkit.TenantCtx(tn), uuid.New())
+
+	body := []byte("atomic effect payload")
+	var docID uuid.UUID
+	var sess document.UploadSession
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var err error
+		docID, err = svc.Create(ctx, db, document.CreateInput{Class: "core.doc", Title: "T"})
+		if err != nil {
+			return err
+		}
+		sess, err = svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		if err != nil {
+			return err
+		}
+		store.Put(sess.StorageKey, body)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	in := document.ConfirmInput{
+		SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo,
+		StorageKey: sess.StorageKey, DeclaredSize: int64(len(body)),
+		DeclaredChecksum: sum(body), DeclaredMIME: "text/plain",
+	}
+	scanEvents := func() int {
+		t.Helper()
+		var n int
+		if err := h.TxM.WithTenantRO(ctx, func(ctx context.Context, db database.TenantDB) error {
+			return db.QueryRow(ctx,
+				`SELECT count(*) FROM events_outbox WHERE event_type = 'document.scan.requested'`).Scan(&n)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// Attempt 1: the confirmation (and hook) succeed, then a post-hook failure
+	// aborts the transaction before commit.
+	injected := errors.New("post-hook failure before commit")
+	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		if _, err := svc.ConfirmUpload(ctx, db, in); err != nil {
+			t.Fatalf("ConfirmUpload (attempt 1): %v", err)
+		}
+		return injected
+	})
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected the injected failure, got %v", err)
+	}
+	if got := scanEvents(); got != 0 {
+		t.Fatalf("Tx-bound hook effect visible after rollback: %d scan events, want 0 (nothing delivered before commit)", got)
+	}
+	if len(deliveries) != 1 {
+		t.Fatalf("external effect log after failed attempt = %d entries, want 1", len(deliveries))
+	}
+
+	// Retry the same reserved upload: it succeeds and commits.
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		_, err := svc.ConfirmUpload(ctx, db, in)
+		return err
+	}); err != nil {
+		t.Fatalf("ConfirmUpload (retry): %v", err)
+	}
+	if got := scanEvents(); got != 1 {
+		t.Fatalf("committed scan events = %d, want exactly 1", got)
+	}
+	if len(deliveries) != 2 {
+		t.Fatalf("external effect log after retry = %d entries, want 2", len(deliveries))
+	}
+	if deliveries[0] != deliveries[1] {
+		t.Fatalf("DeliveryID not stable across retry: %q vs %q — external consumers cannot deduplicate", deliveries[0], deliveries[1])
+	}
+	if deliveries[0] != sess.SessionID.String() {
+		t.Fatalf("DeliveryID = %q, want the durable session identity %s", deliveries[0], sess.SessionID)
+	}
+}
+
+// Second closure-audit evidence fix (2026-07-17): the racy rounds above make
+// both lock orders LIKELY; these two subtests FORCE each order
+// deterministically and assert its one legal terminal state.
+func TestIntegrationConfirmVersusRetentionBothLockOrders(t *testing.T) {
+	a := newHookedHarness(t)
+	platTxM := database.NewManager(a.h.Platform, config.DB{},
+		database.WithRole("app_platform"), database.WithRLSGuard())
+	tenantID, _ := database.TenantIDFrom(a.ctx)
+
+	prepare := func(t *testing.T, body []byte) (uuid.UUID, document.UploadSession) {
+		t.Helper()
+		var docID uuid.UUID
+		var sess document.UploadSession
+		if err := a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
+			docID, sess = a.prepared(t, db, ctx, body)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.h.Admin.Exec(context.Background(),
+			`UPDATE documents SET retention_until = now() - interval '1 hour' WHERE id = $1`, docID); err != nil {
+			t.Fatal(err)
+		}
+		return docID, sess
+	}
+	confirm := func(docID uuid.UUID, sess document.UploadSession, body []byte) error {
+		return a.h.TxM.WithTenant(a.ctx, func(ctx context.Context, db database.TenantDB) error {
+			_, err := a.svc.ConfirmUpload(ctx, db, document.ConfirmInput{
+				SessionID: sess.SessionID, DocumentID: docID, VersionNo: sess.VersionNo,
+				StorageKey: sess.StorageKey, DeclaredSize: int64(len(body)),
+				DeclaredChecksum: sum(body), DeclaredMIME: "text/plain",
+			})
+			return err
+		})
+	}
+
+	t.Run("sweep-first: void lands, confirmation is rejected", func(t *testing.T) {
+		body := []byte("order sweep-first")
+		docID, sess := prepare(t, body)
+		if _, err := a.svc.SweepRetention(context.Background(), platTxM, tenantID, time.Now()); err != nil {
+			t.Fatalf("SweepRetention: %v", err)
+		}
+		err := confirm(docID, sess, body)
+		if err == nil {
+			t.Fatal("confirmation succeeded against a document retention had voided")
+		}
+		if kerr.KindOf(err) != kerr.KindConflict {
+			t.Fatalf("kind = %v, want KindConflict (err=%v)", kerr.KindOf(err), err)
+		}
+		var versions int
+		if err := a.h.Admin.QueryRow(context.Background(),
+			`SELECT count(*) FROM document_versions WHERE document_id = $1`, docID).Scan(&versions); err != nil {
+			t.Fatal(err)
+		}
+		if versions != 0 {
+			t.Fatalf("voided document gained %d version(s)", versions)
+		}
+	})
+
+	t.Run("confirm-first: version lands, then retention voids document and version", func(t *testing.T) {
+		body := []byte("order confirm-first")
+		docID, sess := prepare(t, body)
+		if err := confirm(docID, sess, body); err != nil {
+			t.Fatalf("confirm on a still-active document: %v", err)
+		}
+		if _, err := a.svc.SweepRetention(context.Background(), platTxM, tenantID, time.Now()); err != nil {
+			t.Fatalf("SweepRetention: %v", err)
+		}
+		var docStatus, verStatus string
+		if err := a.h.Admin.QueryRow(context.Background(),
+			`SELECT d.status, v.status FROM documents d JOIN document_versions v ON v.document_id = d.id
+			  WHERE d.id = $1`, docID).Scan(&docStatus, &verStatus); err != nil {
+			t.Fatal(err)
+		}
+		if docStatus != "voided" || verStatus != "voided" {
+			t.Fatalf("after confirm-then-sweep: doc=%q version=%q, want both voided", docStatus, verStatus)
+		}
+	})
 }

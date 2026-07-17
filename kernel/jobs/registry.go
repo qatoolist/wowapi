@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -26,7 +28,10 @@ type Registry struct {
 // Seal freezes the registry once boot validation completes: any later
 // RegisterKind panics rather than introducing a job kind the running worker
 // pool would dispatch without boot validation (closure review 2026-07-17, F-10).
-func (r *Registry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {

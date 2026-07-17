@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel/audit"
@@ -59,7 +61,10 @@ func NewRegistry() *Registry { return &Registry{classes: map[string]RecordClass{
 // Seal freezes the registry once boot validation completes: any later Register
 // panics rather than silently adding a record class the boot gates never saw
 // (closure review 2026-07-17, F-10).
-func (r *Registry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
 
 // Register adds a record class. Keys must be non-empty and unique; the first
 // error is retained and surfaced by Err (checked at boot).

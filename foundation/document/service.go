@@ -245,15 +245,14 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		sens      string
 		docStatus string
 	)
-	// Lock the authoritative document row for the whole confirmation and require
-	// it to still be ACTIVE (closure review 2026-07-17, F-05): without the lock
-	// and status predicate, a retention sweep could void the document between
-	// this read and the version insert, and the confirmation would attach a new
-	// ACTIVE version beneath a voided document — which later retention sweeps
-	// (SELECT ... WHERE status = 'active') would never revisit. FOR UPDATE
-	// serializes confirmation against retention's own documents-row update in a
-	// single-row, deadlock-free order.
-	err := db.QueryRow(ctx, `SELECT document_class, sensitivity, status FROM documents WHERE id = $1 FOR UPDATE`, in.DocumentID).
+	// Load the document's class/sensitivity and fast-fail a non-active status
+	// WITHOUT locking: the object-store Stat/Peek below are network I/O, and
+	// holding the documents row lock across them would block retention and
+	// every other confirmation of this document behind slow storage (second
+	// closure audit 2026-07-17, F-05 Medium). This unlocked status read is a
+	// fast-fail only — the authoritative, serializing check is the FOR UPDATE
+	// recheck after the object checks pass.
+	err := db.QueryRow(ctx, `SELECT document_class, sensitivity, status FROM documents WHERE id = $1`, in.DocumentID).
 		Scan(&class, &sens, &docStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "document not found")
@@ -304,6 +303,29 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		return uuid.Nil, kerr.E(kerr.KindValidation, "mime_not_allowed", "MIME type not permitted for this document class: "+mime)
 	}
 
+	// Lock the authoritative document row and REQUIRE it to still be ACTIVE
+	// under the lock (closure review 2026-07-17, F-05): without this, a
+	// retention sweep could void the document between the unlocked read above
+	// and the version insert below, attaching a new ACTIVE version beneath a
+	// voided document — which later sweeps (SELECT ... WHERE status='active')
+	// would never revisit. FOR UPDATE serializes confirmation against
+	// retention's own documents-row update in a single-row, deadlock-free
+	// order, and the lock is taken only AFTER the object-store I/O so slow
+	// storage never blocks retention or peer confirmations.
+	var lockedStatus string
+	err = db.QueryRow(ctx, `SELECT status FROM documents WHERE id = $1 FOR UPDATE`, in.DocumentID).
+		Scan(&lockedStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "document not found")
+	}
+	if err != nil {
+		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "lock document")
+	}
+	if lockedStatus != "active" {
+		return uuid.Nil, kerr.E(kerr.KindConflict, "document_not_active",
+			"document is "+lockedStatus+"; a terminal document cannot acquire new versions")
+	}
+
 	// CAS confirm the durable session, predicated on the COMPLETE reserved
 	// identity — session id, pending status, document, version, storage key,
 	// checksum — AND the validity window (adversarial review 2026-07-17, F-05:
@@ -344,9 +366,14 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	// and wrong-version attempts triggered scan-enqueue and other external hook
 	// effects for confirmations that were then rejected). A hook error returns
 	// before any version effect and rolls the CAS back with the caller's tx.
+	// The event carries the confirming tx (Tx) and a retry-stable idempotency
+	// identifier (DeliveryID = the session id) so hook effects can be atomic
+	// with the confirmation or deduplicated across a post-hook rollback+retry
+	// (second closure audit 2026-07-17, F-05 — see UploadEvent's contract).
 	if err := s.hooks.runUpload(ctx, UploadEvent{
 		DocumentID: confirmed.documentID.String(), Class: class, VersionNo: confirmed.versionNo,
 		StorageKey: confirmed.storageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
+		DeliveryID: in.SessionID.String(), Tx: db,
 	}); err != nil {
 		return uuid.Nil, err
 	}

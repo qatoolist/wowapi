@@ -119,9 +119,12 @@ func run(ctx context.Context, argv []string) error {
 		return fmt.Errorf("boot: %w", err)
 	}
 
-	// Module migration sources in stable alphabetical order.
-	names := make([]string, 0, len(booted.Migrations))
-	for name := range booted.Migrations {
+	// Module migration sources in stable alphabetical order, from the
+	// boot-validated view (RuntimeMigrations) — the informational Migrations
+	// field could have been reassigned after boot.
+	moduleMigrations := booted.RuntimeMigrations()
+	names := make([]string, 0, len(moduleMigrations))
+	for name := range moduleMigrations {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -131,7 +134,7 @@ func run(ctx context.Context, argv []string) error {
 		// so foreign keys onto kernel tables are gone before the kernel schema drops.
 		for i := len(names) - 1; i >= 0; i-- {
 			name := names[i]
-			v, err := database.MigrateReset(ctx, pool, booted.Migrations[name], name)
+			v, err := database.MigrateReset(ctx, pool, moduleMigrations[name], name)
 			if err != nil {
 				return fmt.Errorf("module %q reset: %w", name, err)
 			}
@@ -154,7 +157,7 @@ func run(ctx context.Context, argv []string) error {
 		"source", migrations.SourceName, "applied", res.Applied, "version", res.Version)
 
 	for _, name := range names {
-		r, err := database.Migrate(ctx, pool, booted.Migrations[name], name)
+		r, err := database.Migrate(ctx, pool, moduleMigrations[name], name)
 		if err != nil {
 			return fmt.Errorf("module %q migrations: %w", name, err)
 		}

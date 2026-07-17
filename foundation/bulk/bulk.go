@@ -108,6 +108,10 @@ type Service struct {
 	// same tenant transaction — the F-04 atomicity regression proves a failure
 	// there rolls back both writes. nil in production.
 	cancelInterceptor func(ctx context.Context, db database.TenantDB) error
+	// cancelCommitInterceptor is a second test-only seam AFTER the pending-item
+	// sweep, holding Cancel's transaction open in its commit window (the
+	// aggregate row updated + sweep done, nothing committed).
+	cancelCommitInterceptor func(ctx context.Context, db database.TenantDB) error
 }
 
 // New builds the service. idgen mints operation and item ids.
@@ -188,7 +192,16 @@ func (s *Service) Process(ctx context.Context, txm database.TxManager, tenantID,
 		return 0, err
 	}
 	switch status {
-	case "completed", "cancelled":
+	case "completed":
+		return 0, nil
+	case "cancelled":
+		// Defensive repair (closure review 2026-07-17, F-04): a late retry or
+		// reclaim may have returned an item to pending after Cancel's sweep
+		// committed. A cancelled aggregate must never retain pending items, so
+		// sweep again before returning instead of leaving them stranded.
+		if err := s.cancelPending(tctx, txm, bulkID); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	case "paused":
 		return 0, nil
@@ -305,19 +318,42 @@ func (s *Service) Cancel(ctx context.Context, txm database.TxManager, tenantID, 
 			`UPDATE bulk_items SET status = 'cancelled' WHERE bulk_id = $1 AND status = 'pending'`, bulkID); err != nil {
 			return kerr.Wrapf(err, "bulk.Cancel", "cancel pending items")
 		}
+		if s.cancelCommitInterceptor != nil {
+			if err := s.cancelCommitInterceptor(ctx, db); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 }
 
 // ReclaimStalled resets items whose leases have expired back to pending so other
-// workers can claim them. It returns the number of items reclaimed.
+// workers can claim them. Items whose AGGREGATE is already cancelled become
+// cancelled instead (closure review 2026-07-17, F-04): a terminal cancelled
+// operation must never regain pending items through lease recovery. It returns
+// the number of items transitioned either way.
 func (s *Service) ReclaimStalled(ctx context.Context, txm database.TxManager, tenantID uuid.UUID, bulkID uuid.UUID) (int, error) {
 	tctx := database.WithTenantID(ctx, tenantID)
 	var n int64
 	err := txm.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {
+		// FOR SHARE for the same reason as recordFailure: a plain join read
+		// under READ COMMITTED reads around an in-flight Cancel and would
+		// resurrect expired items as pending after Cancel's sweep already ran.
+		var opStatus string
+		if err := db.QueryRow(ctx,
+			`SELECT status FROM bulk_operations WHERE id = $1 FOR SHARE`, bulkID).Scan(&opStatus); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // unknown bulk id: nothing to reclaim
+			}
+			return kerr.Wrapf(err, "bulk.ReclaimStalled", "read aggregate state for bulk %s", bulkID)
+		}
+		target := "pending"
+		if opStatus == "cancelled" {
+			target = "cancelled"
+		}
 		res, err := db.Exec(ctx,
 			`UPDATE bulk_items
-			    SET status = 'pending',
+			    SET status = $2,
 			        lease_token = NULL,
 			        lease_generation = 0,
 			        lease_expires_at = NULL,
@@ -325,7 +361,7 @@ func (s *Service) ReclaimStalled(ctx context.Context, txm database.TxManager, te
 			  WHERE bulk_id = $1
 			    AND status = 'running'
 			    AND lease_expires_at <= now()`,
-			bulkID)
+			bulkID, target)
 		if err != nil {
 			return kerr.Wrapf(err, "bulk.ReclaimStalled", "reclaim items for bulk %s", bulkID)
 		}
@@ -452,7 +488,11 @@ func (s *Service) runItem(ctx context.Context, txm database.TxManager, item Item
 
 // recordFailure writes the failed or retry-pending state for item. If dead is
 // true the item is marked failed; otherwise it is returned to pending so another
-// worker can retry it.
+// worker can retry it — UNLESS the aggregate has been cancelled meanwhile, in
+// which case the item becomes cancelled (closure review 2026-07-17, F-04):
+// Cancel intentionally leaves running items to finish, so their retryable
+// failures must land in the terminal state, not resurrect pending work under a
+// terminal aggregate that no later Cancel is required to repair.
 func (s *Service) recordFailure(ctx context.Context, txm database.TxManager, item Item, cause error, dead bool) error {
 	return txm.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		var res pgconn.CommandTag
@@ -473,9 +513,32 @@ func (s *Service) recordFailure(ctx context.Context, txm database.TxManager, ite
 				    AND lease_expires_at > now()`,
 				item.ID, cause.Error(), item.Lease.Token, item.Lease.Generation)
 		} else {
+			// Read the aggregate's status under FOR SHARE, NOT via a plain join
+			// (second closure audit verification, F-04): under READ COMMITTED a
+			// FROM-joined read sees only the last-committed row — it reads
+			// AROUND a concurrently in-flight Cancel whose 'cancelled' write is
+			// not yet committed, resurrecting the item as pending AFTER
+			// Cancel's sweep already ran. FOR SHARE blocks on Cancel's row
+			// lock, so this read either observes the cancel (item lands
+			// cancelled) or commits its pending write before Cancel's sweep
+			// runs (the sweep collects it). Either interleaving converges to
+			// zero pending items under a cancelled aggregate.
+			var opStatus string
+			if err := db.QueryRow(ctx,
+				`SELECT bo.status
+				   FROM bulk_operations bo
+				   JOIN bulk_items bi ON bi.bulk_id = bo.id
+				  WHERE bi.id = $1
+				    FOR SHARE OF bo`, item.ID).Scan(&opStatus); err != nil {
+				return kerr.Wrapf(err, "bulk.recordFailure", "read aggregate state for item %s", item.ID)
+			}
+			target := "pending"
+			if opStatus == "cancelled" {
+				target = "cancelled"
+			}
 			res, err = db.Exec(ctx,
 				`UPDATE bulk_items
-				    SET status = 'pending',
+				    SET status = $5,
 				        last_error = left($2, 1000),
 				        processed_at = now(),
 				        attempts = attempts + 1,
@@ -486,7 +549,7 @@ func (s *Service) recordFailure(ctx context.Context, txm database.TxManager, ite
 				    AND lease_token = $3
 				    AND lease_generation = $4
 				    AND lease_expires_at > now()`,
-				item.ID, cause.Error(), item.Lease.Token, item.Lease.Generation)
+				item.ID, cause.Error(), item.Lease.Token, item.Lease.Generation, target)
 		}
 		if err != nil {
 			return kerr.Wrapf(err, "bulk.recordFailure", "record failure for item %s", item.ID)

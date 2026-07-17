@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -149,7 +151,10 @@ type HandlerRegistry struct {
 // Seal freezes the registry once boot validation completes: any later
 // Subscribe panics rather than silently attaching a handler the relay would
 // dispatch to without boot validation (closure review 2026-07-17, F-10).
-func (r *HandlerRegistry) Seal() { r.sealed = true }
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *HandlerRegistry) Seal(sealer.Authority) { r.sealed = true }
 
 // NewHandlerRegistry returns an empty registry.
 func NewHandlerRegistry() *HandlerRegistry { return &HandlerRegistry{seen: map[string]bool{}} }
