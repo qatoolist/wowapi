@@ -6,30 +6,27 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/foundation/document"
-	"github.com/qatoolist/wowapi/foundation/integration"
-	"github.com/qatoolist/wowapi/foundation/notify"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/kernel/outbox"
-	"github.com/qatoolist/wowapi/kernel/resource"
-	"github.com/qatoolist/wowapi/kernel/retention"
-	"github.com/qatoolist/wowapi/kernel/rules"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/kernel/workflow"
-	"github.com/qatoolist/wowapi/module"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
+	"github.com/qatoolist/wowapi/v2/foundation/integration"
+	"github.com/qatoolist/wowapi/v2/foundation/notify"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/retention"
+	"github.com/qatoolist/wowapi/v2/kernel/rules"
+	"github.com/qatoolist/wowapi/v2/kernel/workflow"
+	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // Closure-review regression (adversarial closure review 2026-07-17, F-10):
@@ -87,10 +84,10 @@ func TestSealedExtensionModelRejectsEveryPostBootRegistration(t *testing.T) {
 		{"IntegrationProviders.Register", func() { retained.IntegrationProviders().Register("widgets", integration.Provider(nil)) }},
 		// The live collectors Booted itself exposes for serving.
 		{"Booted.Router.Handle", func() {
-			booted.Router.Handle(http.MethodGet, "/late2", httpx.RouteMeta{}, noopHandler)
+			booted.RuntimeRouter().Handle(http.MethodGet, "/late2", httpx.RouteMeta{}, noopHandler)
 		}},
-		{"Booted.Events.Subscribe", func() { booted.Events.Subscribe("late.event2", "late2", nil) }},
-		{"Booted.Jobs.RegisterKind", func() { booted.Jobs.RegisterKind("late.kind2", nil, jobs.RetryPolicy{}) }},
+		{"Booted.Events.Subscribe", func() { booted.RuntimeEvents().Subscribe("late.event2", "late2", nil) }},
+		{"Booted.Jobs.RegisterKind", func() { booted.RuntimeJobs().RegisterKind("late.kind2", nil, jobs.RetryPolicy{}) }},
 	}
 	for _, m := range mutations {
 		t.Run(m.name, func(t *testing.T) {
@@ -158,81 +155,10 @@ func TestBootRejectsNilDocumentHooks(t *testing.T) {
 	}
 }
 
-// Second closure-audit regression (2026-07-17, F-10): Booted's exported
-// collector fields are assignable, and the registry seal cannot prevent a
-// caller REPLACING a field with a fresh unsealed registry or map. The
-// framework's consumers must therefore read the boot-validated runtime view:
-// replacing every replaceable field must leave RuntimeRouter/RuntimeEvents/
-// RuntimeJobs/RuntimeMigrations and a Readiness handler built AFTER the
-// replacement completely unaffected.
-func TestBootedFieldReplacementCannotAlterRuntimeState(t *testing.T) {
-	h := testkit.NewDB(t)
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
-		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM,
-	})
-	if err != nil {
-		t.Fatalf("kernel.New: %v", err)
-	}
-	a := app.New()
-	a.Register(funcModule{name: "widgets", reg: func(mc module.Context) error {
-		mc.Health("real", func(context.Context) error { return nil })
-		mc.Migrations(fstest.MapFS{"0001_real.up.sql": &fstest.MapFile{Data: []byte("SELECT 1;")}})
-		return nil
-	}})
-	booted, err := a.Boot(context.Background(), k, nil)
-	if err != nil {
-		t.Fatalf("Boot: %v", err)
-	}
-
-	validatedRouter := booted.RuntimeRouter()
-	validatedEvents := booted.RuntimeEvents()
-	validatedJobs := booted.RuntimeJobs()
-
-	// Wholesale field replacement — fresh, UNSEALED registries and maps.
-	booted.Router = httpx.NewRouter()
-	booted.Events = outbox.NewHandlerRegistry()
-	booted.Jobs = jobs.NewRegistry()
-	booted.Health = map[string]func(context.Context) error{
-		"evil": func(context.Context) error {
-			t.Error("replaced health map reached the live readiness handler")
-			return nil
-		},
-	}
-	booted.Migrations = map[string]fs.FS{
-		"evil": fstest.MapFS{"0001_evil.up.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;")}},
-	}
-
-	if booted.RuntimeRouter() != validatedRouter || booted.RuntimeRouter() == booted.Router {
-		t.Fatal("RuntimeRouter follows the replaced Router field, not the boot-validated router")
-	}
-	if booted.RuntimeEvents() != validatedEvents || booted.RuntimeEvents() == booted.Events {
-		t.Fatal("RuntimeEvents follows the replaced Events field")
-	}
-	if booted.RuntimeJobs() != validatedJobs || booted.RuntimeJobs() == booted.Jobs {
-		t.Fatal("RuntimeJobs follows the replaced Jobs field")
-	}
-	migs := booted.RuntimeMigrations()
-	if _, ok := migs["evil"]; ok {
-		t.Fatal("RuntimeMigrations includes the replaced migration set")
-	}
-	if _, ok := migs["widgets"]; !ok {
-		t.Fatalf("RuntimeMigrations lost the boot-validated module set: %v", migs)
-	}
-
-	// The readiness aggregator is built AFTER the replacement — a consumer of
-	// the exported field would serve the injected check here.
-	health := app.Readiness(booted, config.Fingerprint{}, nil)
-	rec := httptest.NewRecorder()
-	health.Readiness().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	body := rec.Body.String()
-	if strings.Contains(body, "evil") {
-		t.Fatalf("readiness built after field replacement serves the injected check: %s", body)
-	}
-	if !strings.Contains(body, "widgets.real") {
-		t.Fatalf("readiness built after field replacement lost the boot-validated check: %s", body)
-	}
-}
+// V2 (fifth closure audit 2026-07-17): Booted no longer has informational
+// mirror fields — the former field-replacement regression is structurally
+// obsolete; the sealed live collectors are covered above and the runtime
+// accessors below.
 
 // Third closure-audit regressions (2026-07-17, F-10): seed state and the i18n
 // catalog are part of the boot-validated runtime view; migration content is
@@ -267,20 +193,18 @@ func TestSeedsI18nAndMigrationContentAreBootCaptured(t *testing.T) {
 		t.Fatal("RuntimeI18n returned nil")
 	}
 
-	// (1) Replace the public mirrors wholesale.
-	booted.Seeds = seeds.Bundle{Permissions: []seeds.PermissionSeed{{Key: "evil.thing.admin"}}}
-	booted.I18n = nil
-
+	// V2: there are no public mirror fields to replace — the accessors are
+	// the only surface. (1) The validated catalog is served as expected.
 	rs := booted.RuntimeSeeds()
 	if len(rs.Permissions) != 1 || rs.Permissions[0].Key != "widgets.thing.read" {
-		t.Fatalf("RuntimeSeeds follows the replaced Seeds field: %+v", rs.Permissions)
+		t.Fatalf("RuntimeSeeds does not serve the boot-validated catalog: %+v", rs.Permissions)
 	}
 	if booted.RuntimeI18n() != frozenI18n {
-		t.Fatal("RuntimeI18n follows the replaced I18n field")
+		t.Fatal("RuntimeI18n is not stable across calls")
 	}
 
-	// (2) Mutate nested slices on a RuntimeSeeds result AND on the replaced
-	// public mirror; the validated catalog must be unaffected.
+	// (2) Mutate nested slices on a RuntimeSeeds result; the validated
+	// catalog must be unaffected.
 	rs.Roles[0].Permissions[0] = "evil.everything.admin"
 	rs.Permissions[0].Key = "evil.thing.read"
 	again := booted.RuntimeSeeds()
@@ -339,12 +263,14 @@ func TestBootRejectsNilAndEmptyDeclarations(t *testing.T) {
 	}
 }
 
-// Fourth closure-audit regression (2026-07-17): the KERNEL aggregate is inside
-// the ownership boundary. Boot captures a struct copy; neither reassigning the
-// informational Kernel field nor mutating the caller-owned kernel's fields
-// after boot can change the dependencies the worker and readiness paths run
-// with. StartWorker is exercised with booted.Kernel = nil — the pre-fix code
-// read the field and would nil-panic.
+// Fourth/fifth closure-audit regression (2026-07-17): the KERNEL aggregate is
+// inside the ownership boundary and its pointer is NEVER exposed. Boot
+// captures a struct copy with a deep-copied Cfg; external consumers get only
+// narrow interface accessors (RuntimeAuthz/RuntimeTx). Neither reassigning
+// the informational Kernel field nor mutating the caller-owned kernel's
+// fields after boot changes the dependencies the worker and readiness paths
+// run with. StartWorker is exercised with booted.Kernel = nil — a
+// field-reading worker would nil-panic.
 func TestKernelReplacementAndMutationCannotAlterRuntimeDependencies(t *testing.T) {
 	h := testkit.NewDB(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -361,29 +287,65 @@ func TestKernelReplacementAndMutationCannotAlterRuntimeDependencies(t *testing.T
 		t.Fatalf("Boot: %v", err)
 	}
 
-	captured := booted.RuntimeKernel()
-	origPerms, origTx, origPlatform := captured.Perms, captured.Tx, captured.Platform
+	origAuthz := booted.RuntimeAuthz()
+	origTx := booted.RuntimeTx()
 
-	// Sabotage both paths: replace the informational field AND gut the
-	// caller-owned aggregate boot was given.
-	booted.Kernel = nil
-	k.Perms = nil
+	// Gut the caller-owned aggregate boot was given (V2: there is no Kernel
+	// field left to replace — the aggregate pointer is never exposed).
+	k.Authz = nil
 	k.Tx = nil
 	k.Platform = nil
 
-	got := booted.RuntimeKernel()
-	if got == nil || got.Perms != origPerms || got.Tx == nil || got.Platform == nil {
-		t.Fatalf("RuntimeKernel follows post-boot kernel mutation/replacement: %+v", got)
+	if booted.RuntimeAuthz() != origAuthz || booted.RuntimeAuthz() == nil {
+		t.Fatal("RuntimeAuthz follows post-boot kernel mutation/replacement")
 	}
-	if got.Tx != origTx || got.Platform != origPlatform {
-		t.Fatal("RuntimeKernel lost the boot-captured dependencies")
+	if booted.RuntimeTx() != origTx || booted.RuntimeTx() == nil {
+		t.Fatal("RuntimeTx follows post-boot kernel mutation/replacement")
 	}
 
-	// The worker must run off the captured view: with booted.Kernel nil, a
-	// field-reading StartWorker would nil-panic before its first loop.
+	// The worker must run off the captured view: with the caller-owned
+	// aggregate gutted, a field-reading StartWorker would nil-panic before
+	// its first loop.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := app.StartWorker(ctx, booted, app.WorkerConfigOpts{ShutdownDrain: 5 * time.Second}); err != nil {
 		t.Fatalf("StartWorker off the captured kernel view: %v", err)
+	}
+}
+
+// Fifth closure-audit regression (2026-07-17): the captured kernel view's
+// nested CONFIG is deep-copied — the composition root mutating the original
+// kernel's config maps/slices (CORS origins, webhook allowlists) after boot
+// must not reach the boot-captured dependencies. The aggregate pointer is
+// unexported; the test observes it through a test-only seam.
+func TestCapturedKernelConfigIsDeeplyIsolated(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Defaults()
+	cfg.HTTP.CORSAllowedOrigins = []string{"https://trusted.example"}
+	cfg.Webhook.Outbound.AllowedHosts = []string{"hooks.example"}
+	k, err := kernel.New(cfg, log, kernel.Deps{
+		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM,
+	})
+	if err != nil {
+		t.Fatalf("kernel.New: %v", err)
+	}
+	a := app.New()
+	a.Register(funcModule{name: "widgets"})
+	b, err := a.Boot(context.Background(), k, nil)
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	// Mutate the ORIGINAL kernel's nested config storage post-boot.
+	k.Cfg.HTTP.CORSAllowedOrigins[0] = "https://evil.example"
+	k.Cfg.Webhook.Outbound.AllowedHosts[0] = "evil.example"
+
+	got := app.CapturedKernelConfig(b)
+	if got.HTTP.CORSAllowedOrigins[0] != "https://trusted.example" || len(got.HTTP.CORSAllowedOrigins) != 1 {
+		t.Fatalf("captured CORS origins share storage with the caller-owned config: %v", got.HTTP.CORSAllowedOrigins)
+	}
+	if got.Webhook.Outbound.AllowedHosts[0] != "hooks.example" {
+		t.Fatalf("captured webhook allowlist shares storage with the caller-owned config: %v", got.Webhook.Outbound.AllowedHosts)
 	}
 }

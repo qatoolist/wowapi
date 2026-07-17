@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
 )
 
 func TestContextRoundTrip(t *testing.T) {

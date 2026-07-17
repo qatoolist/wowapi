@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // F-02 regression (adversarial-framework-review-2026-07-17): a worker whose

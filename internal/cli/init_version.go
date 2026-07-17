@@ -31,7 +31,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/qatoolist/wowapi/internal/buildinfo"
+	"github.com/qatoolist/wowapi/v2/internal/buildinfo"
 )
 
 // frameworkResolution is the pre-write outcome: the go.mod require-line
@@ -48,7 +48,9 @@ type frameworkResolution struct {
 // pseudo-version is Go's own convention for locally replaced modules. It is
 // not the deleted bare-`v0.0.0` fallback — it is never written without the
 // replace directive that satisfies it.
-const localReplaceVersion = "v0.0.0-00010101000000-000000000000"
+// localReplaceVersion is the placeholder require version paired with a
+// local replace directive. A /v2 module path demands a v2-family version.
+const localReplaceVersion = "v2.0.0-00010101000000-000000000000"
 
 // Test seams: a test binary carries no VCS stamp, and hermetic tests must not
 // depend on the real module proxy, so both effects are injectable.

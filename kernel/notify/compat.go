@@ -2,9 +2,9 @@
 package notify
 
 import (
-	"github.com/qatoolist/wowapi/foundation/notify"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/foundation/notify"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 type (

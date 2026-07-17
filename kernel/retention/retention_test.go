@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/retention"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/retention"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 func tctx(tenant uuid.UUID) context.Context {

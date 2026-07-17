@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/v2/kernel/secrets"
 )
 
 // Secret holds a resolved secret value with structural redaction: every

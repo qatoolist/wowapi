@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // Bundle is a set of messages a module (or the product) registers for one

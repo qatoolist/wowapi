@@ -2,9 +2,9 @@
 package comment
 
 import (
-	"github.com/qatoolist/wowapi/foundation/comment"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/foundation/comment"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
 )
 
 type (

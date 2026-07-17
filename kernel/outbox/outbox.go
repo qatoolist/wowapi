@@ -10,15 +10,15 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/qatoolist/wowapi/internal/sealer"
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // Event is the outbox envelope. Type is "module.resource.verb_past"; Payload is

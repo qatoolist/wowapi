@@ -135,10 +135,10 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 
 	"github.com/acme/compiletest/internal/wire"
 )

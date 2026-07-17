@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
 )
 
 // TestBackpressurePassesThroughUnderCap proves requests within the cap reach

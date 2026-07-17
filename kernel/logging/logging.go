@@ -14,8 +14,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // sensitiveKeySuffixes is the heuristic list of key suffixes (case-insensitive)

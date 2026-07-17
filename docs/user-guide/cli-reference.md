@@ -6,7 +6,7 @@ below is taken from the source — if a subcommand you expect isn't here, it isn
 
 ## `wowapi` CLI
 
-Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0` — pin an exact tag, never `@latest`
+Get the CLI: `go install github.com/qatoolist/wowapi/v2/cmd/wowapi@v1.1.0` — pin an exact tag, never `@latest`
 (per the [upgrade policy](../operations/upgrade-and-deprecation-policy.md)) — or build from a clone; see
 [Getting Started](getting-started.md#step-1--get-the-wowapi-cli).
 

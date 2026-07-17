@@ -1,6 +1,6 @@
 package i18n
 
-import "github.com/qatoolist/wowapi/kernel/errors"
+import "github.com/qatoolist/wowapi/v2/kernel/errors"
 
 // reservedPrefix namespaces every message the framework itself ships. Modules
 // may not register keys under it (see Registry.Register), so a product can never

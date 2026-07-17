@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 )
 
 // TestDiscardWriter covers the contract logger's throwaway sink.

@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
 )
 
 // TestTruncate covers both branches of truncate: the short-circuit return when

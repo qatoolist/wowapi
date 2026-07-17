@@ -54,7 +54,7 @@ The reviewer explicitly treated unresolved implementation defects and absent fut
 === RUN   TestIntegrationMigrationsReversible
 --- PASS: TestIntegrationMigrationsReversible (0.70s)
 PASS
-ok  github.com/qatoolist/wowapi/migrations  0.707s
+ok  github.com/qatoolist/wowapi/v2/migrations  0.707s
 ```
 
 ## Uncached S3/MinIO drill
@@ -65,7 +65,7 @@ The first forced invocation failed closed with the following repeated cause:
 WOWAPI_REQUIRE_S3=1 but S3/minio unreachable at localhost:9000:
 dial tcp [::1]:9000: connect: connection refused
 FAIL
-FAIL github.com/qatoolist/wowapi/adapters/storage/s3 0.004s
+FAIL github.com/qatoolist/wowapi/v2/adapters/storage/s3 0.004s
 ```
 
 With the test-specific endpoint bound to the Compose service, the integration-bearing cases executed and passed:
@@ -96,7 +96,7 @@ With the test-specific endpoint bound to the Compose service, the integration-be
 === RUN   TestS3_ConcurrentRoundTrips
 --- PASS: TestS3_ConcurrentRoundTrips (0.01s)
 PASS
-ok  github.com/qatoolist/wowapi/adapters/storage/s3  0.231s
+ok  github.com/qatoolist/wowapi/v2/adapters/storage/s3  0.231s
 ```
 
 ## Dispatch benchmark
@@ -106,7 +106,7 @@ Raw host output:
 ```text
 goos: darwin
 goarch: arm64
-pkg: github.com/qatoolist/wowapi/kernel/httpx
+pkg: github.com/qatoolist/wowapi/v2/kernel/httpx
 cpu: Apple M3 Max
 BenchmarkDispatch/50routes-16          2032887    588.3 ns/op    1194 B/op    14 allocs/op
 BenchmarkDispatch/50routes-16          2014862    585.3 ns/op    1194 B/op    14 allocs/op
@@ -118,7 +118,7 @@ BenchmarkDispatch/2000routes-16        1858754    641.9 ns/op    1194 B/op    14
 BenchmarkDispatch/2000routes-16        1897162    641.1 ns/op    1194 B/op    14 allocs/op
 BenchmarkDispatch/2000routes-16        1858645    638.4 ns/op    1194 B/op    14 allocs/op
 PASS
-ok  github.com/qatoolist/wowapi/kernel/httpx  16.965s
+ok  github.com/qatoolist/wowapi/v2/kernel/httpx  16.965s
 ```
 
 Median host values are 588.3, 612.7, and 641.1 ns/op for 50, 500, and 2,000 routes respectively, with 1,194 B/op and 14 allocations/op at every size. The 40-fold route-count increase moved the median by approximately 9.0%.

@@ -17,7 +17,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/qatoolist/wowapi/internal/buildinfo.version={{ .Version }}
+      - -s -w -X github.com/qatoolist/wowapi/v2/internal/buildinfo.version={{ .Version }}
     goos:
       - linux
       - darwin
@@ -103,4 +103,4 @@ release:
   footer: |
     ---
     **Supply chain:** binaries are cosign-signed (keyless), ship an SBOM, and carry SLSA build provenance.
-    See [SECURITY.md](https://github.com/qatoolist/wowapi/blob/main/SECURITY.md) for verification commands.
+    See [SECURITY.md](https://github.com/qatoolist/wowapi/v2/blob/main/SECURITY.md) for verification commands.

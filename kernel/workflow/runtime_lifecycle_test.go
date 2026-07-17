@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/pagination"
-	"github.com/qatoolist/wowapi/testkit"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/pagination"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // runtime_lifecycle_test.go — QA G2 (workflow runtime): the existing suite covers

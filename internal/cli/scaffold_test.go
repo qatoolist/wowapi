@@ -145,7 +145,7 @@ func TestInitCreatesGoMod(t *testing.T) {
 	gomod := filepath.Join(dir, "go.mod")
 	assertFileExists(t, gomod)
 	assertFileContains(t, gomod, "module github.com/acme/testapp")
-	assertFileContains(t, gomod, "github.com/qatoolist/wowapi")
+	assertFileContains(t, gomod, "github.com/qatoolist/wowapi/v2")
 }
 
 func TestInitCreatesAllFiles(t *testing.T) {
@@ -252,7 +252,7 @@ func TestInitGoModHasFrameworkRequire(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d; stderr: %s", code, errOut)
 	}
-	assertFileContains(t, filepath.Join(dir, "go.mod"), "github.com/qatoolist/wowapi")
+	assertFileContains(t, filepath.Join(dir, "go.mod"), "github.com/qatoolist/wowapi/v2")
 }
 
 func TestInitLocalYAMLHasEnvironment(t *testing.T) {
@@ -439,7 +439,7 @@ func TestInitAPIMainWiresOptionalStorage(t *testing.T) {
 	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
 	assertParseGo(t, apiPath)
 	for _, want := range []string{
-		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		`s3adapter "github.com/qatoolist/wowapi/v2/adapters/storage/s3"`,
 		"kernel/storage",
 		"cfg.Storage.Enabled()",
 		"s3adapter.New(ctx, s3adapter.Config{",
@@ -460,7 +460,7 @@ func TestInitWorkerMainWiresOptionalStorage(t *testing.T) {
 	workerPath := filepath.Join(dir, "cmd", "worker", "main.go")
 	assertParseGo(t, workerPath)
 	for _, want := range []string{
-		`s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"`,
+		`s3adapter "github.com/qatoolist/wowapi/v2/adapters/storage/s3"`,
 		"cfg.Storage.Enabled()",
 		"s3adapter.New(ctx, s3adapter.Config{",
 		"Storage:  store",

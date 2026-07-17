@@ -10,7 +10,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/qatoolist/wowapi/kernel/tracing"
+	"github.com/qatoolist/wowapi/v2/kernel/tracing"
 )
 
 // ContextWithSpan returns a context carrying s, retrievable via SpanFromContext.

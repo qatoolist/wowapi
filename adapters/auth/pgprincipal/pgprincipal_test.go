@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
-	"github.com/qatoolist/wowapi/kernel/auth"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/adapters/auth/pgprincipal"
+	"github.com/qatoolist/wowapi/v2/kernel/auth"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // These are real DB integration tests (no mocks): they run against the migrated

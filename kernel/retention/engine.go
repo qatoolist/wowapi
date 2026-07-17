@@ -6,13 +6,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/qatoolist/wowapi/internal/sealer"
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/audit"
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/audit"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // The disposition/DSR engine turns the retention primitives (holds, DSR ledger)

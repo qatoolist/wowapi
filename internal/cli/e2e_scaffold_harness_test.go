@@ -143,7 +143,7 @@ func frameworkSourceSuffix(t *testing.T) string {
 // proxy packaged from this checkout. The content-derived suffix keeps the
 // version in lock-step with the packaged source (see frameworkSourceSuffix).
 func e2eReleaseVersion(t *testing.T) string {
-	return "v0.2.0-w06shared-" + frameworkSourceSuffix(t)
+	return "v2.0.0-e2e-" + frameworkSourceSuffix(t)
 }
 
 // buildWowapiCLI compiles cmd/wowapi into a temp dir and returns the binary
@@ -158,7 +158,7 @@ func buildWowapiCLI(t *testing.T, ldflagsVersion string) string {
 	args := []string{"build", "-buildvcs=false", "-o", bin}
 	if ldflagsVersion != "" {
 		args = append(args, "-ldflags",
-			"-X github.com/qatoolist/wowapi/internal/buildinfo.version="+ldflagsVersion)
+			"-X github.com/qatoolist/wowapi/v2/internal/buildinfo.version="+ldflagsVersion)
 	}
 	args = append(args, "./cmd/wowapi")
 	cmd := exec.Command("go", args...)
@@ -215,17 +215,9 @@ func primeModuleCacheProxy(t *testing.T, gomod, gosum []byte) {
 	}
 }
 
-// primeReleasedModuleCacheProxy makes the full dependency graph of a tagged
-// framework release available before golden-consumer resolution goes offline.
-func primeReleasedModuleCacheProxy(t *testing.T, version string) {
-	t.Helper()
-	gomod := fmt.Appendf(nil, "module example.com/wowapi-proxy-prime\n\ngo 1.26.0\n\nrequire github.com/qatoolist/wowapi %s\n", version)
-	primeModuleCacheProxy(t, gomod, nil)
-}
-
 // buildFrameworkProxy packages THIS checkout as module version `version`
 // inside a file:// GOPROXY directory (list, .info, .mod, .zip), so a
-// released-CLI scaffold's `go mod download github.com/qatoolist/wowapi@version`
+// released-CLI scaffold's `go mod download github.com/qatoolist/wowapi/v2@version`
 // succeeds hermetically. Only the files a consumer build needs are zipped.
 // purgeStaleFrameworkVersion removes a previously downloaded/extracted copy of
 // the synthetic framework version from the shared GOMODCACHE — but ONLY when
@@ -303,7 +295,7 @@ func extractionComplete(t *testing.T, zipPath, extractedDir, version string) boo
 		t.Fatalf("open fresh proxy zip: %v", err)
 	}
 	defer func() { _ = zr.Close() }()
-	prefix := "github.com/qatoolist/wowapi@" + version + "/"
+	prefix := "github.com/qatoolist/wowapi/v2@" + version + "/"
 	for _, f := range zr.File {
 		rel := strings.TrimPrefix(f.Name, prefix)
 		if rel == f.Name || rel == "" {
@@ -321,7 +313,7 @@ func buildFrameworkProxy(t *testing.T, version string) string {
 	t.Helper()
 	root := wowapiCheckoutRoot(t)
 	proxy := t.TempDir()
-	vdir := filepath.Join(proxy, filepath.FromSlash("github.com/qatoolist/wowapi/@v"))
+	vdir := filepath.Join(proxy, filepath.FromSlash("github.com/qatoolist/wowapi/v2/@v"))
 	if err := os.MkdirAll(vdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +337,7 @@ func buildFrameworkProxy(t *testing.T, version string) string {
 		t.Fatal(err)
 	}
 	zw := zip.NewWriter(zf)
-	prefix := "github.com/qatoolist/wowapi@" + version + "/"
+	prefix := "github.com/qatoolist/wowapi/v2@" + version + "/"
 	for _, entry := range frameworkZipInclude {
 		abs := filepath.Join(root, entry)
 		st, err := os.Stat(abs)
@@ -445,11 +437,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
 
 	"MODULE_PATH/internal/wire"
 )
@@ -577,7 +569,7 @@ func TestE2EScaffoldSourceBuiltCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi => ") {
+	if !strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi/v2 => ") {
 		t.Errorf("source-path go.mod missing the local replace directive:\n%s", gomod)
 	}
 }
@@ -600,7 +592,7 @@ func TestE2EScaffoldReleasedCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+e2eReleaseVersion(t)) {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 "+e2eReleaseVersion(t)) {
 		t.Errorf("released-path go.mod must pin the CLI's release version:\n%s", gomod)
 	}
 	if strings.Contains(string(gomod), "replace ") {

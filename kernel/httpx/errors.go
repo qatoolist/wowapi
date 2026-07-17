@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // ProblemError is the RFC 9457 problem-details body — the ONLY error shape the

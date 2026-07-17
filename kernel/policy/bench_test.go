@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/policy"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/policy"
 )
 
 func marshalJSON(t interface{}) json.RawMessage {

@@ -1,9 +1,9 @@
 package jobs
 
 import (
-	"github.com/qatoolist/wowapi/internal/sealer"
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // entry is a registered kind: the worker that executes it, its idempotency

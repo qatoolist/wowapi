@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/auth"
-	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/auth"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
 )
 
 func TestNewJWKSKeySource_ProdCustomClientRequiresTrustedIssuers(t *testing.T) {

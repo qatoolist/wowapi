@@ -3,7 +3,7 @@ package bulk
 import (
 	"context"
 
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 )
 
 // SetCancelInterceptor wires the test-only fault-injection seam invoked between

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // TestDuplicateWorkerLeaseExpiry is the named chaos test from DATA-02 T7. It

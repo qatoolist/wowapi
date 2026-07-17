@@ -28,15 +28,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/foundation/document"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/module"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // docClassAttachment is the test-local document class key, namespaced under
@@ -93,7 +93,7 @@ func bootDocModuleWithS3(t *testing.T, store storage.Adapter) *docEnv {
 	// testDocModule declares no migrations/seeds of its own — the tenants /
 	// acting_capacities tables used below come from the kernel baseline
 	// migrations testkit.NewDB already applied.
-	if err := seeds.Sync(ctx, h.Platform, booted.Seeds); err != nil {
+	if err := seeds.Sync(ctx, h.Platform, booted.RuntimeSeeds()); err != nil {
 		t.Fatalf("seed sync: %v", err)
 	}
 

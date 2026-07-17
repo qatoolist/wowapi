@@ -6,12 +6,12 @@ import (
 
 	"github.com/google/uuid"
 
-	kaudit "github.com/qatoolist/wowapi/kernel/audit"
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/relationship"
-	"github.com/qatoolist/wowapi/kernel/resource"
+	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/relationship"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // Relationships is the scoped privileged service for ReBAC relationship edges.

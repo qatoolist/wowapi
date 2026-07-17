@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/module"
 )
 
 // RunModuleContract is the kernel's module conformance suite (blueprint 08 §2,
@@ -48,7 +48,7 @@ func RunModuleContract(t *testing.T, m module.Module) {
 	// the public tables before/after so the RLS check (step 4) inspects the
 	// tables THIS module created — not a name-prefix convention it could evade.
 	before := publicTables(t, h)
-	migFS, ok := booted.Migrations[m.Name()]
+	migFS, ok := booted.RuntimeMigrations()[m.Name()]
 	if ok {
 		r1, err := database.Migrate(ctx, h.Admin, migFS, m.Name())
 		if err != nil {
@@ -72,11 +72,11 @@ func RunModuleContract(t *testing.T, m module.Module) {
 	// re-sync and assert it changed NOTHING (idempotent in EFFECT, not just
 	// no-error): the catalog checksum before and after the second sync matches
 	// (review finding ARCH-49).
-	if err := seeds.Sync(ctx, h.Platform, booted.Seeds); err != nil {
+	if err := seeds.Sync(ctx, h.Platform, booted.RuntimeSeeds()); err != nil {
 		t.Fatalf("contract: seed sync (as app_platform): %v", err)
 	}
 	sum1 := catalogChecksum(t, h)
-	if err := seeds.Sync(ctx, h.Platform, booted.Seeds); err != nil {
+	if err := seeds.Sync(ctx, h.Platform, booted.RuntimeSeeds()); err != nil {
 		t.Fatalf("contract: seed sync rerun (must be idempotent): %v", err)
 	}
 	if sum2 := catalogChecksum(t, h); sum1 != sum2 {

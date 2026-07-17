@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 )
 
 // RowFactory produces the non-tenant columns for one probe row. It is called

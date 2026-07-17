@@ -618,7 +618,7 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Context:** the headline exit criterion — an external product repo can import wowapi, define a
   module, and pass the contract suite without framework edits.
 - **Decision:** a `test-consumer` flow (host+container) scaffolds a tiny product module in
-  t.TempDir(), `go mod init` + `go mod edit -replace github.com/qatoolist/wowapi => <repo>`, writes
+  t.TempDir(), `go mod init` + `go mod edit -replace github.com/qatoolist/wowapi/v2 => <repo>`, writes
   a module using only public packages, and runs `testkit.RunModuleContract`. Proves the public API
   surface is sufficient and import-direction-clean from outside the repo.
 - **Affected:** testkit/contract.go, a consumer test under testkit or internal, Makefile test-consumer.
@@ -1495,17 +1495,16 @@ Blueprint deviations MUST land here before the code that implements them.
   scripts/object_storage_restore_drill.sh, internal/tools/migrate/main.go, Makefile (drill-* targets),
   docs/operations/{migrations,backup-restore}.md.
 
-## D-0091 — Booted is opaque-by-construction (accepted stable-v1 exception)
+## D-0091 — Booted is opaque-by-construction (the V2 opacity decision)
 
-**Date:** 2026-07-17 · **Context:** fourth adversarial closure audit.
-Adding the unexported `runtime` field to `app.Booted` breaks external
-POSITIONAL composite literals of `Booted`, and hand-constructed values now
-fail loudly (`ErrNotBooted` / accessor panics) instead of silently operating.
-**Decision:** accept the break. A `Booted` that did not come from `App.Boot`
-never passed boot validation; silently operating on one was the F-10
-two-sources-of-truth defect itself. The alternative — preserving positional
-constructibility — would preserve the vulnerability. Recorded in the
-CHANGELOG as a breaking change with migration guidance (obtain `Booted` only
-from `App.Boot`); the stable-v1 positional-literal freeze
-(`internal/compat/stable_v1_consumer_test.go`) intentionally covers
-`app.Hook` and `document.UploadEvent` but NOT `app.Booted`.
+**Date:** 2026-07-17 · **Context:** fourth/fifth adversarial closure audits;
+V1 discarded before any production consumer existed. `app.Booted` is fully
+OPAQUE in V2: no informational mirror fields, no exposed kernel aggregate —
+every capability flows through accessors backed by the boot-validated runtime
+view, and values not produced by `App.Boot` fail loudly (`ErrNotBooted` /
+accessor panics). Rationale: informational mirrors created two sources of
+truth (the F-10 defect class); a hand-constructed `Booted` never passed boot
+validation, so silently operating on one was the vulnerability itself. The V2
+contract fixtures (`internal/compat/v2_contract_test.go`) freeze
+`app.Hook` and `document.UploadEvent` — the V2 positional-literal contract —
+and intentionally exclude `app.Booted`, which is not constructible.

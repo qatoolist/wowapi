@@ -20,9 +20,11 @@ and scheduler, HTTP primitives, configuration, observability, and a set of compl
 resources, permissions, routes, workflows, events, jobs, seeds, and migrations **without touching kernel
 code**.
 
-> Status: **stable v1 API surface** (current: `v1.1.0`). As of `v1.0.0` the public surface (`kernel` /
-> `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking changes to
-> it require a new major version (`/v2`). See [Versioning](#versioning--stability).
+> Status: **V2** (module path `github.com/qatoolist/wowapi/v2`). V1 was discarded before any
+> production consumer existed; V2 carries no V1 compatibility obligations. From the first tagged
+> `v2.x` release the public surface (`kernel` / `module` / `app` / `adapters` / `testkit` /
+> `migrations` + `cmd/wowapi`) is stable: breaking changes to it require a new major version
+> (`/v3`). See [Versioning](#versioning--stability).
 >
 > **Production-readiness note:** an active architecture-review programme
 > ([architecture directive](docs/implementation/architecture-directive-2026-07-11.md) →
@@ -183,7 +185,7 @@ You consume `wowapi` from a **separate product repository**. The `wowapi` CLI sc
 **1. Get the `wowapi` CLI.** Either install a published version:
 
 ```bash
-go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0   # pin an exact tag; see Versioning below
+go install github.com/qatoolist/wowapi/v2/cmd/wowapi@latest   # pin an exact tag; see Versioning below
 ```
 
 (`@latest` is discouraged — the [upgrade policy](docs/operations/upgrade-and-deprecation-policy.md) requires

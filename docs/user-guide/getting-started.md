@@ -16,7 +16,7 @@ Go from zero to a running wowapi-based product. (To work on the framework itself
 
 **Option A (published):**
 ```bash
-go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0    # pin an exact tag — never @latest (see the upgrade policy)
+go install github.com/qatoolist/wowapi/v2/cmd/wowapi@v1.1.0    # pin an exact tag — never @latest (see the upgrade policy)
 wowapi version
 ```
 
@@ -49,7 +49,7 @@ What it scaffolds:
 
 ```
 myapp/
-├── go.mod                     # requires github.com/qatoolist/wowapi
+├── go.mod                     # requires github.com/qatoolist/wowapi/v2
 ├── Makefile                   # build / test / lint / migrate-up / migrate-down
 ├── .gitignore
 ├── README.md
@@ -163,7 +163,7 @@ Then register it in `internal/wire/modules.go`:
 package wire
 
 import (
-    "github.com/qatoolist/wowapi/module"
+    "github.com/qatoolist/wowapi/v2/module"
     "github.com/acme/myapp/internal/modules/widgets"
 )
 

@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/policy"
-	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/policy"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // TestAuthzMatrix reproduces the blueprint 01 §3 permission matrix as a single

@@ -6,8 +6,8 @@ import (
 	"io"
 	"net/http"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/validation"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/validation"
 )
 
 // DecodeJSON strict-decodes the request body into T: unknown fields are

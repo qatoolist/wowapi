@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/foundation/document"
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // hooks_fire_test.go — QA G10 (extension point / security): OnFileUpload and

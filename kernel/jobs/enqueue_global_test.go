@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/testkit"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // enqueue_global_test.go — QA G12 (data path): EnqueueGlobal inserts a

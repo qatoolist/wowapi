@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 const sweepSLABatchSize = 100
@@ -246,7 +246,7 @@ func (rt *Runtime) loadSLAState(ctx context.Context, db database.TenantDB, refs 
 		def, ok := rt.registry.definition(key, version)
 		if !ok {
 			var err error
-			def, err = ParseDefinition(raw)
+			def, err = rt.parseAndValidateDefinition(raw)
 			if err != nil {
 				defRows.Close()
 				return nil, err

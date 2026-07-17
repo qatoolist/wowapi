@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/module"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // F-10 regressions (adversarial-framework-review-2026-07-17): the public
@@ -224,14 +224,10 @@ func TestBootRejectsDuplicateCollectorRegistrations(t *testing.T) {
 	}
 }
 
-// The live readiness handler is isolated from post-construction mutation of
-// Booted.Health: Readiness copies the check set when it is built, so a late
-// injection into the exposed map never reaches the serving handler. (This is
-// construction-time isolation — defense-in-depth alongside it, Booted.Health
-// is itself a boot-time snapshot, and the sealed-registry regression in
-// extension_seal_test.go covers the live Router/Events/Jobs and every
-// retained-context registry class.)
-func TestReadinessHandlerIsolatedFromPostConstructionMutation(t *testing.T) {
+// The live readiness handler serves the boot-validated module checks. V2:
+// Booted has no exposed Health map to inject into — the former sabotage
+// vector is structurally impossible; this asserts the wiring itself.
+func TestReadinessHandlerServesBootValidatedChecks(t *testing.T) {
 	h := testkit.NewDB(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
@@ -251,17 +247,8 @@ func TestReadinessHandlerIsolatedFromPostConstructionMutation(t *testing.T) {
 	}
 
 	health := app.Readiness(booted, config.Fingerprint{}, nil)
-	// Post-boot sabotage attempts through the exposed structures:
-	booted.Health["widgets.injected"] = func(context.Context) error {
-		t.Error("late-injected health check executed by the live handler")
-		return nil
-	}
-
 	rec := httptest.NewRecorder()
 	health.Readiness().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if body := rec.Body.String(); strings.Contains(body, "injected") {
-		t.Fatalf("readiness payload includes the late-injected check: %s", body)
-	}
 	if !strings.Contains(rec.Body.String(), "widgets.real") {
 		t.Fatalf("readiness payload lost the genuine module check: %s", rec.Body.String())
 	}

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/appmodel"
-	"github.com/qatoolist/wowapi/kernel/port"
+	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
+	"github.com/qatoolist/wowapi/v2/kernel/port"
 )
 
 type TestService interface {

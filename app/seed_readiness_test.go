@@ -14,11 +14,11 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/module"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 func TestIntegrationReadinessEmptyCatalogsFailsNamed(t *testing.T) {
@@ -95,7 +95,7 @@ permissions:
 		t.Fatalf("Boot: %v", err)
 	}
 
-	report, err := seeds.Apply(context.Background(), h.Platform, booted.Seeds, seeds.ApplyOptions{Actor: "test"})
+	report, err := seeds.Apply(context.Background(), h.Platform, booted.RuntimeSeeds(), seeds.ApplyOptions{Actor: "test"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

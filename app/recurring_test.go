@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/module"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/module"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 type recurringModule struct{}
@@ -74,10 +74,10 @@ func TestIntegrationModuleRecurringJobCollected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boot: %v", err)
 	}
-	if len(booted.Recurring) != 1 {
-		t.Fatalf("expected 1 recurring job on Booted, got %d", len(booted.Recurring))
+	if len(app.CapturedRecurring(booted)) != 1 {
+		t.Fatalf("expected 1 recurring job on Booted, got %d", len(app.CapturedRecurring(booted)))
 	}
-	rj := booted.Recurring[0]
+	rj := app.CapturedRecurring(booted)[0]
 	if rj.Name != "widgets.nightly" {
 		t.Errorf("recurring job name = %q, want widgets.nightly (module-prefixed)", rj.Name)
 	}

@@ -95,8 +95,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
 
 	"github.com/acme/compiletest/internal/appcfg"
 )

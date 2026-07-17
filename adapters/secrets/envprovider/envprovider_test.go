@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/adapters/secrets/envprovider"
-	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/v2/adapters/secrets/envprovider"
+	"github.com/qatoolist/wowapi/v2/kernel/secrets"
 )
 
 func TestResolve_HappyPath(t *testing.T) {

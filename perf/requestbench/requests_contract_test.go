@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 )
 
 func TestRealPostgresRequestProfileMatrix(t *testing.T) {

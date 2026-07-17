@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qatoolist/wowapi/kernel/tracing"
+	"github.com/qatoolist/wowapi/v2/kernel/tracing"
 )
 
 // WithQueryTracer makes every query on the pool (Query/QueryRow/Exec) open a

@@ -78,7 +78,7 @@ func TestGeneratedMigrateTemplateRunsFullLifecycle(t *testing.T) {
 // specifically (rather than a plain substring search) so the many
 // documentation/help-text mentions of "rules.SyncDefinitions" this file
 // deliberately carries (seedUsage, comments) don't trip the guard — only an
-// actual `"github.com/qatoolist/wowapi/kernel/rules"` import would let
+// actual `"github.com/qatoolist/wowapi/v2/kernel/rules"` import would let
 // seed_cmd.go call the real function. If this ever changes (e.g. a
 // framework-kernel-only rule registry becomes syncable), this test — and the
 // seedUsage/warning text it pairs with — must be updated together.
@@ -88,7 +88,7 @@ func TestStandaloneSeedSyncDoesNotClaimRuleSync(t *testing.T) {
 		t.Fatalf("read seed_cmd.go: %v", err)
 	}
 	src := string(body)
-	if strings.Contains(src, `"github.com/qatoolist/wowapi/kernel/rules"`) {
+	if strings.Contains(src, `"github.com/qatoolist/wowapi/v2/kernel/rules"`) {
 		t.Fatalf("seed_cmd.go now imports kernel/rules — update seedUsage()'s " +
 			"disclosure and the drift test's positive assertions to match reality " +
 			"(the CLI would need a source of rules.Point declarations, which today only " +

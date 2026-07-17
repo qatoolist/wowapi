@@ -2,11 +2,11 @@
 package document
 
 import (
-	"github.com/qatoolist/wowapi/foundation/document"
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
-	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
 )
 
 type (

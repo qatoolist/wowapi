@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/rules"
-	"github.com/qatoolist/wowapi/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/rules"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
 )
 
 // Readiness assembles the /readyz aggregator from the booted app: every module's
@@ -72,20 +72,20 @@ func ReadinessWithCatalogs(b *Booted, fingerprint config.Fingerprint, db databas
 		return "seed_catalog_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.RuntimeKernel().Rules == nil {
+		if b.runtimeKernel().Rules == nil {
 			return "", nil
 		}
-		hash := RuleHash(b.RuntimeKernel().Rules)
+		hash := RuleHash(b.runtimeKernel().Rules)
 		if hash == "" {
 			return "", nil
 		}
 		return "rule_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.RuntimeKernel().ModelHash == "" {
+		if b.runtimeKernel().ModelHash == "" {
 			return "", nil
 		}
-		return "model_hash", b.RuntimeKernel().ModelHash
+		return "model_hash", b.runtimeKernel().ModelHash
 	})
 
 	return h

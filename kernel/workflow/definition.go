@@ -18,10 +18,11 @@ package workflow
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -190,11 +191,14 @@ type Fraction struct {
 // a compiled gateway condition supports. nil is excluded: a When without a
 // value is meaningless (a default branch omits When entirely).
 func scalarConditionValue(v any) bool {
-	switch v.(type) {
+	switch f := v.(type) {
+	case float32:
+		return !math.IsNaN(float64(f)) && !math.IsInf(float64(f), 0)
+	case float64:
+		return !math.IsNaN(f) && !math.IsInf(f, 0)
 	case string, bool,
 		int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64,
-		float32, float64:
+		uint, uint8, uint16, uint32, uint64:
 		return true
 	}
 	return false

@@ -11,22 +11,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
-	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
-	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
-	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/apikey"
-	kaudit "github.com/qatoolist/wowapi/kernel/audit"
-	kauth "github.com/qatoolist/wowapi/kernel/auth"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/migrations"
+	"github.com/qatoolist/wowapi/v2/adapters/auth/pgprincipal"
+	promadapter "github.com/qatoolist/wowapi/v2/adapters/metrics/prometheus"
+	s3adapter "github.com/qatoolist/wowapi/v2/adapters/storage/s3"
+	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/apikey"
+	kaudit "github.com/qatoolist/wowapi/v2/kernel/audit"
+	kauth "github.com/qatoolist/wowapi/v2/kernel/auth"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/logging"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
+	"github.com/qatoolist/wowapi/v2/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -209,7 +209,7 @@ func run(ctx context.Context) error {
 	auth := httpx.Composite(apiKeyAuth, userAuth)
 	// RuntimeRouter is the boot-validated router; unlike the informational
 	// Router field it cannot have been reassigned after boot.
-	mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeKernel().Authz, booted.RuntimeKernel().Tx)
+	mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeAuthz(), booted.RuntimeTx())
 
 	// Health endpoints are Public infrastructure, mounted directly.
 	// ReadinessWithCatalogs registers the framework-level "seed_catalogs"

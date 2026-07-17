@@ -9,8 +9,8 @@ The housing society product is a reference domain only; the core is fully reusab
 clubs, facilities, vendor/case management, and other multi-tenant, workflow-heavy SaaS.
 
 **Consumption model:** wowapi is a versioned third-party Go dependency
-(`go get github.com/qatoolist/wowapi@vX.Y.Z`) with an installable CLI
-(`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`); product applications live in their
+(`go get github.com/qatoolist/wowapi/v2@vX.Y.Z`) with an installable CLI
+(`go install github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z`); product applications live in their
 own repositories and register domain modules via the public module SDK — see
 [11-framework-distribution-and-consumption.md](11-framework-distribution-and-consumption.md).
 

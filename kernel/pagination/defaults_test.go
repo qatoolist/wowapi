@@ -3,7 +3,7 @@ package pagination
 import (
 	"testing"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // F-08 regression (adversarial-framework-review-2026-07-17): the parsed limit

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // ruleValueSchema is the closed grammar validateAgainstSchema enforces. This

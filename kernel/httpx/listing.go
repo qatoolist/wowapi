@@ -3,8 +3,8 @@ package httpx
 import (
 	"net/http"
 
-	"github.com/qatoolist/wowapi/kernel/filtering"
-	"github.com/qatoolist/wowapi/kernel/pagination"
+	"github.com/qatoolist/wowapi/v2/kernel/filtering"
+	"github.com/qatoolist/wowapi/v2/kernel/pagination"
 )
 
 // The list helpers read query parameters and hand back the allowlist-driven,

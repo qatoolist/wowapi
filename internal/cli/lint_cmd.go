@@ -21,8 +21,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/qatoolist/wowapi/internal/buildinfo"
-	"github.com/qatoolist/wowapi/kernel/lifecycle"
+	"github.com/qatoolist/wowapi/v2/internal/buildinfo"
+	"github.com/qatoolist/wowapi/v2/kernel/lifecycle"
 )
 
 func lintUsage(w io.Writer) {

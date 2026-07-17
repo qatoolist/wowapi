@@ -28,10 +28,10 @@ import (
 
 	"github.com/google/uuid"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/storage"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
 
-	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
+	s3adapter "github.com/qatoolist/wowapi/v2/adapters/storage/s3"
 )
 
 const testBucket = "wowapi-storage-it"

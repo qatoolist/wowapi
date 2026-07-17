@@ -3,8 +3,8 @@ package testkit
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/policy"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/policy"
 )
 
 // covEvaluator wires the real pg-backed authz stack (Store + Registry + policy

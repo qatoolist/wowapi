@@ -3,8 +3,8 @@ package rules
 import (
 	"context"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // SyncDefinitions upserts every point in the registry into rule_definitions —

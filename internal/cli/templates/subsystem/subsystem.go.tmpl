@@ -5,30 +5,30 @@ import (
 {{- if eq .Kind "rule"}}
 	"encoding/json"
 
-	"github.com/qatoolist/wowapi/kernel/rules"
+	"github.com/qatoolist/wowapi/v2/kernel/rules"
 {{- else if eq .Kind "workflow"}}
-	"github.com/qatoolist/wowapi/kernel/workflow"
+	"github.com/qatoolist/wowapi/v2/kernel/workflow"
 {{- else if eq .Kind "event-handler"}}
 	"context"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
 {{- else if eq .Kind "recurring-job"}}
 	"context"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 {{- else if eq .Kind "document-flow"}}
-	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
 {{- else if eq .Kind "notification"}}
-	"github.com/qatoolist/wowapi/foundation/notify"
+	"github.com/qatoolist/wowapi/v2/foundation/notify"
 {{- else if eq .Kind "webhook"}}
 	"context"
 
-	"github.com/qatoolist/wowapi/foundation/webhook"
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/foundation/webhook"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 {{- end}}
-	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/v2/module"
 )
 
 func init() {

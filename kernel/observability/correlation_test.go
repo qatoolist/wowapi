@@ -18,8 +18,8 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // stubSpan is a minimal observability.Span double with fixed IDs, so the

@@ -3,7 +3,7 @@ package mfa_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/foundation/mfa"
+	"github.com/qatoolist/wowapi/v2/foundation/mfa"
 )
 
 func TestOTP_GenerateCode_Length(t *testing.T) {

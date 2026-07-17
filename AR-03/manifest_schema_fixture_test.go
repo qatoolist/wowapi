@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/appmodel"
+	"github.com/qatoolist/wowapi/v2/kernel/appmodel"
 )
 
 // TestManifestSchemaFixture proves the manifest schema is traceable 1:1 to existing

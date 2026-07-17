@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/v2/module"
 )
 
 // App holds the registered module set. Construct with New, add modules with

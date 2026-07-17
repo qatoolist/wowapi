@@ -3,7 +3,7 @@ package i18n
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // This golden test is the guard that migrating the framework's English strings

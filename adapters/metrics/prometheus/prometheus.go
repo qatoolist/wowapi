@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // Compile-time assertion: *Prometheus implements observability.Metrics.

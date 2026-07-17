@@ -9,14 +9,14 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/foundation/notify"
-	"github.com/qatoolist/wowapi/foundation/webhook"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/secrets"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/foundation/notify"
+	"github.com/qatoolist/wowapi/v2/foundation/webhook"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/secrets"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // staticSecrets resolves any ref to a fixed signing secret (webhook HMAC key).

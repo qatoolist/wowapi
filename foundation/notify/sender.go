@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/qatoolist/wowapi/kernel/safety"
+	"github.com/qatoolist/wowapi/v2/kernel/safety"
 )
 
 // ChannelSender is the port for channel-specific delivery adapters (smtp, sms,

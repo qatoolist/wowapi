@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // TestIntegrationSchedulerRunsDueTask proves a registered task runs when due and

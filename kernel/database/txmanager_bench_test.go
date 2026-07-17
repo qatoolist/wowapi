@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // BenchmarkTenantTransactionOpenCommit measures the real PostgreSQL

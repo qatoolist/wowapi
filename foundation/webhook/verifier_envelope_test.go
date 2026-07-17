@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/foundation/webhook"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/foundation/webhook"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // TestUnitHMACVerifier_Envelope proves HMACVerifier returns an Envelope whose

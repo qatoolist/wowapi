@@ -1,17 +1,19 @@
 # Upgrade & Deprecation Policy (O3 / CA-12)
 
-wowapi is distributed as a versioned Go dependency and is on the **stable v1 line**. This document is the
+wowapi is distributed as a versioned Go dependency and is on the **stable v2 line** (`github.com/qatoolist/wowapi/v2`). This document is the
 published upgrade discipline and deprecation policy the roadmap (O3) requires — the contract a product
 depends on when it pins a framework version.
 
 ## Versioning
 
-- **Semantic versioning, v1 rules.** Public Go symbols, generated contracts, config semantics, event
-  compatibility, and migrations remain **backward-compatible throughout v1**. An incompatible public
-  change requires a `/v2` module path and a v2 migration guide.
-- The existing `module.Context` interface is not widened again within v1: new capabilities are added via
-  narrow interfaces/packages and adapters. The legacy surface is removed only in v2.
-- **Support window.** The current and immediately previous v1 minor lines are supported. The previous
+- **Semantic versioning, v2 rules.** The framework ships as `github.com/qatoolist/wowapi/v2`; V1 was
+  discarded before any production consumer existed and carries no support obligations. Public Go
+  symbols, generated contracts, config semantics, event compatibility, and migrations remain
+  **backward-compatible throughout v2** from the first tagged `v2.x` release. An incompatible public
+  change requires a `/v3` module path and a migration guide.
+- The `module.Context` interface is not widened within v2: new capabilities are added via narrow
+  interfaces/packages and adapters.
+- **Support window.** The current and immediately previous v2 minor lines are supported. The previous
   minor receives critical security/data-integrity fixes for at least six months after its successor ships.
   At the current state, that means v1.1 and v1.0.
 - **Generator/CLI version pairing.** A generated product records the framework major/minor and
@@ -24,7 +26,7 @@ depends on when it pins a framework version.
 - **Release-blocking within v1:** OpenAPI request requirements, response removals/narrowing, security
   weakening, config removals/semantic changes, and incompatible event schema changes are release-blocking.
   Additive optional fields and new operations remain allowed.
-- Products **pin an exact version** in `go.mod` (`require github.com/qatoolist/wowapi vX.Y.Z`) and upgrade
+- Products **pin an exact version** in `go.mod` (`require github.com/qatoolist/wowapi/v2 vX.Y.Z`) and upgrade
   deliberately, never via `@latest`.
 
 ## The upgrade tripwire (mandatory)

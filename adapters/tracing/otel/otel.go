@@ -16,7 +16,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // Tracer implements observability.Tracer over an OTel SDK TracerProvider.
@@ -47,7 +47,7 @@ func New(exporter sdktrace.SpanExporter, sampleRatio float64) *Tracer {
 	)
 	return &Tracer{
 		provider: tp,
-		tracer:   tp.Tracer("github.com/qatoolist/wowapi"),
+		tracer:   tp.Tracer("github.com/qatoolist/wowapi/v2"),
 		prop:     propagation.TraceContext{},
 	}
 }

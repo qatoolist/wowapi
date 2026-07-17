@@ -1,24 +1,28 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/audit"
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/filtering"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/outbox"
-	"github.com/qatoolist/wowapi/kernel/pagination"
-	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/audit"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/filtering"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/pagination"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // decidePermission is the permission a transition re-checks when an authz
@@ -183,8 +187,8 @@ func (rt *Runtime) StartIn(ctx context.Context, db database.TenantDB, defKey str
 	// Execute over the CANONICAL context — the JSON just persisted — never the
 	// caller-owned map (fourth closure audit 2026-07-17: pre- vs post-reload
 	// routing equivalence, and no retained caller alias).
-	var canonical map[string]any
-	if err := json.Unmarshal(ctxJSON, &canonical); err != nil {
+	canonical, err := decodeCanonicalContext(ctxJSON)
+	if err != nil {
 		return uuid.Nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context does not round-trip JSON")
 	}
 	inst := Instance{ID: instanceID, DefinitionID: defID, Resource: res, CurrentStep: def.InitialStep, Status: "running", Context: canonical, Version: 1}
@@ -280,7 +284,16 @@ func (rt *Runtime) CompleteTask(ctx context.Context, taskID uuid.UUID, output ma
 			return kerr.E(kerr.KindWorkflowState, "not_a_task_step",
 				fmt.Sprintf("step %q is a %s, not a task step", task.StepKey, step.Type))
 		}
-		if err := rt.closeTask(ctx, db, task, "done", nil, "", output); err != nil {
+		// Canonicalize the output EXACTLY ONCE and use that same value for task
+		// persistence, the audit/evidence trail, and the context merge (fifth
+		// closure audit 2026-07-17): serializing the caller's map twice let a
+		// stateful json.Marshaler record one output on the task and route
+		// gateways on another.
+		canonOut, err := canonicalizeContext(output)
+		if err != nil {
+			return err
+		}
+		if err := rt.closeTask(ctx, db, task, "done", nil, "", canonOut); err != nil {
 			return err
 		}
 		if err := rt.emit(ctx, db, inst, def, "completed", map[string]any{
@@ -288,14 +301,9 @@ func (rt *Runtime) CompleteTask(ctx context.Context, taskID uuid.UUID, output ma
 		}); err != nil {
 			return err
 		}
-		// Merge output into instance context so downstream gateways can branch —
-		// canonicalized first, so routing before and after a reload evaluates
-		// the same JSON-shaped values (fourth closure audit 2026-07-17).
-		if len(output) > 0 {
-			canonOut, err := canonicalizeContext(output)
-			if err != nil {
-				return err
-			}
+		// Merge the SAME canonical output into the instance context so
+		// downstream gateways branch on exactly what the task recorded.
+		if len(canonOut) > 0 {
 			for k, v := range canonOut {
 				inst.Context[k] = v
 			}
@@ -603,7 +611,16 @@ func (rt *Runtime) runAuto(ctx context.Context, db database.TenantDB, inst *Inst
 		return kerr.E(kerr.KindInternal, "auto_action_unregistered",
 			"auto step "+stepKey+" references unregistered action "+step.Action)
 	}
-	out, err := fn(ctx, AutoInput{InstanceID: inst.ID.String(), Resource: inst.Resource, Step: stepKey, Context: inst.Context})
+	// Callbacks receive a deep canonical COPY of the context, never the live
+	// framework-owned map (fifth closure audit 2026-07-17): a callback that
+	// mutates or retains its input must not be able to steer downstream
+	// routing, desynchronize memory from the persisted context, or race
+	// framework readers. Returned output is the only mutation channel.
+	ctxCopy, err := canonicalizeContext(inst.Context)
+	if err != nil {
+		return err
+	}
+	out, err := fn(ctx, AutoInput{InstanceID: inst.ID.String(), Resource: inst.Resource, Step: stepKey, Context: ctxCopy})
 	if err != nil {
 		if step.OnError.target() == "" {
 			return kerr.Wrapf(err, "workflow.runAuto", "auto action %s failed with no on_error", step.Action)
@@ -677,50 +694,90 @@ func (rt *Runtime) gatewayTarget(step Step, ctxMap map[string]any) string {
 }
 
 // conditionMatches compares a context value against a validated scalar
-// condition value with TYPE-PRESERVING semantics (fourth closure audit
-// 2026-07-17): fmt.Sprint equality made string "1" match number 1 and "true"
-// match true, and invoked arbitrary Stringer implementations during routing
-// decisions. Strings match only string-kinded values, bools only bools, and
-// numeric kinds compare by value across int/uint/float — the instance context
-// is canonical JSON (see canonicalizeContext), where every number is float64,
-// so cross-numeric equality is what makes pre- and post-reload routing
-// identical. No method on either value is ever invoked.
+// condition value with TYPE-PRESERVING, EXACT semantics (fourth/fifth closure
+// audits 2026-07-17): strings match only string-kinded values, bools only
+// bools, and numbers compare as exact rationals (math/big.Rat) — never
+// float64-lossy, never fmt.Sprint, and no method on either value is ever
+// invoked. Context numbers are json.Number (see decodeCanonicalContext), so
+// integers beyond 2^53 and int64/uint64 boundaries compare exactly; condition
+// floats compare by their shortest round-trip decimal, so a float32(0.1)
+// condition equals the JSON number 0.1. NaN and infinities are rejected at
+// declaration validation and unrepresentable in JSON context.
 func conditionMatches(ctxVal, equals any) bool {
-	cv, ok := canonicalScalar(ctxVal)
+	if cs, ok := stringScalar(ctxVal); ok {
+		es, ok2 := stringScalar(equals)
+		return ok2 && cs == es
+	}
+	if cb, ok := boolScalar(ctxVal); ok {
+		eb, ok2 := boolScalar(equals)
+		return ok2 && cb == eb
+	}
+	cr, ok := numericRat(ctxVal)
 	if !ok {
 		return false
 	}
-	ev, ok := canonicalScalar(equals)
-	if !ok {
-		return false
-	}
-	// Interface equality here is same-dynamic-type equality: after
-	// canonicalScalar the dynamic types are exactly string, bool, or float64,
-	// so a string can never equal a number or a bool.
-	return cv == ev
+	er, ok := numericRat(equals)
+	return ok && cr.Cmp(er) == 0
 }
 
-// canonicalScalar reduces a value to its canonical scalar representation
-// (string, bool, or float64) by KIND, so named scalar types (type Tier
-// string) compare equal to their canonical JSON form. Anything non-scalar
-// reports false and can never match a condition.
-func canonicalScalar(v any) (any, bool) {
+func stringScalar(v any) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	if _, isNum := v.(json.Number); isNum {
+		return "", false // json.Number's underlying kind is string; it is a number
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.String {
+		return rv.String(), true
+	}
+	return "", false
+}
+
+func boolScalar(v any) (bool, bool) {
+	if v == nil {
+		return false, false
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Bool {
+		return rv.Bool(), true
+	}
+	return false, false
+}
+
+// numericRat reduces a numeric value to an exact rational. json.Number parses
+// its literal text exactly; integer kinds are exact; floats use their
+// shortest round-trip decimal at their OWN precision (a float32 condition
+// means the decimal its author wrote). NaN and infinities report false.
+func numericRat(v any) (*big.Rat, bool) {
 	if v == nil {
 		return nil, false
+	}
+	if n, isNum := v.(json.Number); isNum {
+		r, ok := new(big.Rat).SetString(string(n))
+		return r, ok
 	}
 	rv := reflect.ValueOf(v)
 	k := rv.Kind()
 	switch {
-	case k == reflect.String:
-		return rv.String(), true
-	case k == reflect.Bool:
-		return rv.Bool(), true
 	case k >= reflect.Int && k <= reflect.Int64:
-		return float64(rv.Int()), true
+		return new(big.Rat).SetInt64(rv.Int()), true
 	case k >= reflect.Uint && k <= reflect.Uint64:
-		return float64(rv.Uint()), true
-	case k == reflect.Float32 || k == reflect.Float64:
-		return rv.Float(), true
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(rv.Uint())), true
+	case k == reflect.Float32:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, false
+		}
+		r, ok := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 32))
+		return r, ok
+	case k == reflect.Float64:
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, false
+		}
+		r, ok := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
+		return r, ok
 	default:
 		return nil, false
 	}
@@ -740,8 +797,8 @@ func canonicalizeContext(m map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context not JSON-encodable")
 	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
+	out, err := decodeCanonicalContext(raw)
+	if err != nil {
 		return nil, kerr.E(kerr.KindValidation, "workflow_context_invalid", "instance context does not round-trip JSON")
 	}
 	return out, nil
@@ -749,8 +806,14 @@ func canonicalizeContext(m map[string]any) (map[string]any, error) {
 
 // createTask inserts a task and its resolved assignees, applying the step SLA.
 func (rt *Runtime) createTask(ctx context.Context, db database.TenantDB, inst *Instance, stepKey string, step Step, actor uuid.UUID) error {
+	// Resolvers get the same framework-owned isolation as auto actions (fifth
+	// closure audit 2026-07-17): a deep canonical copy, never the live map.
+	ctxCopy, err := canonicalizeContext(inst.Context)
+	if err != nil {
+		return err
+	}
 	assignees, err := rt.resolveAssignees(ctx, step.Assignees, ResolveInput{
-		InstanceID: inst.ID.String(), Resource: inst.Resource, Step: stepKey, Context: inst.Context,
+		InstanceID: inst.ID.String(), Resource: inst.Resource, Step: stepKey, Context: ctxCopy,
 	})
 	if err != nil {
 		return err
@@ -975,6 +1038,27 @@ func (rt *Runtime) loadInstanceAndDef(ctx context.Context, db database.TenantDB,
 	return inst, def, nil
 }
 
+// parseAndValidateDefinition parses a PERSISTED definition and validates it
+// against the same semantic rules as registered ones — including the
+// fail-closed gates (vote steps, min_approvals > 1, self_approval:false,
+// ratify_by), transition/graph integrity, gateway condition scalars, and the
+// registry's registered auto-action/resolver sets (fifth closure audit
+// 2026-07-17): the database is not a weaker path around validation, and an
+// unsupported historical definition must fail BEFORE any callback or state
+// transition.
+func (rt *Runtime) parseAndValidateDefinition(raw []byte) (Definition, error) {
+	def, err := ParseDefinition(raw)
+	if err != nil {
+		return Definition{}, err
+	}
+	autos, resolvers := rt.registry.callbackKeys()
+	if err := def.Validate(autos, resolvers); err != nil {
+		return Definition{}, kerr.E(kerr.KindInternal, "workflow_persisted_definition_invalid",
+			"persisted workflow definition failed validation: "+err.Error())
+	}
+	return def, nil
+}
+
 // defForInstance resolves the registered Definition for an instance's pinned
 // definition row (falling back to parsing the stored jsonb if the registry does
 // not carry it — the graph is authoritative either way; auto actions/resolvers
@@ -992,7 +1076,7 @@ func (rt *Runtime) defForInstance(ctx context.Context, db database.TenantDB, def
 	if def, ok := rt.registry.definition(key, version); ok {
 		return def, nil
 	}
-	return ParseDefinition(raw)
+	return rt.parseAndValidateDefinition(raw)
 }
 
 func (rt *Runtime) loadTask(ctx context.Context, db database.TenantDB, id uuid.UUID) (Task, error) {
@@ -1066,12 +1150,26 @@ func decodeJSONMap(b []byte) map[string]any {
 	if len(b) == 0 {
 		return map[string]any{}
 	}
-	m := map[string]any{}
-	_ = json.Unmarshal(b, &m)
-	if m == nil {
+	m, err := decodeCanonicalContext(b)
+	if err != nil || m == nil {
 		return map[string]any{}
 	}
 	return m
+}
+
+// decodeCanonicalContext decodes persisted context JSON with EXACT numbers
+// (json.Number, never float64): integers above 2^53 must survive the decode
+// bit-for-bit, and EVERY decode point must use the same representation so
+// routing is identical wherever the context was materialized (fifth closure
+// audit 2026-07-17).
+func decodeCanonicalContext(raw []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var out map[string]any
+	if err := dec.Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // withAuditActor returns ctx with the actor id bound for audit attribution.

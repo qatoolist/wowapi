@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
 )
 
 // TestCredentialSchemeUserPermissionRejectsAPIKey proves SEC-01 T7: a

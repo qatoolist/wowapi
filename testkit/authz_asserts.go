@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
 )
 
 // AssertAllowed fails the test unless the evaluator allows actor to exercise

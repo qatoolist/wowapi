@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
 )
 
 func TestFSSourceKinds(t *testing.T) {

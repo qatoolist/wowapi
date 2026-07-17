@@ -12,7 +12,7 @@ import (
 )
 
 // ModulePath is wowapi's canonical module path.
-const ModulePath = "github.com/qatoolist/wowapi"
+const ModulePath = "github.com/qatoolist/wowapi/v2"
 
 // version is overridable at build time: -ldflags "-X ...buildinfo.version=v1.2.3"
 var version = ""

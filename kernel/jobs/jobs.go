@@ -20,9 +20,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/lease"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/lease"
 )
 
 // Job is a payload that knows its own kind. Payload structs implement it; the

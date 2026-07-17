@@ -10,7 +10,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-const modulePath = "github.com/qatoolist/wowapi"
+const modulePath = "github.com/qatoolist/wowapi/v2"
 
 var infrastructureConstructorSuffixes = [...]string{
 	"Client",

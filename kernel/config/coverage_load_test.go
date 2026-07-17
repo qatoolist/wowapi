@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
 )
 
 // ---------- binder branch coverage via Load ----------

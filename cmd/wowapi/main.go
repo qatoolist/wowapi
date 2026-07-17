@@ -1,12 +1,12 @@
 // Command wowapi is the installable framework CLI:
 //
-//	go install github.com/qatoolist/wowapi/cmd/wowapi@latest
+//	go install github.com/qatoolist/wowapi/v2/cmd/wowapi@latest
 package main
 
 import (
 	"os"
 
-	"github.com/qatoolist/wowapi/internal/cli"
+	"github.com/qatoolist/wowapi/v2/internal/cli"
 )
 
 func main() {

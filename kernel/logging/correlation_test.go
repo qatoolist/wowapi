@@ -17,10 +17,10 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	oteladapter "github.com/qatoolist/wowapi/v2/adapters/tracing/otel"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/logging"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // decodeRecord parses the single JSON log line in buf into a key→value map so

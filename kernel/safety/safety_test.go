@@ -3,7 +3,7 @@ package safety_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/safety"
+	"github.com/qatoolist/wowapi/v2/kernel/safety"
 )
 
 // TestMechanism_String covers every declared Mechanism value plus the

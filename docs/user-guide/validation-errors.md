@@ -92,7 +92,7 @@ type FieldError struct {
 Construct one with `errors.E`:
 
 ```go
-import kerr "github.com/qatoolist/wowapi/kernel/errors"
+import kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 
 // simple
 return kerr.E(kerr.KindNotFound, "not_found", "request not found")
@@ -254,7 +254,7 @@ before your routes:
 ```go
 h := httpx.Chain(mux,
     httpx.RequestID(),
-    httpx.Locale(booted.I18n), // negotiates Accept-Language, sets Content-Language
+    httpx.Locale(booted.RuntimeI18n()), // negotiates Accept-Language, sets Content-Language
     // …edge + auth middleware…
 )
 ```

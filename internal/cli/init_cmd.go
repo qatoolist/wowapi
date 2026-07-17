@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/qatoolist/wowapi/internal/buildinfo"
+	"github.com/qatoolist/wowapi/v2/internal/buildinfo"
 )
 
 func initUsage(w io.Writer) {

@@ -13,6 +13,6 @@ if [ ! -f go.mod ]; then
   exit 1
 fi
 
-go mod edit -replace github.com/qatoolist/wowapi=/wowapi
+go mod edit -replace github.com/qatoolist/wowapi/v2=/wowapi
 go mod tidy
 echo "wow-link: product now builds against the local framework at /wowapi (replace directive added)."

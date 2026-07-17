@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/migrations"
+	"github.com/qatoolist/wowapi/v2/migrations"
 )
 
 // expectedFiles lists the kernel SQL migrations in ascending goose order.

@@ -15,9 +15,9 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
-	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/storage"
+	s3adapter "github.com/qatoolist/wowapi/v2/adapters/storage/s3"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/storage"
 )
 
 type requestCounter struct {

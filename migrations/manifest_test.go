@@ -4,8 +4,8 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/migration"
-	"github.com/qatoolist/wowapi/migrations"
+	"github.com/qatoolist/wowapi/v2/kernel/migration"
+	"github.com/qatoolist/wowapi/v2/migrations"
 )
 
 // TestKernelMigrationsHaveManifests verifies that every kernel migration at or

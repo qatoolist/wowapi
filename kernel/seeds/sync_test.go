@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // scanString runs a single-column, single-row query on the platform pool and

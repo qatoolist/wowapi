@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // F-03 regressions (adversarial-framework-review-2026-07-17): checkpoint

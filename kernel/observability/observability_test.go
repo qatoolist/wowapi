@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/observability"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/observability"
 )
 
 // ---------- recording fake (satisfies observability.Metrics) ----------

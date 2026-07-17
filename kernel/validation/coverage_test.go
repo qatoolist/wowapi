@@ -3,8 +3,8 @@ package validation_test
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/validation"
 )
 
 // tagReq exercises the remaining validator tags whose messages/codes were not

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/pagination"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/pagination"
 )
 
 // DecodeCursor parses attacker-reachable input (the client round-trips the cursor

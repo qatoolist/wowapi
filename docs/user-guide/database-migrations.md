@@ -308,7 +308,7 @@ code), rule points exist only as Go declarations inside a booted product process
 `rules.yaml` equivalent the framework can load from disk today. `wowapi rules sync` is therefore **not**
 a framework CLI subcommand: a standalone framework binary has no way to import a product's registered
 `rules.Point` values. The generated migrate main is the only sanctioned lifecycle path; a product with a
-custom migrate main should call `rules.SyncDefinitions(ctx, pool, booted.Kernel.Rules)` itself, right
+custom migrate main should call `rules.SyncDefinitions(ctx, pool, k.Rules)` itself (the composition root owns `k`; `Booted` is opaque), right
 after `seeds.Sync`, following the same pattern.
 
 This closes the gap that previously forced a product to hand-write a `rule_definitions` INSERT migration

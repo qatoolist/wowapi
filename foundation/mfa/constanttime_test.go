@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/foundation/mfa"
+	"github.com/qatoolist/wowapi/v2/foundation/mfa"
 )
 
 // TestConstantTimeComparisons_Semantics asserts that every security-sensitive

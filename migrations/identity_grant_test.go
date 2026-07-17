@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/migrations"
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/migrations"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 // TestIdentityGrantMigrationUpDown verifies that the identity_grant migration

@@ -10,7 +10,7 @@ package app
 import (
 	"errors"
 
-	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
 )
 
 // RuntimeDB is the runtime slice of config.DB handed to api/worker: the

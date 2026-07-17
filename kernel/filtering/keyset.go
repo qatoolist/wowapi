@@ -3,7 +3,7 @@ package filtering
 import (
 	"strings"
 
-	"github.com/qatoolist/wowapi/kernel/pagination"
+	"github.com/qatoolist/wowapi/v2/kernel/pagination"
 )
 
 // KeysetClause builds the "rows strictly after the cursor" predicate for

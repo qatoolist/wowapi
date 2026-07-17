@@ -2,13 +2,13 @@
 
 `wowapi` is developed, versioned, and consumed as a **third-party Go framework dependency**.
 Product applications (a future housing society product, a school product, a facility product…)
-live in **their own repositories**, add wowapi with `go get github.com/qatoolist/wowapi@vX.Y.Z`,
+live in **their own repositories**, add wowapi with `go get github.com/qatoolist/wowapi/v2@vX.Y.Z`,
 and register their domain modules against wowapi's public module SDK. The framework repository
 contains no real product modules — only neutral standalone examples and private contract-test fixtures.
 
 ## 1. Distribution model
 
-- **One Go module:** `github.com/qatoolist/wowapi`, semver-tagged. The repository is on the **stable
+- **One Go module:** `github.com/qatoolist/wowapi/v2`, semver-tagged. The repository is on the **stable
   v1 line** (`v1.0.0`, `v1.1.0` tagged): the public surface follows additive-only changes within v1.
   `v2+` uses `/v2` module paths per Go convention for any incompatible change. See
   [Versioning & stability](../../README.md#versioning--stability) and the
@@ -48,7 +48,7 @@ must *not* couple to. (Public packages at the repo root is the idiomatic shape �
 
 ```text
 example.com/acme-ops                    # separate product repo (society/school/… follow the same shape)
-  go.mod                                # require github.com/qatoolist/wowapi vX.Y.Z
+  go.mod                                # require github.com/qatoolist/wowapi/v2 vX.Y.Z
   /cmd/api  /cmd/worker  /cmd/migrate   # thin mains over wowapi/app helpers
   /internal/modules/requests/           # product modules — the 06-module-sdk template, unchanged in shape
   /internal/modules/assets/
@@ -62,7 +62,7 @@ product package (structurally impossible: separate repositories, dependency poin
 
 ### Usage flow for a new product backend
 
-1. `go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`
+1. `go install github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z`
 2. `wowapi init --module example.com/acme-ops` — scaffolds the repo
    above (go.mod with pinned wowapi, mains, compose, Makefile wrappers, CI stub). The command may
    offer prompts, but all inputs must also have flags so CI/bootstrap scripts are repeatable.
@@ -83,8 +83,8 @@ import (
     "log/slog"
     "os"
 
-    "github.com/qatoolist/wowapi/app"
-    "github.com/qatoolist/wowapi/kernel"
+    "github.com/qatoolist/wowapi/v2/app"
+    "github.com/qatoolist/wowapi/v2/kernel"
 
     "example.com/acme-ops/internal/appcfg"      // product-owned Config (embeds config.Framework), scaffolded by wowapi init
     "example.com/acme-ops/internal/modules/assets"
@@ -102,8 +102,8 @@ func main() {
     a.Register(requests.Module{}, assets.Module{})
     booted, err := a.Boot(ctx, k, cfg.ModuleNamespaces() /* modules.* config, product-defined */)
     if err != nil { die(err) }
-    // cmd/api serves booted.Router; cmd/worker calls app.StartWorker(ctx, booted, opts);
-    // cmd/migrate applies booted.Migrations + booted.Seeds — same module list, same Boot call, every time.
+    // cmd/api serves booted.RuntimeRouter(); cmd/worker calls app.StartWorker(ctx, booted, opts);
+    // cmd/migrate applies booted.RuntimeMigrations() + booted.RuntimeSeeds() — same module list, same Boot call, every time.
 }
 ```
 
@@ -124,7 +124,7 @@ This minimal framework-only example is compile-checked:
 ```go
 package main
 
-import "github.com/qatoolist/wowapi/app"
+import "github.com/qatoolist/wowapi/v2/app"
 
 func main() {
     application := app.New()
@@ -160,7 +160,7 @@ any module migration that might depend on them.
 **Primary workflow (macOS, Linux, Windows):**
 
 ```text
-go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z
+go install github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z
 
 wowapi init --module example.com/acme-ops          # scaffold a product repo; flags make it repeatable
 wowapi new-module --name requests                  # scaffold a module
@@ -189,7 +189,7 @@ wowapi deploy render --env prod                    # see 12-configuration-and-de
 - **Release binaries** (goreleaser) are published per tag for teams that don't build from source.
 - **CI usage:** `wowapi seed validate`, `wowapi openapi merge`, `wowapi lint boundaries`
   run in product CI. For tightly pinned CI jobs — or as a no-install fallback —
-  `go run github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z <cmd>` works, but it is not the primary
+  `go run github.com/qatoolist/wowapi/v2/cmd/wowapi@vX.Y.Z <cmd>` works, but it is not the primary
   developer experience.
 - **Makefile wrappers** in product repos (`make new-module` → `wowapi new-module …`) are optional
   sugar; the CLI is the source of truth.

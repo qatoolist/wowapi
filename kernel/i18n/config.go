@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // SourceSpec is a config-neutral description of one configured catalog source,

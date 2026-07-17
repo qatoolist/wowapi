@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
 )
 
 // frameworkLayer is the always-first embedded-defaults layer used across tests.

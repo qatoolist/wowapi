@@ -1,6 +1,6 @@
 package httpx
 
-import "github.com/qatoolist/wowapi/kernel/config"
+import "github.com/qatoolist/wowapi/v2/kernel/config"
 
 // security_profile.go — wires config.Security into the concrete middleware
 // chain (backlog B7). This is the single seam a scaffold test point at to

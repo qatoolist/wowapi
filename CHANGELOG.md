@@ -5,9 +5,11 @@ kernel distributed as a third-party dependency (`go get github.com/qatoolist/wow
 CLI (`go install github.com/qatoolist/wowapi/cmd/wowapi@vX.Y.Z`).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com) and this project follows
-[Semantic Versioning](https://semver.org). As of **v1.0.0** the public surface
-(`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`) is stable: breaking
-changes to it require a new major version.
+[Semantic Versioning](https://semver.org). **The framework ships as V2**
+(module path `github.com/qatoolist/wowapi/v2`): V1 was discarded before any production consumer
+existed, so V2 carries no V1 compatibility obligations. From the first tagged `v2.x` release the
+public surface (`kernel` / `module` / `app` / `adapters` / `testkit` / `migrations` + `cmd/wowapi`)
+is stable; breaking changes to it require `/v3`.
 
 ## [Unreleased]
 
@@ -73,12 +75,10 @@ changes to it require a new major version.
   are never sealed. Sealing authority is framework-internal: `Seal` takes an
   `internal/sealer.Authority` token, so a product module cannot prematurely seal shared
   registries during `Register` (second closure audit, F-10).
-- `Booted`'s exported collector fields (Router, Events, Jobs, Health, Migrations,
-  Recurring) are now informational mirrors: the framework's consumers (`StartWorker`, the
-  Readiness builders, and the generated api/migrate processes via the new
-  `Booted.RuntimeRouter()`/`Booted.RuntimeMigrations()` accessors, plus
-  `RuntimeEvents()`/`RuntimeJobs()`) read a boot-validated internal view, so reassigning
-  the fields after boot cannot alter validated runtime state (second closure audit, F-10).
+- `Booted`'s runtime state moved behind a boot-validated internal view consumed through
+  `Runtime*` accessors (second closure audit, F-10); the informational mirror fields that
+  interim design kept for v1 compatibility were REMOVED entirely in the V2 cutover (see the
+  V2 section below).
 - Registry declarations with nested mutable data (`authz.Permission`, `document.Class`,
   `rules.Point`, `notify.TemplateSpec`, `workflow.Definition`) are deep-copied at
   registration and at every exported getter — a retained registration value or a mutated
@@ -127,15 +127,17 @@ changes to it require a new major version.
   also populated from the boot-materialized snapshots, and typed-nil `fs.FS` values are
   rejected like nil ones.
 
-### Changed (BREAKING for hand-constructed `app.Booted` — decision D-0091)
-- `app.Booted` gained an unexported runtime field: external POSITIONAL composite
-  literals of `Booted` no longer compile, and a hand-constructed `Booted` now fails
-  loudly (`ErrNotBooted` from `StartWorker`, panics from `Runtime*` accessors) instead
-  of silently operating on unvalidated state. This is a deliberate, documented exception
-  to stable-v1 source compatibility: a `Booted` that did not come from `App.Boot` never
-  passed boot validation, and operating on one silently was itself the F-10 defect.
-  Migration: obtain `Booted` exclusively from `App.Boot`. See
-  `docs/implementation/decisions.md` D-0091.
+### Changed (V2 — module path `/v2`, opaque boot result; decision D-0091)
+- The module path is `github.com/qatoolist/wowapi/v2`; generated products import `/v2`, and the
+  golden/e2e gates build V2 consumers exclusively.
+- `app.Booted` is OPAQUE (D-0091 — the V2 opacity decision): it has no informational mirror
+  fields at all. Every capability flows through accessors backed by the boot-validated runtime
+  view (`RuntimeRouter`, `RuntimeAuthz`, `RuntimeTx`, `RuntimeEvents`, `RuntimeJobs`,
+  `RuntimeMigrations`, `RuntimeSeeds`, `RuntimeI18n`, `RuntimeOpenAPI`, plus `StartWorker` and
+  the Readiness builders). The kernel aggregate pointer is never exposed; its captured view
+  carries a deep-copied config. A `Booted` not produced by `App.Boot` fails loudly
+  (`ErrNotBooted` / accessor panics). Reading unvalidated or reassignable boot state is
+  structurally impossible.
 
 ### Completed (2026-07-16)
 - Webhook outbound delivery: migrated from in-transaction HTTP dispatch to a staged claim/deliver/finalize pattern (mirrors `notify.SendPending` design), closing the C-1 out-of-tx defect; independently re-verified.

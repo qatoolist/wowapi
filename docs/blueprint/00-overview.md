@@ -11,9 +11,9 @@ edges only** (HTTP, DB, object storage, providers), and a **module SDK** that le
 (society, school, club, facility…) plug in resource types, relationship types, roles, permissions,
 rule points, workflow definitions, events, jobs, seeds, and migrations — without touching kernel code.
 
-**Distribution model:** `wowapi` (`github.com/qatoolist/wowapi`) is itself a versioned Go framework
+**Distribution model:** `wowapi` (`github.com/qatoolist/wowapi/v2`) is itself a versioned Go framework
 dependency. Product applications live in **their own repositories**, add it with
-`go get github.com/qatoolist/wowapi@vX.Y.Z`, import its public packages, and register their domain
+`go get github.com/qatoolist/wowapi/v2@vX.Y.Z`, import its public packages, and register their domain
 modules through the module SDK. The framework repo ships no real product modules — only neutral
 examples/fixtures. Consumer-facing contracts live in public packages (`wowapi/kernel`,
 `wowapi/module`, `wowapi/app`, `wowapi/testkit`, `wowapi/adapters`), never only under Go

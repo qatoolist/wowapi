@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/qatoolist/wowapi/internal/buildinfo"
+	"github.com/qatoolist/wowapi/v2/internal/buildinfo"
 )
 
 // planned maps not-yet-implemented commands to the phase that delivers them

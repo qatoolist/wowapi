@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
 )
 
 // WorkerConfigOpts tunes the worker loops.
@@ -48,7 +48,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	}
 	// The boot-captured dependency view, never the reassignable Kernel field
 	// (fourth closure audit 2026-07-17).
-	k := b.RuntimeKernel()
+	k := b.runtimeKernel()
 	if k.Platform == nil {
 		return errNoPlatformPool
 	}

@@ -133,7 +133,7 @@ func TestInitDevelCleanReachableDerivesVersion(t *testing.T) {
 	const canonical = "v0.3.1-0.20260713054412-abcdefabcdef"
 	withVCSInfo(t, rev, false, true)
 	withResolver(t, func(module, query string) (string, error) {
-		if module != "github.com/qatoolist/wowapi" || query != rev {
+		if module != "github.com/qatoolist/wowapi/v2" || query != rev {
 			t.Errorf("resolver called with %s@%s, want the framework module at the stamped revision", module, query)
 		}
 		return canonical, nil
@@ -147,7 +147,7 @@ func TestInitDevelCleanReachableDerivesVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+canonical) {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 "+canonical) {
 		t.Errorf("go.mod missing derived canonical version %q:\n%s", canonical, gomod)
 	}
 	if strings.Contains(string(gomod), "wowapi v0.0.0\n") {
@@ -172,7 +172,7 @@ func TestInitFrameworkVersionUnresolvableFailsClosed(t *testing.T) {
 		t.Fatal("unresolvable --framework-version must fail closed")
 	}
 	assertNoFilesWritten(t, dir)
-	if !strings.Contains(errOut, "go list -m -versions github.com/qatoolist/wowapi") {
+	if !strings.Contains(errOut, "go list -m -versions github.com/qatoolist/wowapi/v2") {
 		t.Errorf("stderr missing the exact version-discovery remediation command:\n%s", errOut)
 	}
 }
@@ -197,7 +197,7 @@ func TestInitFrameworkVersionVerifiedIsWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi v1.2.3") {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 v1.2.3") {
 		t.Errorf("go.mod missing verified version:\n%s", gomod)
 	}
 	if strings.Contains(string(gomod), "replace ") {
@@ -248,7 +248,7 @@ func TestInitLocalFrameworkNonFrameworkDirFailsClosed(t *testing.T) {
 		t.Fatal("--local-framework at a non-wowapi module must fail closed")
 	}
 	assertNoFilesWritten(t, dir)
-	if !strings.Contains(errOut, "github.com/qatoolist/wowapi") {
+	if !strings.Contains(errOut, "github.com/qatoolist/wowapi/v2") {
 		t.Errorf("stderr should name the expected framework module:\n%s", errOut)
 	}
 }
@@ -273,10 +273,10 @@ func TestInitLocalFrameworkWritesReplaceAndWarns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi => "+root) {
+	if !strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi/v2 => "+root) {
 		t.Errorf("go.mod missing the replace directive:\n%s", gomod)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+localReplaceVersion) {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 "+localReplaceVersion) {
 		t.Errorf("go.mod require line should carry the inert canonical placeholder:\n%s", gomod)
 	}
 }
@@ -364,7 +364,7 @@ func TestInitStampedPseudoVersionVerifiedBeforeWrite(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+stamped) {
+		if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 "+stamped) {
 			t.Errorf("go.mod missing verified stamped pseudo-version:\n%s", gomod)
 		}
 	})
@@ -403,7 +403,7 @@ func TestInitStampedReleaseVersionUsedAsIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi v1.4.2") {
+	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi/v2 v1.4.2") {
 		t.Errorf("go.mod missing release version:\n%s", gomod)
 	}
 	if strings.Contains(string(gomod), "replace ") {

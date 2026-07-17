@@ -1,11 +1,14 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // Second closure-audit regression (2026-07-17, F-10): Definition carries a
@@ -299,5 +302,153 @@ func TestGatewayComparisonIsCanonicalAndTypeSafe(t *testing.T) {
 		if before != "match" || after != "match" {
 			t.Fatalf("key %s: routing diverges or misses across reload: before=%q after=%q", key, before, after)
 		}
+	}
+}
+
+// Fifth closure-audit regression (2026-07-17): a clean validation result must
+// never go STALE — every mutation attempt (all three registration methods)
+// invalidates it, and the runtime refuses to execute until a NEW clean
+// validation pass covers the current contents.
+func TestValidationInvalidatedByEveryMutation(t *testing.T) {
+	valid := func(key string) Definition {
+		return Definition{
+			Key: key, Version: 1, AppliesTo: "widgets.thing", InitialStep: "done",
+			Steps: map[string]Step{"done": {Type: StepTerminal, Outcome: "ok"}},
+		}
+	}
+	mutations := []struct {
+		name string
+		fn   func(r *Registry, i int)
+	}{
+		{"RegisterDefinition", func(r *Registry, i int) {
+			_ = r.RegisterDefinition(valid("widgets.mut" + strconv.Itoa(i)))
+		}},
+		{"RegisterAutoAction", func(r *Registry, i int) {
+			r.RegisterAutoAction("late.act"+strconv.Itoa(i), func(context.Context, AutoInput) (map[string]any, error) { return nil, nil })
+		}},
+		{"RegisterAssigneeResolver", func(r *Registry, i int) {
+			r.RegisterAssigneeResolver("late.res"+strconv.Itoa(i), func(context.Context, ResolveInput) ([]Assignee, error) { return nil, nil })
+		}},
+	}
+	r := NewRegistry()
+	if err := r.RegisterDefinition(valid("widgets.base")); err != nil {
+		t.Fatal(err)
+	}
+	rt := &Runtime{registry: r}
+	for i, m := range mutations {
+		t.Run(m.name, func(t *testing.T) {
+			if err := r.Err(); err != nil {
+				t.Fatalf("validation: %v", err)
+			}
+			if err := rt.requireValidated(); err != nil {
+				t.Fatalf("freshly validated registry rejected: %v", err)
+			}
+			m.fn(r, i)
+			if err := rt.requireValidated(); err == nil {
+				t.Fatalf("%s did not invalidate the previous clean validation — stale validated state", m.name)
+			}
+			if _, err := rt.StartIn(t.Context(), nil, "widgets.base", resource.Ref{}, nil); err == nil ||
+				!strings.Contains(err.Error(), "not completed validation") {
+				t.Fatalf("StartIn after %s = %v, want the validation-gate error until revalidation", m.name, err)
+			}
+		})
+	}
+	if err := r.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.requireValidated(); err != nil {
+		t.Fatalf("revalidated registry rejected: %v", err)
+	}
+}
+
+// Fifth closure-audit regression (2026-07-17): concurrent registration and
+// execution-path reads must be race-free (the registry is RWMutex-guarded) —
+// run under the -race gate.
+func TestConcurrentRegistrationAndExecutionIsSafe(t *testing.T) {
+	r := NewRegistry()
+	rt := &Runtime{registry: r}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 200 {
+			_ = r.RegisterDefinition(Definition{
+				Key: "widgets.c" + strconv.Itoa(i), Version: 1, AppliesTo: "widgets.thing", InitialStep: "done",
+				Steps: map[string]Step{"done": {Type: StepTerminal, Outcome: "ok"}},
+			})
+			if i%10 == 0 {
+				_ = r.Err()
+			}
+		}
+	}()
+	for i := range 200 {
+		_ = rt.requireValidated()
+		_, _ = r.definition("widgets.c"+strconv.Itoa(i%50), 1)
+		_, _ = r.latestVersion("widgets.c0")
+		_, _ = r.auto("none")
+		_, _ = r.resolver("none")
+	}
+	<-done
+}
+
+// Fifth closure-audit regression (2026-07-17): numeric comparison is EXACT —
+// json.Number context values against big.Rat condition semantics. Boundaries
+// the float64 model got wrong: integers beyond 2^53, int64/uint64 maxima,
+// float32 shortest-decimal, NaN/Inf.
+func TestNumericComparisonExactBoundaries(t *testing.T) {
+	for name, tc := range map[string]struct {
+		ctxVal any
+		equals any
+		want   bool
+	}{
+		"2^53 equals itself":            {json.Number("9007199254740992"), int64(9007199254740992), true},
+		"2^53+1 distinct from 2^53":     {json.Number("9007199254740993"), int64(9007199254740992), false},
+		"2^53+1 equals itself":          {json.Number("9007199254740993"), int64(9007199254740993), true},
+		"max int64 exact":               {json.Number("9223372036854775807"), int64(9223372036854775807), true},
+		"max int64 vs max-1":            {json.Number("9223372036854775807"), int64(9223372036854775806), false},
+		"max uint64 exact":              {json.Number("18446744073709551615"), uint64(18446744073709551615), true},
+		"float32(0.1) matches JSON 0.1": {json.Number("0.1"), float32(0.1), true},
+		"float64 0.1 matches JSON 0.1":  {json.Number("0.1"), 0.1, true},
+		"NaN never matches":             {json.Number("1"), math.NaN(), false},
+		"+Inf never matches":            {json.Number("1"), math.Inf(1), false},
+		"scientific notation exact":     {json.Number("1e3"), int64(1000), true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := conditionMatches(tc.ctxVal, tc.equals); got != tc.want {
+				t.Fatalf("conditionMatches(%v, %v) = %v, want %v", tc.ctxVal, tc.equals, got, tc.want)
+			}
+		})
+	}
+
+	// NaN/Inf are also unrepresentable in declarations: registration rejects.
+	for name, v := range map[string]any{"NaN": math.NaN(), "+Inf": math.Inf(1), "-Inf": math.Inf(-1)} {
+		r := NewRegistry()
+		err := r.RegisterDefinition(Definition{
+			Key: "widgets.gw", Version: 1, AppliesTo: "widgets.thing", InitialStep: "gate",
+			Steps: map[string]Step{
+				"gate": {Type: StepGateway, Branches: []Branch{
+					{When: &Condition{Key: "v", Equals: v}, Next: "done"}, {Next: "done"},
+				}},
+				"done": {Type: StepTerminal, Outcome: "ok"},
+			},
+		})
+		if err == nil {
+			t.Fatalf("%s condition value passed registration", name)
+		}
+	}
+
+	// Reload equivalence at the boundary: a big integer survives the canonical
+	// round trip bit-for-bit.
+	canon, err := canonicalizeContext(map[string]any{"n": int64(9007199254740993)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(canon)
+	reloaded, err := decodeCanonicalContext(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !conditionMatches(reloaded["n"], int64(9007199254740993)) ||
+		conditionMatches(reloaded["n"], int64(9007199254740992)) {
+		t.Fatalf("2^53+1 lost precision across the canonical round trip: %v", reloaded["n"])
 	}
 }

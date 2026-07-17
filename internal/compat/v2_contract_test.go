@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/foundation/document"
+	"github.com/qatoolist/wowapi/v2/app"
+	"github.com/qatoolist/wowapi/v2/foundation/document"
 )
 
-// Stable-v1 source-compatibility fixture (third closure audit 2026-07-17):
+// V2 CONTRACT fixture (third/fifth closure audits 2026-07-17):
 // independently maintained derived projects write POSITIONAL composite
 // literals against stable exported structs — adding, removing, reordering, or
 // retyping ANY field breaks their build even when godoc would call the change
@@ -22,7 +22,7 @@ import (
 // needs either a major version or a compatibility-preserving delivery
 // mechanism (context values or new types), like
 // document.UploadDeliveryFromContext and app.SupervisedHook.
-func TestStableV1StructShapesAreFrozen(t *testing.T) {
+func TestV2ContractStructShapesAreFrozen(t *testing.T) {
 	assertShape := func(name string, typ reflect.Type, want []struct{ name, typ string }) {
 		t.Helper()
 		if typ.NumField() != len(want) {

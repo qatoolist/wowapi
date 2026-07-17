@@ -83,8 +83,8 @@ func localImportNames(f *ast.File) map[string]string {
 // auth.JWKSConfig{...}. It returns the kind string for diagnostics.
 func isEgressConstruction(f *ast.File, call ast.Expr) (kind string, ok bool) {
 	imports := localImportNames(f)
-	httpLocal := imports["github.com/qatoolist/wowapi/kernel/httpclient"]
-	authLocal := imports["github.com/qatoolist/wowapi/kernel/auth"]
+	httpLocal := imports["github.com/qatoolist/wowapi/v2/kernel/httpclient"]
+	authLocal := imports["github.com/qatoolist/wowapi/v2/kernel/auth"]
 
 	selName := func(x *ast.Ident, s string) bool {
 		if x == nil {
@@ -221,8 +221,8 @@ func TestFitnessCheckDetectsKnownViolation(t *testing.T) {
 import (
 	"context"
 	"net/http"
-	"github.com/qatoolist/wowapi/kernel/httpclient"
-	"github.com/qatoolist/wowapi/kernel/auth"
+	"github.com/qatoolist/wowapi/v2/kernel/httpclient"
+	"github.com/qatoolist/wowapi/v2/kernel/auth"
 )
 
 func bad(ctx context.Context, r *http.Request) {

@@ -1,4 +1,4 @@
-module github.com/qatoolist/wowapi
+module github.com/qatoolist/wowapi/v2
 
 go 1.26
 

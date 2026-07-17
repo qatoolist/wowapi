@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
 )
 
 func TestLivenessAlwaysOK(t *testing.T) {

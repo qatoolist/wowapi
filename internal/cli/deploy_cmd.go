@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
 )
 
 func deployUsage(w io.Writer) {

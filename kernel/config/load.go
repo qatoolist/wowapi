@@ -7,7 +7,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/v2/kernel/secrets"
 )
 
 // Layer identifies which precedence layer supplied a config value

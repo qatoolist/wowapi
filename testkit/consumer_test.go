@@ -39,9 +39,9 @@ func TestIntegrationScratchConsumer(t *testing.T) {
 
 go 1.26
 
-require github.com/qatoolist/wowapi v0.0.0
+require github.com/qatoolist/wowapi/v2 v2.0.0
 
-replace github.com/qatoolist/wowapi => `+repoRoot+"\n")
+replace github.com/qatoolist/wowapi/v2 => `+repoRoot+"\n")
 
 	// A minimal external module using ONLY public packages.
 	writeFile(t, dir, "mod.go", scratchModuleSrc)
@@ -113,8 +113,8 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/module"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/module"
 )
 
 //go:embed migrations/*.sql
@@ -183,7 +183,7 @@ const scratchTest = `package acme
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/v2/testkit"
 )
 
 func TestWidgetsContract(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
 )
 
 // IDGen is a deterministic model.IDGen: every New() encodes a seed in byte 0 and

@@ -9,62 +9,32 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/qatoolist/wowapi/internal/sealer"
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/authz"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/i18n"
-	"github.com/qatoolist/wowapi/kernel/jobs"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
-	"github.com/qatoolist/wowapi/kernel/resource"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/v2/kernel"
+	"github.com/qatoolist/wowapi/v2/kernel/authz"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/database"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/jobs"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/outbox"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
+	"github.com/qatoolist/wowapi/v2/kernel/seeds"
+	"github.com/qatoolist/wowapi/v2/kernel/validation"
 )
 
-// Booted is the result of App.Boot: everything the process layer needs to
-// start serving (or to migrate/seed). Modules have registered; the whole graph
-// and registries are validated; nothing has started yet.
-//
-// The exported fields (Kernel, Router, Events, Jobs, OpenAPI, Health,
-// Migrations, Seeds, Recurring, I18n) are INFORMATIONAL MIRRORS kept for
-// inspection: the framework's own consumers — StartWorker, the Readiness
-// builders, and the generated api/migrate processes via the Runtime*
-// accessors — read an unexported boot-validated view captured inside Boot, so
-// reassigning these fields after boot cannot alter validated runtime state
-// (closure audits 2026-07-17, F-10). The registries themselves are
-// additionally sealed: their registration mutators panic after boot.
-//
-// COMPATIBILITY DECISION (fourth closure audit, D-0091): the unexported
-// runtime field makes external POSITIONAL literals of Booted uncompilable,
-// and hand-constructed Booted values now fail loudly instead of operating.
-// This is a deliberate, documented source/behavior break for that construction
-// pattern: a hand-constructed Booted never passed boot validation, and
-// operating on one silently was itself the F-10 defect. Migration: obtain
-// Booted only from App.Boot.
+// Booted is the OPAQUE result of App.Boot (V2): modules have registered, the
+// whole graph and registries are validated and sealed, and every capability
+// is exposed through accessors backed by the unexported boot-validated
+// runtime view — StartWorker, the Readiness builders, and the Runtime*
+// accessors the generated processes consume. There are no informational
+// mirror fields: reading unvalidated or reassignable state is STRUCTURALLY
+// impossible (fifth closure audit 2026-07-17; decision D-0091 — V2 opacity).
+// A Booted can only be produced by App.Boot; zero or hand-constructed values
+// fail loudly on every operation.
 type Booted struct {
-	Kernel     *kernel.Kernel
-	Router     *httpx.Router
-	Events     *outbox.HandlerRegistry // event subscriptions (drives the relay)
-	Jobs       *jobs.Registry          // job kinds (drives the worker pools)
-	OpenAPI    map[string][]byte
-	Health     map[string]func(context.Context) error
-	Migrations map[string]fs.FS
-	Seeds      seeds.Bundle   // merged catalog seeds, ready for SeedSync
-	Recurring  []RecurringJob // module-registered recurring jobs (run by the worker scheduler)
-	// I18n is the merged message catalog (framework English + every module's
-	// localized bundles). Pass it to httpx.Locale so responses negotiate and
-	// localize (GAP-001). Never nil — at minimum it carries the framework's
-	// English catalog.
-	I18n *i18n.Catalog
-
-	// runtime is the boot-validated extension state the framework's own
-	// consumers read. It aliases bootState's collections, which are unreachable
-	// after Boot (retained module contexts are sealed), so it cannot be altered
-	// through any exported surface.
 	runtime runtimeView
 }
 
@@ -89,6 +59,7 @@ type runtimeView struct {
 	recurring  []RecurringJob
 	seeds      seeds.Bundle
 	i18n       *i18n.Catalog
+	openapi    map[string][]byte
 }
 
 // ErrNotBooted reports an operation on a Booted value that was not produced by
@@ -103,18 +74,34 @@ func (b *Booted) mustBeBooted() {
 	}
 }
 
-// RuntimeKernel returns the boot-captured kernel dependency view: a struct
-// copy of the *kernel.Kernel taken when Boot validated the application, so
-// neither reassigning the informational Kernel field nor mutating the fields
-// of the caller-owned kernel aggregate after boot can change which pools,
-// transaction managers, registries, or authorization services the framework's
-// consumers (StartWorker, the Readiness builders, generated processes) run
-// with (fourth closure audit 2026-07-17). The services themselves are the
-// live singletons boot validated — that is the point; only the AGGREGATE's
-// field set is frozen.
-func (b *Booted) RuntimeKernel() *kernel.Kernel {
+// runtimeKernel is the boot-captured kernel dependency view: a struct copy of
+// the *kernel.Kernel taken when Boot validated the application, with the
+// nested Cfg deep-copied — so neither reassigning the informational Kernel
+// field, mutating the caller-owned aggregate's fields, nor mutating its
+// nested config maps/slices (trusted issuers, allowlists, CORS origins,
+// privileged declarations) after boot can change what the framework's
+// consumers run with. The AGGREGATE POINTER IS NEVER EXPOSED (fifth closure
+// audit 2026-07-17): a returned *kernel.Kernel would itself be the
+// authoritative mutable state. External consumers get narrow accessors
+// (RuntimeAuthz, RuntimeTx) instead; the framework's own consumers read this
+// unexported view.
+func (b *Booted) runtimeKernel() *kernel.Kernel {
 	b.mustBeBooted()
 	return b.runtime.kernel
+}
+
+// RuntimeAuthz returns the boot-validated authorization evaluator the
+// generated api process wires into the secure handler. An interface value:
+// there is nothing to reassign or mutate through it.
+func (b *Booted) RuntimeAuthz() authz.Evaluator {
+	return b.runtimeKernel().Authz
+}
+
+// RuntimeTx returns the boot-validated tenant transaction manager the
+// generated api process wires into the secure handler. An interface value:
+// there is nothing to reassign or mutate through it.
+func (b *Booted) RuntimeTx() database.TxManager {
+	return b.runtimeKernel().Tx
 }
 
 // RuntimeRouter returns the boot-validated (sealed) router a serving process
@@ -168,6 +155,17 @@ func (b *Booted) RuntimeSeeds() seeds.Bundle {
 func (b *Booted) RuntimeI18n() *i18n.Catalog {
 	b.mustBeBooted()
 	return b.runtime.i18n
+}
+
+// RuntimeOpenAPI returns a deep copy of the boot-validated module OpenAPI
+// fragments (module name -> fragment bytes).
+func (b *Booted) RuntimeOpenAPI() map[string][]byte {
+	b.mustBeBooted()
+	out := make(map[string][]byte, len(b.runtime.openapi))
+	for k, v := range b.runtime.openapi {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
 }
 
 // runtimeHealth returns the boot-validated health-check set the Readiness
@@ -546,49 +544,15 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		k.DocumentHooks.Seal(sealAuth)
 	}
 
-	// Booted's exported fields carry SNAPSHOTS of the boot-time collectors, not
-	// the backing structures (closure review 2026-07-17, F-10): the maps/slice
-	// handed out here are fresh copies. The unexported runtime view below holds
-	// the boot-validated originals; the framework's own consumers (StartWorker,
-	// the Readiness builders, the Runtime* accessors used by generated
-	// processes) read THAT view, so neither mutating nor wholesale REPLACING
-	// the exported fields can alter what the runtime actually consumes (second
-	// closure audit 2026-07-17, F-10: field assignment bypassed the registry
-	// seal).
-	openapi := make(map[string][]byte, len(boot.openapi))
-	for k, v := range boot.openapi {
-		openapi[k] = append([]byte(nil), v...)
-	}
-	health := make(map[string]func(context.Context) error, len(boot.health))
-	for k, v := range boot.health {
-		health[k] = v
-	}
-	// The public Migrations mirror is populated from the MATERIALIZED
-	// snapshots too (fourth closure audit 2026-07-17): a derived migrator that
-	// still reads the informational field must not stay attached to
-	// module-owned mutable filesystems. Independent outer map; same immutable
-	// snapshot values as the runtime view.
-	migrationsFS := make(map[string]fs.FS, len(materialized))
-	for k, v := range materialized {
-		migrationsFS[k] = v
-	}
-	recurring := append([]RecurringJob(nil), boot.recurring...)
 	catalog := boot.i18n.Catalog()
-	// A STRUCT COPY of the kernel aggregate: the caller retains *k and could
-	// reassign its fields after boot; the runtime view must not follow.
+	// A STRUCT COPY of the kernel aggregate with a DEEP-copied Cfg: the caller
+	// retains *k and could reassign its fields or mutate its nested config
+	// maps/slices after boot; the runtime view must not follow. The aggregate
+	// pointer is never exposed.
 	kernelView := *k
+	kernelView.Cfg = k.Cfg.Clone()
 
 	return &Booted{
-		Kernel:     k,
-		Router:     router,
-		Events:     events,
-		Jobs:       jobReg,
-		OpenAPI:    openapi,
-		Health:     health,
-		Migrations: migrationsFS,
-		Seeds:      bundle.Clone(),
-		Recurring:  recurring,
-		I18n:       catalog,
 		runtime: runtimeView{
 			set:        true,
 			kernel:     &kernelView,
@@ -600,6 +564,7 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 			recurring:  boot.recurring,
 			seeds:      bundle,
 			i18n:       catalog,
+			openapi:    boot.openapi,
 		},
 	}, nil
 }

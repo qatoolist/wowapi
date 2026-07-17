@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/qatoolist/wowapi/kernel/config"
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // Backpressure (backlog B6, benchmark §Concurrency) is a bounded-semaphore

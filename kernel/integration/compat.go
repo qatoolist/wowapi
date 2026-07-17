@@ -2,9 +2,9 @@
 package integration
 
 import (
-	"github.com/qatoolist/wowapi/foundation/integration"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/v2/foundation/integration"
+	"github.com/qatoolist/wowapi/v2/kernel/model"
+	"github.com/qatoolist/wowapi/v2/kernel/secrets"
 )
 
 type (

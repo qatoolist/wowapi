@@ -49,7 +49,7 @@ re-exported via a tiny `modules/x/port` package to keep the import surface expli
 
 ## 2. Module registration contract (`wowapi/module` — public)
 
-The SDK is a public package: product repos import `github.com/qatoolist/wowapi/module` (plus the
+The SDK is a public package: product repos import `github.com/qatoolist/wowapi/v2/module` (plus the
 `wowapi/kernel/*` contracts it references). The embedded-asset methods (`Migrations(fs)`,
 `Seeds(fs)`, `OpenAPI(fragment)`) are public contracts precisely so *external* modules can hand
 their `embed.FS` assets to the framework.
@@ -129,7 +129,7 @@ type Context interface {
 <!-- doc-example: illustrative -->
 ```go
 // <product-repo>/internal/modules/requests/module.go — complete wiring example
-import "github.com/qatoolist/wowapi/module"
+import "github.com/qatoolist/wowapi/v2/module"
 
 func (m Module) Register(mc module.Context) error {
     repo := store.NewRequestRepo()
@@ -198,7 +198,7 @@ func (a *App) StartAPI(ctx) error / StartWorker(ctx) error / Shutdown(ctx) error
 import (
     "context"
 
-    "github.com/qatoolist/wowapi/app"
+    "github.com/qatoolist/wowapi/v2/app"
 
     "example.com/acme-ops/internal/appcfg"       // product-owned Config type, scaffolded by `wowapi init`
     "example.com/acme-ops/internal/modules/assets"
@@ -257,3 +257,20 @@ func OnJob(phase Phase, h func(ctx, JobInfo) error)
 Dangerous and therefore disallowed: hooks that mutate command payloads (hidden logic), hooks on hot
 read paths beyond request-level, hook-to-hook dependencies. If a "hook" starts making business
 decisions, it must become an event handler or an explicit service step.
+
+## Workflow callback context contract (V2)
+
+Auto actions (`workflow.AutoInput.Context`) and assignee resolvers
+(`workflow.ResolveInput.Context`) receive a **deep canonical copy** of the
+instance context — mutating or retaining it never affects the framework, and
+the returned output map is the only supported mutation channel. Values are
+canonical JSON shapes: every **number is a `json.Number`** (never `float64`
+or `int`). Assert numerics accordingly:
+
+```go-illustrative
+n, ok := in.Context["amount"].(json.Number) // NOT .(float64)
+amount, err := n.Float64()
+```
+
+This is what makes gateway routing exact and identical before and after an
+instance reloads from the database (see `docs/reference/invariant-ledger.md`).

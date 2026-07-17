@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/filtering"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/filtering"
 )
 
 func testAllow() filtering.Allowlist {

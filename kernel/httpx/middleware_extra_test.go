@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/httpx"
+	"github.com/qatoolist/wowapi/v2/kernel/httpx"
 )
 
 // TestRecoverLogsPanicWithLogger covers the logger != nil branch of Recover: a

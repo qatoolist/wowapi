@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
 )
 
 // staticKeySource is a KeySource backed by an in-memory map[kid]key. It is

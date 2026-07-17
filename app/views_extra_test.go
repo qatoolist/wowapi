@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/v2/kernel/config"
 )
 
 var fpZero config.Fingerprint

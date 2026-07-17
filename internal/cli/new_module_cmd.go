@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/qatoolist/wowapi/internal/buildinfo"
+	"github.com/qatoolist/wowapi/v2/internal/buildinfo"
 )
 
 func newModuleUsage(w io.Writer) {
@@ -108,13 +108,13 @@ func wireGeneratedModule(modDir, name string) error {
 	valueMarker := "\t\t// wowapi:module-values"
 	source := string(src)
 	if !strings.Contains(source, importMarker) || !strings.Contains(source, valueMarker) {
-		const legacyImport = `import "github.com/qatoolist/wowapi/module"`
+		const legacyImport = `import "github.com/qatoolist/wowapi/v2/module"`
 		const legacyValue = "\t\t// e.g. mymodule.New()"
 		if !strings.Contains(source, legacyImport) || !strings.Contains(source, legacyValue) {
 			return fmt.Errorf("%s is missing wowapi module markers", wirePath)
 		}
 		source = strings.Replace(source, legacyImport,
-			"import (\n\t\"github.com/qatoolist/wowapi/module\"\n"+importMarker+"\n)", 1)
+			"import (\n\t\"github.com/qatoolist/wowapi/v2/module\"\n"+importMarker+"\n)", 1)
 		source = strings.Replace(source, legacyValue, valueMarker, 1)
 	}
 	importPath := gomod.ModulePath + "/" + filepath.ToSlash(rel)

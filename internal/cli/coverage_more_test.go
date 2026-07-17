@@ -37,7 +37,7 @@ func TestRunHelpFlags(t *testing.T) {
 func TestVersionInConsumerRepo(t *testing.T) {
 	dir := t.TempDir()
 	gomod := "module example.com/consumer\n\ngo 1.26\n\nrequire " +
-		"github.com/qatoolist/wowapi v9.9.9-not-the-cli\n"
+		"github.com/qatoolist/wowapi/v2 v9.9.9-not-the-cli\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 		t.Fatal(err)
 	}

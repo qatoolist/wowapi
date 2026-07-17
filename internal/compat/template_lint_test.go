@@ -57,7 +57,7 @@ func TestTemplateLintRejectsForbiddenReads(t *testing.T) {
 	})
 
 	t.Run("accessor-only template passes", func(t *testing.T) {
-		code, out := run(t, "mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeKernel().Authz, booted.RuntimeKernel().Tx)\nbooted, err := a.Boot(ctx, k, nil)\n")
+		code, out := run(t, "mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeAuthz(), booted.RuntimeTx())\nbooted, err := a.Boot(ctx, k, nil)\n")
 		if code != 0 {
 			t.Fatalf("lint rejected an accessor-only template:\n%s", out)
 		}

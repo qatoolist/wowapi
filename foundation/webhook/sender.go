@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/qatoolist/wowapi/kernel/httpclient"
-	"github.com/qatoolist/wowapi/kernel/safety"
+	"github.com/qatoolist/wowapi/v2/kernel/httpclient"
+	"github.com/qatoolist/wowapi/v2/kernel/safety"
 )
 
 // HTTPSender implements Sender using a standard net/http client. The client

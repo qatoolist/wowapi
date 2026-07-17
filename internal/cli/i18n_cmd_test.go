@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/i18n"
+	"github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/i18n"
 )
 
 func writeLocaleFile(t *testing.T, dir, rel, content string) {

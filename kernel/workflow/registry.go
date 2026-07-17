@@ -5,15 +5,23 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/qatoolist/wowapi/internal/sealer"
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 
-	kerr "github.com/qatoolist/wowapi/kernel/errors"
-	"github.com/qatoolist/wowapi/kernel/resource"
+	kerr "github.com/qatoolist/wowapi/v2/kernel/errors"
+	"github.com/qatoolist/wowapi/v2/kernel/resource"
 )
 
 // AutoInput is what a registered auto-action receives: the instance context and
 // its target resource. The returned map is merged into the instance context.
+//
+// Context is a deep canonical COPY of the instance context (mutating or
+// retaining it never affects the framework), and its values are canonical
+// JSON shapes: every NUMBER is a json.Number, never float64/int — assert
+// numeric values as json.Number (n.Float64()/n.Int64()), not as native
+// numeric types. Returned output is the only mutation channel and is
+// canonicalized the same way before merging.
 type AutoInput struct {
 	InstanceID string
 	Resource   resource.Ref
@@ -27,6 +35,8 @@ type AutoInput struct {
 type AutoAction func(ctx context.Context, in AutoInput) (map[string]any, error)
 
 // ResolveInput is what an assignee resolver receives when a task is created.
+// Context follows the same contract as AutoInput.Context: a deep canonical
+// copy whose numbers are json.Number values.
 type ResolveInput struct {
 	InstanceID string
 	Resource   resource.Ref
@@ -65,18 +75,24 @@ type AssigneeResolver func(ctx context.Context, in ResolveInput) ([]Assignee, er
 // dangling transition or unknown auto-action fails boot, never a running
 // instance (D-0053).
 type Registry struct {
+	// mu guards every map and the validation state: public-API callers may
+	// interleave registration with runtime execution, and the runtime's read
+	// paths must never race a mutation (fifth closure audit 2026-07-17).
+	mu        sync.RWMutex
 	defs      map[string]Definition // key\x00version -> def
 	latest    map[string]int        // key -> highest registered version
 	autos     map[string]AutoAction
 	resolvers map[string]AssigneeResolver
 	errs      []error
 	sealed    bool
-	// validated is set when Err() last ran clean. The runtime refuses to
-	// execute against a registry that has not completed validation (fourth
-	// closure audit 2026-07-17): the public API path — RegisterDefinition
-	// without ever consulting Err() — must not be an equivalent route around
-	// the boot gates.
-	validated bool
+	// Validation state is GENERATION-KEYED (fifth closure audit 2026-07-17):
+	// every mutation attempt bumps gen and clears validated at entry, so a
+	// clean Err() result can never go stale — the runtime executes only when
+	// the last clean validation covered the registry's current contents
+	// (validated && validatedGen == gen).
+	gen          uint64
+	validatedGen uint64
+	validated    bool
 }
 
 // Seal freezes the registry once boot validation completes: any later
@@ -85,7 +101,11 @@ type Registry struct {
 // The sealer.Authority parameter restricts sealing to the framework's boot
 // path: internal/sealer is unimportable outside the wowapi module, so a
 // product module cannot prematurely seal a shared registry during Register.
-func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
+func (r *Registry) Seal(sealer.Authority) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sealed = true
+}
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -103,6 +123,12 @@ func defKey(key string, version int) string { return key + "\x00" + strconv.Itoa
 // Full graph validation is deferred to Err() so it runs after all auto-actions
 // and resolvers are registered.
 func (r *Registry) RegisterDefinition(def Definition) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Invalidate FIRST: even a rejected mutation attempt means the last clean
+	// validation no longer describes what the caller believes it registered.
+	r.gen++
+	r.validated = false
 	if r.sealed {
 		panic("workflow: definition registration after boot: the extension model is sealed")
 	}
@@ -221,6 +247,10 @@ func (t *Transition) clone() *Transition {
 
 // RegisterAutoAction binds a Go action to an auto step's action key.
 func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gen++
+	r.validated = false
 	if r.sealed {
 		panic("workflow: auto-action registration after boot: the extension model is sealed")
 	}
@@ -239,6 +269,10 @@ func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
 
 // RegisterAssigneeResolver binds a resolver func to a resolver key.
 func (r *Registry) RegisterAssigneeResolver(key string, fn AssigneeResolver) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gen++
+	r.validated = false
 	if r.sealed {
 		panic("workflow: assignee-resolver registration after boot: the extension model is sealed")
 	}
@@ -258,6 +292,8 @@ func (r *Registry) RegisterAssigneeResolver(key string, fn AssigneeResolver) {
 // Err returns accumulated registration errors AND each definition's Validate()
 // error, joined, or nil. It must gate boot.
 func (r *Registry) Err() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	autoKeys := make(map[string]bool, len(r.autos))
 	for k := range r.autos {
 		autoKeys[k] = true
@@ -277,9 +313,11 @@ func (r *Registry) Err() error {
 		}
 	}
 	if len(msgs) == 0 {
-		// Validation completed clean: the runtime may execute against this
-		// registry (fourth closure audit 2026-07-17).
+		// Validation completed clean FOR THIS GENERATION: the runtime may
+		// execute until the next mutation attempt (fourth/fifth closure
+		// audits 2026-07-17).
 		r.validated = true
+		r.validatedGen = r.gen
 		return nil
 	}
 	r.validated = false
@@ -287,24 +325,57 @@ func (r *Registry) Err() error {
 		"workflow registration failed: "+strings.Join(msgs, "; "))
 }
 
-// validatedOK reports whether Err() last completed clean; the runtime refuses
-// to execute otherwise.
-func (r *Registry) validatedOK() bool { return r.validated }
+// validatedOK reports whether the LAST clean validation covers the registry's
+// CURRENT contents; any mutation attempt since invalidates it.
+func (r *Registry) validatedOK() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.validated && r.validatedGen == r.gen
+}
+
+// callbackKeys returns the registered auto-action and resolver key sets, for
+// validating PERSISTED definitions against the same semantic rules as
+// registered ones (fifth closure audit 2026-07-17).
+func (r *Registry) callbackKeys() (autos, resolvers map[string]bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	autos = make(map[string]bool, len(r.autos))
+	for k := range r.autos {
+		autos[k] = true
+	}
+	resolvers = make(map[string]bool, len(r.resolvers))
+	for k := range r.resolvers {
+		resolvers[k] = true
+	}
+	return autos, resolvers
+}
 
 // definition returns the registered definition for (key, version).
 func (r *Registry) definition(key string, version int) (Definition, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	d, ok := r.defs[defKey(key, version)]
 	return d, ok
 }
 
 // latestVersion returns the highest registered version for a key.
 func (r *Registry) latestVersion(key string) (int, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	v, ok := r.latest[key]
 	return v, ok
 }
 
-func (r *Registry) auto(key string) (AutoAction, bool) { fn, ok := r.autos[key]; return fn, ok }
+func (r *Registry) auto(key string) (AutoAction, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	fn, ok := r.autos[key]
+	return fn, ok
+}
+
 func (r *Registry) resolver(key string) (AssigneeResolver, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	fn, ok := r.resolvers[key]
 	return fn, ok
 }

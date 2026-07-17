@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qatoolist/wowapi/kernel/auth"
+	"github.com/qatoolist/wowapi/v2/kernel/auth"
 )
 
 // TestIssueVerifyRoundTrip proves a token minted by TokenIssuer verifies under

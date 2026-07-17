@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/mfa"
+	"github.com/qatoolist/wowapi/v2/kernel/mfa"
 )
 
 var benchmarkTOTPCode string

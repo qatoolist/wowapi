@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/qatoolist/wowapi/kernel/tracing"
+	"github.com/qatoolist/wowapi/v2/kernel/tracing"
 )
 
 // TestNoOpTracer_StartSpan asserts the documented zero-cost contract: the
