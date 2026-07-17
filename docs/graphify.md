@@ -1,6 +1,6 @@
 # Graphify Project Graph
 
-This repository is expected to grow as implementation starts. Keep a Graphify knowledge graph current so architecture, docs, and later code remain navigable across sessions.
+Keep the Graphify knowledge graph current so architecture, implementation, tests, and documentation remain navigable across sessions.
 
 ## Current Setup
 
@@ -8,18 +8,18 @@ This repository is expected to grow as implementation starts. Keep a Graphify kn
 - Git hooks are installed (via `core.hooksPath = .githooks`):
   - `.githooks/pre-commit` (gitleaks secret scan, fmt/lint of staged Go changes, `code-review-graph update`)
   - `.githooks/pre-push` (gitleaks secret scan, vet, lint, tests, tidy check — no graphify step)
-- The current corpus is documentation-only: 17 supported document files, about 35k words.
-- Full semantic extraction currently requires an LLM backend key for Graphify.
+- The current graph covers more than 2,200 repository files and 5,000 symbols/concepts. Treat `graphify-out/graph.json` and `GRAPH_REPORT.md` as the authoritative current counts because they change with the corpus.
+- Full semantic extraction uses Google Gemini by repository default and requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
 
 ## First Full Graph
 
-Set one supported Graphify backend key, then run:
+Set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), then run:
 
 ```bash
-graphify extract . --out . --max-concurrency 2
+scripts/graphify_refresh.sh extract
 ```
 
-Supported keys include:
+The wrapper deliberately pins `--backend gemini`. For an intentional alternate backend, set `GRAPHIFY_BACKEND` and its corresponding key. Graphify itself supports keys including:
 
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY`
 - `MOONSHOT_API_KEY`
@@ -77,6 +77,9 @@ graphify export neo4j
 
 - Do not hand-edit `graphify-out/graph.json`.
 - Prefer `graphify update .` for code-only changes.
-- Use full `graphify extract . --out .` after substantial documentation, architecture, or product-shaping changes.
+- Use `scripts/graphify_refresh.sh extract` after substantial documentation, architecture, or product-shaping changes so the semantic engine is explicit.
+- Record the source commit and extraction backend/model in review or release evidence until Graphify persists backend/model provenance directly in graph metadata.
+- Treat a reported semantic-chunk connection failure as an incomplete refresh and rerun it; an updated AST graph alone is not proof that changed documentation received semantic extraction.
+- A completed semantic refresh must report each chunk as done and include nonzero input/output token accounting in the command evidence.
 - Keep generated graph artifacts out of commits unless the team explicitly decides to version them.
 - If Graphify reports that an update is needed, refresh before major design or implementation work.

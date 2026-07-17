@@ -858,7 +858,17 @@ func (rt *Runtime) resolveAssignees(ctx context.Context, specs []AssigneeSpec, i
 				return nil, kerr.E(kerr.KindInternal, "resolver_unregistered",
 					"assignee resolver not registered: "+spec.Resolver)
 			}
-			resolved, err := fn(ctx, in)
+			// Each resolver invocation gets its OWN deep canonical copy of the
+			// context (sixth review, C-04): resolvers run in sequence over one
+			// step's specs, so a resolver that mutates or retains its input
+			// must not steer a later resolver or the persisted routing.
+			invIn := in
+			perCall, err := canonicalizeContext(in.Context)
+			if err != nil {
+				return nil, err
+			}
+			invIn.Context = perCall
+			resolved, err := fn(ctx, invIn)
 			if err != nil {
 				return nil, kerr.Wrapf(err, "workflow.resolveAssignees", "resolver %s", spec.Resolver)
 			}
@@ -1073,7 +1083,16 @@ func (rt *Runtime) defForInstance(ctx context.Context, db database.TenantDB, def
 		return Definition{}, kerr.E(kerr.KindNotFound, "workflow_definition_not_found",
 			"workflow definition row not found: "+defID.String())
 	}
-	if def, ok := rt.registry.definition(key, version); ok {
+	// Resolve the registered graph and the validation check ATOMICALLY (sixth
+	// review, C-02): the executed graph must be the one a single validated
+	// generation covers. A registry hit that is not currently validated is a
+	// program error (the executing methods gate on requireValidated at entry,
+	// but a concurrent mutation could have invalidated since).
+	if def, validated, ok := rt.registry.resolveValidated(key, version); ok {
+		if !validated {
+			return Definition{}, kerr.E(kerr.KindInternal, "workflow_registry_unvalidated",
+				"workflow registry was invalidated during execution: revalidate before running workflows")
+		}
 		return def, nil
 	}
 	return rt.parseAndValidateDefinition(raw)

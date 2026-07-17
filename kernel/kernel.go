@@ -194,25 +194,30 @@ type Deps struct {
 // variables. The key is read from WOWAPI_DSR_ARTIFACT_KEY (hex, 32 bytes);
 // when absent a deterministic test key is used so local/test boots succeed, but
 // deployments must set the variable to avoid a shared fallback key.
-func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer) retention.ArtifactWriter {
+func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer, env config.Env) (retention.ArtifactWriter, error) {
 	dir := os.Getenv("WOWAPI_ARTIFACT_DIR")
 	if dir == "" {
 		dir = filepath.Join(os.TempDir(), "wowapi-artifacts")
 	}
 	keyHex := os.Getenv("WOWAPI_DSR_ARTIFACT_KEY")
-	var key []byte
-	if keyHex != "" {
-		var err error
-		key, err = hex.DecodeString(keyHex)
-		if err != nil || len(key) != 32 {
-			log.WarnContext(context.Background(), "kernel: invalid WOWAPI_DSR_ARTIFACT_KEY; falling back to test key", "decode_err", err)
-			key = retention.TestKey()
-		}
-	} else {
-		log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY not set; using test key")
-		key = retention.TestKey()
+	key, decodeErr := hex.DecodeString(keyHex)
+	valid := keyHex != "" && decodeErr == nil && len(key) == 32
+	if valid {
+		return retention.NewFileArtifactWriter(dir, key, audit), nil
 	}
-	return retention.NewFileArtifactWriter(dir, key, audit)
+	// A missing or malformed key must NEVER silently fall back to the
+	// deterministic shared test key in production (sixth review, C-05):
+	// DSR artifacts would be encrypted with a public constant. Fail boot in
+	// prod; the test key stays a local/dev convenience with a loud warning.
+	if env.IsProd() {
+		if decodeErr != nil {
+			return nil, fmt.Errorf("kernel: WOWAPI_DSR_ARTIFACT_KEY must be a 32-byte hex key in production: %w", decodeErr)
+		}
+		return nil, fmt.Errorf("kernel: WOWAPI_DSR_ARTIFACT_KEY must be a 32-byte hex key in production (got %d bytes)", len(key))
+	}
+	log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY missing or invalid; using deterministic TEST key (non-production only)",
+		"environment", string(env), "decode_err", decodeErr)
+	return retention.NewFileArtifactWriter(dir, retention.TestKey(), audit), nil
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
@@ -307,7 +312,10 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	// engine that drives disposition and DSR over it (roadmap E2).
 	retClasses := retention.NewRegistry()
 	retHolds := retention.NewHolds(idgen)
-	retArtifacts := newArtifactWriter(log, auditWriter)
+	retArtifacts, err := newArtifactWriter(log, auditWriter, cfg.Environment)
+	if err != nil {
+		return nil, err
+	}
 	retEngine := retention.NewEngineWithCompliance(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
 
 	docClasses := document.NewRegistry()

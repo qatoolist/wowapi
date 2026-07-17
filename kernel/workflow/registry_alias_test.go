@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/qatoolist/wowapi/v2/kernel/resource"
+
+	"github.com/qatoolist/wowapi/v2/internal/sealer"
 )
 
 // Second closure-audit regression (2026-07-17, F-10): Definition carries a
@@ -16,6 +18,9 @@ import (
 // registration — a module mutating the value it registered (its Steps map, a
 // Transition, a Policy) must never alter the validated graph running
 // instances resolve against.
+
+func sealAuthForTest() sealer.Authority { return sealer.Grant() }
+
 func TestDefinitionNestedDataIsNotAliased(t *testing.T) {
 	r := NewRegistry()
 	selfApprove := false
@@ -450,5 +455,115 @@ func TestNumericComparisonExactBoundaries(t *testing.T) {
 	if !conditionMatches(reloaded["n"], int64(9007199254740993)) ||
 		conditionMatches(reloaded["n"], int64(9007199254740992)) {
 		t.Fatalf("2^53+1 lost precision across the canonical round trip: %v", reloaded["n"])
+	}
+}
+
+// Sixth review regression (2026-07-17, C-01): a REJECTED mutation must leave
+// generation, contents, and validation UNCHANGED — a caller recovering the
+// post-seal panic (or hitting a duplicate/invalid rejection) must not be able
+// to strand a previously validated registry as stale.
+func TestRejectedMutationsDoNotInvalidate(t *testing.T) {
+	valid := Definition{
+		Key: "widgets.flow", Version: 1, AppliesTo: "widgets.thing", InitialStep: "done",
+		Steps: map[string]Step{"done": {Type: StepTerminal, Outcome: "ok"}},
+	}
+	rt := func(r *Registry) *Runtime { return &Runtime{registry: r} }
+
+	t.Run("duplicate definition rejection", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.RegisterDefinition(valid); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.RegisterDefinition(valid); err == nil { // duplicate → rejected
+			t.Fatal("duplicate accepted")
+		}
+		if err := rt(r).requireValidated(); err != nil {
+			t.Fatalf("a rejected duplicate invalidated the registry: %v", err)
+		}
+	})
+
+	t.Run("post-seal panic recovered", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.RegisterDefinition(valid); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Err(); err != nil {
+			t.Fatal(err)
+		}
+		r.Seal(sealAuthForTest())
+		func() {
+			defer func() { _ = recover() }() // a product recovering the seal panic
+			r.RegisterDefinition(Definition{
+				Key: "widgets.late", Version: 1, InitialStep: "x",
+				Steps: map[string]Step{"x": {Type: StepTerminal, Outcome: "ok"}},
+			})
+		}()
+		if err := rt(r).requireValidated(); err != nil {
+			t.Fatalf("a recovered post-seal panic stranded the validated registry: %v", err)
+		}
+	})
+}
+
+// Sixth review regression (2026-07-17, C-04): multiple assignee resolvers on
+// ONE step must each observe an isolated canonical copy of the context — a
+// resolver that mutates or retains its input cannot steer a later resolver.
+func TestResolversEachGetIsolatedContext(t *testing.T) {
+	r := NewRegistry()
+	var secondSaw any
+	r.RegisterAssigneeResolver("first.mutator", func(_ context.Context, in ResolveInput) ([]Assignee, error) {
+		in.Context["tier"] = "sabotaged" // mutate + retain
+		return []Assignee{{Kind: KindSystem, Ref: "a"}}, nil
+	})
+	r.RegisterAssigneeResolver("second.observer", func(_ context.Context, in ResolveInput) ([]Assignee, error) {
+		secondSaw = in.Context["tier"]
+		return []Assignee{{Kind: KindSystem, Ref: "b"}}, nil
+	})
+	if err := r.Err(); err != nil {
+		t.Fatal(err)
+	}
+	rt := &Runtime{registry: r}
+	specs := []AssigneeSpec{
+		{Kind: SpecResolver, Resolver: "first.mutator"},
+		{Kind: SpecResolver, Resolver: "second.observer"},
+	}
+	if _, err := rt.resolveAssignees(t.Context(), specs, ResolveInput{Context: map[string]any{"tier": "gold"}}); err != nil {
+		t.Fatal(err)
+	}
+	if secondSaw != "gold" {
+		t.Fatalf("second resolver saw %v, want the isolated original \"gold\" — resolvers share a mutable context", secondSaw)
+	}
+}
+
+// Sixth review regression (2026-07-17, C-02): resolution and the validation
+// check are atomic — resolveValidated reports validated=false the instant a
+// mutation invalidates the generation, so a graph resolved after a concurrent
+// registration can never execute as if validated.
+func TestResolveValidatedIsAtomicWithValidation(t *testing.T) {
+	def := Definition{
+		Key: "widgets.flow", Version: 1, AppliesTo: "widgets.thing", InitialStep: "done",
+		Steps: map[string]Step{"done": {Type: StepTerminal, Outcome: "ok"}},
+	}
+	r := NewRegistry()
+	if err := r.RegisterDefinition(def); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if d, validated, ok := r.resolveValidated("widgets.flow", 1); !ok || !validated || d.Key != "widgets.flow" {
+		t.Fatalf("validated resolve failed: ok=%v validated=%v", ok, validated)
+	}
+	// A mutation invalidates: the very same resolve must now report unvalidated.
+	if err := r.RegisterDefinition(Definition{
+		Key: "widgets.other", Version: 1, AppliesTo: "widgets.thing", InitialStep: "done",
+		Steps: map[string]Step{"done": {Type: StepTerminal, Outcome: "ok"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, validated, _ := r.resolveValidated("widgets.flow", 1); validated {
+		t.Fatal("resolveValidated reported validated after an intervening mutation — TOCTOU window open")
 	}
 }

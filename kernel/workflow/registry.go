@@ -125,10 +125,11 @@ func defKey(key string, version int) string { return key + "\x00" + strconv.Itoa
 func (r *Registry) RegisterDefinition(def Definition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Invalidate FIRST: even a rejected mutation attempt means the last clean
-	// validation no longer describes what the caller believes it registered.
-	r.gen++
-	r.validated = false
+	// A rejected mutation must leave generation, contents, AND validation
+	// UNCHANGED (sixth review, C-01): invalidate only once the mutation is
+	// certain to take effect, never before the sealed-panic or a rejection —
+	// a caller recovering the post-seal panic must not be able to strand a
+	// previously validated registry as stale.
 	if r.sealed {
 		panic("workflow: definition registration after boot: the extension model is sealed")
 	}
@@ -167,6 +168,9 @@ func (r *Registry) RegisterDefinition(def Definition) error {
 			}
 		}
 	}
+	// Invalidate only on the successful mutation (sixth review, C-01).
+	r.gen++
+	r.validated = false
 	r.defs[k] = def.clone()
 	if def.Version > r.latest[def.Key] {
 		r.latest[def.Key] = def.Version
@@ -249,8 +253,6 @@ func (t *Transition) clone() *Transition {
 func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.gen++
-	r.validated = false
 	if r.sealed {
 		panic("workflow: auto-action registration after boot: the extension model is sealed")
 	}
@@ -264,6 +266,9 @@ func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
 			"auto-action registered more than once: "+key))
 		return
 	}
+	// Invalidate only on the successful mutation (sixth review, C-01).
+	r.gen++
+	r.validated = false
 	r.autos[key] = fn
 }
 
@@ -271,8 +276,6 @@ func (r *Registry) RegisterAutoAction(key string, fn AutoAction) {
 func (r *Registry) RegisterAssigneeResolver(key string, fn AssigneeResolver) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.gen++
-	r.validated = false
 	if r.sealed {
 		panic("workflow: assignee-resolver registration after boot: the extension model is sealed")
 	}
@@ -286,6 +289,9 @@ func (r *Registry) RegisterAssigneeResolver(key string, fn AssigneeResolver) {
 			"assignee resolver registered more than once: "+key))
 		return
 	}
+	// Invalidate only on the successful mutation (sixth review, C-01).
+	r.gen++
+	r.validated = false
 	r.resolvers[key] = fn
 }
 
@@ -331,6 +337,22 @@ func (r *Registry) validatedOK() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.validated && r.validatedGen == r.gen
+}
+
+// resolveValidated atomically returns the registered definition for
+// (key, version) UNDER ONE READ LOCK together with the validation check
+// (sixth review, C-02): a separate validatedOK() then definition() opens a
+// window where a concurrent registration invalidates the registry between the
+// two calls, letting an unvalidated graph execute. `validated` reports whether
+// the current generation is validated; `found` whether the definition exists.
+func (r *Registry) resolveValidated(key string, version int) (def Definition, validated, found bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if !r.validated || r.validatedGen != r.gen {
+		return Definition{}, false, false
+	}
+	d, ok := r.defs[defKey(key, version)]
+	return d, true, ok
 }
 
 // callbackKeys returns the registered auto-action and resolver key sets, for
