@@ -199,3 +199,49 @@ grant, and a PUBLIC grant/revoke. Remove 2>/dev/null from the gate (preserve
 stderr for diagnosis). The largest current omission: baseline_census.sql is
 public-only and never inventories the migration schema — a baseline could drop
 the entire checkpoint schema and still pass.
+
+## C-03 plan — refinements from the review + implementation spike (2026-07-17)
+
+Added requirements (reviewer): (a) SyncDefinitions is ATOMIC — one transaction;
+divergence/validation/insert failure on any definition rolls back the whole
+set (do not copy rules.SyncDefinitions' partial-commit-on-pool weakness).
+(b) NO empty-digest state — the column is `definition_digest text NOT NULL
+CHECK (definition_digest ~ '^[0-9a-f]{64}$')` with NO default; abandoned rows
+that survive must fail the migration, never adopt a blank identity. (c) The
+shared verifier binds ALL representations, not just the digest column: persisted
+key==registered key, version==version, applies_to==registered, persisted JSON
+canonicalizes, sha256(canonical persisted)==definition_digest, sha256(canonical
+registered)==definition_digest, and registry validation covers the resolved
+graph. Sync SQL: immutable insert; ON CONFLICT (key,version) never updates
+semantic fields or id; read existing + compare full canonical identity; same=
+idempotent, any difference=loud conflict; definitions absent from the binary
+stay stored but cannot execute without a registered definition.
+
+Implementation-spike finding (blocks correct coding): `workflow.Definition`
+and its nested types carry only `yaml:"..."` tags. `json.Marshal(def)` emits
+Go field names ({"Key":...}) which `ParseDefinition` (a yaml decoder expecting
+{"key":...}) cannot round-trip — the canonical digest would never match a
+re-parsed persisted row. FIX FIRST: add `json:"..."` tags mirroring the yaml
+tags on Definition/Step/Transition/Policy/SLA/Branch/Condition/Electorate/
+Fraction/AssigneeSpec, then CanonicalDigest(def)=sha256(json.Marshal(def))
+(deterministic: struct field order + sorted map keys) and store that exact JSON
+in the definition column so persisted==canonical.
+
+Verified migration SQL (kept in scratchpad 00050_verified.sql, NOT committed —
+it breaks the suite until the writer exists; lands with the full unit as
+00050 or folded into the baseline):
+  Up: DROP POLICY workflow_definitions_tenant; DISABLE + NO FORCE RLS; DROP
+  INDEX workflow_definitions_key; DROP COLUMN tenant_id; CREATE UNIQUE INDEX
+  workflow_definitions_key ON (key, version); ADD COLUMN definition_digest text
+  NOT NULL CHECK (~ '^[0-9a-f]{64}$').
+  Down: restore tenant_id + COALESCE unique index + RLS + FORCE + the
+  workflow_definitions_tenant policy exactly as 00009. (Applied + shape-verified
+  on a scratch DB: chain runs to 50, column present, tenant_id gone.)
+
+Test refactor (larger than it looks — 44 SeedWorkflowDefinition invocations in
+6 files): ordinary tests register + SyncDefinitions through the production path;
+corruption tests use a clearly-named low-level direct-insert fixture that still
+satisfies the digest CHECK (sha256 of the raw). The fallback and corrupt-defense
+tests change semantics — registry-less/persisted-only execution is now
+forbidden (a persisted row absent from the registry never executes), so they
+assert the new rejection.
