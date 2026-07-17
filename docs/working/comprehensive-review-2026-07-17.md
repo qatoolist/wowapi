@@ -140,3 +140,62 @@ FK deferrability, policy role, function security-definer, an added grant, an
 added extension, a generated column — changes the manifest in every case. The
 oracle is therefore genuinely discriminating, not an "equal counts" false pass.
 `make baseline-census-check` is now sound as the squash equivalence guard.
+
+## C-03 implementation plan (scoped, turnkey — 2026-07-17)
+
+Prerequisites cleared (tenant-override decision, discriminating census). The
+C-03 coding unit, in dependency order, each DB-verified:
+
+1. Migration 00050_workflow_definition_identity (folds into the baseline):
+   - DROP POLICY workflow_definitions_tenant; DISABLE + NO FORCE RLS (becomes a
+     global platform catalog, matching rule_definitions).
+   - DROP INDEX workflow_definitions_key; DROP COLUMN tenant_id;
+     CREATE UNIQUE INDEX workflow_definitions_key ON (key, version).
+   - ADD COLUMN definition_digest text NOT NULL DEFAULT ''.
+   - Reversible Down restores tenant_id + the COALESCE unique index + RLS +
+     policy exactly as 00009 (verify with the reversibility drill).
+2. Canonical serialization + digest (kernel/workflow): deterministic JSON of
+   the validated Definition (sorted keys) -> sha256 hex. Stable across
+   marshal/unmarshal.
+3. workflow.SyncDefinitions(ctx, db, reg) mirroring rules.SyncDefinitions:
+   upsert each registered def with its digest. Contract:
+   - (key,version) immutable; re-sync of same digest = idempotent no-op;
+   - a DIFFERENT digest for an existing (key,version) FAILS LOUDLY (never
+     overwrite) — semantics change requires a new version;
+   - existing row IDs stable (workflow_instances reference them);
+   - definitions absent from a later binary are NOT auto-deleted while
+     instances may reference them.
+4. Wire SyncDefinitions into the generated migrate template after rules sync
+   (cmd_migrate_main.go.tmpl), and into testkit setup so tests get real rows.
+5. ONE shared verified-definition loader used by StartIn, Decide, CompleteTask,
+   Delegate, Override, and SweepSLA (replace the ad-hoc resolveValidated /
+   parseAndValidateDefinition calls): resolves the graph, recomputes its
+   canonical digest, compares to the persisted row's definition_digest, and
+   REJECTS before any state mutation on missing or mismatched identity. No
+   fallback executes persisted JSON absent from the canonical registry (no
+   historical-execution policy in clean V1). Simplify definitionRow to
+   `WHERE key=$1 AND status='active' ORDER BY version DESC` (tenant_id gone).
+6. testkit.SeedWorkflowDefinition: drop the tenant param, compute+store the
+   digest (or route through SyncDefinitions); update its 6 callers.
+7. Regressions: sync idempotent-same-digest; sync divergent-digest-fails-loud;
+   load rejects a digest mismatch before mutation; StartIn/Decide/CompleteTask/
+   SweepSLA all go through the shared loader (one check, not four); missing
+   definition rejected.
+8. Regenerate migrations/baseline/census-reference.txt for the 00050 delta.
+
+## Census completion (before baseline generation — reviewer's remaining gaps)
+
+Add before generating 00001_baseline: a declared framework-owned schema set
+(>= public + migration); enumerate all relations in those schemas incl.
+migration.backfill_checkpoint (columns, composite PK, defaults, indexes),
+sequences, views/matviews/partitioned/foreign tables; triggers + rules;
+enum/domain/range/composite user types; role existence + intended membership
+(normalizing LOGIN creds); pg_default_acl; ACL via aclexplode with object
+identity + overloaded-function signatures + PUBLIC + grantor + grantee +
+privilege + grant-option; fuller function attrs (kind, leakproof, parallel,
+cost, rows). Add negative tests for: migration checkpoint table, a sequence, a
+view, a trigger, a custom type, a default privilege, an overloaded-function
+grant, and a PUBLIC grant/revoke. Remove 2>/dev/null from the gate (preserve
+stderr for diagnosis). The largest current omission: baseline_census.sql is
+public-only and never inventories the migration schema — a baseline could drop
+the entire checkpoint schema and still pass.
