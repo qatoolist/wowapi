@@ -27,14 +27,6 @@ const (
 	testSecretRef   = "secretref://test/key"
 )
 
-type envelopeVerifier struct {
-	envelope webhook.Envelope
-}
-
-func (v envelopeVerifier) Verify(string, []byte, map[string]string) (webhook.Envelope, error) {
-	return v.envelope, nil
-}
-
 // --- seed helpers (Admin pool → bypasses RLS) ---
 
 func seedInboundEndpoint(t *testing.T, h *testkit.DBHandle, tenantID uuid.UUID) uuid.UUID {

@@ -395,6 +395,8 @@ func (r *Registry) callbackKeys() (autos, resolvers map[string]bool) {
 }
 
 // definition returns the registered definition for (key, version).
+//
+//nolint:unparam // versioned accessor keyed by (key, version) like latestVersion/defKey; current callers register only v1.
 func (r *Registry) definition(key string, version int) (Definition, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

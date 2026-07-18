@@ -288,9 +288,7 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 				"capacity not permitted", err, errors.Op("auth.Actor"))
 		}
 	} else {
-		count := 0
-		var err error
-		count, err = ps.ActiveCapacityCount(ctx, userID, claims.TenantID)
+		count, err := ps.ActiveCapacityCount(ctx, userID, claims.TenantID)
 		if err != nil {
 			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
 				"capacity count unavailable", err, errors.Op("auth.Actor"))
