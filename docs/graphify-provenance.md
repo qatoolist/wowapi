@@ -4,7 +4,7 @@ This file records the semantic-extraction evidence for the clean-V1 review. Gene
 
 ## Clean-V1 semantic run
 
-- Source revision: `3650b29dcd5b26e32e5fbf37bbf5b88c0cc81405` plus the report/provenance documentation commit identified in the final review report.
+- Implementation revision: `8b2188f29a2d96536004b6bcf619c5cac7b8a1dd`; the final report/provenance revision is repository `HEAD` at handoff.
 - Graphify: `0.7.19`.
 - Invocation: `scripts/graphify_refresh.sh extract`, followed by `scripts/graphify_refresh.sh cluster`.
 - Backend: Google Gemini, pinned by the repository wrapper.
