@@ -54,3 +54,45 @@ func TestCorpusSnapshotCountsRetainedFiles(t *testing.T) {
 		t.Fatalf("snapshot = %+v", snapshot)
 	}
 }
+
+// The FuzzParseSort output that flaked CI on 2026-07-18: 10s of positive
+// progress, no crash, then a worker-coordination timeout. Must be retryable.
+const observedTransientFailure = `=== RUN   FuzzParseSort
+fuzz: elapsed: 3s, execs: 104580 (34857/sec), new interesting: 4 (total: 247)
+fuzz: elapsed: 9s, execs: 332904 (37091/sec), new interesting: 12 (total: 255)
+fuzz: elapsed: 10s, execs: 373791 (37455/sec), new interesting: 14 (total: 257)
+--- FAIL: FuzzParseSort (10.10s)
+    context deadline exceeded
+FAIL`
+
+// A genuine fuzz-discovered crash writes a reproducer. Must NEVER be retried.
+const realCrashFailure = `--- FAIL: FuzzParseSort (2.31s)
+    parse_test.go:42: mismatch on input
+    Failing input written to testdata/fuzz/FuzzParseSort/abc123
+    To re-run:
+    go test -run=FuzzParseSort/abc123
+FAIL`
+
+func TestRetryableFuzzFailure(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"observed transient timeout", observedTransientFailure, true},
+		{"real crash with reproducer", realCrashFailure, false},
+		{"panic is a real failure", "some log\npanic: runtime error: index out of range\ngoroutine 1", false},
+		{"runtime fatal error is real", "fatal error: concurrent map writes", false},
+		{"transient text but crash present is not retried", "context deadline exceeded\nFailing input written to testdata/fuzz/X/y", false},
+		{"worker process terminated is transient", "fuzzing process hung or terminated unexpectedly", true},
+		{"unclassified failure fails closed", "--- FAIL: FuzzX (1s)\n    assertion failed", false},
+		{"clean output has nothing transient to retry", "PASS\nok", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := retryableFuzzFailure(tc.output); got != tc.want {
+				t.Fatalf("retryableFuzzFailure(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}

@@ -133,11 +133,58 @@ func main() {
 	fmt.Printf("PASS: %s fuzz profile ran %d coverage-guided targets for positive elapsed time; corpus files before=%d after=%d; report=%s\n", *profile, len(results), before.Files, after.Files, reportPath)
 }
 
+// maxFuzzAttempts bounds retries for a target whose `go test -fuzz` run fails
+// with a TRANSIENT Go-fuzzing worker error (a coordinator/worker RPC timeout —
+// "context deadline exceeded" — under CI CPU starvation, not a discovered bug).
+// A real crash writes a reproducer to the package corpus and is never retried.
+const maxFuzzAttempts = 3
+
+// crashSignature marks a genuine fuzz-discovered failure: Go writes the failing
+// input to the package's testdata/fuzz corpus and prints "Failing input written
+// to ...", and/or the target panics / hits a runtime fatal error. These are real
+// bugs — they must NEVER be retried or masked.
+var crashSignature = regexp.MustCompile(`(?m)Failing input written to|^\s*panic:|^\s*fatal error:|test execution corrupted`)
+
+// transientSignature marks a fuzzing-infrastructure failure (worker coordination
+// under load), safe to retry because it reflects the runner, not the code. Kept
+// deliberately narrow so unclassified failures fall through to fail-closed.
+var transientSignature = regexp.MustCompile(`context deadline exceeded|fuzzing process (?:hung or )?terminated|communicating with fuzzing process`)
+
+// retryableFuzzFailure reports whether a failed run is a transient worker
+// timeout rather than a real crash. It fails closed: a crash signature (or any
+// output that does not positively match a known transient pattern) is treated
+// as a genuine failure and never retried.
+func retryableFuzzFailure(output string) bool {
+	if crashSignature.MatchString(output) {
+		return false
+	}
+	return transientSignature.MatchString(output)
+}
+
 func runTarget(item target, fuzzTime, cache, output string) (targetResult, error) {
 	logPath := filepath.Join(output, item.Name+".txt")
+	var lastErr error
+	for attempt := 1; attempt <= maxFuzzAttempts; attempt++ {
+		result, combined, err := runFuzzOnce(item, fuzzTime, cache, logPath)
+		if err == nil {
+			return result, nil
+		}
+		if !retryableFuzzFailure(combined) {
+			// Real crash (reproducer written) or an unclassified error: fail
+			// hard and surface it — never retry, never mask a discovered bug.
+			return targetResult{}, fmt.Errorf("go fuzz failed: %w", err)
+		}
+		lastErr = err
+		fmt.Fprintf(os.Stderr, "fuzz proof: %s/%s transient fuzzing-worker failure on attempt %d/%d (%v); retrying\n",
+			item.Package, item.Name, attempt, maxFuzzAttempts, err)
+	}
+	return targetResult{}, fmt.Errorf("go fuzz failed after %d attempts with only transient worker timeouts (no crash found): %w", maxFuzzAttempts, lastErr)
+}
+
+func runFuzzOnce(item target, fuzzTime, cache, logPath string) (targetResult, string, error) {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- fuzz tool writes the selected output path by design
 	if err != nil {
-		return targetResult{}, err
+		return targetResult{}, "", err
 	}
 	defer func() { _ = logFile.Close() }()
 
@@ -147,13 +194,13 @@ func runTarget(item target, fuzzTime, cache, output string) (targetResult, error
 	command.Stdout = io.MultiWriter(os.Stdout, logFile, &captured)
 	command.Stderr = io.MultiWriter(os.Stderr, logFile, &captured)
 	if err := command.Run(); err != nil {
-		return targetResult{}, fmt.Errorf("go fuzz failed: %w", err)
+		return targetResult{}, captured.String(), fmt.Errorf("go fuzz failed: %w", err)
 	}
 	observed, err := parseProgress(captured.String())
 	if err != nil {
-		return targetResult{}, err
+		return targetResult{}, captured.String(), err
 	}
-	return targetResult{Target: item, Progress: observed, Log: logPath}, nil
+	return targetResult{Target: item, Progress: observed, Log: logPath}, captured.String(), nil
 }
 
 func parseProgress(output string) (progress, error) {
