@@ -79,6 +79,7 @@ graphify export neo4j
 - Prefer `graphify update .` for code-only changes.
 - Use `scripts/graphify_refresh.sh extract` after substantial documentation, architecture, or product-shaping changes so the semantic engine is explicit.
 - Record the source commit and extraction backend/model in review or release evidence until Graphify persists backend/model provenance directly in graph metadata.
+- Keep the latest reviewed extraction evidence in [Graphify extraction provenance](graphify-provenance.md); generated graph output itself remains ignored.
 - Treat a reported semantic-chunk connection failure as an incomplete refresh and rerun it; an updated AST graph alone is not proof that changed documentation received semantic extraction.
 - A completed semantic refresh must report each chunk as done and include nonzero input/output token accounting in the command evidence.
 - Keep generated graph artifacts out of commits unless the team explicitly decides to version them.
