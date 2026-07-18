@@ -92,7 +92,8 @@ func (m *gaugeRecorder) has(key string) bool {
 func newSweepRuntime(tb testing.TB, h *testkit.DBHandle, metrics observability.Metrics) *workflow.Runtime {
 	tb.Helper()
 	reg := workflow.NewRegistry()
-	def, err := workflow.ParseDefinition([]byte(linearDef))
+	sweepDefinition := strings.Replace(linearDef, "    type: approval\n", "    type: approval\n    sla: { due: PT2H, remind_after: PT1H }\n", 1)
+	def, err := workflow.ParseDefinition([]byte(sweepDefinition))
 	if err != nil {
 		tb.Fatalf("parse definition: %v", err)
 	}

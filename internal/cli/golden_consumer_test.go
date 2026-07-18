@@ -131,6 +131,9 @@ func TestGeneratedInboundWebhookRouteIsBooted(t *testing.T) {
 	a.Register(wire.Modules()...)
 	booted, err := a.Boot(context.Background(), k, nil)
 	if err != nil { t.Fatal(err) }
+	if !k.Webhooks.HasInboundHandler("fulfillment.shipment_update") {
+		t.Fatal("generated inbound webhook handler was not registered")
+	}
 	for _, route := range booted.RuntimeRouter().Routes() {
 		if route.Method == http.MethodPost && route.Pattern == "/webhooks/fulfillment/shipment_update/{tenant_id}/{endpoint_id}" && route.Meta.Public {
 			return

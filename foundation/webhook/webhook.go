@@ -165,7 +165,7 @@ func WithClock(now func() time.Time) Option {
 
 // New wires the Service. sender, secrets, and idgen are required.
 func New(sender Sender, secrets SecretResolver, idgen model.IDGen, opts ...Option) *Service {
-	if sender == nil || secrets == nil || idgen == nil {
+	if nilRegistration(sender) || nilRegistration(secrets) || nilRegistration(idgen) {
 		panic("webhook.New: sender, secrets, and idgen are required")
 	}
 	return newService(sender, secrets, idgen, time.Now, opts...)
@@ -231,6 +231,16 @@ func (s *Service) RegisterHandler(eventType string, h InboundHandler) {
 		panic(fmt.Sprintf("webhook.RegisterHandler: duplicate event type %q", eventType))
 	}
 	s.handlers[eventType] = h
+}
+
+// HasInboundHandler reports whether boot wiring registered an asynchronous
+// consumer for eventType. It exposes no mutable registry state and is useful
+// for readiness diagnostics and generated-product contract tests.
+func (s *Service) HasInboundHandler(eventType string) bool {
+	s.registryMu.RLock()
+	defer s.registryMu.RUnlock()
+	_, ok := s.handlers[eventType]
+	return ok
 }
 
 func nilRegistration(v any) bool {

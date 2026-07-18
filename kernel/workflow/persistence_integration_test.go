@@ -461,3 +461,65 @@ func TestIntegrationSweepSLAVerifiesIdentityBeforeCallerOwnedTransactionEffects(
 		})
 	}
 }
+
+func TestIntegrationSweepSLARejectsCorruptTaskAssociationBeforeEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		corrupt func(*testing.T, *testkit.DBHandle, uuid.UUID, uuid.UUID)
+	}{
+		{name: "unknown task step", corrupt: func(t *testing.T, h *testkit.DBHandle, taskID, _ uuid.UUID) {
+			if _, err := h.Admin.Exec(context.Background(), `UPDATE workflow_tasks
+				SET step_key='missing_step', due_at=now()-interval '1 hour', remind_after=NULL WHERE id=$1`, taskID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "non-running instance", corrupt: func(t *testing.T, h *testkit.DBHandle, taskID, instanceID uuid.UUID) {
+			if _, err := h.Admin.Exec(context.Background(), `UPDATE workflow_tasks
+				SET due_at=now()-interval '1 hour', remind_after=NULL WHERE id=$1`, taskID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.Admin.Exec(context.Background(), `UPDATE workflow_instances SET status='completed' WHERE id=$1`, instanceID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testkit.NewDB(t)
+			tn := testkit.CreateTenant(t, h)
+			user := testkit.CreateUser(t, h)
+			cap := testkit.CreateCapacity(t, h, tn.ID, user)
+			res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+			rt := buildRuntime(t, h, cap, linearDef)
+			sim := testkit.NewWorkflowSim(t, h, rt).Start("requests.approval", res, nil)
+			taskID := openTaskID(t, h, sim.InstanceID(), "manager_review")
+			tc.corrupt(t, h, taskID, sim.InstanceID())
+
+			var associationErr error
+			if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
+				_, _, associationErr = rt.SweepSLA(ctx, db, time.Now())
+				return nil // deliberately commit after ignoring the sweep error
+			}); err != nil {
+				t.Fatalf("caller-owned transaction: %v", err)
+			}
+			if kerr.KindOf(associationErr) != kerr.KindConflict {
+				t.Fatalf("corrupt association = %v, want conflict", associationErr)
+			}
+
+			var status string
+			var reminded *time.Time
+			if err := h.Admin.QueryRow(context.Background(), `SELECT status,last_reminded_at
+				FROM workflow_tasks WHERE id=$1`, taskID).Scan(&status, &reminded); err != nil {
+				t.Fatal(err)
+			}
+			var effects int
+			if err := h.Admin.QueryRow(context.Background(), `SELECT count(*) FROM events_outbox
+				WHERE tenant_id=$1 AND event_type IN
+				('workflow.requests.approval.reminded','workflow.requests.approval.escalated')`, tn.ID).Scan(&effects); err != nil {
+				t.Fatal(err)
+			}
+			if status != "open" || reminded != nil || effects != 0 {
+				t.Fatalf("corrupt association committed effects: status=%s reminded=%v outbox=%d", status, reminded, effects)
+			}
+		})
+	}
+}

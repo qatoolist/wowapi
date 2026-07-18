@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,6 +234,9 @@ func nonProductionArtifactKey() []byte {
 // kernel's Perms/Resources registries are the shared pointers modules register
 // into during boot; the evaluator reads them at decision time.
 func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+	if deps.WebhookSender != nil && nilLike(deps.WebhookSender) {
+		return nil, fmt.Errorf("kernel: WebhookSender must not be typed nil")
+	}
 	idgen := model.UUIDv7()
 
 	// Metrics sink: NoOp unless a product wires an adapter (e.g. Prometheus),
@@ -422,6 +426,18 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Artifacts:            artifact.New(idgen),
 		auditSink:            audit,
 	}, nil
+}
+
+func nilLike(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Chan || rv.Kind() == reflect.Func || rv.Kind() == reflect.Interface ||
+		rv.Kind() == reflect.Map || rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Slice {
+		return rv.IsNil()
+	}
+	return false
 }
 
 // secretRefResolver adapts the kernel secrets.Provider to the webhook package's

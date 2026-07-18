@@ -71,6 +71,9 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 	if err != nil {
 		return 0, 0, err
 	}
+	if err := validateSLACandidates(slaState, reminderCandidates, escalationCandidates); err != nil {
+		return 0, 0, err
+	}
 
 	// Only after every selected instance's persisted/registered definition has
 	// passed identity verification may a durable reminder guard be flipped.
@@ -123,6 +126,43 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 		escalations++
 	}
 	return reminders, escalations, nil
+}
+
+func validateSLACandidates(state map[uuid.UUID]slaState, reminders, escalations []slaRef) error {
+	validate := func(ref slaRef, reminder bool) error {
+		candidate, ok := state[ref.instance]
+		if !ok {
+			return kerr.E(kerr.KindNotFound, "workflow_instance_not_found", "workflow instance not found during SLA sweep")
+		}
+		if candidate.instance.Status != "running" {
+			return kerr.E(kerr.KindConflict, "workflow_sla_instance_state", "SLA task belongs to a non-running workflow instance")
+		}
+		if candidate.instance.CurrentStep != ref.step {
+			return kerr.E(kerr.KindConflict, "workflow_sla_task_step_mismatch", "SLA task step does not match the workflow instance")
+		}
+		step, ok := candidate.def.Steps[ref.step]
+		if !ok || step.SLA == nil {
+			return kerr.E(kerr.KindConflict, "workflow_sla_step_invalid", "SLA task step is absent or has no SLA declaration")
+		}
+		if reminder && step.SLA.RemindAfter == "" {
+			return kerr.E(kerr.KindConflict, "workflow_sla_reminder_invalid", "reminder task step has no reminder declaration")
+		}
+		if !reminder && step.SLA.Due == "" {
+			return kerr.E(kerr.KindConflict, "workflow_sla_escalation_invalid", "escalation task step has no due declaration")
+		}
+		return nil
+	}
+	for _, ref := range reminders {
+		if err := validate(ref, true); err != nil {
+			return err
+		}
+	}
+	for _, ref := range escalations {
+		if err := validate(ref, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func selectReminderBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {

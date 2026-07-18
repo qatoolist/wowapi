@@ -339,6 +339,41 @@ func TestIntegrationHandleInbound_TimestampOutOfWindow(t *testing.T) {
 	}
 }
 
+// A representable far-future timestamp used to overflow the absolute-duration
+// calculation: min Duration cannot be negated, so the old comparison accepted
+// and persisted this correctly signed request.
+func TestIntegrationHandleInbound_ExtremeFutureTimestampOutOfWindow(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	epID := seedInboundEndpoint(t, h, tn.ID)
+	body := []byte(`{"event":"far-future"}`)
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
+	svc := webhook.New(&fakes.WebhookSender{}, resolver, model.UUIDv7())
+	svc.RegisterVerifier(testProviderKey, webhook.TimestampedHMACVerifier{})
+	timestamp := "253402300799" // 9999-12-31T23:59:59Z
+
+	var windowErr error
+	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
+		windowErr = svc.HandleInbound(ctx, db, webhook.InboundIn{
+			EndpointID: epID, ProviderKey: testProviderKey, RawBody: body,
+			Headers: map[string]string{
+				"X-Timestamp": timestamp,
+				"X-Signature": timestampedSignature(testSecret, timestamp, body),
+			},
+			EventType: "order.created",
+		})
+		return nil // prove an ignored error cannot commit an event
+	}); cerr != nil {
+		t.Fatalf("tx commit: %v", cerr)
+	}
+	if kerr.KindOf(windowErr) != kerr.KindValidation {
+		t.Fatalf("extreme timestamp = %v, want validation", windowErr)
+	}
+	if n := countEvents(t, h, tn.ID); n != 0 {
+		t.Fatalf("extreme timestamp persisted %d events, want 0", n)
+	}
+}
+
 // =============================================================================
 // Inbound processing tests
 // =============================================================================

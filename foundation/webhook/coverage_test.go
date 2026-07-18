@@ -201,6 +201,12 @@ func TestUnitNew_PanicsOnNilDeps(t *testing.T) {
 	mustPanic("New(nil sender)", func() { webhook.New(nil, resolver, idgen) })
 	mustPanic("New(nil secrets)", func() { webhook.New(&fakes.WebhookSender{}, nil, idgen) })
 	mustPanic("New(nil idgen)", func() { webhook.New(&fakes.WebhookSender{}, resolver, nil) })
+	var typedSender *fakes.WebhookSender
+	var typedResolver *fakes.WebhookSecretResolver
+	var typedIDGen *fakes.IDGen
+	mustPanic("New(typed-nil sender)", func() { webhook.New(typedSender, resolver, idgen) })
+	mustPanic("New(typed-nil secrets)", func() { webhook.New(&fakes.WebhookSender{}, typedResolver, idgen) })
+	mustPanic("New(typed-nil idgen)", func() { webhook.New(&fakes.WebhookSender{}, resolver, typedIDGen) })
 	mustPanic("WithClock(nil clock)", func() {
 		webhook.New(&fakes.WebhookSender{}, resolver, idgen, webhook.WithClock(nil))
 	})

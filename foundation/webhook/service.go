@@ -99,12 +99,11 @@ func (s *Service) HandleInbound(ctx context.Context, db database.TenantDB, in In
 		return kerr.E(kerr.KindUnauthenticated, "signature_invalid", "webhook signature verification failed")
 	}
 
-	// Timestamp window ±5 m, using the verifier-attested occurred time.
-	delta := s.now().Sub(env.OccurredAt)
-	if delta < 0 {
-		delta = -delta
-	}
-	if delta > TimestampWindow {
+	// Timestamp window ±5 m, using the verifier-attested occurred time. Compare
+	// absolute time bounds rather than subtracting: time.Time.Sub saturates at
+	// min/max Duration, whose minimum cannot be safely negated.
+	now := s.now().UTC()
+	if env.OccurredAt.Before(now.Add(-TimestampWindow)) || env.OccurredAt.After(now.Add(TimestampWindow)) {
 		return kerr.E(kerr.KindValidation, "timestamp_out_of_window", "webhook timestamp is outside the ±5 m replay window")
 	}
 
