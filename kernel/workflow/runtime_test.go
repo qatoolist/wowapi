@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -264,7 +265,8 @@ func TestIntegrationWorkflowSweepSLA(t *testing.T) {
 	approverCap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRuntime(t, h, approverCap, linearDef)
+	reminderDef := strings.Replace(linearDef, "    type: approval\n", "    type: approval\n    sla: { due: PT2H, remind_after: PT1H }\n", 1)
+	rt := buildRuntime(t, h, approverCap, reminderDef)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
