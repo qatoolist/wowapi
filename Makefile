@@ -93,7 +93,7 @@ baseline-census-check: ## Regenerate the schema census and fail if it drifts fro
 	regen=$$(mktemp); committed=$$(mktemp); \
 	trap 'rm -f "$$regen" "$$committed"' EXIT; \
 	sh scripts/baseline_census.sh > "$$regen"; \
-	grep -vE '^#|^$$' migrations/baseline/census-reference.txt | sort > "$$committed"; \
+	grep -vE '^#|^$$' migrations/baseline/census-reference.txt | LC_ALL=C sort > "$$committed"; \
 	if diff -u "$$committed" "$$regen"; then echo "baseline census: MATCHES reference"; else echo "baseline census: DRIFT — the schema changed; regenerate the reference intentionally"; exit 1; fi
 
 .PHONY: baseline-census-discriminates
