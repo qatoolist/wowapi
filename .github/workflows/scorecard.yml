@@ -55,7 +55,15 @@ jobs:
           results_file: scorecard-results.sarif
           results_format: sarif
           publish_results: true
+      # Upload SARIF only on push/schedule (the default-branch dashboard).
+      # scorecard-action runs Branch-Protection ONLY on push events, so a PR
+      # upload produces 2 of main's 3 SARIF categories; code-scanning then flags
+      # the missing supply-chain/branch-protection as "1 configuration not found".
+      # We still RUN scorecard on pull_request (the security-scan hosted-scanner
+      # meta-check requires a successful run on the exact PR SHA), but skipping
+      # the PR upload leaves nothing for code-scanning to diff against main.
       - name: upload SARIF
+        if: github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
         with:
           sarif_file: scorecard-results.sarif
