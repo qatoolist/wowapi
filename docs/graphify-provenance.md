@@ -21,3 +21,7 @@ The final handoff records the post-report incremental counts and confirms that s
 ## Final report refresh
 
 After `ComprehensiveReport.md` received Fable's final verdict, committed revision `bd650be` was structurally refreshed and the report plus this provenance document were deliberately invalidated from the semantic cache. Google Gemini re-extracted 2/2 files in one successful chunk using 5,258 input and 2,456 output tokens. Reclustering produced 8,541 nodes, 21,652 edges, and 599 communities. The same seven historical `impl/` edge warnings remained; no semantic chunk failed.
+
+## Post-GO correction refresh
+
+After reviewer remediations `404f398` and `ce0746d` and the committed correction addendum `c7f0193`, the graph was structurally rebuilt and `ComprehensiveReport.md` was deliberately invalidated from semantic cache. Gemini re-extracted 1/1 file in one successful chunk using 4,786 input and 2,082 output tokens. Reclustering produced 8,546 nodes, 21,675 edges, and 596 communities. The same seven historical `impl/` edge warnings remained; no semantic chunk failed.
