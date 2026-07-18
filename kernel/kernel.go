@@ -237,6 +237,9 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	if deps.WebhookSender != nil && nilLike(deps.WebhookSender) {
 		return nil, fmt.Errorf("kernel: WebhookSender must not be typed nil")
 	}
+	if deps.Secrets != nil && nilLike(deps.Secrets) {
+		return nil, fmt.Errorf("kernel: Secrets provider must not be typed nil")
+	}
 	idgen := model.UUIDv7()
 
 	// Metrics sink: NoOp unless a product wires an adapter (e.g. Prometheus),

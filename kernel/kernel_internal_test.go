@@ -35,6 +35,10 @@ func (*typedNilKernelWebhookSender) Post(context.Context, string, []byte, map[st
 }
 func (*typedNilKernelWebhookSender) DuplicateSafety() safety.Mechanism { return safety.DomainCAS }
 
+type typedNilKernelSecrets struct{}
+
+func (*typedNilKernelSecrets) Resolve(context.Context, secrets.Ref) (string, error) { return "", nil }
+
 func (s stubProvider) Resolve(_ context.Context, _ secrets.Ref) (string, error) {
 	return s.val, s.err
 }
@@ -212,6 +216,15 @@ func TestNewRejectsTypedNilWebhookSender(t *testing.T) {
 	k, err := New(config.Defaults(), log, Deps{Tx: failTxM{err: errors.New("x")}, WebhookSender: sender})
 	if err == nil || k != nil || !strings.Contains(err.Error(), "WebhookSender must not be typed nil") {
 		t.Fatalf("New(typed-nil WebhookSender) = (%v, %v), want nil kernel and explicit error", k, err)
+	}
+}
+
+func TestNewRejectsTypedNilSecretsProvider(t *testing.T) {
+	var provider *typedNilKernelSecrets
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := New(config.Defaults(), log, Deps{Tx: failTxM{err: errors.New("x")}, Secrets: provider})
+	if err == nil || k != nil || !strings.Contains(err.Error(), "Secrets provider must not be typed nil") {
+		t.Fatalf("New(typed-nil Secrets) = (%v, %v), want nil kernel and explicit error", k, err)
 	}
 }
 
