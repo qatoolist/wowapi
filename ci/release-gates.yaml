@@ -56,6 +56,15 @@
       "requires_services": true
     },
     {
+      "id": "baseline-census",
+      "command": "make baseline-census-check baseline-census-discriminates",
+      "owner": "data-integrity",
+      "required_from_wave": 6,
+      "timeout_minutes": 15,
+      "evidence_artifact": "gate-evidence/baseline-census.json",
+      "requires_services": true
+    },
+    {
       "id": "coverage",
       "command": "make coverage-check",
       "owner": "framework",

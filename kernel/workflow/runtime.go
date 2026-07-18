@@ -322,6 +322,14 @@ func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until tim
 			return kerr.E(kerr.KindWorkflowState, "task_not_open",
 				fmt.Sprintf("task %s is %s, not open", taskID, task.Status))
 		}
+		// Verify the instance and its immutable definition BEFORE mutating any
+		// row, consistent with Decide/CompleteTask/Override: a corrupt or
+		// tampered definition must fail the transition before writes, not after
+		// (loadInstanceAndDef runs verifyDefinition).
+		inst, def, err := rt.loadInstanceAndDef(ctx, db, task.InstanceID)
+		if err != nil {
+			return err
+		}
 		tag, err := db.Exec(ctx,
 			`UPDATE workflow_tasks SET delegated_to = $2, version = version + 1, updated_at = now()
 			 WHERE id = $1 AND version = $3`, taskID, to, task.Version)
@@ -336,10 +344,6 @@ func (rt *Runtime) Delegate(ctx context.Context, taskID, to uuid.UUID, until tim
 			 VALUES ($1, app_tenant_id(), 'capacity', $2)
 			 ON CONFLICT DO NOTHING`, taskID, to.String()); err != nil {
 			return kerr.Wrapf(err, "workflow.Delegate", "add delegate assignee")
-		}
-		inst, def, err := rt.loadInstanceAndDef(ctx, db, task.InstanceID)
-		if err != nil {
-			return err
 		}
 		return rt.emit(ctx, db, inst, def, "delegated", map[string]any{
 			"instance_id": inst.ID.String(), "task_id": taskID.String(),
