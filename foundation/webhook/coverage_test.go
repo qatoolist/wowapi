@@ -265,7 +265,7 @@ func TestIntegrationHandleInbound_EndpointNotFound(t *testing.T) {
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: uuid.New(), ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "x", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "x",
 		})
 		return nil
 	}); cerr != nil {
@@ -288,7 +288,7 @@ func TestIntegrationHandleInbound_WrongDirection(t *testing.T) {
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -311,7 +311,7 @@ func TestIntegrationHandleInbound_InactiveEndpoint(t *testing.T) {
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -334,7 +334,7 @@ func TestIntegrationHandleInbound_NoVerifier(t *testing.T) {
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: "unregistered-provider",
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -359,7 +359,7 @@ func TestIntegrationHandleInbound_SecretResolveError(t *testing.T) {
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -390,7 +390,7 @@ func TestIntegrationProcessInbound_NoHandler(t *testing.T) {
 		return svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
 			RawBody: body, Headers: map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-nohandler", EventType: "unhandled.event", Timestamp: time.Now(),
+			EventType: "unhandled.event",
 		})
 	}); err != nil {
 		t.Fatalf("HandleInbound: %v", err)

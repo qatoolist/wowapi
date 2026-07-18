@@ -399,3 +399,65 @@ func TestIntegrationMissingRegistryDefinitionAndSLACorruptionFailClosed(t *testi
 		t.Fatalf("SLA corruption caused effects: status=%s reminded=%v events=%d", status, reminded, escalationEvents)
 	}
 }
+
+func TestIntegrationSweepSLAVerifiesIdentityBeforeCallerOwnedTransactionEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		dueSQL string
+	}{
+		{name: "reminder", dueSQL: `UPDATE workflow_tasks
+			SET remind_after=now()-interval '1 hour', due_at=NULL WHERE id=$1`},
+		{name: "escalation", dueSQL: `UPDATE workflow_tasks
+			SET due_at=now()-interval '1 hour', remind_after=NULL WHERE id=$1`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := testkit.NewDB(t)
+			tn := testkit.CreateTenant(t, h)
+			user := testkit.CreateUser(t, h)
+			cap := testkit.CreateCapacity(t, h, tn.ID, user)
+			res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+			rt := buildRuntime(t, h, cap, linearDef)
+			sim := testkit.NewWorkflowSim(t, h, rt).Start("requests.approval", res, nil)
+			taskID := openTaskID(t, h, sim.InstanceID(), "manager_review")
+
+			if _, err := h.Admin.Exec(context.Background(), tc.dueSQL, taskID); err != nil {
+				t.Fatalf("make %s due: %v", tc.name, err)
+			}
+			if _, err := h.Admin.Exec(context.Background(), `UPDATE workflow_definitions
+				SET applies_to='tampered' WHERE key='requests.approval' AND version=1`); err != nil {
+				t.Fatal(err)
+			}
+
+			var identityErr error
+			// The caller owns this tenant transaction, deliberately ignores the
+			// SweepSLA error, and returns nil so the transaction commits. Any
+			// pre-verification write therefore becomes observable after commit.
+			if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
+				_, _, identityErr = rt.SweepSLA(ctx, db, time.Now())
+				return nil
+			}); err != nil {
+				t.Fatalf("caller-owned transaction: %v", err)
+			}
+			if kerr.KindOf(identityErr) != kerr.KindConflict {
+				t.Fatalf("SweepSLA identity mismatch = %v, want conflict", identityErr)
+			}
+
+			var status string
+			var reminded *time.Time
+			if err := h.Admin.QueryRow(context.Background(), `SELECT status,last_reminded_at
+				FROM workflow_tasks WHERE id=$1`, taskID).Scan(&status, &reminded); err != nil {
+				t.Fatal(err)
+			}
+			var effects int
+			if err := h.Admin.QueryRow(context.Background(), `SELECT count(*) FROM events_outbox
+				WHERE tenant_id=$1 AND event_type IN
+				('workflow.requests.approval.reminded','workflow.requests.approval.escalated')`, tn.ID).Scan(&effects); err != nil {
+				t.Fatal(err)
+			}
+			if status != "open" || reminded != nil || effects != 0 {
+				t.Fatalf("%s identity error committed partial effects: status=%s reminded=%v outbox=%d",
+					tc.name, status, reminded, effects)
+			}
+		})
+	}
+}

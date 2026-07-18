@@ -1,6 +1,7 @@
 package webhook_test
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"testing"
@@ -10,6 +11,57 @@ import (
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/testkit/fakes"
 )
+
+func timestampedSignature(secret, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+func TestUnitTimestampedHMACVerifierAuthenticatesTimestampAndBody(t *testing.T) {
+	body := []byte(`{"event":"order.created"}`)
+	ts := "1700000000"
+	v := webhook.TimestampedHMACVerifier{}
+	env, err := v.Verify(testSecret, body, map[string]string{
+		"X-Timestamp": ts,
+		"X-Signature": timestampedSignature(testSecret, ts, body),
+	})
+	if err != nil {
+		t.Fatalf("verify timestamped HMAC: %v", err)
+	}
+	if got, want := env.OccurredAt, time.Unix(1700000000, 0).UTC(); !got.Equal(want) {
+		t.Fatalf("OccurredAt = %v, want %v", got, want)
+	}
+	if env.SignatureVersion != "sha256-timestamped" || env.EventID == "" {
+		t.Fatalf("incomplete authenticated envelope: %+v", env)
+	}
+
+	for name, headers := range map[string]map[string]string{
+		"forged timestamp": {
+			"X-Timestamp": "1700000001",
+			"X-Signature": timestampedSignature(testSecret, ts, body),
+		},
+		"forged body": {
+			"X-Timestamp": ts,
+			"X-Signature": timestampedSignature(testSecret, ts, body),
+		},
+		"malformed timestamp": {
+			"X-Timestamp": "not-unix-seconds",
+			"X-Signature": timestampedSignature(testSecret, "not-unix-seconds", body),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidateBody := body
+			if name == "forged body" {
+				candidateBody = []byte(`{"event":"order.cancelled"}`)
+			}
+			if _, err := v.Verify(testSecret, candidateBody, headers); kerr.KindOf(err) != kerr.KindUnauthenticated {
+				t.Fatalf("tampered timestamped envelope = %v, want unauthenticated", err)
+			}
+		})
+	}
+}
 
 // TestUnitHMACVerifier_Envelope proves HMACVerifier returns an Envelope whose
 // fields are derived from the authenticated body and receipt time only.
@@ -50,8 +102,7 @@ func TestUnitHMACVerifier_Envelope(t *testing.T) {
 
 // TestUnitHMACVerifier_OccurredAtIgnoresTimestampHeader proves the verifier's
 // receipt-time synthesis is independent of any timestamp header the caller
-// supplies. This is the unit-level complement to the integration test that
-// manipulates in.Timestamp.
+// supplies. A body-only verifier cannot attest to caller-supplied time.
 func TestUnitHMACVerifier_OccurredAtIgnoresTimestampHeader(t *testing.T) {
 	body := []byte(`{"event":"order.created"}`)
 	v := webhook.HMACVerifier{}

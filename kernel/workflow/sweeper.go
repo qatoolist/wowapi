@@ -53,13 +53,28 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 	}()
 	now = now.UTC()
 
-	// Claim and guard-flip one bounded reminder batch atomically. SKIP LOCKED
-	// lets another invocation make progress while preserving no-double-remind.
-	toRemind, err := claimReminderBatch(ctx, db, now)
+	// Lock both bounded candidate sets before changing either guard. SKIP LOCKED
+	// lets another invocation make progress, while the row locks keep these
+	// candidates stable until their definitions have been fully verified.
+	reminderCandidates, err := selectReminderBatch(ctx, db, now)
 	if err != nil {
 		return 0, 0, err
 	}
-	reminderState, err := rt.loadSLAState(ctx, db, toRemind)
+	escalationCandidates, err := selectEscalationBatch(ctx, db, now)
+	if err != nil {
+		return 0, 0, err
+	}
+	allCandidates := make([]slaRef, 0, len(reminderCandidates)+len(escalationCandidates))
+	allCandidates = append(allCandidates, reminderCandidates...)
+	allCandidates = append(allCandidates, escalationCandidates...)
+	slaState, err := rt.loadSLAState(ctx, db, allCandidates)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Only after every selected instance's persisted/registered definition has
+	// passed identity verification may a durable reminder guard be flipped.
+	toRemind, err := markReminderBatch(ctx, db, now, reminderCandidates)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -67,7 +82,7 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 		if lag := now.Sub(ref.dueAt); lag > maxLag {
 			maxLag = lag
 		}
-		state := reminderState[ref.instance]
+		state := slaState[ref.instance]
 		if err := rt.emit(ctx, db, state.instance, state.def, "reminded", map[string]any{
 			"instance_id": ref.instance.String(), "task_id": ref.id.String(), "step": ref.step,
 		}); err != nil {
@@ -76,14 +91,9 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 		reminders++
 	}
 
-	// Expiry is the escalation guard. As above, the state transition and
-	// bounded claim are one statement, so concurrent invocations cannot emit
-	// the same escalation.
-	toEscalate, err := claimEscalationBatch(ctx, db, now)
-	if err != nil {
-		return reminders, escalations, err
-	}
-	escalationState, err := rt.loadSLAState(ctx, db, toEscalate)
+	// Expiry is the escalation guard. Candidate locks plus the guarded update
+	// preserve no-double-escalation across concurrent invocations.
+	toEscalate, err := markEscalationBatch(ctx, db, now, escalationCandidates)
 	if err != nil {
 		return reminders, escalations, err
 	}
@@ -91,7 +101,7 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 		if lag := now.Sub(ref.dueAt); lag > maxLag {
 			maxLag = lag
 		}
-		state := escalationState[ref.instance]
+		state := slaState[ref.instance]
 		inst, def := state.instance, state.def
 		if err := rt.emit(ctx, db, inst, def, "escalated", map[string]any{
 			"instance_id": ref.instance.String(), "task_id": ref.id.String(), "step": ref.step,
@@ -115,9 +125,8 @@ func (rt *Runtime) SweepSLA(ctx context.Context, db database.TenantDB, now time.
 	return reminders, escalations, nil
 }
 
-func claimReminderBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
-	rows, err := db.Query(ctx, `WITH due AS (
-		SELECT id
+func selectReminderBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `SELECT id, instance_id, step_key, remind_after
 		  FROM workflow_tasks
 		 WHERE status = 'open'
 		   AND remind_after IS NOT NULL
@@ -125,40 +134,63 @@ func claimReminderBatch(ctx context.Context, db database.TenantDB, now time.Time
 		   AND (last_reminded_at IS NULL OR last_reminded_at < remind_after)
 		 ORDER BY remind_after, id
 		 FOR UPDATE SKIP LOCKED
-		 LIMIT $2
-	)
-	UPDATE workflow_tasks AS task
-	   SET last_reminded_at = $1, updated_at = now()
-	  FROM due
-	 WHERE task.id = due.id
-	   AND task.status = 'open'
-	   AND task.remind_after <= $1
-	   AND (task.last_reminded_at IS NULL OR task.last_reminded_at < task.remind_after)
-	RETURNING task.id, task.instance_id, task.step_key, task.remind_after`, now, sweepSLABatchSize)
+		 LIMIT $2`, now, sweepSLABatchSize)
 	if err != nil {
-		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "claim reminders")
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "select reminders")
 	}
+	defer rows.Close()
 	return scanSLARefs(rows, "reminders")
 }
 
-func claimEscalationBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
-	rows, err := db.Query(ctx, `WITH due AS (
-		SELECT id
+func selectEscalationBatch(ctx context.Context, db database.TenantDB, now time.Time) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `SELECT id, instance_id, step_key, due_at
 		  FROM workflow_tasks
 		 WHERE status = 'open' AND due_at IS NOT NULL AND due_at <= $1
 		 ORDER BY due_at, id
 		 FOR UPDATE SKIP LOCKED
-		 LIMIT $2
-	)
-	UPDATE workflow_tasks AS task
-	   SET status = 'expired', version = version + 1, updated_at = now()
-	  FROM due
-	 WHERE task.id = due.id AND task.status = 'open'
-	RETURNING task.id, task.instance_id, task.step_key, task.due_at`, now, sweepSLABatchSize)
+		 LIMIT $2`, now, sweepSLABatchSize)
 	if err != nil {
-		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "claim escalations")
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "select escalations")
 	}
+	defer rows.Close()
 	return scanSLARefs(rows, "escalations")
+}
+
+func markReminderBatch(ctx context.Context, db database.TenantDB, now time.Time, candidates []slaRef) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `UPDATE workflow_tasks AS task
+	   SET last_reminded_at = $1, updated_at = now()
+	 WHERE task.id = ANY($2::uuid[])
+	   AND task.status = 'open'
+	   AND task.remind_after <= $1
+	   AND (task.last_reminded_at IS NULL OR task.last_reminded_at < task.remind_after)
+	RETURNING task.id, task.instance_id, task.step_key, task.remind_after`, now, slaRefIDs(candidates))
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "mark reminders")
+	}
+	defer rows.Close()
+	return scanSLARefs(rows, "reminders")
+}
+
+func markEscalationBatch(ctx context.Context, db database.TenantDB, now time.Time, candidates []slaRef) ([]slaRef, error) {
+	rows, err := db.Query(ctx, `UPDATE workflow_tasks AS task
+	   SET status = 'expired', version = version + 1, updated_at = now()
+	 WHERE task.id = ANY($2::uuid[])
+	   AND task.status = 'open'
+	   AND task.due_at <= $1
+	RETURNING task.id, task.instance_id, task.step_key, task.due_at`, now, slaRefIDs(candidates))
+	if err != nil {
+		return nil, kerr.Wrapf(err, "workflow.SweepSLA", "mark escalations")
+	}
+	defer rows.Close()
+	return scanSLARefs(rows, "escalations")
+}
+
+func slaRefIDs(refs []slaRef) []uuid.UUID {
+	ids := make([]uuid.UUID, len(refs))
+	for i := range refs {
+		ids[i] = refs[i].id
+	}
+	return ids
 }
 
 func scanSLARefs(rows interface {

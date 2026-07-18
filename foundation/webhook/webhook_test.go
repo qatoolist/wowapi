@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -103,6 +104,38 @@ func newService(t *testing.T, sender *fakes.WebhookSender) *webhook.Service {
 	return svc
 }
 
+func TestRegistrationRejectsDuplicateNilAndTypedNil(t *testing.T) {
+	newBare := func() *webhook.Service {
+		return webhook.New(&fakes.WebhookSender{}, &fakes.WebhookSecretResolver{}, model.UUIDv7())
+	}
+	noop := func(context.Context, database.TenantDB, webhook.Event) error { return nil }
+	tests := map[string]func(*webhook.Service){
+		"duplicate verifier": func(s *webhook.Service) {
+			s.RegisterVerifier("provider", fakes.WebhookVerifier{})
+			s.RegisterVerifier("provider", fakes.WebhookVerifier{})
+		},
+		"nil verifier":       func(s *webhook.Service) { s.RegisterVerifier("provider", nil) },
+		"typed nil verifier": func(s *webhook.Service) { var v *fakes.WebhookVerifier; s.RegisterVerifier("provider", v) },
+		"empty provider":     func(s *webhook.Service) { s.RegisterVerifier("", fakes.WebhookVerifier{}) },
+		"duplicate handler": func(s *webhook.Service) {
+			s.RegisterHandler("event", noop)
+			s.RegisterHandler("event", noop)
+		},
+		"nil handler": func(s *webhook.Service) { s.RegisterHandler("event", nil) },
+		"empty event": func(s *webhook.Service) { s.RegisterHandler("", noop) },
+	}
+	for name, register := range tests {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("invalid webhook registration did not panic")
+				}
+			}()
+			register(newBare())
+		})
+	}
+}
+
 // --- signing helper ---
 
 // testSign computes an inbound X-Signature header (HMAC over the body alone —
@@ -168,13 +201,11 @@ func TestIntegrationHandleInbound_SignatureSuccess(t *testing.T) {
 
 	body := []byte(`{"event":"order.created"}`)
 	in := webhook.InboundIn{
-		EndpointID:      epID,
-		ProviderKey:     testProviderKey,
-		RawBody:         body,
-		Headers:         map[string]string{"X-Signature": testSign(body)},
-		ExternalEventID: "ext-001",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EndpointID:  epID,
+		ProviderKey: testProviderKey,
+		RawBody:     body,
+		Headers:     map[string]string{"X-Signature": testSign(body)},
+		EventType:   "order.created",
 	}
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		return svc.HandleInbound(ctx, db, in)
@@ -203,13 +234,11 @@ func TestIntegrationHandleInbound_BadSignature(t *testing.T) {
 
 	body := []byte(`{"event":"order.created"}`)
 	in := webhook.InboundIn{
-		EndpointID:      epID,
-		ProviderKey:     testProviderKey,
-		RawBody:         body,
-		Headers:         map[string]string{"X-Signature": "sha256=badhex"},
-		ExternalEventID: "ext-badsig",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EndpointID:  epID,
+		ProviderKey: testProviderKey,
+		RawBody:     body,
+		Headers:     map[string]string{"X-Signature": "sha256=badhex"},
+		EventType:   "order.created",
 	}
 
 	var sigErr error
@@ -243,13 +272,11 @@ func TestIntegrationHandleInbound_Replay(t *testing.T) {
 	body := []byte(`{"event":"order.created"}`)
 	makeIn := func() webhook.InboundIn {
 		return webhook.InboundIn{
-			EndpointID:      epID,
-			ProviderKey:     testProviderKey,
-			RawBody:         body,
-			Headers:         map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-replay",
-			EventType:       "order.created",
-			Timestamp:       time.Now(),
+			EndpointID:  epID,
+			ProviderKey: testProviderKey,
+			RawBody:     body,
+			Headers:     map[string]string{"X-Signature": testSign(body)},
+			EventType:   "order.created",
 		}
 	}
 
@@ -281,19 +308,20 @@ func TestIntegrationHandleInbound_TimestampOutOfWindow(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
 	body := []byte(`{"event":"old"}`)
-	svc := newService(t, &fakes.WebhookSender{})
-	svc.RegisterVerifier(testProviderKey, envelopeVerifier{envelope: webhook.Envelope{
-		CanonicalBody:    body,
-		EventID:          "ext-old",
-		OccurredAt:       time.Now().Add(-10 * time.Minute),
-		SignatureVersion: "test",
-	}})
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
+	svc := webhook.New(&fakes.WebhookSender{}, resolver, model.UUIDv7())
+	svc.RegisterVerifier(testProviderKey, webhook.TimestampedHMACVerifier{})
+	timestamp := strconv.FormatInt(time.Now().Add(-10*time.Minute).Unix(), 10)
 
 	in := webhook.InboundIn{
 		EndpointID:  epID,
 		ProviderKey: testProviderKey,
 		RawBody:     body,
-		EventType:   "order.created",
+		Headers: map[string]string{
+			"X-Timestamp": timestamp,
+			"X-Signature": timestampedSignature(testSecret, timestamp, body),
+		},
+		EventType: "order.created",
 	}
 
 	var tsErr error
@@ -333,11 +361,9 @@ func TestIntegrationProcessInbound_Success(t *testing.T) {
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		return svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody:         body,
-			Headers:         map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-proc-ok",
-			EventType:       "order.created",
-			Timestamp:       time.Now(),
+			RawBody:   body,
+			Headers:   map[string]string{"X-Signature": testSign(body)},
+			EventType: "order.created",
 		})
 	}); err != nil {
 		t.Fatalf("HandleInbound: %v", err)
@@ -369,11 +395,9 @@ func TestIntegrationProcessInbound_HandlerErrorDeadLetters(t *testing.T) {
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		return svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody:         body,
-			Headers:         map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-dlq",
-			EventType:       "broken.event",
-			Timestamp:       time.Now(),
+			RawBody:   body,
+			Headers:   map[string]string{"X-Signature": testSign(body)},
+			EventType: "broken.event",
 		})
 	}); err != nil {
 		t.Fatalf("HandleInbound: %v", err)
@@ -576,13 +600,11 @@ func TestIntegrationTenantIsolation(t *testing.T) {
 	body := []byte(`{"x":1}`)
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tnA.ID), func(ctx context.Context, db database.TenantDB) error {
 		return svc.HandleInbound(ctx, db, webhook.InboundIn{
-			EndpointID:      epA,
-			ProviderKey:     testProviderKey,
-			RawBody:         body,
-			Headers:         map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-iso",
-			EventType:       "x.event",
-			Timestamp:       time.Now(),
+			EndpointID:  epA,
+			ProviderKey: testProviderKey,
+			RawBody:     body,
+			Headers:     map[string]string{"X-Signature": testSign(body)},
+			EventType:   "x.event",
 		})
 	}); err != nil {
 		t.Fatalf("HandleInbound for A: %v", err)
@@ -665,9 +687,8 @@ func TestIntegrationHandleInbound_IdlessDedup(t *testing.T) {
 			ProviderKey: testProviderKey,
 			RawBody:     body,
 			Headers:     map[string]string{"X-Signature": testSign(body)},
-			// no ExternalEventID → synthesized from the body
+			// no verifier event id → synthesized from the authenticated body
 			EventType: "order.created",
-			Timestamp: time.Now(),
 		}
 	}
 
@@ -705,13 +726,11 @@ func TestIntegrationHandleInbound_FailedSigDoesNotBlockValid(t *testing.T) {
 	// A spoofed request supplies caller-controlled id "evt-1", but a failed
 	// signature must not claim any verifier-derived deduplication identity.
 	badIn := webhook.InboundIn{
-		EndpointID:      epID,
-		ProviderKey:     testProviderKey,
-		RawBody:         body,
-		Headers:         map[string]string{"X-Signature": "sha256=deadbeef"},
-		ExternalEventID: "evt-1",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EndpointID:  epID,
+		ProviderKey: testProviderKey,
+		RawBody:     body,
+		Headers:     map[string]string{"X-Signature": "sha256=deadbeef"},
+		EventType:   "order.created",
 	}
 	var badErr error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
@@ -727,13 +746,11 @@ func TestIntegrationHandleInbound_FailedSigDoesNotBlockValid(t *testing.T) {
 	// A legitimate signed event with the same caller-controlled id must succeed;
 	// HMACVerifier derives the trusted identity from the authenticated body.
 	goodIn := webhook.InboundIn{
-		EndpointID:      epID,
-		ProviderKey:     testProviderKey,
-		RawBody:         body,
-		Headers:         map[string]string{"X-Signature": testSign(body)},
-		ExternalEventID: "evt-1",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EndpointID:  epID,
+		ProviderKey: testProviderKey,
+		RawBody:     body,
+		Headers:     map[string]string{"X-Signature": testSign(body)},
+		EventType:   "order.created",
 	}
 	bodyHash := sha256.Sum256(body)
 	verifiedEventID := "sha256:" + hex.EncodeToString(bodyHash[:])

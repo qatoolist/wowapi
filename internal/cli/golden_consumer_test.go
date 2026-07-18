@@ -75,6 +75,10 @@ func goldenConsumerScaffold(t *testing.T) string {
 		"gen", "notification", "--module", "internal/modules/fulfillment", "--name", "shipment_ready")
 	runPipelineStep(t, "generate fulfillment webhook", productDir, nil, cli,
 		"gen", "webhook", "--module", "internal/modules/fulfillment", "--name", "shipment_update")
+	webhookClosureTest := strings.ReplaceAll(goldenWebhookClosureSource, "MODULE_PATH", goldenConsumerModulePath)
+	if err := os.WriteFile(filepath.Join(productDir, "internal", "boottest", "webhook_route_test.go"), []byte(webhookClosureTest), 0o644); err != nil {
+		t.Fatalf("write generated webhook closure test: %v", err)
+	}
 
 	runPipelineStep(t, "tidy generated two-module consumer", productDir, goEnv,
 		"go", "mod", "tidy")
@@ -84,6 +88,104 @@ func goldenConsumerScaffold(t *testing.T) string {
 		"go", "test", "./internal/boottest/")
 	return productDir
 }
+
+const goldenWebhookClosureSource = `package boottest
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/testkit"
+	"MODULE_PATH/internal/wire"
+)
+
+const generatedWebhookSecret = "golden-webhook-secret"
+
+type generatedWebhookSecrets struct{}
+
+func (generatedWebhookSecrets) Resolve(context.Context, secrets.Ref) (string, error) {
+	return generatedWebhookSecret, nil
+}
+
+func TestGeneratedInboundWebhookRouteIsBooted(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{Tx: noopTxM{}, Storage: storage.NewMemory()})
+	if err != nil { t.Fatal(err) }
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil { t.Fatal(err) }
+	for _, route := range booted.RuntimeRouter().Routes() {
+		if route.Method == http.MethodPost && route.Pattern == "/webhooks/fulfillment/shipment_update/{tenant_id}/{endpoint_id}" && route.Meta.Public {
+			return
+		}
+	}
+	t.Fatal("generated inbound webhook POST route was not present after boot")
+}
+
+func TestGeneratedInboundWebhookRoutePersistsVerifiedEvent(t *testing.T) {
+	h := testkit.NewDB(t)
+	tenant := testkit.CreateTenant(t, h)
+	endpointID := uuid.New()
+	if _, err := h.Admin.Exec(context.Background(), ` + "`" + `INSERT INTO webhook_endpoints
+		(id, tenant_id, direction, secret_ref, signature_scheme, status, created_by)
+		VALUES ($1,$2,'inbound','secretref://test/webhook','hmac-sha256','active',$3)` + "`" + `,
+		endpointID, tenant.ID, uuid.Nil); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Tx: h.TxM, Storage: storage.NewMemory(), Secrets: generatedWebhookSecrets{},
+	})
+	if err != nil { t.Fatal(err) }
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil { t.Fatal(err) }
+
+	body := []byte(` + "`" + `{"shipment":"updated"}` + "`" + `)
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(generatedWebhookSecret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(body)
+	req := httptest.NewRequest(http.MethodPost,
+		"/webhooks/fulfillment/shipment_update/"+tenant.ID.String()+"/"+endpointID.String(),
+		bytes.NewReader(body))
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	rec := httptest.NewRecorder()
+	booted.RuntimeRouter().SecureHandler(nil, nil, h.TxM).ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("generated inbound route = %d: %s", rec.Code, rec.Body.String())
+	}
+	var status, eventType string
+	var signatureOK bool
+	if err := h.Admin.QueryRow(context.Background(), ` + "`" + `SELECT delivery_status,event_type,signature_ok
+		FROM webhook_events WHERE tenant_id=$1 AND endpoint_id=$2` + "`" + `,
+		tenant.ID, endpointID).Scan(&status, &eventType, &signatureOK); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || eventType != "fulfillment.shipment_update" || !signatureOK {
+		t.Fatalf("generated inbound event status=%s type=%s signature_ok=%v", status, eventType, signatureOK)
+	}
+}
+`
 
 var goldenConsumerRequiredArtifacts = []string{
 	"internal/modules/catalog/module.go",

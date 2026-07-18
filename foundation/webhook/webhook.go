@@ -8,10 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
@@ -84,13 +87,11 @@ type Event struct {
 // InboundIn is the input envelope the HTTP layer fills when it receives a
 // provider webhook POST.
 type InboundIn struct {
-	EndpointID      uuid.UUID
-	ProviderKey     string // key to look up the registered Verifier
-	RawBody         []byte
-	Headers         map[string]string
-	ExternalEventID string
-	EventType       string
-	Timestamp       time.Time // provider-supplied timestamp from headers
+	EndpointID  uuid.UUID
+	ProviderKey string // key to look up the registered Verifier
+	RawBody     []byte
+	Headers     map[string]string
+	EventType   string
 }
 
 // --- port interfaces ---
@@ -128,14 +129,16 @@ type InboundHandler func(ctx context.Context, db database.TenantDB, e Event) err
 // DB (app_rt); ProcessInbound and DispatchOutbound run on a platform TxManager
 // (app_platform, tenant-bound), following the document.Service pattern.
 type Service struct {
-	verifiers map[string]Verifier
-	handlers  map[string]InboundHandler
-	sender    Sender
-	secrets   SecretResolver
-	breaker   *breakerRegistry
-	idgen     model.IDGen
-	now       func() time.Time
-	metrics   observability.Metrics
+	registryMu sync.RWMutex
+	sealed     bool
+	verifiers  map[string]Verifier
+	handlers   map[string]InboundHandler
+	sender     Sender
+	secrets    SecretResolver
+	breaker    *breakerRegistry
+	idgen      model.IDGen
+	now        func() time.Time
+	metrics    observability.Metrics
 }
 
 // Option customizes a Service at construction.
@@ -199,11 +202,53 @@ func (s *Service) emitBreakerState(endpointID uuid.UUID, br *breakerState) {
 // RegisterVerifier registers a Verifier for the given provider key.
 // Call before serving requests.
 func (s *Service) RegisterVerifier(providerKey string, v Verifier) {
+	s.registryMu.Lock()
+	defer s.registryMu.Unlock()
+	if s.sealed {
+		panic("webhook.RegisterVerifier: registration after boot: the extension model is sealed")
+	}
+	if providerKey == "" || nilRegistration(v) {
+		panic("webhook.RegisterVerifier: provider key and non-nil verifier are required")
+	}
+	if _, exists := s.verifiers[providerKey]; exists {
+		panic(fmt.Sprintf("webhook.RegisterVerifier: duplicate provider key %q", providerKey))
+	}
 	s.verifiers[providerKey] = v
 }
 
 // RegisterHandler registers an InboundHandler for the given event type.
 // Only one handler per event type; call before serving.
 func (s *Service) RegisterHandler(eventType string, h InboundHandler) {
+	s.registryMu.Lock()
+	defer s.registryMu.Unlock()
+	if s.sealed {
+		panic("webhook.RegisterHandler: registration after boot: the extension model is sealed")
+	}
+	if eventType == "" || h == nil {
+		panic("webhook.RegisterHandler: event type and non-nil handler are required")
+	}
+	if _, exists := s.handlers[eventType]; exists {
+		panic(fmt.Sprintf("webhook.RegisterHandler: duplicate event type %q", eventType))
+	}
 	s.handlers[eventType] = h
+}
+
+func nilRegistration(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Chan || rv.Kind() == reflect.Func || rv.Kind() == reflect.Interface ||
+		rv.Kind() == reflect.Map || rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Slice {
+		return rv.IsNil()
+	}
+	return false
+}
+
+// Seal freezes boot-owned verifier and handler registration. The authority is
+// internal to the framework, so derived projects cannot prematurely seal it.
+func (s *Service) Seal(sealer.Authority) {
+	s.registryMu.Lock()
+	defer s.registryMu.Unlock()
+	s.sealed = true
 }

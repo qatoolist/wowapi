@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/kernel/lease"
@@ -111,12 +114,14 @@ type Delivery struct {
 // operations (SendPending) run under a tenant-bound TxManager (app_platform) to
 // advance append-only delivery status — the same split as kernel/document.
 type Service struct {
-	reg     *Registry
-	idgen   model.IDGen
-	now     func() time.Time
-	senders map[string]ChannelSender
-	tracer  observability.Tracer
-	ob      outbox.Writer // optional; when set, ImportanceLegal deliveries write a delivery-audit event
+	sendersMu sync.RWMutex
+	sealed    bool
+	reg       *Registry
+	idgen     model.IDGen
+	now       func() time.Time
+	senders   map[string]ChannelSender
+	tracer    observability.Tracer
+	ob        outbox.Writer // optional; when set, ImportanceLegal deliveries write a delivery-audit event
 }
 
 // Option customizes the notify Service.
@@ -178,10 +183,42 @@ func New(reg *Registry, idgen model.IDGen, opts ...Option) *Service {
 // Adapters must implement safety.Declarer and declare their duplicate-safety
 // mechanism; registration panics otherwise.
 func (s *Service) RegisterSender(channel Channel, sender ChannelSender) {
+	s.sendersMu.Lock()
+	defer s.sendersMu.Unlock()
+	if s.sealed {
+		panic("notify.RegisterSender: registration after boot: the extension model is sealed")
+	}
+	if channel == "" || nilSender(sender) {
+		panic(fmt.Sprintf("notify.RegisterSender: channel and non-nil sender are required (channel %q)", channel))
+	}
 	if _, ok := sender.(safety.Declarer); !ok {
 		panic(fmt.Sprintf("notify.RegisterSender: sender %T for channel %q must implement safety.Declarer", sender, channel))
 	}
-	s.senders[string(channel)] = sender
+	key := string(channel)
+	if _, exists := s.senders[key]; exists {
+		panic(fmt.Sprintf("notify.RegisterSender: duplicate sender for channel %q", channel))
+	}
+	s.senders[key] = sender
+}
+
+func nilSender(sender ChannelSender) bool {
+	if sender == nil {
+		return true
+	}
+	rv := reflect.ValueOf(sender)
+	if rv.Kind() == reflect.Chan || rv.Kind() == reflect.Func || rv.Kind() == reflect.Interface ||
+		rv.Kind() == reflect.Map || rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Slice {
+		return rv.IsNil()
+	}
+	return false
+}
+
+// Seal freezes boot-owned sender registration. Only app.Boot can obtain the
+// unforgeable internal authority; runtime delivery remains read-only.
+func (s *Service) Seal(sealer.Authority) {
+	s.sendersMu.Lock()
+	defer s.sendersMu.Unlock()
+	s.sealed = true
 }
 
 // --- module-facing operations (run on the caller's app_rt tenant tx) ---
@@ -762,6 +799,8 @@ func localeFallback(locale string) []string {
 // sender is wired for the channel — the caller must treat that as a delivery
 // failure, NOT a silent success (roadmap CA-15).
 func (s *Service) senderFor(ch Channel) (ChannelSender, bool) {
+	s.sendersMu.RLock()
+	defer s.sendersMu.RUnlock()
 	sndr, ok := s.senders[string(ch)]
 	return sndr, ok
 }

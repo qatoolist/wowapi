@@ -67,7 +67,9 @@ func (s *Service) HandleInbound(ctx context.Context, db database.TenantDB, in In
 		return kerr.Wrapf(err, "webhook.HandleInbound", "resolve secret")
 	}
 
+	s.registryMu.RLock()
 	v, ok := s.verifiers[in.ProviderKey]
+	s.registryMu.RUnlock()
 	if !ok {
 		return kerr.E(kerr.KindValidation, "no_verifier", "no verifier registered for provider: "+in.ProviderKey)
 	}
@@ -435,7 +437,9 @@ func (s *Service) claimRetry(ctx context.Context, plat database.TxManager, tenan
 // --- internal ---
 
 func (s *Service) runInboundHandler(ctx context.Context, db database.TenantDB, ev Event) error {
+	s.registryMu.RLock()
 	h, ok := s.handlers[ev.EventType]
+	s.registryMu.RUnlock()
 	if !ok {
 		return nil // no handler registered — treat as processed (no-op)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/qatoolist/wowapi/foundation/document"
 	"github.com/qatoolist/wowapi/foundation/integration"
 	"github.com/qatoolist/wowapi/foundation/notify"
+	"github.com/qatoolist/wowapi/foundation/webhook"
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/authz"
 	"github.com/qatoolist/wowapi/kernel/config"
@@ -27,6 +28,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/workflow"
 	"github.com/qatoolist/wowapi/module"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // Closure-review regression (adversarial closure review 2026-07-17, F-10):
@@ -83,6 +85,11 @@ func TestSealedExtensionModelRejectsEveryPostBootRegistration(t *testing.T) {
 		{"DocumentHooks.OnFileUpload", func() { retained.DocumentHooks().OnFileUpload(nil) }},
 		{"DocumentHooks.OnDocumentAccess", func() { retained.DocumentHooks().OnDocumentAccess(nil) }},
 		{"NotifyTemplates.Register", func() { retained.NotifyTemplates().Register("widgets", notify.TemplateSpec{}) }},
+		{"Notify.RegisterSender", func() { retained.Notify().RegisterSender(notify.ChannelEmail, &fakes.NotifySender{}) }},
+		{"Webhooks.RegisterVerifier", func() { retained.Webhooks().RegisterVerifier("late", fakes.WebhookVerifier{}) }},
+		{"Webhooks.RegisterHandler", func() {
+			retained.Webhooks().RegisterHandler("late.event", func(context.Context, database.TenantDB, webhook.Event) error { return nil })
+		}},
 		{"IntegrationProviders.Register", func() { retained.IntegrationProviders().Register("widgets", integration.Provider(nil)) }},
 		// The live collectors Booted itself exposes for serving.
 		{"Booted.Router.Handle", func() {

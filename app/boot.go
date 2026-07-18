@@ -539,6 +539,8 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	k.Workflows.Seal(sealAuth)
 	k.DocumentClasses.Seal(sealAuth)
 	k.NotifyTemplates.Seal(sealAuth)
+	k.Notify.Seal(sealAuth)
+	k.Webhooks.Seal(sealAuth)
 	k.IntegrationProviders.Seal(sealAuth)
 	if k.RetentionClasses != nil {
 		k.RetentionClasses.Seal(sealAuth)

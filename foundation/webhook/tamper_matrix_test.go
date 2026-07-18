@@ -101,9 +101,7 @@ func TestIntegrationHandleInbound_TamperedKeyID(t *testing.T) {
 			"X-Key-Id":            "key-2", // tampered: signed for key-1
 			"X-Signature-Version": "v1",
 		},
-		ExternalEventID: "ext-keyid-tamper",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EventType: "order.created",
 	}
 
 	var tamperErr error
@@ -150,9 +148,7 @@ func TestIntegrationHandleInbound_TamperedSignatureVersion(t *testing.T) {
 			"X-Key-Id":            "key-1",
 			"X-Signature-Version": "v1", // tampered: signed for v2
 		},
-		ExternalEventID: "ext-sigver-tamper",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EventType: "order.created",
 	}
 
 	var tamperErr error

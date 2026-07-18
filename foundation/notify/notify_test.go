@@ -49,6 +49,32 @@ func TestRegisterSender_AcceptsDeclaredAdapter(t *testing.T) {
 	svc.RegisterSender(notify.ChannelEmail, &declaredChannelSender{mechanism: safety.InboxEffectLedger})
 }
 
+func TestRegisterSenderRejectsDuplicateNilAndTypedNil(t *testing.T) {
+	tests := map[string]func(*notify.Service){
+		"duplicate": func(s *notify.Service) {
+			s.RegisterSender(notify.ChannelEmail, &fakes.NotifySender{})
+			s.RegisterSender(notify.ChannelEmail, &fakes.NotifySender{})
+		},
+		"nil": func(s *notify.Service) { s.RegisterSender(notify.ChannelEmail, nil) },
+		"typed nil": func(s *notify.Service) {
+			var sender *fakes.NotifySender
+			s.RegisterSender(notify.ChannelEmail, sender)
+		},
+		"empty channel": func(s *notify.Service) { s.RegisterSender("", &fakes.NotifySender{}) },
+	}
+	for name, register := range tests {
+		t.Run(name, func(t *testing.T) {
+			svc := notify.New(notify.NewRegistry(), model.UUIDv7())
+			defer func() {
+				if recover() == nil {
+					t.Fatal("invalid sender registration did not panic")
+				}
+			}()
+			register(svc)
+		})
+	}
+}
+
 // undeclaredChannelSender implements notify.ChannelSender but not safety.Declarer.
 type undeclaredChannelSender struct{}
 
