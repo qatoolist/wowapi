@@ -17,3 +17,7 @@ This file records the semantic-extraction evidence for the clean-V1 review. Gene
 Graphify's cluster/report regeneration currently writes zero token usage into `graphify-out/GRAPH_REPORT.md`, even though the raw analysis file contains the nonzero totals above. The raw analysis is therefore the usage authority; the generated report is the node/edge/community authority. Seven warnings about missing `source_file` provenance remain on historical `impl/` inferred edges. They were not hand-edited because generated graph data is not a source artifact.
 
 The final handoff records the post-report incremental counts and confirms that structural freshness is current. Semantic extraction is considered complete only when every requested chunk succeeds and raw input/output usage is nonzero.
+
+## Final report refresh
+
+After `ComprehensiveReport.md` received Fable's final verdict, committed revision `bd650be` was structurally refreshed and the report plus this provenance document were deliberately invalidated from the semantic cache. Google Gemini re-extracted 2/2 files in one successful chunk using 5,258 input and 2,456 output tokens. Reclustering produced 8,541 nodes, 21,652 edges, and 599 communities. The same seven historical `impl/` edge warnings remained; no semantic chunk failed.
