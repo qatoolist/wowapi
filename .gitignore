@@ -103,3 +103,10 @@ CLAUDE.md
 # HTML test reports
 full_test_report.html
 functional_fix_report.log
+
+# User-owned review artifacts & dev prompts — kept locally, never committed
+ComprehensiveReport.md
+CleanV1DevelopmentPrompt.md
+Rejection.md
+Rejection2.md
+Rejection3.md
