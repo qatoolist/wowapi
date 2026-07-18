@@ -346,7 +346,7 @@ func TestInitMigrateMainSyncsSeeds(t *testing.T) {
 	}
 	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
 	assertFileContains(t, migratePath, "kernel/seeds")
-	assertFileContains(t, migratePath, "seeds.Apply(ctx, pool, booted.Seeds")
+	assertFileContains(t, migratePath, "seeds.Apply(ctx, pool, booted.RuntimeSeeds()")
 	assertParseGo(t, migratePath)
 }
 
@@ -375,10 +375,31 @@ func TestInitMigrateMainSyncsRuleDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedIdx := strings.Index(string(content), "seeds.Apply(ctx, pool, booted.Seeds")
+	seedIdx := strings.Index(string(content), "seeds.Apply(ctx, pool, booted.RuntimeSeeds()")
 	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
 	if seedIdx == -1 || ruleIdx == -1 || ruleIdx < seedIdx {
 		t.Fatalf("rule-definition sync must appear AFTER seed sync in generated migrate main (seedIdx=%d ruleIdx=%d)", seedIdx, ruleIdx)
+	}
+}
+
+func TestInitMigrateMainSyncsWorkflowDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := callInit(t, "--module", "github.com/acme/myapp", "--dir", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	migratePath := filepath.Join(dir, "cmd", "migrate", "main.go")
+	assertFileContains(t, migratePath, "kernel/workflow")
+	assertFileContains(t, migratePath, "workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows())")
+	assertParseGo(t, migratePath)
+	content, err := os.ReadFile(migratePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ruleIdx := strings.Index(string(content), "rules.SyncDefinitions(ctx, pool, k.Rules)")
+	workflowIdx := strings.Index(string(content), "workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows())")
+	if ruleIdx == -1 || workflowIdx == -1 || workflowIdx < ruleIdx {
+		t.Fatalf("workflow sync must appear after rule sync (ruleIdx=%d workflowIdx=%d)", ruleIdx, workflowIdx)
 	}
 }
 
@@ -471,7 +492,7 @@ func TestInitWorkerMainWiresOptionalStorage(t *testing.T) {
 
 // TestInitAPIMainWiresLocaleMiddleware: the generated api main must install the
 // framework's i18n locale-negotiation middleware (kernel/i18n landed this
-// branch) unconditionally — booted.I18n is always a non-nil catalog
+// branch) unconditionally — booted.RuntimeI18n() is always a non-nil catalog
 // (framework English is pre-loaded), so this is a pure framework-standard
 // concern with no product config gate, unlike storage/OIDC.
 func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
@@ -482,7 +503,7 @@ func TestInitAPIMainWiresLocaleMiddleware(t *testing.T) {
 	}
 	apiPath := filepath.Join(dir, "cmd", "api", "main.go")
 	assertParseGo(t, apiPath)
-	assertFileContains(t, apiPath, "httpx.Locale(booted.I18n)")
+	assertFileContains(t, apiPath, "httpx.Locale(booted.RuntimeI18n())")
 }
 
 // TestInitConfigsBaseDocumentsStorage: the generated configs/base.yaml should
@@ -912,6 +933,33 @@ func TestNewModuleBadName(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "must match") {
 		t.Errorf("stderr should mention constraint: %q", errOut)
+	}
+}
+
+func TestWireGeneratedModuleRejectsMarkerlessRegistry(t *testing.T) {
+	root := t.TempDir()
+	wireDir := filepath.Join(root, "internal", "wire")
+	if err := os.MkdirAll(wireDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/product\n\ngo 1.26\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wireDir, "modules.go"), []byte(`package wire
+
+import "github.com/qatoolist/wowapi/module"
+
+func Modules() []module.Module { return nil }
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modDir := filepath.Join(root, "internal", "modules", "widgets")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := wireGeneratedModule(modDir, "widgets"); err == nil || !strings.Contains(err.Error(), "missing wowapi module markers") {
+		t.Fatalf("markerless registry must fail loudly, got %v", err)
 	}
 }
 

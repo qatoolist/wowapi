@@ -55,7 +55,7 @@ func TestIntegrationUploadHookAbortsConfirm(t *testing.T) {
 			return e
 		}
 		body := []byte("payload")
-		sess, e := svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -112,7 +112,7 @@ func TestIntegrationAccessHookDeniesDownload(t *testing.T) {
 			return e
 		}
 		body := []byte("hello, framework")
-		sess, e := svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}

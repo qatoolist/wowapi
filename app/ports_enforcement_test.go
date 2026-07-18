@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -152,4 +154,102 @@ func TestRetainedContextCannotMutatePortsAfterBoot(t *testing.T) {
 	mustPanic("Health", func() { retained.Health("late", func(context.Context) error { return nil }) })
 	mustPanic("Migrations", func() { retained.Migrations(nil) })
 	mustPanic("OpenAPI", func() { retained.OpenAPI([]byte("{}")) })
+}
+
+// Closure-review regressions (adversarial closure review 2026-07-17, F-10).
+
+// A module that IGNORES the Port error and returns nil from Register must
+// still fail boot: unsatisfied dependencies are a boot contract, not a
+// courtesy return value.
+func TestBootFailsWhenPortErrorIsIgnored(t *testing.T) {
+	err := bootModules(t,
+		funcModule{name: "widgets", reg: func(mc module.Context) error {
+			mc.ProvidePort("widgets.clock", widgetImpl{})
+			return nil
+		}},
+		funcModule{name: "zgadgets", reg: func(mc module.Context) error {
+			_, _ = mc.Port("widgets.clock") // undeclared dependency; error ignored
+			return nil
+		}},
+	)
+	if err == nil {
+		t.Fatal("boot succeeded although a module resolved an undeclared dependency and swallowed the error")
+	}
+}
+
+// A missing provider must fail boot even when the module ignores the error.
+func TestBootFailsWhenMissingProviderErrorIsIgnored(t *testing.T) {
+	err := bootModules(t,
+		funcModule{name: "widgets", reg: func(mc module.Context) error {
+			_, _ = mc.Port("widgets.absent") // never provided; error ignored
+			return nil
+		}},
+	)
+	if err == nil {
+		t.Fatal("boot succeeded although a module resolved a missing port and swallowed the error")
+	}
+}
+
+// A typed nil passes impl == nil but panics at first use — boot must reject it.
+func TestBootRejectsTypedNilPortImpl(t *testing.T) {
+	err := bootModules(t,
+		funcModule{name: "widgets", reg: func(mc module.Context) error {
+			mc.ProvidePort("widgets.clock", (*widgetImpl)(nil))
+			return nil
+		}},
+	)
+	if err == nil {
+		t.Fatal("boot accepted a typed-nil port implementation")
+	}
+}
+
+// Duplicate collector registrations must fail boot, never silently overwrite.
+func TestBootRejectsDuplicateCollectorRegistrations(t *testing.T) {
+	err := bootModules(t,
+		funcModule{name: "widgets", reg: func(mc module.Context) error {
+			mc.OpenAPI([]byte(`{"a":1}`))
+			mc.OpenAPI([]byte(`{"b":2}`)) // would previously overwrite {"a":1}
+			mc.Health("db", func(context.Context) error { return nil })
+			mc.Health("db", func(context.Context) error { return nil })
+			return nil
+		}},
+	)
+	if err == nil {
+		t.Fatal("boot accepted duplicate OpenAPI/Health registrations (silent overwrite)")
+	}
+	for _, want := range []string{"duplicate OpenAPI", "duplicate Health"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("boot error %v does not name %q", err, want)
+		}
+	}
+}
+
+// The live readiness handler serves the boot-validated module checks. V2:
+// Booted has no exposed Health map to inject into — the former sabotage
+// vector is structurally impossible; this asserts the wiring itself.
+func TestReadinessHandlerServesBootValidatedChecks(t *testing.T) {
+	h := testkit.NewDB(t)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Pool: h.Runtime, Platform: h.Platform, Tx: h.TxM,
+	})
+	if err != nil {
+		t.Fatalf("kernel.New: %v", err)
+	}
+	a := app.New()
+	a.Register(funcModule{name: "widgets", reg: func(mc module.Context) error {
+		mc.Health("real", func(context.Context) error { return nil })
+		return nil
+	}})
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	health := app.Readiness(booted, config.Fingerprint{}, nil)
+	rec := httptest.NewRecorder()
+	health.Readiness().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if !strings.Contains(rec.Body.String(), "widgets.real") {
+		t.Fatalf("readiness payload lost the genuine module check: %s", rec.Body.String())
+	}
 }

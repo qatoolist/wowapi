@@ -3,7 +3,7 @@ package pagination_test
 // Hot-path benchmarks for cursor encode/decode (criterion #17).
 //
 // DecodeCursor runs on every non-first page request (attacker-reachable input
-// from the client). EncodeCursor runs once per response when minting the next
+// from the client). EncodeCursorWithSig runs once per response when minting the next
 // cursor. Both should be fast and allocation-bounded.
 
 import (
@@ -20,13 +20,13 @@ var benchCursorValues = map[string]any{
 	"id":         uuid.MustParse("01234567-89ab-cdef-0123-456789abcdef"),
 }
 
-// BenchmarkCursorEncode measures EncodeCursor: JSON marshal + base64url
+// BenchmarkCursorEncode measures EncodeCursorWithSig: JSON marshal + base64url
 // encoding of a two-column keyset tuple.
 func BenchmarkCursorEncode(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = pagination.EncodeCursor(benchCursorValues)
+		_, _ = pagination.EncodeCursorWithSig("created_at:asc,id:asc", benchCursorValues)
 	}
 }
 
@@ -34,7 +34,7 @@ func BenchmarkCursorEncode(b *testing.B) {
 // path. Includes base64url decode + JSON decode with UseNumber + number
 // conversion. Must not allocate unboundedly on valid input.
 func BenchmarkCursorDecode(b *testing.B) {
-	encoded, err := pagination.EncodeCursor(benchCursorValues)
+	encoded, err := pagination.EncodeCursorWithSig("created_at:asc,id:asc", benchCursorValues)
 	if err != nil {
 		b.Fatalf("setup: %v", err)
 	}
@@ -61,7 +61,7 @@ func BenchmarkCursorRoundTrip(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		enc, err := pagination.EncodeCursor(benchCursorValues)
+		enc, err := pagination.EncodeCursorWithSig("created_at:asc,id:asc", benchCursorValues)
 		if err != nil {
 			b.Fatal(err)
 		}

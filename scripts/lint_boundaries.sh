@@ -114,44 +114,30 @@ fi
 
 # Kernel package allowlist: any new addition to ./kernel/... must fail CI unless added here.
 # Keeps the kernel small, stable, and focused on core capabilities (FBL-01).
-# Deprecated v1 forwarding packages are listed below. Their only production
-# file is compat.go; depguard and constructorlint keep those exceptions
-# file-scoped.
 expected_kernel_pkgs="
 github.com/qatoolist/wowapi/kernel
 github.com/qatoolist/wowapi/kernel/apikey
 github.com/qatoolist/wowapi/kernel/appmodel
-github.com/qatoolist/wowapi/kernel/artifact
-github.com/qatoolist/wowapi/kernel/attachment
 github.com/qatoolist/wowapi/kernel/audit
 github.com/qatoolist/wowapi/kernel/auth
 github.com/qatoolist/wowapi/kernel/authz
-github.com/qatoolist/wowapi/kernel/bulk
-github.com/qatoolist/wowapi/kernel/comment
 github.com/qatoolist/wowapi/kernel/config
 github.com/qatoolist/wowapi/kernel/database
-github.com/qatoolist/wowapi/kernel/document
 github.com/qatoolist/wowapi/kernel/errors
 github.com/qatoolist/wowapi/kernel/filtering
 github.com/qatoolist/wowapi/kernel/httpclient
 github.com/qatoolist/wowapi/kernel/httpx
 github.com/qatoolist/wowapi/kernel/i18n
-github.com/qatoolist/wowapi/kernel/integration
 github.com/qatoolist/wowapi/kernel/jobs
 github.com/qatoolist/wowapi/kernel/jobs/chaos
 github.com/qatoolist/wowapi/kernel/lease
-github.com/qatoolist/wowapi/kernel/lifecycle
 github.com/qatoolist/wowapi/kernel/logging
-github.com/qatoolist/wowapi/kernel/mfa
 github.com/qatoolist/wowapi/kernel/migration
 github.com/qatoolist/wowapi/kernel/model
-github.com/qatoolist/wowapi/kernel/notify
 github.com/qatoolist/wowapi/kernel/observability
 github.com/qatoolist/wowapi/kernel/outbox
 github.com/qatoolist/wowapi/kernel/pagination
 github.com/qatoolist/wowapi/kernel/policy
-github.com/qatoolist/wowapi/kernel/port
-github.com/qatoolist/wowapi/kernel/port/registrar_forge_compile_fail_fixture
 github.com/qatoolist/wowapi/kernel/privileged
 github.com/qatoolist/wowapi/kernel/relationship
 github.com/qatoolist/wowapi/kernel/resource
@@ -166,7 +152,6 @@ github.com/qatoolist/wowapi/kernel/sequence
 github.com/qatoolist/wowapi/kernel/storage
 github.com/qatoolist/wowapi/kernel/tracing
 github.com/qatoolist/wowapi/kernel/validation
-github.com/qatoolist/wowapi/kernel/webhook
 github.com/qatoolist/wowapi/kernel/workflow
 "
 
@@ -183,6 +168,12 @@ if [ -n "$unallowlisted" ]; then
   for pkg in $unallowlisted; do
     echo "  $pkg"
   done
+  fail=1
+fi
+
+# Template consumer-path lint (extracted to its own script so a negative
+# fixture test can prove forbidden reads actually fail the gate).
+if ! sh scripts/lint_templates.sh internal/cli/templates; then
   fail=1
 fi
 

@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/qatoolist/wowapi/foundation/mfa"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 func TestFakeSender_RecordsDeliveries(t *testing.T) {
-	f := &mfa.FakeSender{}
+	f := &fakes.MFASender{}
 	if err := f.Send(context.Background(), "+15551234567", "your code is 123456"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -24,7 +25,7 @@ func TestFakeSender_RecordsDeliveries(t *testing.T) {
 }
 
 func TestFakeSender_ReturnsConfiguredError(t *testing.T) {
-	f := &mfa.FakeSender{Err: errors.New("boom")}
+	f := &fakes.MFASender{Err: errors.New("boom")}
 	if err := f.Send(context.Background(), "+1", "body"); err == nil {
 		t.Fatal("expected configured error")
 	}
@@ -34,7 +35,7 @@ func TestFakeSender_ReturnsConfiguredError(t *testing.T) {
 }
 
 func TestFakeSender_Reset(t *testing.T) {
-	f := &mfa.FakeSender{Err: errors.New("boom")}
+	f := &fakes.MFASender{Err: errors.New("boom")}
 	f.Reset()
 	if err := f.Send(context.Background(), "+1", "body"); err != nil {
 		t.Fatalf("Send after Reset: %v", err)
@@ -45,7 +46,7 @@ func TestFakeSender_Reset(t *testing.T) {
 }
 
 func TestFakeSender_LastCode_ExtractsTrailingDigits(t *testing.T) {
-	f := &mfa.FakeSender{}
+	f := &fakes.MFASender{}
 	_ = f.Send(context.Background(), "+1", "Your verification code is 048213")
 	if got := f.LastCode(); got != "048213" {
 		t.Errorf("LastCode() = %q, want %q", got, "048213")
@@ -53,14 +54,14 @@ func TestFakeSender_LastCode_ExtractsTrailingDigits(t *testing.T) {
 }
 
 func TestFakeSender_LastCode_EmptyBeforeAnySend(t *testing.T) {
-	f := &mfa.FakeSender{}
+	f := &fakes.MFASender{}
 	if got := f.LastCode(); got != "" {
 		t.Errorf("LastCode() before any Send = %q, want empty", got)
 	}
 }
 
 func TestFakeSender_LastCode_EmptyBodyYieldsEmptyCode(t *testing.T) {
-	f := &mfa.FakeSender{}
+	f := &fakes.MFASender{}
 	_ = f.Send(context.Background(), "+1", "")
 	if got := f.LastCode(); got != "" {
 		t.Errorf("LastCode() for empty body = %q, want empty", got)
@@ -101,6 +102,6 @@ func TestLogSender_RedactsShortDestination(t *testing.T) {
 // TestSender_InterfaceSatisfiedByAdapters is a compile-time-ish check (run at
 // test time) that both adapters satisfy the Sender port.
 func TestSender_InterfaceSatisfiedByAdapters(t *testing.T) {
-	var _ mfa.Sender = &mfa.FakeSender{}
+	var _ mfa.Sender = &fakes.MFASender{}
 	_ = mfa.NewLogSender(slog.Default()) // return type is already mfa.Sender
 }

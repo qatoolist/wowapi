@@ -24,7 +24,7 @@ import (
 func registerMaintenance(sched *jobs.Scheduler, k *kernel.Kernel, slaEvery, idemEvery, dlqEvery, anchorEvery, notifyEvery, webhookEvery, uploadSessionEvery time.Duration) {
 	// Idempotency-key expiry: one cross-tenant DELETE as app_platform. The
 	// k.Platform pool already connects AS app_platform, so Platform() runs with
-	// the cross-tenant sweep policy (migration 00012).
+	// the clean-baseline cross-tenant sweep policy.
 	platTxM := database.NewManager(k.Platform, config.DB{}, database.WithRole("app_platform"), database.WithRLSGuard())
 	idem := database.NewIdemStore()
 	sched.Register("kernel.idempotency.sweep", idemEvery, func(ctx context.Context) error {

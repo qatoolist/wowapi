@@ -87,8 +87,8 @@ tok := ti.Issue(subjectID, tenantID, capacityID,
 req.Header.Set("Authorization", "Bearer "+tok)
 ```
 Options: `WithIssuer`, `WithAudience`, `WithExpiry`, `WithGrantID`, `WithAMR`.
-`WithImpersonator`/`WithBreakGlass` are retained for backwards compatibility but no longer drive
-`authz.Actor` fields unless a matching `grant_id` is resolved server-side.
+Privileged-session tests use `WithGrantID` and a matching server-side grant row; the token helper
+does not expose impersonator or break-glass claim options.
 
 ### The module contract suite
 

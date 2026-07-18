@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,67 @@ type HMACVerifier struct {
 	SignatureHeader string
 }
 
+// TimestampedHMACVerifier implements the framework's timestamped HMAC wire
+// contract. It authenticates the exact byte sequence "<unix-seconds>.<body>"
+// using HMAC-SHA256, matching outbound delivery. The timestamp is therefore
+// verifier-attested and can safely drive HandleInbound's replay window.
+type TimestampedHMACVerifier struct {
+	SignatureHeader string
+	TimestampHeader string
+}
+
+// Verify validates a lowercase hexadecimal HMAC (an optional "sha256=" prefix
+// is accepted), strictly parses the authenticated Unix timestamp, and derives
+// a stable event identity from the complete authenticated message.
+func (v TimestampedHMACVerifier) Verify(secret string, body []byte, headers map[string]string) (Envelope, error) {
+	sigHeader := v.SignatureHeader
+	if sigHeader == "" {
+		sigHeader = "X-Signature"
+	}
+	tsHeader := v.TimestampHeader
+	if tsHeader == "" {
+		tsHeader = "X-Timestamp"
+	}
+	got := headerValue(headers, sigHeader)
+	if got == "" {
+		return Envelope{}, kerr.E(kerr.KindUnauthenticated, "signature_missing", "webhook signature header absent")
+	}
+	ts := headerValue(headers, tsHeader)
+	if ts == "" {
+		return Envelope{}, kerr.E(kerr.KindUnauthenticated, "timestamp_missing", "webhook timestamp header absent")
+	}
+	seconds, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return Envelope{}, kerr.E(kerr.KindUnauthenticated, "timestamp_invalid", "webhook timestamp must be Unix seconds")
+	}
+	got = strings.TrimPrefix(got, "sha256=")
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(ts + "."))
+	_, _ = mac.Write(body)
+	want := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(got), []byte(want)) {
+		return Envelope{}, kerr.E(kerr.KindUnauthenticated, "signature_mismatch", "webhook timestamped HMAC-SHA256 signature does not match")
+	}
+	identity := sha256.New()
+	_, _ = identity.Write([]byte(ts + "."))
+	_, _ = identity.Write(body)
+	return Envelope{
+		CanonicalBody:    body,
+		EventID:          "sha256:" + hex.EncodeToString(identity.Sum(nil)),
+		OccurredAt:       time.Unix(seconds, 0).UTC(),
+		SignatureVersion: "sha256-timestamped",
+	}, nil
+}
+
+func headerValue(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
+}
+
 // Verify computes HMAC-SHA256(secret, body) and compares it to the value in
 // SignatureHeader using a constant-time comparison. On success it returns an
 // Envelope synthesized from the authenticated body and receipt time. On
@@ -74,13 +136,7 @@ func (v HMACVerifier) Verify(secret string, body []byte, headers map[string]stri
 		header = "X-Signature"
 	}
 	// Header lookup is case-insensitive.
-	var got string
-	for k, val := range headers {
-		if strings.EqualFold(k, header) {
-			got = val
-			break
-		}
-	}
+	got := headerValue(headers, header)
 	if got == "" {
 		return Envelope{}, kerr.E(kerr.KindUnauthenticated, "signature_missing", "webhook signature header absent")
 	}
@@ -106,27 +162,4 @@ func (v HMACVerifier) Verify(secret string, body []byte, headers map[string]stri
 		SignatureVersion: "sha256",
 		KeyID:            "", // body-only HMAC does not authenticate a key id
 	}, nil
-}
-
-// FakeVerifier is a test double that passes when the header "X-Test-Sig" equals
-// the pre-configured Secret, and fails otherwise.
-type FakeVerifier struct {
-	// Secret is the expected value in the "X-Test-Sig" header.
-	Secret string
-}
-
-// Verify passes when headers["X-Test-Sig"] == v.Secret, fails otherwise.
-// On success it returns an Envelope synthesized from the body and receipt time.
-func (v FakeVerifier) Verify(_ string, body []byte, headers map[string]string) (Envelope, error) {
-	if headers["X-Test-Sig"] == v.Secret {
-		sum := sha256.Sum256(body)
-		return Envelope{
-			CanonicalBody:    body,
-			EventID:          "sha256:" + hex.EncodeToString(sum[:]),
-			OccurredAt:       time.Now(),
-			SignatureVersion: "test",
-			KeyID:            "",
-		}, nil
-	}
-	return Envelope{}, kerr.E(kerr.KindUnauthenticated, "signature_mismatch", "fake verifier: signature does not match")
 }

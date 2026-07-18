@@ -6,7 +6,7 @@ below is taken from the source — if a subcommand you expect isn't here, it isn
 
 ## `wowapi` CLI
 
-Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0` — pin an exact tag, never `@latest`
+Get the CLI after the clean release: `go install github.com/qatoolist/wowapi/cmd/wowapi@v1.2.0` — pin an exact tag, never `@latest`
 (per the [upgrade policy](../operations/upgrade-and-deprecation-policy.md)) — or build from a clone; see
 [Getting Started](getting-started.md#step-1--get-the-wowapi-cli).
 
@@ -58,7 +58,6 @@ Get the CLI: `go install github.com/qatoolist/wowapi/cmd/wowapi@v1.1.0` — pin 
 | Command | Flags | Purpose |
 |---|---|---|
 | `wowapi lint boundaries` | `--pkgs` (`./...`) | Module isolation + layering (import-law) check. |
-| `wowapi lint lifecycle` | — | Print + lint the static provider/lifecycle manifest (`kernel/lifecycle`): catches scope leaks, raw pools reaching modules, tenant-scoped values escaping their transaction, migrate-only services wired into API/worker runtime, and missing providers/cycles. Exit 0 clean / 1 with every violation listed. |
 | `wowapi deploy render` | `--format` (`compose`\|`env`), `--name` (`app`), `--image` (`app:latest`), `--env` (`local`\|`dev`\|`stage`\|`prod`), `--out` | Render a deployment manifest. |
 
 ### API keys
@@ -116,7 +115,6 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make fmt` | `gofmt` all Go files. |
 | `make lint` | `golangci-lint` (falls back to `go vet`). |
 | `make lint-boundaries` | Import-law + vocabulary + `Reveal()` boundary lint. |
-| `make lint-lifecycle` | Static provider/lifecycle manifest lint (`wowapi lint lifecycle`; backlog B9). |
 
 ### Test
 
@@ -130,7 +128,7 @@ Inspect and recover failed async work (`internal/cli/dlq_cmd.go`):
 | `make test-security` | authz / RLS / secrets / redaction / unsafe-config. |
 | `make test-fuzz` | Fuzz the filter-DSL parser and cursor decoder. |
 | `make coverage` | Unit coverage report. |
-| `make golden-consumer` | Install a versioned CLI, generate/boot the two-module eight-subsystem consumer, replay tagged v1.1.0→local release candidate, and verify the RLS census. |
+| `make golden-consumer` | Install the candidate CLI, generate/boot the two-module eight-subsystem clean-baseline consumer, and verify the RLS census. |
 
 ### Bench, gen, build, CI
 

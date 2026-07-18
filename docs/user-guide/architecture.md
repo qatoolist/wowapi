@@ -58,18 +58,12 @@ wowapi does not use a reflection-based runtime DI container or a service locator
 (`module/module.go`) built from those same services. That is deliberate — explicit wiring stays
 readable and debuggable as the kernel grows.
 
-What *does* need discipline at that size is lifecycle correctness: which services are process-lived
-vs. request-lived vs. bound to one tenant transaction, and which are migrate-only and must never reach
-the API/worker runtime. `kernel/lifecycle` captures that as a small, hand-maintained descriptor model
-(`ProviderDescriptor{Provides, Requires, Scope}`, scopes `process | request | tenant_tx | job |
-migrate`) reflecting the real graph above, plus a pure-function lint over it. `wowapi lint lifecycle`
-prints the manifest and fails (exit 1) on:
-
-- a process-scoped service depending on request-scoped (or otherwise narrower-lived) state;
-- a module receiving a raw `*pgxpool.Pool` instead of a `database.TxManager`;
-- a tenant-scoped value (`database.TenantDB`) escaping the transaction callback that produced it;
-- a migrate-only service wired into API/worker runtime;
-- a declared dependency with no matching provider, or a dependency cycle.
+Lifecycle correctness is enforced by the executable composition boundary: `App.Boot` validates the
+actual registered module/port graph, seals every extension registry, and exposes only the opaque,
+boot-produced runtime view. Tenant database handles exist only inside transaction callbacks, modules
+receive `database.TxManager` rather than raw pools, and generated process mains consume narrow runtime
+accessors. The repository does not maintain a second hand-authored lifecycle graph that can drift from
+this real wiring.
 
 CI gates on this the same way it gates on `make lint-boundaries` — see [CLI reference](cli-reference.md).
 
@@ -137,8 +131,8 @@ The kernel ships primitives products usually have to build themselves:
 | Audit log | `kernel/audit` | Hash-chained, tamper-evident event log |
 | Sequences | `kernel/sequence` | Gap-free monotonic numbering (invoices, etc.) |
 | Retention | `kernel/retention` | Legal holds, DSR erasure, disposition engine |
-| Bulk ops | `kernel/bulk` | Batched, tenant-safe bulk mutations |
-| Artifacts | `kernel/artifact` | Managed blob/object references |
+| Bulk ops | `foundation/bulk` | Batched, tenant-safe bulk mutations |
+| Artifacts | `foundation/artifact` | Managed blob/object references |
 | Idempotency | `kernel/httpx` | Idempotency-key dedupe on mutating routes |
 
 Modules reach these through `module.Context` accessors — see [Building modules](modules.md).

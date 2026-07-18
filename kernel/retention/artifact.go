@@ -78,23 +78,6 @@ func NewFileArtifactWriter(dir string, key []byte, audit *audit.Writer) *FileArt
 	return &FileArtifactWriter{dir: dir, key: key, audit: audit}
 }
 
-// TestKey returns a deterministic 32-byte AES key for tests. It may be
-// overridden by the WOWAPI_DSR_ARTIFACT_TEST_KEY environment variable (hex).
-func TestKey() []byte {
-	if k := os.Getenv("WOWAPI_DSR_ARTIFACT_TEST_KEY"); k != "" {
-		b, err := hex.DecodeString(k)
-		if err == nil && len(b) == 32 {
-			return b
-		}
-	}
-	return []byte{
-		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
-	}
-}
-
 type artifactEnvelope struct {
 	RequestID uuid.UUID `json:"request_id"`
 	Algorithm string    `json:"algorithm"`

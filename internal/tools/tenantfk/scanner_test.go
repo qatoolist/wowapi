@@ -366,6 +366,8 @@ func TestMigrationVersionGT(t *testing.T) {
 		{"pre-cleanup migration", "migrations/00010_documents.sql", 36, false},
 		{"fixture without version", "testdata/bad_fk_migration.sql", 36, true},
 		{"since zero keeps all", "migrations/00010_documents.sql", 0, true},
+		{"clean baseline included at zero", "migrations/00001_baseline.sql", 0, true},
+		{"clean baseline excluded only after one", "migrations/00001_baseline.sql", 1, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

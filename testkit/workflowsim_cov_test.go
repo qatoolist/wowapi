@@ -64,7 +64,10 @@ func buildCovRuntime(t *testing.T, h *DBHandle, approverCap uuid.UUID, raws ...s
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntimeWithCompliance(h.TxM, reg, covEvaluator(), outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatalf("SyncDefinitions: %v", err)
+	}
+	return workflow.NewRuntime(h.TxM, reg, covEvaluator(), outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 }
 
 func covActor(tenant, userID, cap uuid.UUID) authz.Actor {
@@ -84,7 +87,6 @@ func TestIntegrationWorkflowSimApproveFlow(t *testing.T) {
 	res := CreateResourceTypeAndResource(t, h, tn.ID, "cov.request")
 
 	rt := buildCovRuntime(t, h, approverCap, linearDefCov)
-	SeedWorkflowDefinition(t, h, &tn.ID, "cov.approval", 1, "cov.request", nil)
 
 	sim := NewWorkflowSim(t, h, rt)
 	sim.Start("cov.approval", res, map[string]any{"amount": 10})
@@ -107,7 +109,6 @@ func TestIntegrationWorkflowSimRejectFlow(t *testing.T) {
 	res := CreateResourceTypeAndResource(t, h, tn.ID, "cov.request")
 
 	rt := buildCovRuntime(t, h, approverCap, linearDefCov)
-	SeedWorkflowDefinition(t, h, &tn.ID, "cov.approval", 1, "cov.request", nil)
 
 	NewWorkflowSim(t, h, rt).
 		Start("cov.approval", res, nil).
@@ -116,23 +117,42 @@ func TestIntegrationWorkflowSimRejectFlow(t *testing.T) {
 		ExpectStatus("rejected")
 }
 
-// TestSeedWorkflowDefinitionTemplate seeds a module-template definition
-// (tenant_id NULL) with an empty raw body, exercising the nil-tenant and
-// default-raw branches of SeedWorkflowDefinition, and asserts the row landed.
-func TestIntegrationSeedWorkflowDefinitionTemplate(t *testing.T) {
+// TestIntegrationSyncWorkflowDefinitionMaterializesGlobalCatalog proves the
+// testkit path uses the same production synchronization contract as products.
+func TestIntegrationSyncWorkflowDefinitionMaterializesGlobalCatalog(t *testing.T) {
 	h := NewDB(t)
-	id := SeedWorkflowDefinition(t, h, nil, "cov.template", 2, "cov.request", nil)
-
-	var tenantID *uuid.UUID
-	var version int
-	if err := h.Admin.QueryRow(context.Background(),
-		`SELECT tenant_id, version FROM workflow_definitions WHERE id = $1`, id).Scan(&tenantID, &version); err != nil {
-		t.Fatalf("load seeded definition: %v", err)
+	def, err := workflow.ParseDefinition([]byte(`
+key: cov.template
+version: 2
+applies_to: cov.request
+initial_step: done
+steps:
+  done: {type: terminal, outcome: completed}
+`))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if tenantID != nil {
-		t.Fatalf("template definition tenant_id = %v, want NULL", tenantID)
+	reg := workflow.NewRegistry()
+	if err := reg.RegisterDefinition(def); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatal(err)
+	}
+
+	var version int
+	var digest string
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT version, definition_digest FROM workflow_definitions WHERE key = 'cov.template'`).Scan(&version, &digest); err != nil {
+		t.Fatalf("load seeded definition: %v", err)
 	}
 	if version != 2 {
 		t.Fatalf("version = %d, want 2", version)
+	}
+	if len(digest) != 64 {
+		t.Fatalf("definition digest length = %d, want 64", len(digest))
 	}
 }

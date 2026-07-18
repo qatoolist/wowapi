@@ -240,7 +240,7 @@ constraints (`org IN (…)`, `resource.id IN (SELECT … relationships …)`) th
 - **Delegation:** approver creates a time-boxed assignment `delegated_from=own_assignment`; revoked automatically when the source assignment ends.
 - **Break-glass:** platform role `core.platform.breakglass` grants nothing until activated via a dedicated endpoint that (a) requires reason, (b) creates a ≤60min assignment, (c) fires `core.security.breakglass_activated` event + notification to tenant admins, (d) banners every audit row it produces.
 - **Impersonation:** support actor gets `impersonating_user_id` in ctx; every audit row records both identities; impersonation cannot approve workflows or change security settings (kernel policy `deny`).
-- **Emergency workflow override:** see workflow engine — an override records mandatory reason + creates a ratification task.
+- **Emergency workflow override:** see workflow engine — an authorized override records the mandatory reason and both acting identities in the same transaction.
 
 ### Society mapping (illustration)
 Owner/occupier → relationship types; secretary/treasurer/chairman → roles with term-limited assignments; auditor → `core.org.auditor` time-boxed; vendor → vendor capacity + `assigned_to` relationships; "member can view own society docs" → `document.read granted_via society.member_of`.

@@ -74,10 +74,10 @@ func TestIntegrationModuleRecurringJobCollected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boot: %v", err)
 	}
-	if len(booted.Recurring) != 1 {
-		t.Fatalf("expected 1 recurring job on Booted, got %d", len(booted.Recurring))
+	if len(app.CapturedRecurring(booted)) != 1 {
+		t.Fatalf("expected 1 recurring job on Booted, got %d", len(app.CapturedRecurring(booted)))
 	}
-	rj := booted.Recurring[0]
+	rj := app.CapturedRecurring(booted)[0]
 	if rj.Name != "widgets.nightly" {
 		t.Errorf("recurring job name = %q, want widgets.nightly (module-prefixed)", rj.Name)
 	}

@@ -106,7 +106,6 @@ db:
 | `security.csrf.header_name` | string | `X-CSRF-Token` | Only consulted under `security.profile: browser`. |
 | `security.cookie.same_site` | enum | `lax` | `strict`/`lax`/`none`; only consulted under `security.profile: browser`. |
 | `security.cookie.secure` | bool | `true` | Required `true` when `same_site: none`. |
-| `security.enforce_route_contracts` | bool | `false` | Fail boot when a POST/PUT/PATCH route declares no `RouteMeta.Request` contract and no `NoRequestBody` waiver. Enable after auditing your mutating routes. |
 
 > Modules read their own config namespace via `mc.Config().Decode(&cfg)` inside `Register` — see
 > [Modules](modules.md). Unknown keys are **rejected**, so a typo'd module config key fails the boot.
@@ -161,7 +160,7 @@ change needed. The generated `main.go` is identical either way: under the `api` 
 nothing (proven behavior-unchanged), under `browser` it activates CSP + CSRF at runtime.
 
 The safe outbound HTTP client (DNS/IP-blocking SSRF guard for anything wowapi calls out to) is a separate,
-already-shipped concern: `kernel/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
+already-shipped concern: `foundation/webhook.HTTPSender` (backlog B2). It is unaffected by, and unrelated to,
 the security profile selected here.
 ## Concurrency: capacity budget + backpressure
 

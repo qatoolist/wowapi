@@ -40,7 +40,15 @@ type WorkerConfigOpts struct {
 // Signal wiring (SIGINT/SIGTERM) belongs to the process main via
 // signal.NotifyContext; StartWorker stays testable with a plain context.
 func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
-	k := b.Kernel
+	// A Booted value App.Boot did not produce never passed validation; running
+	// it would convert construction misuse into unvalidated operation (third
+	// closure audit 2026-07-17). No fallback — fail closed.
+	if b == nil || !b.runtime.set {
+		return ErrNotBooted
+	}
+	// The boot-captured dependency view, never the reassignable Kernel field
+	// (fourth closure audit 2026-07-17).
+	k := b.runtimeKernel()
 	if k.Platform == nil {
 		return errNoPlatformPool
 	}
@@ -82,7 +90,10 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 		opts.UploadSessionInterval = time.Hour
 	}
 
-	relay := outbox.NewRelay(k.Platform, k.Tx, b.Events, opts.RelayBatch,
+	// The relay, runner, and scheduler consume the boot-validated runtime view;
+	// reassigning Booted's exported fields cannot change what this worker runs
+	// (second closure audit 2026-07-17, F-10).
+	relay := outbox.NewRelay(k.Platform, k.Tx, b.RuntimeEvents(), opts.RelayBatch,
 		outbox.WithRelayTracer(k.Tracer), outbox.WithRelayMetrics(k.Metrics))
 	var runnerOpts []jobs.RunnerOpt
 	if opts.JobPoolSize > 0 {
@@ -91,7 +102,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 	// WithRunnerTracer continues each job's originating request trace across the
 	// async boundary (roadmap O1/CA-9), mirroring the outbox relay tracer above.
 	runnerOpts = append(runnerOpts, jobs.WithDrainTimeout(opts.ShutdownDrain), jobs.WithLogger(log), jobs.WithRunnerTracer(k.Tracer))
-	runner := jobs.NewRunner(k.Platform, k.Tx, b.Jobs, runnerOpts...)
+	runner := jobs.NewRunner(k.Platform, k.Tx, b.RuntimeJobs(), runnerOpts...)
 
 	// Scheduler: leader-safe kernel maintenance sweeps (SLA timers, idempotency
 	// expiry). Registered here so every worker replica participates; the schedules
@@ -110,7 +121,7 @@ func StartWorker(ctx context.Context, b *Booted, opts WorkerConfigOpts) error {
 		}
 	})
 	registerMaintenance(sched, k, opts.SLAInterval, opts.IdempotencyInterval, opts.DLQDepthInterval, opts.AuditAnchorInterval, opts.NotifySendInterval, opts.WebhookRetryInterval, opts.UploadSessionInterval)
-	registerModuleRecurring(sched, k, b.Recurring)
+	registerModuleRecurring(sched, k, b.runtimeRecurring())
 
 	// Both loops respect ctx cancellation and drain in-flight work themselves.
 	// StartWorker blocks until ctx is cancelled and both have returned — but with

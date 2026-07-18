@@ -35,15 +35,15 @@ type Metrics interface {
 	SetGauge(name string, value float64, labels map[string]string)
 }
 
-// HistogramMetrics is the additive v1 extension for sampled distributions.
+// HistogramMetrics is the optional distribution-capable metrics contract.
 type HistogramMetrics interface {
 	Metrics
 	ObserveHistogram(name string, value float64, labels map[string]string)
 }
 
 // ObserveHistogram records a histogram sample when the configured sink
-// supports HistogramMetrics. Legacy v1 Metrics implementations safely ignore
-// the additive signal.
+// supports HistogramMetrics. Basic counter/gauge sinks intentionally ignore
+// distribution samples.
 func ObserveHistogram(metrics Metrics, name string, value float64, labels map[string]string) {
 	if sink, ok := metrics.(HistogramMetrics); ok {
 		sink.ObserveHistogram(name, value, labels)

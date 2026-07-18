@@ -74,23 +74,23 @@ jobs:
           docker run --rm --network perf-reference \
             --volume "$PWD:/src" --workdir /src \
             --env DATABASE_URL="$PERF_DSN" --env WOWAPI_REQUIRE_DB=1 --env WOWAPI_REQUIRE_S3=1 \
-            --env PERF_REPORT=perf/results/request-reference-v1.json \
+            --env PERF_REPORT=perf/results/request-reference-schema1.json \
             --env PERF_SOURCE_SHA="${GITHUB_SHA}" --env PERF_CONTAINER_IMAGE="$GO_IMAGE" \
             --env PERF_POSTGRES_IMAGE="$POSTGRES_IMAGE" --env PERF_POSTGRES_VERSION=16.9 \
             --env PERF_POSTGRES_CONFIG="shared_buffers=128MB,max_connections=200,fsync=on,synchronous_commit=on,full_page_writes=on,jit=off,track_io_timing=on" \
             --env PERF_NETWORK="GitHub Actions Docker service bridge; no artificial shaping" \
             --env GOCACHE=/tmp/go-build --env GOMODCACHE=/tmp/go-mod \
             "$GO_IMAGE" \
-            bash -euc "go test ./perf/requestbench -run '^(TestRealPostgresRequestProfileMatrix|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestEachProfileHasARepresentativeQueryPlanHash)$' -count=1 -v && go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests$' -benchtime=1x -count=1 -benchmem | tee perf/results/request-reference-v1.txt"
+            bash -euc "go test ./perf/requestbench -run '^(TestRealPostgresRequestProfileMatrix|TestSeedMatchesReferenceDatasetCardinality|TestSeedGrantsRealPostgresAuthorization|TestCostAttributionIsNonOverlapping|TestSQLCountExcludesWarmupAndPriorBatches|TestEachProfileHasARepresentativeQueryPlanHash)$' -count=1 -v && go test ./perf/requestbench -run '^$' -bench '^BenchmarkRealPostgresRequests$' -benchtime=1x -count=1 -benchmem | tee perf/results/request-reference-schema1.txt"
       - name: Publish source-addressed reference evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: perf-request-reference-${{ github.sha }}
           path: |
-            perf/reference-v1.json
+            perf/reference-schema1.json
             perf/fixtures/request-workloads-v1.json
-            perf/results/request-reference-v1.json
-            perf/results/request-reference-v1.txt
+            perf/results/request-reference-schema1.json
+            perf/results/request-reference-schema1.txt
             perf/results/runner/
           if-no-files-found: error
           retention-days: 30

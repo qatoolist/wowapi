@@ -18,7 +18,6 @@ import (
 	"github.com/qatoolist/wowapi/kernel/httpclient"
 	"github.com/qatoolist/wowapi/kernel/model"
 	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/testkit"
 	"github.com/qatoolist/wowapi/testkit/fakes"
 )
@@ -144,7 +143,7 @@ func TestUnitHTTPSender_BadURL(t *testing.T) {
 // TestUnitFakeSender_DefaultStatus proves the FakeSender returns 200 when its
 // StatusCode field is left at zero.
 func TestUnitFakeSender_DefaultStatus(t *testing.T) {
-	f := &webhook.FakeSender{} // StatusCode zero
+	f := &fakes.WebhookSender{} // StatusCode zero
 	code, err := f.Post(context.Background(), "http://x", []byte(`{}`), nil)
 	if err != nil {
 		t.Fatalf("Post: %v", err)
@@ -160,7 +159,7 @@ func TestUnitFakeSender_DefaultStatus(t *testing.T) {
 // TestUnitFakeVerifier proves the FakeVerifier passes on the matching test
 // header and fails otherwise.
 func TestUnitFakeVerifier(t *testing.T) {
-	v := webhook.FakeVerifier{Secret: "open-sesame"}
+	v := fakes.WebhookVerifier{Secret: "open-sesame"}
 	if _, err := v.Verify("", nil, map[string]string{"X-Test-Sig": "open-sesame"}); err != nil {
 		t.Fatalf("matching header should pass, got %v", err)
 	}
@@ -183,10 +182,10 @@ func TestUnitHMACVerifier_MissingHeader(t *testing.T) {
 // Constructor guard rails
 // =============================================================================
 
-// TestUnitNew_PanicsOnNilDeps proves New and NewWithClock panic when required
+// TestUnitNew_PanicsOnNilDeps proves New and WithClock panic when required
 // dependencies are missing.
 func TestUnitNew_PanicsOnNilDeps(t *testing.T) {
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
 	idgen := model.UUIDv7()
 
 	mustPanic := func(name string, fn func()) {
@@ -200,10 +199,16 @@ func TestUnitNew_PanicsOnNilDeps(t *testing.T) {
 	}
 
 	mustPanic("New(nil sender)", func() { webhook.New(nil, resolver, idgen) })
-	mustPanic("New(nil secrets)", func() { webhook.New(&webhook.FakeSender{}, nil, idgen) })
-	mustPanic("New(nil idgen)", func() { webhook.New(&webhook.FakeSender{}, resolver, nil) })
-	mustPanic("NewWithClock(nil clock)", func() {
-		webhook.NewWithClock(&webhook.FakeSender{}, resolver, idgen, nil)
+	mustPanic("New(nil secrets)", func() { webhook.New(&fakes.WebhookSender{}, nil, idgen) })
+	mustPanic("New(nil idgen)", func() { webhook.New(&fakes.WebhookSender{}, resolver, nil) })
+	var typedSender *fakes.WebhookSender
+	var typedResolver *fakes.WebhookSecretResolver
+	var typedIDGen *fakes.IDGen
+	mustPanic("New(typed-nil sender)", func() { webhook.New(typedSender, resolver, idgen) })
+	mustPanic("New(typed-nil secrets)", func() { webhook.New(&fakes.WebhookSender{}, typedResolver, idgen) })
+	mustPanic("New(typed-nil idgen)", func() { webhook.New(&fakes.WebhookSender{}, resolver, typedIDGen) })
+	mustPanic("WithClock(nil clock)", func() {
+		webhook.New(&fakes.WebhookSender{}, resolver, idgen, webhook.WithClock(nil))
 	})
 }
 
@@ -225,11 +230,11 @@ func TestIntegrationWithMetrics_EmitsBreakerGauge(t *testing.T) {
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/metrics")
 
 	m := &recordingMetrics{gauges: map[string]float64{}}
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
-	svc := webhook.New(&webhook.FakeSender{StatusCode: 200}, resolver, model.UUIDv7(), webhook.WithMetrics(m))
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
+	svc := webhook.New(&fakes.WebhookSender{StatusCode: 200}, resolver, model.UUIDv7(), webhook.WithMetrics(m))
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
 	}
@@ -244,8 +249,8 @@ func TestIntegrationWithMetrics_EmitsBreakerGauge(t *testing.T) {
 // TestUnitWithMetrics_NilIsIgnored proves WithMetrics(nil) does not override the
 // NoOp sink (service must still construct and dispatch without panicking).
 func TestUnitWithMetrics_NilIsIgnored(t *testing.T) {
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
-	svc := webhook.New(&webhook.FakeSender{}, resolver, model.UUIDv7(), webhook.WithMetrics(nil))
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
+	svc := webhook.New(&fakes.WebhookSender{}, resolver, model.UUIDv7(), webhook.WithMetrics(nil))
 	if svc == nil {
 		t.Fatal("New returned nil with WithMetrics(nil)")
 	}
@@ -260,13 +265,13 @@ func TestUnitWithMetrics_NilIsIgnored(t *testing.T) {
 func TestIntegrationHandleInbound_EndpointNotFound(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	var err error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: uuid.New(), ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "x", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "x",
 		})
 		return nil
 	}); cerr != nil {
@@ -283,13 +288,13 @@ func TestIntegrationHandleInbound_WrongDirection(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/out")
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	var err error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -306,13 +311,13 @@ func TestIntegrationHandleInbound_InactiveEndpoint(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpointStatus(t, h, tn.ID, "disabled")
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 
 	var err error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -329,13 +334,13 @@ func TestIntegrationHandleInbound_NoVerifier(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{}) // only testProviderKey registered
+	svc := newService(t, &fakes.WebhookSender{}) // only testProviderKey registered
 
 	var err error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: "unregistered-provider",
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -353,14 +358,14 @@ func TestIntegrationHandleInbound_SecretResolveError(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
 
-	svc := webhook.New(&webhook.FakeSender{}, failingResolver{}, model.UUIDv7())
+	svc := webhook.New(&fakes.WebhookSender{}, failingResolver{}, model.UUIDv7())
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 
 	var err error
 	if cerr := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		err = svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
-			RawBody: []byte(`{}`), EventType: "order.created", Timestamp: time.Now(),
+			RawBody: []byte(`{}`), EventType: "order.created",
 		})
 		return nil
 	}); cerr != nil {
@@ -384,14 +389,14 @@ func TestIntegrationProcessInbound_NoHandler(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{}) // no handlers registered
+	svc := newService(t, &fakes.WebhookSender{}) // no handlers registered
 
 	body := []byte(`{"event":"unhandled"}`)
 	if err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		return svc.HandleInbound(ctx, db, webhook.InboundIn{
 			EndpointID: epID, ProviderKey: testProviderKey,
 			RawBody: body, Headers: map[string]string{"X-Signature": testSign(body)},
-			ExternalEventID: "ext-nohandler", EventType: "unhandled.event", Timestamp: time.Now(),
+			EventType: "unhandled.event",
 		})
 	}); err != nil {
 		t.Fatalf("HandleInbound: %v", err)
@@ -418,10 +423,10 @@ func TestIntegrationDeliverToEndpoint_DeadLetterAndSkips(t *testing.T) {
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/dead")
 
 	clk := fakes.NewClock(time.Now())
-	sender := &webhook.FakeSender{StatusCode: 500}
+	sender := &fakes.WebhookSender{StatusCode: 500}
 	svc := newServiceWithClock(t, sender, clk)
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{"n":1}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"n":1}`))
 
 	// First failing attempt → status 'failed', attempts=1.
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, clk.Now()); err != nil {
@@ -489,10 +494,10 @@ func TestIntegrationDeliverToEndpoint_DeliveredSkip(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/delivered")
 
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
@@ -516,11 +521,11 @@ func TestIntegrationDeliverToEndpoint_SecretResolveError(t *testing.T) {
 	tn := testkit.CreateTenant(t, h)
 	epID := seedOutboundEndpoint(t, h, tn.ID, "https://example.test/nosecret")
 
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := webhook.New(sender, failingResolver{}, model.UUIDv7())
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{}`))
 	// DispatchOutbound swallows per-endpoint errors, so it returns nil even though
 	// delivery failed to resolve the secret.
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
@@ -563,7 +568,7 @@ func TestIntegrationRetryOutbound_SkipsNonUUID(t *testing.T) {
 		t.Fatalf("seed bad-id row: %v", err)
 	}
 
-	sender := &webhook.FakeSender{StatusCode: 200}
+	sender := &fakes.WebhookSender{StatusCode: 200}
 	svc := newService(t, sender)
 
 	if err := svc.RetryOutbound(context.Background(), h.PlatformTxM, tn.ID, time.Now()); err != nil {

@@ -77,8 +77,8 @@ func newEngine(t *testing.T) (*retention.Engine, *retention.DSR) {
 		t.Fatal(err)
 	}
 	dsr := retention.NewDSR(model.UUIDv7())
-	artifacts := retention.NewFileArtifactWriter(t.TempDir(), retention.TestKey(), nil)
-	return retention.NewEngineWithCompliance(reg, dsr, nil, artifacts, nil), dsr
+	artifacts := retention.NewFileArtifactWriter(t.TempDir(), artifactTestKey(), nil)
+	return retention.NewEngine(reg, dsr, nil, artifacts, nil), dsr
 }
 
 func peopleCount(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID) int {
@@ -106,7 +106,7 @@ func TestIntegrationEngineExport(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		manifest, e = eng.RunExportDetailed(ctx, db, reqID)
+		manifest, e = eng.RunExport(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run export: %v", err)
@@ -137,7 +137,7 @@ func TestIntegrationEngineErasure(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		result, e = eng.RunErasureDetailed(ctx, db, reqID)
+		result, e = eng.RunErasure(ctx, db, reqID)
 		return e
 	}); err != nil {
 		t.Fatalf("run erasure: %v", err)

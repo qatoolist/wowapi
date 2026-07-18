@@ -27,7 +27,9 @@ import (
 // worker mains (blueprint 07 §9).
 func Readiness(b *Booted, fingerprint config.Fingerprint, extra map[string]httpx.HealthCheck) *httpx.Health {
 	h := httpx.NewHealth(fingerprint.String())
-	for name, chk := range b.Health {
+	// Read the boot-validated view, not the reassignable Health field (second
+	// closure audit 2026-07-17, F-10).
+	for name, chk := range b.runtimeHealth() {
 		h.Register("module."+name, chk)
 	}
 	for name, chk := range extra {
@@ -47,9 +49,13 @@ func Readiness(b *Booted, fingerprint config.Fingerprint, extra map[string]httpx
 func ReadinessWithCatalogs(b *Booted, fingerprint config.Fingerprint, db database.DBTX, src fs.FS, source string, extra map[string]httpx.HealthCheck) *httpx.Health {
 	h := Readiness(b, fingerprint, extra)
 
-	if bundleHasSeeds(b.Seeds) {
+	// Read the boot-validated seed catalog, never the reassignable Seeds field
+	// (third closure audit 2026-07-17, F-10): the readiness hash and the
+	// seeded-catalog check must reflect what boot validated.
+	validatedSeeds := b.runtimeSeeds()
+	if bundleHasSeeds(validatedSeeds) {
 		h.Register("seed_catalogs", func(ctx context.Context) error {
-			return CatalogsSeeded(ctx, db, b.Seeds)
+			return CatalogsSeeded(ctx, db, validatedSeeds)
 		})
 	}
 
@@ -66,20 +72,20 @@ func ReadinessWithCatalogs(b *Booted, fingerprint config.Fingerprint, db databas
 		return "seed_catalog_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.Kernel == nil || b.Kernel.Rules == nil {
+		if b.runtimeKernel().Rules == nil {
 			return "", nil
 		}
-		hash := RuleHash(b.Kernel.Rules)
+		hash := RuleHash(b.runtimeKernel().Rules)
 		if hash == "" {
 			return "", nil
 		}
 		return "rule_hash", hash
 	})
 	h.Detail(func(ctx context.Context) (string, any) {
-		if b.Kernel == nil || b.Kernel.ModelHash == "" {
+		if b.runtimeKernel().ModelHash == "" {
 			return "", nil
 		}
-		return "model_hash", b.Kernel.ModelHash
+		return "model_hash", b.runtimeKernel().ModelHash
 	})
 
 	return h

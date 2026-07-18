@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "module_path": "github.com/qatoolist/wowapi",
+  "bootstrap_tag": "v1.2.0",
+  "mode": "bootstrap",
+  "supported_predecessor": null,
+  "abandoned_tags": ["v1.0.0", "v1.1.0"]
+}

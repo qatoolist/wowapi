@@ -136,8 +136,8 @@ func TestAdapterMethods_WrapNonNotFoundErrors(t *testing.T) {
 	if err := a.Delete(ctx, "k"); err == nil {
 		t.Error("Delete with an invalid bucket succeeded, want a wrapped error")
 	}
-	if _, err := a.PresignPut(ctx, "k", time.Minute); err == nil {
-		t.Error("PresignPut with an invalid bucket succeeded, want a wrapped error")
+	if _, err := a.PresignPutChecksum(ctx, "k", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", time.Minute); err == nil {
+		t.Error("PresignPutChecksum with an invalid bucket succeeded, want a wrapped error")
 	}
 	if _, err := a.PresignGet(ctx, "k", time.Minute); err == nil {
 		t.Error("PresignGet with an invalid bucket succeeded, want a wrapped error")

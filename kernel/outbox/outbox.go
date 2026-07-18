@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel/database"
@@ -140,10 +142,19 @@ type subscription struct {
 
 // HandlerRegistry collects event subscriptions during module registration.
 type HandlerRegistry struct {
-	subs []subscription
-	seen map[string]bool // eventType+name dedup
-	errs []error
+	subs   []subscription
+	seen   map[string]bool // eventType+name dedup
+	errs   []error
+	sealed bool
 }
+
+// Seal freezes the registry once boot validation completes: any later
+// Subscribe panics rather than silently attaching a handler the relay would
+// dispatch to without boot validation (closure review 2026-07-17, F-10).
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *HandlerRegistry) Seal(sealer.Authority) { r.sealed = true }
 
 // NewHandlerRegistry returns an empty registry.
 func NewHandlerRegistry() *HandlerRegistry { return &HandlerRegistry{seen: map[string]bool{}} }
@@ -151,6 +162,9 @@ func NewHandlerRegistry() *HandlerRegistry { return &HandlerRegistry{seen: map[s
 // Subscribe registers an idempotent handler for an event type. handlerName must
 // be unique per event type and stable across deploys (it keys the inbox).
 func (r *HandlerRegistry) Subscribe(eventType, handlerName string, fn Handler) {
+	if r.sealed {
+		panic("outbox: event subscription after boot: the extension model is sealed")
+	}
 	if eventType == "" || handlerName == "" || fn == nil {
 		r.errs = append(r.errs, kerr.E(kerr.KindInternal, "invalid_subscription",
 			"Subscribe requires eventType, handlerName, and fn"))

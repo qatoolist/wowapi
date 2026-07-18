@@ -9,13 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/qatoolist/wowapi/foundation/webhook"
 	"github.com/qatoolist/wowapi/kernel/httpclient"
 	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // TestHTTPSenderBlocksLoopbackByDefault proves NewHTTPSender is SSRF-safe by
@@ -168,12 +166,12 @@ func TestIntegrationDispatchOutbound_DefaultSenderBlocksLoopback(t *testing.T) {
 	defer srv.Close()
 
 	epID := seedOutboundEndpoint(t, h, tn.ID, srv.URL)
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
 	// The exact construction kernel.New performs by default: no allowlist, SSRF
 	// protection on.
 	svc := webhook.New(webhook.NewHTTPSender(), resolver, model.UUIDv7())
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created"}
+	ev := outboundEvent(tn.ID, "order.created", nil)
 	now := time.Now()
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, now); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
@@ -211,13 +209,13 @@ func TestIntegrationDispatchOutbound_AllowlistedLoopbackDelivers(t *testing.T) {
 	defer srv.Close()
 
 	epID := seedOutboundEndpoint(t, h, tn.ID, srv.URL)
-	resolver := &webhook.FakeSecretResolver{Secret: testSecret}
+	resolver := &fakes.WebhookSecretResolver{Secret: testSecret}
 	sender := webhook.NewHTTPSender(webhook.WithHTTPClientConfig(httpclient.Config{
 		AllowedHosts: []string{hostOnly(t, srv.Listener.Addr().String())},
 	}))
 	svc := webhook.New(sender, resolver, model.UUIDv7())
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created"}
+	ev := outboundEvent(tn.ID, "order.created", nil)
 	now := time.Now()
 	if err := svc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, now); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)

@@ -8,12 +8,12 @@ case "$mode" in
     graphify update .
     ;;
   extract)
-    # Semantic extraction needs an LLM. Pin the backend EXPLICITLY (default kimi =
-    # Moonshot) so it never falls back to Claude via graphify's "whichever API key
-    # is set" default. Override with GRAPHIFY_BACKEND / GRAPHIFY_MODEL if needed.
-    backend="${GRAPHIFY_BACKEND:-kimi}"
-    if [ "$backend" = "kimi" ] && [ -z "${MOONSHOT_API_KEY:-}" ]; then
-      echo "graphify extract: MOONSHOT_API_KEY is required for --backend kimi (Moonshot)" >&2
+    # Semantic extraction needs an LLM. Pin Google Gemini as the repository
+    # default so extraction never depends on Graphify's key-discovery order.
+    # Override with GRAPHIFY_BACKEND / GRAPHIFY_MODEL for an intentional run.
+    backend="${GRAPHIFY_BACKEND:-gemini}"
+    if [ "$backend" = "gemini" ] && [ -z "${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}" ]; then
+      echo "graphify extract: GEMINI_API_KEY or GOOGLE_API_KEY is required for --backend gemini" >&2
       exit 2
     fi
     if [ -n "${GRAPHIFY_MODEL:-}" ]; then

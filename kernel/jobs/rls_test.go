@@ -11,7 +11,7 @@ import (
 )
 
 // TestIntegrationJobsQueueRLSRejectsCrossTenantInsert is the M2 probe: with
-// FORCE RLS on jobs_queue (migration 00028), an app_rt session bound to tenant A
+// FORCE RLS on jobs_queue (clean baseline), an app_rt session bound to tenant A
 // can no longer INSERT a row carrying tenant_id=B. app_rt holds the INSERT grant,
 // so this is the WITH CHECK — not the grant — doing the rejecting. A same-tenant
 // control INSERT proves the policy still admits legitimate enqueues (the RLS
@@ -90,7 +90,7 @@ func TestIntegrationJobsRunnerCrossTenantAfterRLS(t *testing.T) {
 	tenantB := testkit.CreateTenant(t, h)
 
 	reg := jobs.NewRegistry()
-	reg.RegisterKindWithIdempotency(jobKind, func(context.Context, database.TenantDB, []byte) error {
+	reg.RegisterKind(jobKind, func(context.Context, database.TenantDB, []byte) error {
 		return nil // trivially succeeds; we only care the runner processes both tenants
 	}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())
 	if err := reg.Err(); err != nil {

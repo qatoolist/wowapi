@@ -1,9 +1,33 @@
 # Webhooks
 
-`kernel/webhook` is wowapi's webhook subsystem: inbound signature verification + replay protection +
+`foundation/webhook` is wowapi's webhook subsystem: inbound signature verification + replay protection +
 async processing, and outbound signed HTTP delivery with per-endpoint circuit breakers. This page covers
 the outbound delivery path's SSRF protection (backlog B2); for the inbound verify/dedup/process pipeline
-and the `Service` API, read the package doc in `foundation/webhook/webhook.go` (or via the `kernel/webhook` compat shim for backward compatibility).
+and the `Service` API, read the package doc in `foundation/webhook/webhook.go`.
+
+## Generated inbound webhook closure
+
+`wowapi gen webhook --module internal/modules/payments --name provider_event`
+generates a complete boot-owned inbound path. During module registration it
+registers a timestamped-HMAC verifier and the asynchronous event handler, and exposes
+the public route
+`POST /webhooks/payments/provider_event/{tenant_id}/{endpoint_id}`. The route
+preserves the exact request body, copies its headers, opens the tenant
+transaction selected by the path, and calls `Webhooks().HandleInbound`.
+
+The generated verifier expects `X-Timestamp` to contain Unix seconds and
+`X-Signature` to contain the lowercase hex HMAC-SHA256 of
+`<X-Timestamp>.<raw-body>` using the endpoint's resolved secret (an optional
+`sha256=` prefix is accepted). The authenticated timestamp drives the replay
+window; a body-only signature never fabricates a trusted occurrence time.
+Replace the verifier during development when a provider uses a different
+authenticated canonical envelope. Registration is duplicate-rejecting and
+becomes immutable after `app.Boot`, so the generated registration is the single
+explicit provider integration point.
+
+Both `Notify().RegisterSender` and webhook verifier/handler registration are
+boot-time extension APIs. Duplicate, nil, and post-boot registrations are
+rejected; request and worker execution perform read-only lookups.
 
 ## Outbound SSRF protection
 
@@ -107,5 +131,5 @@ and to prove real delivery is unaffected.
 - [Configuration](configuration.md) — the full `webhook.outbound.*` key reference.
 - [Building & extending modules](modules.md) — `Webhooks()` on `module.Context`.
 - `foundation/webhook/` — the `Service` API (inbound verify/dedup/process, outbound
-  dispatch/retry, circuit breaker); via compat shim `kernel/webhook` for imports.
+  dispatch/retry, circuit breaker). Import `foundation/webhook` directly.
 - `kernel/httpclient/client.go` — the SSRF guard implementation.

@@ -1,9 +1,9 @@
 // Startup/shutdown lifecycle skeleton (phase-plan Phase 1).
 //
-// RunHooks provides orderly start-then-stop sequencing for named components
-// (HTTP server, outbox relay, …) wired in as Hook values. Signal wiring
-// (SIGINT/SIGTERM) belongs to the process main via signal.NotifyContext;
-// RunHooks stays testable with a plain context.
+// RunHooks provides supervised start-then-stop sequencing for named components
+// (HTTP server, outbox relay, …). Signal wiring (SIGINT/SIGTERM) belongs to the
+// process main via signal.NotifyContext; RunHooks stays testable with a plain
+// context.
 //
 // Real server construction arrives in Phases 2–3; this skeleton establishes
 // the lifecycle contract that those phases plug into.
@@ -17,38 +17,29 @@ import (
 	"time"
 )
 
-// Hook is one startable/stoppable component: an HTTP server, outbox relay,
-// background sweeper, or any other process-lifetime service.
+// Hook is a component whose background work can die AFTER a successful
+// Start (a listener that stopped serving, a loop that crashed) and report it
+// through Failed. RunHooks treats a received error like a Start
+// failure: it stops every started hook and returns the error — the process
+// must never sit alive while a critical serving loop is dead (adversarial
+// review 2026-07-17, F-02).
 type Hook struct {
 	// Name is used in log messages; should be short and unique within a run.
 	Name string
-	// Start launches background work and must return promptly (not block for
-	// the component's lifetime). The ctx is the run context; components should
-	// respect its cancellation on their own internal paths.
+	// Start launches background work and must return promptly.
 	Start func(ctx context.Context) error
-	// Failed, when non-nil, is how a hook reports that its background work
-	// died AFTER a successful Start (a listener that stopped serving, a loop
-	// that crashed). RunHooks treats a received error like a Start failure:
-	// it stops every started hook and returns the error — the process must
-	// never sit alive while a critical serving loop is dead (adversarial
-	// review 2026-07-17, F-02). Send at most one error; nil channels are
-	// simply never selected.
+	// Failed, when non-nil, reports post-Start background death. Send at most
+	// one error; nil channels are simply never selected.
 	Failed <-chan error
-	// Stop performs a graceful shutdown. nil means nothing to stop. Stop
-	// receives a fresh context bounded by the stopTimeout, independent of
-	// the (already-cancelled) run context.
+	// Stop performs a graceful shutdown. nil means nothing to stop.
 	Stop func(ctx context.Context) error
 }
 
 // RunHooks starts hooks in order and blocks until ctx is cancelled or a Start
-// returns an error. It then stops the successfully-started hooks in reverse
-// order, each bounded by stopTimeout.
-//
-// Errors are handled as follows:
-//   - A Start error aborts the remaining starts and triggers immediate shutdown.
-//   - Stop errors are all collected (never short-circuited) and joined with
-//     any Start error via errors.Join.
-//   - If every Start and Stop succeeds, RunHooks returns nil.
+// returns an error or a started component reports asynchronous failure. It
+// blocks on every non-nil Failed channel and
+// treats a received error like a Start failure — every started hook is stopped
+// (in reverse order, each bounded by stopTimeout) and the error is returned.
 func RunHooks(ctx context.Context, logger *slog.Logger, stopTimeout time.Duration, hooks ...Hook) error {
 	var (
 		started  []Hook

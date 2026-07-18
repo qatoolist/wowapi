@@ -57,7 +57,7 @@ func TestIntegrationWorkerEndToEnd(t *testing.T) {
 				eventSeen.Add(1)
 				return nil
 			})
-		mc.Jobs().RegisterKindWithIdempotency("test.ping", func(ctx context.Context, db database.TenantDB, payload []byte) error {
+		mc.Jobs().RegisterKind("test.ping", func(ctx context.Context, db database.TenantDB, payload []byte) error {
 			jobRan.Add(1)
 			return nil
 		}, jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS}, jobs.DefaultRetry())

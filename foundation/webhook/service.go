@@ -67,7 +67,9 @@ func (s *Service) HandleInbound(ctx context.Context, db database.TenantDB, in In
 		return kerr.Wrapf(err, "webhook.HandleInbound", "resolve secret")
 	}
 
+	s.registryMu.RLock()
 	v, ok := s.verifiers[in.ProviderKey]
+	s.registryMu.RUnlock()
 	if !ok {
 		return kerr.E(kerr.KindValidation, "no_verifier", "no verifier registered for provider: "+in.ProviderKey)
 	}
@@ -97,12 +99,11 @@ func (s *Service) HandleInbound(ctx context.Context, db database.TenantDB, in In
 		return kerr.E(kerr.KindUnauthenticated, "signature_invalid", "webhook signature verification failed")
 	}
 
-	// Timestamp window ±5 m, using the verifier-attested occurred time.
-	delta := s.now().Sub(env.OccurredAt)
-	if delta < 0 {
-		delta = -delta
-	}
-	if delta > TimestampWindow {
+	// Timestamp window ±5 m, using the verifier-attested occurred time. Compare
+	// absolute time bounds rather than subtracting: time.Time.Sub saturates at
+	// min/max Duration, whose minimum cannot be safely negated.
+	now := s.now().UTC()
+	if env.OccurredAt.Before(now.Add(-TimestampWindow)) || env.OccurredAt.After(now.Add(TimestampWindow)) {
 		return kerr.E(kerr.KindValidation, "timestamp_out_of_window", "webhook timestamp is outside the ±5 m replay window")
 	}
 
@@ -249,15 +250,12 @@ func (s *Service) ProcessInbound(ctx context.Context, plat database.TxManager, t
 // would look up B's endpoints and sign A's payload with B's secret — a
 // cross-tenant leak. When ev carries a tenant (relay/writer sets it), a
 // disagreeing tenantID is rejected fail-closed (KindValidation); the event's
-// tenant then binds the whole dispatch. A zero ev.TenantID falls back to the
-// passed tenantID (legacy callers that pre-bind the tenant themselves).
+// tenant then binds the whole dispatch. Both identities are mandatory and must
+// match; there is no inference or zero-value fallback.
 func (s *Service) DispatchOutbound(ctx context.Context, plat database.TxManager, tenantID uuid.UUID, ev outbox.Event, now time.Time) error {
-	if ev.TenantID != uuid.Nil {
-		if tenantID != uuid.Nil && tenantID != ev.TenantID {
-			return kerr.E(kerr.KindValidation, "tenant_mismatch",
-				"webhook dispatch tenant does not match event tenant")
-		}
-		tenantID = ev.TenantID
+	if tenantID == uuid.Nil || ev.TenantID == uuid.Nil || tenantID != ev.TenantID {
+		return kerr.E(kerr.KindValidation, "tenant_mismatch",
+			"webhook dispatch requires matching nonzero scope and event tenants")
 	}
 
 	body, err := marshalOutboundBody(ev, tenantID)
@@ -438,7 +436,9 @@ func (s *Service) claimRetry(ctx context.Context, plat database.TxManager, tenan
 // --- internal ---
 
 func (s *Service) runInboundHandler(ctx context.Context, db database.TenantDB, ev Event) error {
+	s.registryMu.RLock()
 	h, ok := s.handlers[ev.EventType]
+	s.registryMu.RUnlock()
 	if !ok {
 		return nil // no handler registered — treat as processed (no-op)
 	}

@@ -27,7 +27,7 @@ import (
 )
 
 // Subject/object kinds and the relationship_types.subject_kind / object_kind
-// check constraint vocabulary (migration 00005).
+// clean-baseline check-constraint vocabulary.
 const (
 	KindParty    = "party"
 	KindResource = "resource"
@@ -131,7 +131,7 @@ func (c *Checker) resolveSubject(ctx context.Context, db database.DBTX, subject 
 // arbitrary module code for security-sensitive edge types; edge creation for
 // granted_via relationship types is a kernel/platform capability (an audited
 // service running as app_platform, wired with the assignment-management API).
-// The DB backstop (migration 00005) removes INSERT/UPDATE on `relationships`
+// The clean-baseline DB backstop removes INSERT/UPDATE on `relationships`
 // from app_rt for that reason. This function is used by kernel services and
 // tests (which seed via the admin/platform role); tenant_id is set from
 // app_tenant_id() so RLS WITH CHECK holds.

@@ -28,35 +28,13 @@ type ObjectInfo struct {
 	Checksum string
 }
 
-// RepairOptions bounds the exceptional full-body checksum repair path.
-// Label is required so repair work is explicit and attributable.
-type RepairOptions struct {
-	Label    string
-	MaxBytes int64
-	Timeout  time.Duration
-}
-
-// ChecksumRepairer is an optional storage capability for legacy objects.
-// It is deliberately separate from Adapter so normal Stat cannot fall back to
-// body hashing and existing storage adapters remain source-compatible.
-type ChecksumRepairer interface {
-	RepairChecksum(ctx context.Context, key string, opts RepairOptions) (ObjectInfo, error)
-}
-
-// ChecksumUploader is the checksum-enforcing upload capability used by the
-// document framework. It is optional on Adapter to preserve third-party
-// adapter compatibility; framework upload initiation fails closed without it.
-type ChecksumUploader interface {
-	PresignPutChecksum(ctx context.Context, key, checksumSHA256 string, ttl time.Duration) (PresignedURL, error)
-}
-
 // Adapter is the object-storage port.
 //
 // A tenant-prefixed Key ("<tenant>/<document>/<version>") is minted by the
-// document service; the adapter treats keys as opaque. PresignPut is retained
-// for adapter compatibility; framework uploads require ChecksumUploader.
+// document service; the adapter treats keys as opaque. Every upload is bound
+// to the caller-declared lowercase hexadecimal SHA-256 checksum.
 type Adapter interface {
-	PresignPut(ctx context.Context, key string, ttl time.Duration) (PresignedURL, error)
+	PresignPutChecksum(ctx context.Context, key, checksumSHA256 string, ttl time.Duration) (PresignedURL, error)
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (PresignedURL, error)
 	Stat(ctx context.Context, key string) (ObjectInfo, error)
 	// Peek returns up to n leading bytes for MIME sniffing (http.DetectContentType

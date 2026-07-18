@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -62,10 +63,30 @@ func TestIntegrationMigrationCurrencyCheckFailsWhenStale(t *testing.T) {
 	cfg := config.Defaults()
 	fp, _ := config.FingerprintOf(cfg)
 
-	// Simulate a stale-migrated database by rewinding the goose version table.
-	if _, err := h.Admin.Exec(context.Background(),
-		"UPDATE goose_version_wowapi SET version_id = 1, is_applied = true"); err != nil {
+	// Simulate a stale database relative to the clean embedded head (version 1)
+	// by marking that head row unapplied, leaving goose's version-0 marker as the
+	// highest applied version. Assert the fixture is genuinely behind before
+	// exercising readiness so a future baseline squash cannot silently turn this
+	// regression into a current/current comparison.
+	expected, err := app.MaxMigrationVersion(migrations.Kernel())
+	if err != nil {
+		t.Fatalf("read embedded head: %v", err)
+	}
+	tag, err := h.Admin.Exec(context.Background(),
+		"UPDATE goose_version_wowapi SET is_applied = false WHERE version_id = $1 AND is_applied", expected)
+	if err != nil {
 		t.Fatalf("rewind migration version: %v", err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("rewind affected %d applied rows, want exactly 1", tag.RowsAffected())
+	}
+	var applied int64
+	if err := h.Admin.QueryRow(context.Background(), `SELECT version_id
+		FROM goose_version_wowapi WHERE is_applied ORDER BY version_id DESC LIMIT 1`).Scan(&applied); err != nil {
+		t.Fatalf("read rewound migration version: %v", err)
+	}
+	if applied >= expected {
+		t.Fatalf("stale fixture is not stale: applied=%d expected=%d", applied, expected)
 	}
 
 	health := app.ReadinessWithCatalogs(booted, fp, h.Platform, migrations.Kernel(), migrations.SourceName, nil)
@@ -84,8 +105,13 @@ func TestIntegrationMigrationCurrencyCheckFailsWhenStale(t *testing.T) {
 	if body.Status != "not_ready" {
 		t.Fatalf("status = %q, want not_ready", body.Status)
 	}
-	if _, ok := body.Checks["migration_currency"]; !ok {
+	check, ok := body.Checks["migration_currency"]
+	if !ok {
 		t.Fatalf("missing migration_currency check; checks=%v", body.Checks)
+	}
+	want := "applied version 0 lags expected 1"
+	if !strings.Contains(check, want) {
+		t.Fatalf("migration_currency = %q, want error containing %q", check, want)
 	}
 }
 
@@ -120,7 +146,7 @@ permissions:
 
 	// Seed-sync the declared catalogs so seed_catalogs check passes and the hash
 	// is recorded.
-	if _, err := seeds.Apply(context.Background(), h.Platform, booted.Seeds, seeds.ApplyOptions{Actor: "test"}); err != nil {
+	if _, err := seeds.Apply(context.Background(), h.Platform, booted.RuntimeSeeds(), seeds.ApplyOptions{Actor: "test"}); err != nil {
 		t.Fatalf("seed sync: %v", err)
 	}
 

@@ -5,7 +5,8 @@
 //	up    apply kernel then module migrations (forward, expand-contract), then
 //	      sync the merged module seed catalog (permissions, roles, resource
 //	      types, relationship types) idempotently, then sync the rule
-//	      registry's definitions (rule_definitions) idempotently. Without the
+//	      registry's definitions (rule_definitions) idempotently, then sync the
+//	      canonical workflow definitions. Without the
 //	      seed step the catalogs stay empty and every authorization check
 //	      denies (GAP-003); without the rule-definition step, any registered
 //	      rule point fails rule_versions.rule_key's FK until synced (GAP-007) —
@@ -24,15 +25,16 @@ import (
 	"sort"
 	"time"
 
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/config"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/rules"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/kernel/seeds"
-	"github.com/qatoolist/wowapi/migrations"
+	"{{.FrameworkModule}}/app"
+	"{{.FrameworkModule}}/kernel"
+	"{{.FrameworkModule}}/kernel/config"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/logging"
+	"{{.FrameworkModule}}/kernel/rules"
+	"{{.FrameworkModule}}/kernel/seeds"
+	"{{.FrameworkModule}}/kernel/storage"
+	"{{.FrameworkModule}}/kernel/workflow"
+	"{{.FrameworkModule}}/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -119,9 +121,12 @@ func run(ctx context.Context, argv []string) error {
 		return fmt.Errorf("boot: %w", err)
 	}
 
-	// Module migration sources in stable alphabetical order.
-	names := make([]string, 0, len(booted.Migrations))
-	for name := range booted.Migrations {
+	// Module migration sources in stable alphabetical order, from the
+	// boot-validated view (RuntimeMigrations) — the informational Migrations
+	// field could have been reassigned after boot.
+	moduleMigrations := booted.RuntimeMigrations()
+	names := make([]string, 0, len(moduleMigrations))
+	for name := range moduleMigrations {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -131,7 +136,7 @@ func run(ctx context.Context, argv []string) error {
 		// so foreign keys onto kernel tables are gone before the kernel schema drops.
 		for i := len(names) - 1; i >= 0; i-- {
 			name := names[i]
-			v, err := database.MigrateReset(ctx, pool, booted.Migrations[name], name)
+			v, err := database.MigrateReset(ctx, pool, moduleMigrations[name], name)
 			if err != nil {
 				return fmt.Errorf("module %q reset: %w", name, err)
 			}
@@ -154,7 +159,7 @@ func run(ctx context.Context, argv []string) error {
 		"source", migrations.SourceName, "applied", res.Applied, "version", res.Version)
 
 	for _, name := range names {
-		r, err := database.Migrate(ctx, pool, booted.Migrations[name], name)
+		r, err := database.Migrate(ctx, pool, moduleMigrations[name], name)
 		if err != nil {
 			return fmt.Errorf("module %q migrations: %w", name, err)
 		}
@@ -169,7 +174,9 @@ func run(ctx context.Context, argv []string) error {
 	// check denies and resource-mirror writes fail their FK (GAP-003). No
 	// invalidator is passed: this process holds no long-lived authz cache (it
 	// exits immediately after migrating), unlike the api/worker runtime.
-	seedReport, err := seeds.Apply(ctx, pool, booted.Seeds, seeds.ApplyOptions{Actor: "migrate"})
+	// RuntimeSeeds is the boot-validated catalog; the informational Seeds
+	// field could have been reassigned or mutated after boot.
+	seedReport, err := seeds.Apply(ctx, pool, booted.RuntimeSeeds(), seeds.ApplyOptions{Actor: "migrate"})
 	if err != nil {
 		return fmt.Errorf("seed sync: %w", err)
 	}
@@ -189,6 +196,14 @@ func run(ctx context.Context, argv []string) error {
 		return fmt.Errorf("rule definition sync: %w", err)
 	}
 	log.InfoContext(ctx, "rule definitions synced", "keys", len(k.Rules.Keys()))
+
+	// Workflow definitions are executable identities, not mutable tenant data.
+	// Materialize the exact boot-validated registry snapshot atomically after
+	// all schema and catalog synchronization has completed.
+	if err := workflow.SyncDefinitions(ctx, pool, booted.RuntimeWorkflows()); err != nil {
+		return fmt.Errorf("workflow definition sync: %w", err)
+	}
+	log.InfoContext(ctx, "workflow definitions synced")
 	return nil
 }
 

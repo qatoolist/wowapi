@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,13 +88,16 @@ func buildRuntime(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, raws
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatalf("SyncDefinitions: %v", err)
+	}
 	// NewRuntime requires a non-nil evaluator (SEC-02: Override's permission
 	// check is unconditional). This suite doesn't exercise the authz gate
 	// itself (see runtime_extra_test.go's TestIntegrationOverrideAuthzGate for
 	// that), so wire a permissive fake that allows the one permission Override
 	// checks.
 	ev := fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}}
-	return workflow.NewRuntimeWithCompliance(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	return workflow.NewRuntime(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 }
 
 func countEvents(t *testing.T, h *testkit.DBHandle, tenant uuid.UUID, typ string) int {
@@ -122,7 +126,6 @@ func TestIntegrationWorkflowLinearApproval(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, approverCap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, map[string]any{"amount": 10})
@@ -178,7 +181,6 @@ func TestIntegrationWorkflowReject(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, approverCap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil).
@@ -200,7 +202,6 @@ func TestIntegrationWorkflowOptimisticLock(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, approverCap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	var instanceID uuid.UUID
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -243,7 +244,6 @@ func TestIntegrationWorkflowSimTwoStep(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRuntime(t, h, approverCap, twoStepDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.twostep", 1, "requests.request", nil)
 
 	a := actor(tn.ID, userID, approverCap)
 	testkit.NewWorkflowSim(t, h, rt).
@@ -265,8 +265,8 @@ func TestIntegrationWorkflowSweepSLA(t *testing.T) {
 	approverCap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	rt := buildRuntime(t, h, approverCap, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
+	reminderDef := strings.Replace(linearDef, "    type: approval\n", "    type: approval\n    sla: { due: PT2H, remind_after: PT1H }\n", 1)
+	rt := buildRuntime(t, h, approverCap, reminderDef)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)

@@ -49,7 +49,7 @@ func TestRouterAccumulatesErrors(t *testing.T) {
 func TestRouterValidRoutesAndPermissions(t *testing.T) {
 	r := httpx.NewRouter()
 	r.Handle(http.MethodGet, "/health", httpx.RouteMeta{Public: true}, noop)
-	r.Handle(http.MethodPost, "/things", httpx.RouteMeta{Permission: "things.create"}, noop)
+	r.Handle(http.MethodPost, "/things", httpx.RouteMeta{Permission: "things.create", NoRequestBody: true}, noop)
 	r.Handle(http.MethodGet, "/things", httpx.RouteMeta{Permission: "things.read"}, noop)
 	if err := r.Err(); err != nil {
 		t.Fatalf("valid routes should register cleanly: %v", err)

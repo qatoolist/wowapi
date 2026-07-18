@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,33 +193,53 @@ type Deps struct {
 
 // newArtifactWriter builds the production DSR artifact writer from environment
 // variables. The key is read from WOWAPI_DSR_ARTIFACT_KEY (hex, 32 bytes);
-// when absent a deterministic test key is used so local/test boots succeed, but
-// deployments must set the variable to avoid a shared fallback key.
-func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer) retention.ArtifactWriter {
+// production rejects a missing or malformed key. Local/dev uses a deterministic
+// key only as an explicitly warned convenience.
+func newArtifactWriter(log *slog.Logger, audit *kaudit.Writer, env config.Env) (retention.ArtifactWriter, error) {
 	dir := os.Getenv("WOWAPI_ARTIFACT_DIR")
 	if dir == "" {
 		dir = filepath.Join(os.TempDir(), "wowapi-artifacts")
 	}
 	keyHex := os.Getenv("WOWAPI_DSR_ARTIFACT_KEY")
-	var key []byte
-	if keyHex != "" {
-		var err error
-		key, err = hex.DecodeString(keyHex)
-		if err != nil || len(key) != 32 {
-			log.WarnContext(context.Background(), "kernel: invalid WOWAPI_DSR_ARTIFACT_KEY; falling back to test key", "decode_err", err)
-			key = retention.TestKey()
-		}
-	} else {
-		log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY not set; using test key")
-		key = retention.TestKey()
+	key, decodeErr := hex.DecodeString(keyHex)
+	valid := keyHex != "" && decodeErr == nil && len(key) == 32
+	if valid {
+		return retention.NewFileArtifactWriter(dir, key, audit), nil
 	}
-	return retention.NewFileArtifactWriter(dir, key, audit)
+	// A missing or malformed key must NEVER silently fall back to the
+	// deterministic shared test key in production (sixth review, C-05):
+	// DSR artifacts would be encrypted with a public constant. Fail boot in
+	// prod; the test key stays a local/dev convenience with a loud warning.
+	if env.IsProd() {
+		if decodeErr != nil {
+			return nil, fmt.Errorf("kernel: WOWAPI_DSR_ARTIFACT_KEY must be a 32-byte hex key in production: %w", decodeErr)
+		}
+		return nil, fmt.Errorf("kernel: WOWAPI_DSR_ARTIFACT_KEY must be a 32-byte hex key in production (got %d bytes)", len(key))
+	}
+	log.WarnContext(context.Background(), "kernel: WOWAPI_DSR_ARTIFACT_KEY missing or invalid; using deterministic TEST key (non-production only)",
+		"environment", string(env), "decode_err", decodeErr)
+	return retention.NewFileArtifactWriter(dir, nonProductionArtifactKey(), audit), nil
+}
+
+func nonProductionArtifactKey() []byte {
+	return []byte{
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+	}
 }
 
 // New wires the kernel. cfg travels by value (immutable, 12 §6). The returned
 // kernel's Perms/Resources registries are the shared pointers modules register
 // into during boot; the evaluator reads them at decision time.
 func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
+	if deps.WebhookSender != nil && nilLike(deps.WebhookSender) {
+		return nil, fmt.Errorf("kernel: WebhookSender must not be typed nil")
+	}
+	if deps.Secrets != nil && nilLike(deps.Secrets) {
+		return nil, fmt.Errorf("kernel: Secrets provider must not be typed nil")
+	}
 	idgen := model.UUIDv7()
 
 	// Metrics sink: NoOp unless a product wires an adapter (e.g. Prometheus),
@@ -298,7 +319,7 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 
 	// Workflow: registry + runtime (shares the tx, evaluator, outbox writer).
 	wfReg := workflow.NewRegistry()
-	wfRuntime := workflow.NewRuntimeWithCompliance(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
+	wfRuntime := workflow.NewRuntime(deps.Tx, wfReg, eval, writer, idgen, auditWriter, workflow.WithRuntimeMetrics(metrics))
 
 	// Documents: the class registry + hook set modules register into, plus the
 	// service (only when an object-storage adapter is wired). The two document
@@ -307,8 +328,11 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 	// engine that drives disposition and DSR over it (roadmap E2).
 	retClasses := retention.NewRegistry()
 	retHolds := retention.NewHolds(idgen)
-	retArtifacts := newArtifactWriter(log, auditWriter)
-	retEngine := retention.NewEngineWithCompliance(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
+	retArtifacts, err := newArtifactWriter(log, auditWriter, cfg.Environment)
+	if err != nil {
+		return nil, err
+	}
+	retEngine := retention.NewEngine(retClasses, retention.NewDSR(idgen), retHolds, retArtifacts, auditWriter)
 
 	docClasses := document.NewRegistry()
 	docHooks := document.NewHooks()
@@ -405,6 +429,18 @@ func New(cfg config.Framework, log *slog.Logger, deps Deps) (*Kernel, error) {
 		Artifacts:            artifact.New(idgen),
 		auditSink:            audit,
 	}, nil
+}
+
+func nilLike(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Chan || rv.Kind() == reflect.Func || rv.Kind() == reflect.Interface ||
+		rv.Kind() == reflect.Map || rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Slice {
+		return rv.IsNil()
+	}
+	return false
 }
 
 // secretRefResolver adapts the kernel secrets.Provider to the webhook package's

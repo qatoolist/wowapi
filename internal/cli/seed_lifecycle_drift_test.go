@@ -31,9 +31,10 @@ func TestGeneratedMigrateTemplateRunsFullLifecycle(t *testing.T) {
 	src := string(body)
 
 	mustContain := []string{
-		"appcfg.Load()",          // product config + secretref resolution (not bare DATABASE_URL)
-		"seeds.Apply(",           // GAP-003/FBL-02 recorded seed catalog sync
-		"rules.SyncDefinitions(", // GAP-007 rule definition sync
+		"appcfg.Load()",             // product config + secretref resolution (not bare DATABASE_URL)
+		"seeds.Apply(",              // GAP-003/FBL-02 recorded seed catalog sync
+		"rules.SyncDefinitions(",    // GAP-007 rule definition sync
+		"workflow.SyncDefinitions(", // C-03 canonical workflow definition sync
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(src, want) {
@@ -59,13 +60,14 @@ func TestGeneratedMigrateTemplateRunsFullLifecycle(t *testing.T) {
 	loadIdx := strings.Index(runBody, "loadConfig()")
 	seedIdx := strings.Index(runBody, "seeds.Apply(")
 	rulesIdx := strings.Index(runBody, "rules.SyncDefinitions(")
-	if loadIdx < 0 || seedIdx < 0 || rulesIdx < 0 {
+	workflowIdx := strings.Index(runBody, "workflow.SyncDefinitions(")
+	if loadIdx < 0 || seedIdx < 0 || rulesIdx < 0 || workflowIdx < 0 {
 		t.Fatalf("expected loadConfig()/seeds.Sync()/rules.SyncDefinitions() all within func run(...), got indices %d,%d,%d",
 			loadIdx, seedIdx, rulesIdx)
 	}
-	if loadIdx >= seedIdx || seedIdx >= rulesIdx {
-		t.Fatalf("expected lifecycle order loadConfig() < seeds.Sync() < rules.SyncDefinitions() within func run(...), got indices %d,%d,%d",
-			loadIdx, seedIdx, rulesIdx)
+	if loadIdx >= seedIdx || seedIdx >= rulesIdx || rulesIdx >= workflowIdx {
+		t.Fatalf("expected lifecycle order loadConfig() < seeds.Sync() < rules.SyncDefinitions() < workflow.SyncDefinitions(), got indices %d,%d,%d,%d",
+			loadIdx, seedIdx, rulesIdx, workflowIdx)
 	}
 }
 

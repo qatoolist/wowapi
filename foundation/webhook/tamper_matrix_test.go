@@ -12,6 +12,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/database"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // =============================================================================
@@ -85,7 +86,7 @@ func TestIntegrationHandleInbound_TamperedKeyID(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterVerifier(testKeyedProviderKey, keyedVerifier{})
 
 	body := []byte(`{"event":"order.created"}`)
@@ -100,9 +101,7 @@ func TestIntegrationHandleInbound_TamperedKeyID(t *testing.T) {
 			"X-Key-Id":            "key-2", // tampered: signed for key-1
 			"X-Signature-Version": "v1",
 		},
-		ExternalEventID: "ext-keyid-tamper",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EventType: "order.created",
 	}
 
 	var tamperErr error
@@ -134,7 +133,7 @@ func TestIntegrationHandleInbound_TamperedSignatureVersion(t *testing.T) {
 	h := testkit.NewDB(t)
 	tn := testkit.CreateTenant(t, h)
 	epID := seedInboundEndpoint(t, h, tn.ID)
-	svc := newService(t, &webhook.FakeSender{})
+	svc := newService(t, &fakes.WebhookSender{})
 	svc.RegisterVerifier(testKeyedProviderKey, keyedVerifier{})
 
 	body := []byte(`{"event":"order.created"}`)
@@ -149,9 +148,7 @@ func TestIntegrationHandleInbound_TamperedSignatureVersion(t *testing.T) {
 			"X-Key-Id":            "key-1",
 			"X-Signature-Version": "v1", // tampered: signed for v2
 		},
-		ExternalEventID: "ext-sigver-tamper",
-		EventType:       "order.created",
-		Timestamp:       time.Now(),
+		EventType: "order.created",
 	}
 
 	var tamperErr error

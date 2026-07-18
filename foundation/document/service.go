@@ -175,22 +175,12 @@ func (s *Service) Create(ctx context.Context, db database.TenantDB, in CreateInp
 	return id, nil
 }
 
-// InitiateUpload is retained as a fail-closed compatibility entry point.
-// Framework uploads must provide the checksum before a URL can be signed.
-func (s *Service) InitiateUpload(_ context.Context, _ database.TenantDB, _ uuid.UUID) (UploadSession, error) {
-	return UploadSession{}, kerr.E(kerr.KindValidation, "upload_checksum_required", "upload SHA-256 is required at initiation")
-}
-
-// InitiateUploadChecksum reserves the next version number and returns a PUT
+// InitiateUpload reserves the next version number and returns a PUT
 // whose signed headers bind S3's canonical SHA-256 metadata to the upload.
-func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.TenantDB, docID uuid.UUID, checksumSHA256 string) (UploadSession, error) {
+func (s *Service) InitiateUpload(ctx context.Context, db database.TenantDB, docID uuid.UUID, checksumSHA256 string) (UploadSession, error) {
 	rawChecksum, checksumErr := hex.DecodeString(checksumSHA256)
 	if checksumErr != nil || len(rawChecksum) != sha256.Size || checksumSHA256 != strings.ToLower(checksumSHA256) {
 		return UploadSession{}, kerr.E(kerr.KindValidation, "invalid_upload_checksum", "upload checksum must be lowercase-hex SHA-256")
-	}
-	uploader, ok := s.store.(storage.ChecksumUploader)
-	if !ok {
-		return UploadSession{}, kerr.E(kerr.KindInternal, "checksum_upload_unsupported", "storage adapter does not support checksum-enforcing uploads")
 	}
 	var status string
 	err := db.QueryRow(ctx, `SELECT status FROM documents WHERE id = $1`, docID).Scan(&status)
@@ -220,7 +210,7 @@ func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.Tenant
 	// unreferenced blob (swept by a future storage GC).
 	tenantID, _ := database.TenantIDFrom(ctx)
 	key := tenantID.String() + "/" + docID.String() + "/" + s.idgen.New().String()
-	url, err := uploader.PresignPutChecksum(ctx, key, checksumSHA256, s.putTTL)
+	url, err := s.store.PresignPutChecksum(ctx, key, checksumSHA256, s.putTTL)
 	if err != nil {
 		return UploadSession{}, kerr.Wrapf(err, "document.InitiateUpload", "presign put")
 	}
@@ -241,16 +231,28 @@ func (s *Service) InitiateUploadChecksum(ctx context.Context, db database.Tenant
 // limits), runs OnFileUpload hooks, and writes the immutable version row.
 func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in ConfirmInput) (uuid.UUID, error) {
 	var (
-		class string
-		sens  string
+		class     string
+		sens      string
+		docStatus string
 	)
-	err := db.QueryRow(ctx, `SELECT document_class, sensitivity FROM documents WHERE id = $1`, in.DocumentID).
-		Scan(&class, &sens)
+	// Load the document's class/sensitivity and fast-fail a non-active status
+	// WITHOUT locking: the object-store Stat/Peek below are network I/O, and
+	// holding the documents row lock across them would block retention and
+	// every other confirmation of this document behind slow storage (second
+	// closure audit 2026-07-17, F-05 Medium). This unlocked status read is a
+	// fast-fail only — the authoritative, serializing check is the FOR UPDATE
+	// recheck after the object checks pass.
+	err := db.QueryRow(ctx, `SELECT document_class, sensitivity, status FROM documents WHERE id = $1`, in.DocumentID).
+		Scan(&class, &sens, &docStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "document not found")
 	}
 	if err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "load document")
+	}
+	if docStatus != "active" {
+		return uuid.Nil, kerr.E(kerr.KindConflict, "document_not_active",
+			"document is "+docStatus+"; a terminal document cannot acquire new versions")
 	}
 	cl, ok := s.registry.Get(class)
 	if !ok {
@@ -291,11 +293,27 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 		return uuid.Nil, kerr.E(kerr.KindValidation, "mime_not_allowed", "MIME type not permitted for this document class: "+mime)
 	}
 
-	if err := s.hooks.runUpload(ctx, UploadEvent{
-		DocumentID: in.DocumentID.String(), Class: class, VersionNo: in.VersionNo,
-		StorageKey: in.StorageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
-	}); err != nil {
-		return uuid.Nil, err
+	// Lock the authoritative document row and REQUIRE it to still be ACTIVE
+	// under the lock (closure review 2026-07-17, F-05): without this, a
+	// retention sweep could void the document between the unlocked read above
+	// and the version insert below, attaching a new ACTIVE version beneath a
+	// voided document — which later sweeps (SELECT ... WHERE status='active')
+	// would never revisit. FOR UPDATE serializes confirmation against
+	// retention's own documents-row update in a single-row, deadlock-free
+	// order, and the lock is taken only AFTER the object-store I/O so slow
+	// storage never blocks retention or peer confirmations.
+	var lockedStatus string
+	err = db.QueryRow(ctx, `SELECT status FROM documents WHERE id = $1 FOR UPDATE`, in.DocumentID).
+		Scan(&lockedStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, kerr.E(kerr.KindNotFound, "not_found", "document not found")
+	}
+	if err != nil {
+		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "lock document")
+	}
+	if lockedStatus != "active" {
+		return uuid.Nil, kerr.E(kerr.KindConflict, "document_not_active",
+			"document is "+lockedStatus+"; a terminal document cannot acquire new versions")
 	}
 
 	// CAS confirm the durable session, predicated on the COMPLETE reserved
@@ -328,6 +346,26 @@ func (s *Service) ConfirmUpload(ctx context.Context, db database.TenantDB, in Co
 	}
 	if err != nil {
 		return uuid.Nil, kerr.Wrapf(err, "document.ConfirmUpload", "confirm session")
+	}
+
+	// Hooks run ONLY after the CAS has established that this confirmation is
+	// pending, unexpired, and bound to the reserved document/version/key — and
+	// the event carries the AUTHORITATIVE values, never caller input (closure
+	// review 2026-07-17, F-05: hooks previously fired before the CAS with
+	// caller-supplied identity, so cross-document, expired, replayed, wrong-key
+	// and wrong-version attempts triggered scan-enqueue and other external hook
+	// effects for confirmations that were then rejected). A hook error returns
+	// before any version effect and rolls the CAS back with the caller's tx.
+	// The hook event carries the confirming tx and a retry-stable idempotency
+	// identifier (DeliveryID = the session id) so hook effects can be atomic
+	// with the confirmation or deduplicated across a post-hook rollback+retry
+	// (second closure audit 2026-07-17, F-05).
+	if err := s.hooks.runUpload(ctx, UploadEvent{
+		DocumentID: confirmed.documentID.String(), Class: class, VersionNo: confirmed.versionNo,
+		StorageKey: confirmed.storageKey, MIME: mime, SizeBytes: info.Size, Sensitivity: Sensitivity(sens),
+		DeliveryID: in.SessionID.String(), Tx: db,
+	}); err != nil {
+		return uuid.Nil, err
 	}
 
 	verID := s.idgen.New()
@@ -780,7 +818,7 @@ func actorFromCtx(ctx context.Context) uuid.UUID {
 func actorAuthz(ctx context.Context) authz.Actor {
 	id := actorFromCtx(ctx)
 	tid, _ := database.TenantIDFrom(ctx)
-	return authz.Actor{CapacityID: id, UserID: id, TenantID: tid}
+	return authz.Actor{Kind: authz.ActorUser, CapacityID: id, UserID: id, TenantID: tid, CredentialScheme: authz.CredentialUser}
 }
 
 func actorID(a authz.Actor) string {

@@ -50,28 +50,6 @@ const (
 	CredentialInternal CredentialScheme = "internal"
 )
 
-// defaultCredentialScheme derives a scheme from ActorKind and Scopes when the
-// actor was not constructed with an explicit CredentialScheme. This preserves
-// backward compatibility for existing tests and internal callers.
-func defaultCredentialScheme(a Actor) CredentialScheme {
-	if a.CredentialScheme != "" {
-		return a.CredentialScheme
-	}
-	switch a.Kind {
-	case ActorUser:
-		return CredentialUser
-	case ActorWebhook:
-		return CredentialWebhook
-	case ActorSystem:
-		if len(a.Scopes) > 0 {
-			return CredentialAPIKey
-		}
-		return CredentialInternal
-	default:
-		return CredentialInternal
-	}
-}
-
 // Actor is the authenticated principal for an authorization decision. For a
 // human it carries the user and their active capacity in the tenant; for a
 // non-human it carries a system identifier.
@@ -94,8 +72,8 @@ type Actor struct {
 	// CredentialScheme classifies how the actor was authenticated. It drives
 	// permission-level scheme scoping (SEC-01 T7) and is set by each
 	// authenticator (JWT user, API key, webhook, internal system). A zero value
-	// is interpreted by the evaluator using ActorKind/Scopes heuristics for
-	// backward compatibility, but authenticators should set it explicitly.
+	// must be set explicitly by the authenticator. A zero value cannot satisfy a
+	// permission restricted by AllowedSchemes.
 	CredentialScheme CredentialScheme
 	// Scopes is the explicit permission set of a machine principal (API key /
 	// service principal). It is meaningful only for ActorSystem actors: a scope

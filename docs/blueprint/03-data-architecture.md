@@ -45,7 +45,7 @@ Scope: **G**=global, **T**=tenant-scoped(RLS). Flags: **A**=append-only, **V**=o
 | rule_definitions | G | — | persisted rule points; PK `key`; `value_schema` is RuleValueSchema (not JSON Schema, see 02 §2.1) |
 | rule_versions | T+G | A(status transitions only),Tm | values; exclusion constraint prevents overlapping active versions per scope |
 | feature_flags | — | — | implemented as `feature.*` rule points (no separate table) |
-| workflow_definitions | G+T | — | immutable per `(key,version,tenant_id?)` |
+| workflow_definitions | G | — | global immutable catalog; unique `(key,version)` with canonical definition digest |
 | workflow_instances | T | V | pins def version; idx `(tenant_id,resource_type,resource_id)`, `(tenant_id,status)` |
 | workflow_tasks | T | V,S | idx `(tenant_id,status,due_at)`, assignee GIN or child table `workflow_task_assignees` |
 | documents | T | V,S | metadata + class + resource ref |
@@ -327,12 +327,12 @@ CREATE TABLE rule_versions (
 CREATE TABLE workflow_definitions (
   id uuid PRIMARY KEY,
   key text NOT NULL, version int NOT NULL,
-  tenant_id uuid,                          -- NULL = module template
   applies_to text NOT NULL REFERENCES resource_types(key),
-  definition jsonb NOT NULL,               -- validated graph
+  definition jsonb NOT NULL,               -- canonical validated graph
+  definition_digest text NOT NULL CHECK (definition_digest ~ '^[0-9a-f]{64}$'),
   status text NOT NULL DEFAULT 'active',
   created_at timestamptz NOT NULL DEFAULT now(), created_by uuid NOT NULL,
-  UNIQUE (key, version, COALESCE(tenant_id,'00000000-0000-0000-0000-000000000000'::uuid))
+  UNIQUE (key, version)
 );
 CREATE TABLE workflow_instances (
   id uuid PRIMARY KEY, tenant_id uuid NOT NULL,

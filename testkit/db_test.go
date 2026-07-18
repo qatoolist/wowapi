@@ -74,7 +74,7 @@ func TestIntegrationNoTenantContextFails(t *testing.T) {
 }
 
 // TestIntegrationKernelTablesExist checks the global spine tables shipped by
-// migration 00002 exist and carry NO row security (they are global, D-0025).
+// the clean baseline exist and carry NO row security (they are global, D-0025).
 func TestIntegrationKernelTablesExist(t *testing.T) {
 	h := NewDB(t)
 	ctx := context.Background()

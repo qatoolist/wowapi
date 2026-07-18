@@ -92,7 +92,7 @@ func BenchmarkKeysetClause(b *testing.B) {
 	if err != nil {
 		b.Fatalf("setup sort: %v", err)
 	}
-	cur, err := pagination.EncodeCursor(map[string]any{
+	cur, err := pagination.EncodeCursorWithSig(sort.Signature(), map[string]any{
 		"created_at": "2026-06-01T00:00:00Z",
 		"id":         int64(42),
 	})

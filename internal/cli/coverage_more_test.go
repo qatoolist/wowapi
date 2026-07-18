@@ -417,7 +417,10 @@ func TestGenCRUDAllFieldTypes(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("gen crud all types exit %d: %s", code, errOut)
 	}
-	assertParseGo(t, filepath.Join(modDir, "kind.go"))
+	path := filepath.Join(modDir, "kind.go")
+	assertParseGo(t, path)
+	assertFileContains(t, path, "F uuid.UUID")
+	assertFileContains(t, path, "G time.Time")
 }
 
 func TestGenCRUDInvalidFieldSpec(t *testing.T) {

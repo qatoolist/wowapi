@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/qatoolist/wowapi/foundation/webhook"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/safety"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // =============================================================================
@@ -64,7 +62,7 @@ func (p *txDepthTracker) Platform(ctx context.Context, fn func(context.Context, 
 type txAssertingSender struct {
 	t       *testing.T
 	tracker *txDepthTracker
-	inner   *webhook.FakeSender
+	inner   *fakes.WebhookSender
 }
 
 func (s *txAssertingSender) Post(ctx context.Context, url string, body []byte, headers map[string]string) (int, error) {
@@ -102,13 +100,13 @@ func TestIntegrationDispatchOutbound_NoTxOpenDuringRemoteIO(t *testing.T) {
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/txcheck")
 
 	tracker := &txDepthTracker{inner: h.PlatformTxM}
-	sender := &txAssertingSender{t: t, tracker: tracker, inner: &webhook.FakeSender{StatusCode: 200}}
+	sender := &txAssertingSender{t: t, tracker: tracker, inner: &fakes.WebhookSender{StatusCode: 200}}
 	resolver := &txAssertingSecretResolver{t: t, tracker: tracker, secret: testSecret}
 
 	svc := webhook.New(sender, resolver, model.UUIDv7())
 	svc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
 
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{"k":"v"}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"k":"v"}`))
 	if err := svc.DispatchOutbound(context.Background(), tracker, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("DispatchOutbound: %v", err)
 	}
@@ -126,16 +124,16 @@ func TestIntegrationRetryOutbound_NoTxOpenDuringRemoteIO(t *testing.T) {
 	seedOutboundEndpoint(t, h, tn.ID, "https://example.test/txcheck-retry")
 
 	// First, dispatch with a failing sender (untracked) to seed a 'failed' row.
-	failSender := &webhook.FakeSender{StatusCode: 500}
-	seedSvc := webhook.New(failSender, &webhook.FakeSecretResolver{Secret: testSecret}, model.UUIDv7())
+	failSender := &fakes.WebhookSender{StatusCode: 500}
+	seedSvc := webhook.New(failSender, &fakes.WebhookSecretResolver{Secret: testSecret}, model.UUIDv7())
 	seedSvc.RegisterVerifier(testProviderKey, webhook.HMACVerifier{})
-	ev := outbox.Event{ID: uuid.New(), Type: "order.created", Payload: json.RawMessage(`{"k":"v"}`)}
+	ev := outboundEvent(tn.ID, "order.created", json.RawMessage(`{"k":"v"}`))
 	if err := seedSvc.DispatchOutbound(context.Background(), h.PlatformTxM, tn.ID, ev, time.Now()); err != nil {
 		t.Fatalf("seed dispatch: %v", err)
 	}
 
 	tracker := &txDepthTracker{inner: h.PlatformTxM}
-	sender := &txAssertingSender{t: t, tracker: tracker, inner: &webhook.FakeSender{StatusCode: 200}}
+	sender := &txAssertingSender{t: t, tracker: tracker, inner: &fakes.WebhookSender{StatusCode: 200}}
 	resolver := &txAssertingSecretResolver{t: t, tracker: tracker, secret: testSecret}
 
 	svc := webhook.New(sender, resolver, model.UUIDv7())

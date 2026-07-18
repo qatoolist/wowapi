@@ -7,8 +7,8 @@ reversibility drill the framework enforces.
 ## Requirements
 
 - **PostgreSQL 16.**
-- Three roles: `app_rt` and `app_platform` are **created by the first kernel migration**
-  (`migrations/00001_bootstrap.sql`); **`app_migrate` is not** — it's the role the migration *runner*
+- Three roles: `app_rt` and `app_platform` are **created by the clean kernel baseline**
+  (`migrations/00001_baseline.sql`); **`app_migrate` is not** — it's the role the migration *runner*
   connects as, so it must already exist.
 - Migrations are **[goose](https://github.com/pressly/goose)** SQL files, embedded into the binaries.
 
@@ -16,8 +16,8 @@ reversibility drill the framework enforces.
 
 | Role | Used by | Created by | Privilege |
 |---|---|---|---|
-| `app_rt` | runtime (api + worker) | bootstrap migration | **Non-superuser, least privilege.** Subject to `FORCE ROW LEVEL SECURITY`. Cannot bypass RLS, cannot run DDL. |
-| `app_platform` | deliberate cross-tenant operations | bootstrap migration | Can operate across tenants where a feature legitimately needs it (kept narrow). |
+| `app_rt` | runtime (api + worker) | kernel baseline | **Non-superuser, least privilege.** Subject to `FORCE ROW LEVEL SECURITY`. Cannot bypass RLS, cannot run DDL. |
+| `app_platform` | deliberate cross-tenant operations | kernel baseline | Can operate across tenants where a feature legitimately needs it (kept narrow). |
 | `app_migrate` | migrations only | **you (pre-existing)** | The role the migration runner connects as; owns/alters schema (DDL). Not used to serve requests. |
 
 The two DSNs your product provides map onto this split:
@@ -86,6 +86,11 @@ make migrate-down        # go run ./cmd/migrate down  — FULL reset to version 
 Migrations are embedded, so the compiled `migrate` binary is self-contained — no loose `.sql` files to
 ship. In the **framework repo**, the same happens via the kernel `migrations/` package + the container
 gate.
+
+The first supported line (`v1.2.0`) has one kernel migration,
+`00001_baseline.sql`, which directly constructs the verified current catalog. The abandoned
+pre-v1.2 chain is not replayed and is not an upgrade source. New kernel changes start at `00002` and
+use the online-migration protocol below when a later supported database needs a staged rollout.
 
 ## Writing a module migration
 
@@ -301,14 +306,14 @@ make migrate-up   # kernel migrations → module migrations → seeds.Sync → r
 
 The generated `cmd/migrate` runs it automatically, immediately after `seeds.Sync`, on the same
 `app_platform`-privileged connection — `rule_definitions` is `app_platform` SELECT/INSERT/UPDATE and
-`app_rt` SELECT-only (migration `00008_rules.sql`), the same write posture as the seed catalogs.
+`app_rt` SELECT-only (enforced by the clean baseline), the same write posture as the seed catalogs.
 
 Unlike seed catalogs (declarative YAML on disk, loadable by the framework CLI without any product Go
 code), rule points exist only as Go declarations inside a booted product process — there is no
 `rules.yaml` equivalent the framework can load from disk today. `wowapi rules sync` is therefore **not**
 a framework CLI subcommand: a standalone framework binary has no way to import a product's registered
 `rules.Point` values. The generated migrate main is the only sanctioned lifecycle path; a product with a
-custom migrate main should call `rules.SyncDefinitions(ctx, pool, booted.Kernel.Rules)` itself, right
+custom migrate main should call `rules.SyncDefinitions(ctx, pool, k.Rules)` itself (the composition root owns `k`; `Booted` is opaque), right
 after `seeds.Sync`, following the same pattern.
 
 This closes the gap that previously forced a product to hand-write a `rule_definitions` INSERT migration

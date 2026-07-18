@@ -26,7 +26,7 @@
 4. Sensitive actions produce audit rows; permission denials on sensitive permissions are audited.
 5. RLS isolation tests pass for every registered tenant-scoped table (catalog-driven sweep).
 6. `wowapi new-module` + `wowapi gen crud` yield a compiling, tested module in under an hour — in a consuming repo, without copying framework files.
-7. Workflow definitions load from seeds; tenant overrides resolve; version pinning holds.
+7. Registered workflow definitions synchronize atomically; canonical digest verification and version pinning hold.
 8. Rule versions support draft→approval→active; historical `Resolve(at)` returns period-correct values.
 9. Outbox events commit atomically with business writes (crash-injection test).
 10. Jobs are idempotent (inbox) and tenant-aware (`SET LOCAL` verified in-worker).

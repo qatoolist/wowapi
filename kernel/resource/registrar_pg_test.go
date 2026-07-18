@@ -31,7 +31,15 @@ func TestIntegrationRegistrarUpsertBumpsVersion(t *testing.T) {
 
 	reg := resource.NewRegistrar()
 	ref := resource.Ref{Type: rt, ID: uuid.New()}
-	tctx := database.WithTenantID(ctx, tenant)
+	actor := uuid.New()
+	tctx := database.WithActorID(database.WithTenantID(ctx, tenant), actor)
+
+	// Attribution is mandatory even on the low-level module port.
+	if err := h.TxM.WithTenant(database.WithTenantID(ctx, tenant), func(ctx context.Context, db database.TenantDB) error {
+		return reg.Bind(db).Upsert(ctx, ref, &org, "Unattributed", "active")
+	}); err == nil {
+		t.Fatal("upsert without an actor-bound context must fail")
+	}
 
 	// First upsert: insert.
 	if err := h.TxM.WithTenant(tctx, func(ctx context.Context, db database.TenantDB) error {

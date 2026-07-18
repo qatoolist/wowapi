@@ -1,27 +1,35 @@
 name: compatibility-gates
 
+# Generic compatibility engine for deliberate diagnostics. Release authority
+# remains the exact-SHA manifest matrix in required-gates.yml.
 on:
   workflow_call:
     inputs:
-      baseline_ref:
-        description: Oldest supported v1 release used for N-1 compatibility checks
-        required: false
+      source_sha:
+        description: Full candidate commit SHA
+        required: true
         type: string
-        default: v1.0.0
+      target_tag:
+        description: Exact candidate semantic-version tag
+        required: true
+        type: string
       candidate_image:
-        description: Immutable candidate image reference (name@sha256:digest); empty until build-candidate exists
+        description: Optional immutable candidate image name@sha256:digest
         required: false
         type: string
         default: ""
   workflow_dispatch:
     inputs:
-      baseline_ref:
-        description: Oldest supported v1 release used for N-1 compatibility checks
-        required: false
+      source_sha:
+        description: Full candidate commit SHA
+        required: true
         type: string
-        default: v1.0.0
+      target_tag:
+        description: Exact candidate semantic-version tag
+        required: true
+        type: string
       candidate_image:
-        description: Immutable candidate image reference (name@sha256:digest)
+        description: Optional immutable candidate image name@sha256:digest
         required: false
         type: string
         default: ""
@@ -31,93 +39,10 @@ permissions:
   packages: read
 
 jobs:
-  adversarial-fixtures:
-    name: compatibility adversarial fixtures
+  compatibility:
+    name: compatibility policy and generic engines
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: "1.26.5"
-          cache: true
-      - name: OpenAPI merge, validation, and semantic-diff fixtures
-        run: go test ./internal/cli -run 'OpenAPI' -count=1
-      - name: Go API, config-schema, and architecture-smoke fixtures
-        run: go test ./internal/compat -run '^(TestCheckConfigSchemaCompatibility|TestGoAPIDiffGateFixtures|TestCandidateArchitectureSmoke)' -count=1
-      - name: config compatibility CLI fixtures
-        run: go test ./internal/compatcli -run '^TestRunConfig' -count=1
-
-  compile-matrix:
-    name: compile (${{ matrix.go_version }}, ${{ matrix.dependency_set }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - go_version: "1.26.0"
-            dependency_set: locked
-          - go_version: "1.26.5"
-            dependency_set: locked
-        # Explicit exclusions, not silent omissions:
-        # - Go <1.26: unsupported because go.mod declares the 1.26 language floor.
-        # - Go >1.26: not supported until a stable 1.27 release is intentionally adopted.
-        # - dependency_set=minimum: excluded because wowapi publishes exact supported
-        #   module requirements, not independently supported minimum versions.
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: ${{ matrix.go_version }}
-          cache: true
-      - name: compile every module package with the selected supported toolchain/dependency set
-        env:
-          GOTOOLCHAIN: local
-        run: go test -run '^$' ./...
-
-  go-public-api:
-    name: Go public API (oldest supported to current)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ inputs.baseline_ref }}
-          path: .compat-baseline
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: "1.26.5"
-          cache: true
-      - name: apidiff exported module surface
-        run: scripts/check_go_api_compat.sh .compat-baseline .
-
-  config-schema:
-    name: generated config schema (oldest supported to current)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ inputs.baseline_ref }}
-          path: .compat-baseline
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version: "1.26.5"
-          cache: true
-      - name: generate schemas from each release's kernel/config/schema.go source of truth
-        run: |
-          (cd .compat-baseline && go run ./cmd/wowapi config schema) > "$RUNNER_TEMP/config-baseline.json"
-          go run ./cmd/wowapi config schema > "$RUNNER_TEMP/config-current.json"
-      - name: enforce backward-compatible config changes
-        run: go run ./cmd/compatcheck config --baseline "$RUNNER_TEMP/config-baseline.json" --current "$RUNNER_TEMP/config-current.json"
-
-  migration-upgrade:
-    name: oldest-supported migration upgrade and reverse
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18-alpine
@@ -135,15 +60,24 @@ jobs:
     env:
       DATABASE_URL: postgres://wowapi:wowapi-local-only@localhost:5432/wowapi?sslmode=disable
       WOWAPI_REQUIRE_DB: "1"
-      WOWAPI_REQUIRE_S3: "1"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.26.5"
           cache: true
-      - name: seed v1.0.0 schema, migrate forward, preserve data, reverse, and reconstruct
-        run: go test ./migrations -run '^TestIntegrationMigrationsReversible$' -count=1 -v
+      - name: prove exact checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: test "$(git rev-parse 'HEAD^{commit}')" = "$SOURCE_SHA"
+      - name: run bootstrap or exact-predecessor compatibility
+        env:
+          WOWAPI_RELEASE_TAG: ${{ inputs.target_tag }}
+        run: scripts/run_release_compatibility.sh
 
   candidate-architecture-smoke:
     name: candidate image smoke (${{ matrix.architecture }})
@@ -156,10 +90,11 @@ jobs:
         architecture: [amd64, arm64]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: set up QEMU for published architectures
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-      - name: log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

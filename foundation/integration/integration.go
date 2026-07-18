@@ -13,8 +13,11 @@ package integration
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
+
+	"github.com/qatoolist/wowapi/internal/sealer"
 
 	"github.com/qatoolist/wowapi/kernel/config"
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
@@ -58,14 +61,40 @@ type Provider interface {
 type Registry struct {
 	providers map[string]Provider
 	errs      []error
+	sealed    bool
 }
 
 // NewRegistry returns an empty provider registry.
 func NewRegistry() *Registry { return &Registry{providers: map[string]Provider{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a provider the boot gates never saw
+// (closure review 2026-07-17, F-10).
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
+
 // Register adds a provider adapter. A malformed/foreign-module key, an invalid
 // kind, or a duplicate is recorded and surfaced by Err().
 func (r *Registry) Register(module string, p Provider) {
+	if r.sealed {
+		panic("integration: provider registration after boot: the extension model is sealed")
+	}
+	// Reject nil and typed-nil providers BEFORE the p.Key() call below
+	// dereferences them (third closure audit 2026-07-17): an interface holding
+	// a nil pointer is not itself nil, and either form would otherwise panic
+	// here or at first runtime use instead of surfacing a collected boot error.
+	if p == nil {
+		r.errf("module %s registered a nil integration provider", module)
+		return
+	}
+	if v := reflect.ValueOf(p); (v.Kind() == reflect.Ptr || v.Kind() == reflect.Map ||
+		v.Kind() == reflect.Slice || v.Kind() == reflect.Func || v.Kind() == reflect.Chan ||
+		v.Kind() == reflect.Interface) && v.IsNil() {
+		r.errf("module %s registered a typed-nil integration provider (%T)", module, p)
+		return
+	}
 	key := p.Key()
 	if !keyRE.MatchString(key) {
 		r.errf("provider key must be module.name: %s", key)

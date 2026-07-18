@@ -49,7 +49,7 @@ func TestMemoryMissingObject(t *testing.T) {
 func TestMemoryPresignAndDelete(t *testing.T) {
 	m := storage.NewMemory()
 	ctx := context.Background()
-	put, err := m.PresignPut(ctx, "k", time.Minute)
+	put, err := m.PresignPutChecksum(ctx, "k", "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881", time.Minute)
 	if err != nil || put.Method != http.MethodPut || put.URL == "" {
 		t.Fatalf("presign put: %+v %v", put, err)
 	}

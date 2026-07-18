@@ -10,11 +10,6 @@ import (
 	"github.com/qatoolist/wowapi/internal/buildinfo"
 )
 
-// planned maps not-yet-implemented commands to the phase that delivers them
-// (docs/implementation/phase-plan.md). Keeping the full surface visible from
-// day one makes `wowapi help` an honest roadmap.
-var planned = map[string]string{}
-
 // Run executes the CLI and returns the process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -54,11 +49,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "audit":
 		return runAudit(args[1:], stdout, stderr)
 	default:
-		if phase, ok := planned[cmd]; ok {
-			fmt.Fprintf(stderr, "wowapi %s: not implemented yet — planned in %s.\n", cmd, phase)
-			fmt.Fprintf(stderr, "See docs/implementation/phase-plan.md in %s.\n", buildinfo.ModulePath)
-			return 2
-		}
 		fmt.Fprintf(stderr, "wowapi: unknown command %q — run `wowapi help`.\n", cmd)
 		return 2
 	}

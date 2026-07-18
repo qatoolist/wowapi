@@ -281,11 +281,38 @@ func (c *moduleContext) Jobs() *jobs.Registry {
 
 // RecurringJob collects a leader-safe per-tenant recurring job; the worker's
 // scheduler runs it (roadmap E5/CA-5). The name is module-prefixed to avoid
-// collisions with kernel maintenance tasks and other modules.
+// collisions with kernel maintenance tasks and other modules. Declarations are
+// boot-validated (second closure audit 2026-07-17, F-10): an empty name, a
+// nonpositive interval, a nil callback, or a duplicate full name is a
+// collected boot error — a duplicate would silently share one scheduler row
+// (one declaration advances the schedule while the other starves), and a nil
+// callback would panic only when first due.
 func (c *moduleContext) RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error) {
 	c.mustBeUnsealed("RecurringJob")
+	full := c.name + "." + name
+	switch {
+	case name == "":
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: RecurringJob requires a non-empty name", c.name))
+		return
+	case every <= 0:
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: recurring job %q has nonpositive interval %v", c.name, full, every))
+		return
+	case fn == nil:
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: recurring job %q has a nil callback (would panic when due)", c.name, full))
+		return
+	}
+	for _, existing := range c.boot.recurring {
+		if existing.Name == full {
+			c.boot.portErrs = append(c.boot.portErrs,
+				fmt.Errorf("module %q: recurring job %q declared more than once (duplicates share one scheduler row and starve each other)", c.name, full))
+			return
+		}
+	}
 	c.boot.recurring = append(c.boot.recurring, RecurringJob{
-		Name:  c.name + "." + name,
+		Name:  full,
 		Every: every,
 		Run:   fn,
 	})
@@ -357,18 +384,64 @@ func (c *moduleContext) mustBeUnsealed(what string) {
 	}
 }
 
+// rejectDuplicate accumulates a boot error when a module registers the same
+// collector twice — the second call previously overwrote the first silently
+// (closure review 2026-07-17, F-10).
+func (c *moduleContext) rejectDuplicate(what string, exists bool) bool {
+	if exists {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: duplicate %s registration (would silently overwrite the first)", c.name, what))
+	}
+	return exists
+}
+
+// isNilLikeFS reports whether fsys is nil OR an interface holding a typed nil
+// (fourth closure audit 2026-07-17): an fs.FS containing (*customFS)(nil)
+// compares unequal to nil, passes registration, and panics only inside
+// fs.WalkDir at materialization or use.
+func isNilLikeFS(fsys fs.FS) bool {
+	if fsys == nil {
+		return true
+	}
+	v := reflect.ValueOf(fsys)
+	if (v.Kind() == reflect.Ptr || v.Kind() == reflect.Map || v.Kind() == reflect.Slice ||
+		v.Kind() == reflect.Func || v.Kind() == reflect.Chan || v.Kind() == reflect.Interface) && v.IsNil() {
+		return true
+	}
+	return false
+}
+
 func (c *moduleContext) Migrations(fsys fs.FS) {
 	c.mustBeUnsealed("Migrations")
+	if isNilLikeFS(fsys) {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Migrations registered a nil (or typed-nil) fs.FS", c.name))
+		return
+	}
+	if _, dup := c.boot.migrations[c.name]; c.rejectDuplicate("Migrations", dup) {
+		return
+	}
 	c.boot.migrations[c.name] = fsys
 }
 
 func (c *moduleContext) Seeds(fsys fs.FS) {
 	c.mustBeUnsealed("Seeds")
+	if isNilLikeFS(fsys) {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Seeds registered a nil (or typed-nil) fs.FS", c.name))
+		return
+	}
+	if _, dup := c.boot.seeds[c.name]; c.rejectDuplicate("Seeds", dup) {
+		return
+	}
 	c.boot.seeds[c.name] = fsys
 }
 
 func (c *moduleContext) OpenAPI(fragment []byte) {
 	c.mustBeUnsealed("OpenAPI")
+	if _, dup := c.boot.openapi[c.name]; c.rejectDuplicate("OpenAPI", dup) {
+		return
+	}
 	c.boot.openapi[c.name] = fragment
 }
 
@@ -382,7 +455,21 @@ func (c *moduleContext) I18n(bundle i18n.Bundle) {
 
 func (c *moduleContext) Health(name string, check func(context.Context) error) {
 	c.mustBeUnsealed("Health")
-	c.boot.health[c.name+"."+name] = check
+	if name == "" {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: Health requires a non-empty check name", c.name))
+		return
+	}
+	if check == nil {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: health check %q has a nil func (would panic when probed)", c.name, name))
+		return
+	}
+	key := c.name + "." + name
+	if _, dup := c.boot.health[key]; c.rejectDuplicate("Health("+name+")", dup) {
+		return
+	}
+	c.boot.health[key] = check
 }
 
 // ProvidePort registers an impl under a module-prefixed name so dependents can
@@ -401,6 +488,16 @@ func (c *moduleContext) ProvidePort(name string, impl any) {
 	if impl == nil {
 		c.boot.portErrs = append(c.boot.portErrs,
 			fmt.Errorf("module %q: ProvidePort(%q): nil implementation", c.name, name))
+		return
+	}
+	// A typed nil ((*T)(nil), nil map/func/chan/slice) passes impl == nil but
+	// panics at first use — reject it at boot like an untyped nil (closure
+	// review 2026-07-17, F-10).
+	if v := reflect.ValueOf(impl); (v.Kind() == reflect.Ptr || v.Kind() == reflect.Map ||
+		v.Kind() == reflect.Slice || v.Kind() == reflect.Func || v.Kind() == reflect.Chan ||
+		v.Kind() == reflect.Interface) && v.IsNil() {
+		c.boot.portErrs = append(c.boot.portErrs,
+			fmt.Errorf("module %q: ProvidePort(%q): typed-nil implementation (%T)", c.name, name, impl))
 		return
 	}
 	t := reflect.TypeOf(impl)
@@ -424,19 +521,30 @@ func (c *moduleContext) Port(name string) (any, error) {
 	if c.boot.sealed {
 		return nil, fmt.Errorf("module %q: Port(%q) after boot: the extension model is sealed", c.name, name)
 	}
+	// Every resolution failure is BOTH returned to the module AND accumulated
+	// into boot validation (closure review 2026-07-17, F-10): a module that
+	// ignores the error and returns nil from Register must still fail boot —
+	// "unsatisfied dependency fails boot" is a boot contract, not a courtesy
+	// return value.
+	fail := func(err error) (any, error) {
+		c.boot.portErrs = append(c.boot.portErrs, err)
+		return nil, err
+	}
 	provider, _, ok := strings.Cut(name, ".")
 	if !ok {
-		return nil, fmt.Errorf("module %q: port %q is not module-prefixed", c.name, name)
+		return fail(fmt.Errorf("module %q: port %q is not module-prefixed", c.name, name))
 	}
 	if provider != c.name {
 		if _, declared := c.depSet[provider]; !declared {
-			return nil, fmt.Errorf("module %q: port %q belongs to module %q, which is not a declared dependency", c.name, name, provider)
+			return fail(fmt.Errorf("module %q: port %q belongs to module %q, which is not a declared dependency", c.name, name, provider))
 		}
 	}
 	p, ok := c.boot.ports[name]
 	if !ok {
-		return nil, fmt.Errorf("module %q: port %q is not provided by any registered dependency", c.name, name)
+		return fail(fmt.Errorf("module %q: port %q is not provided by any registered dependency", c.name, name))
 	}
-	_ = c.registrar.RequirePort(name, reflect.TypeOf(p))
+	if err := c.registrar.RequirePort(name, reflect.TypeOf(p)); err != nil {
+		return fail(fmt.Errorf("module %q: Port(%q): %w", c.name, name, err))
+	}
 	return p, nil
 }

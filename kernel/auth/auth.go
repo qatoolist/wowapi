@@ -54,19 +54,14 @@ type Config struct {
 
 // Claims carries the wowapi-specific token payload alongside the standard
 // registered claims. Subject (sub) maps to a user's idp_subject; TenantID and
-// the optional CapacityID/ImpersonatorUserID/BreakGlass drive the authz.Actor.
-//
-// T5 (SEC-01): ImpersonatorUserID and BreakGlass are no longer trusted from
-// these claim fields. When GrantID is present, Verifier.Actor resolves the
-// verified grant row and populates those Actor fields from that row only.
-// The claim fields are retained for claim-shape compatibility during cutover.
+// the optional CapacityID and GrantID drive the authz.Actor. Privileged-session
+// attribution never comes directly from token claims: GrantID is resolved
+// against the server-side grant ledger.
 type Claims struct {
 	jwt.RegisteredClaims
-	TenantID           uuid.UUID `json:"tenant_id"`
-	CapacityID         uuid.UUID `json:"capacity_id,omitempty"`
-	GrantID            uuid.UUID `json:"grant_id,omitempty"`
-	ImpersonatorUserID uuid.UUID `json:"impersonator_user_id,omitempty"`
-	BreakGlass         bool      `json:"break_glass,omitempty"`
+	TenantID   uuid.UUID `json:"tenant_id"`
+	CapacityID uuid.UUID `json:"capacity_id,omitempty"`
+	GrantID    uuid.UUID `json:"grant_id,omitempty"`
 	// AuthTime is the standard auth_time claim (OIDC Core §2, ISO8601 numeric
 	// date). It records when the user authenticated at the IdP and drives
 	// step-up freshness enforcement (SEC-01 T6). Absent or malformed auth_time
@@ -234,31 +229,16 @@ func IsGrantRejection(err error, r GrantRejection) bool {
 }
 
 // PrincipalStore resolves the framework user id from the IdP subject and
-// confirms the capacity belongs to that user in the tenant. Implemented in the
-// app/adapters DB layer (kernel/auth may not import a database).
-//
-// A PrincipalStore that does not additionally implement AssurancePrincipalStore
-// cannot satisfy the SEC-01 unconditional tenant-membership check: Verifier.Actor
-// fails closed with KindForbidden for any token carrying a TenantID when the
-// configured store lacks that interface. Production stores must implement
-// AssurancePrincipalStore.
+// confirms live tenant membership, capacity ownership/count, and privileged
+// grants. Implemented in the app/adapters DB layer (kernel/auth may not import
+// a database). Every method is required: partial assurance stores cannot be
+// wired into the authenticator.
 type PrincipalStore interface {
 	// UserIDBySubject returns the framework user id for an IdP subject.
 	UserIDBySubject(ctx context.Context, subject string) (uuid.UUID, error)
 	// ValidateCapacity returns a non-nil error if capacityID is not an active
 	// capacity of userID in tenantID.
 	ValidateCapacity(ctx context.Context, userID, tenantID, capacityID uuid.UUID) error
-}
-
-// AssurancePrincipalStore is the additive v1 extension used for live tenant
-// membership, capacity-count, and privileged-session checks. Legacy
-// PrincipalStore implementations remain source-compatible, but Verifier.Actor
-// requires this interface whenever a token carries a TenantID (SEC-01
-// unconditional membership verification) and fails closed with KindForbidden
-// if the configured store does not implement it. Production stores must
-// implement this interface to enable the stricter assurance posture.
-type AssurancePrincipalStore interface {
-	PrincipalStore
 	ActiveTenantAccess(ctx context.Context, userID, tenantID uuid.UUID) error
 	ActiveCapacityCount(ctx context.Context, userID, tenantID uuid.UUID) (int, error)
 	ResolveGrant(ctx context.Context, userID, tenantID, grantID uuid.UUID) (*ResolvedGrant, error)
@@ -292,13 +272,8 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 		return authz.Actor{}, unauth("unknown subject", err)
 	}
 
-	assurance, hasAssurance := ps.(AssurancePrincipalStore)
 	if claims.TenantID != uuid.Nil {
-		if !hasAssurance {
-			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-				"tenant membership verification unavailable", errors.Op("auth.Actor"))
-		}
-		if err := assurance.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
+		if err := ps.ActiveTenantAccess(ctx, userID, claims.TenantID); err != nil {
 			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
 				"tenant access not permitted", err, errors.Op("auth.Actor"))
 		}
@@ -313,14 +288,10 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 				"capacity not permitted", err, errors.Op("auth.Actor"))
 		}
 	} else {
-		count := 0
-		if hasAssurance {
-			var err error
-			count, err = assurance.ActiveCapacityCount(ctx, userID, claims.TenantID)
-			if err != nil {
-				return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-					"capacity count unavailable", err, errors.Op("auth.Actor"))
-			}
+		count, err := ps.ActiveCapacityCount(ctx, userID, claims.TenantID)
+		if err != nil {
+			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
+				"capacity count unavailable", err, errors.Op("auth.Actor"))
 		}
 		if count > 1 {
 			return authz.Actor{}, errors.E(errors.KindValidation, "validation_failed",
@@ -342,11 +313,7 @@ func (v *Verifier) Actor(ctx context.Context, claims Claims, ps PrincipalStore) 
 	}
 
 	if claims.GrantID != uuid.Nil {
-		if !hasAssurance {
-			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
-				"principal store does not support privileged sessions", errors.Op("auth.Actor"))
-		}
-		grant, err := assurance.ResolveGrant(ctx, userID, claims.TenantID, claims.GrantID)
+		grant, err := ps.ResolveGrant(ctx, userID, claims.TenantID, claims.GrantID)
 		if err != nil {
 			return authz.Actor{}, errors.E(errors.KindForbidden, "permission_denied",
 				"privileged session not permitted", err, errors.Op("auth.Actor"))

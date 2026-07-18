@@ -30,7 +30,7 @@ func TestPublicationRequiresCompleteMatrixAndAttribution(t *testing.T) {
 		}
 	}
 	pub := publication{
-		SchemaVersion: 1, Reference: "perf/reference-v1.json",
+		SchemaVersion: 1, Reference: "perf/reference-schema1.json",
 		ComparisonKind: "initial-reference-capture", AbsoluteSLOStatus: "conditional-on-DEC-Q9",
 		MeasuredAt: time.Now().UTC(),
 		Environment: map[string]string{

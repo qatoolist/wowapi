@@ -9,20 +9,26 @@ import (
 	"testing"
 )
 
-const (
-	goldenConsumerModulePath       = "example.com/wowapi-golden-consumer"
-	goldenConsumerFrameworkVersion = "v1.2.0-w06e01s002.11"
-)
+const goldenConsumerModulePath = "example.com/wowapi-golden-consumer"
+
+// goldenConsumerFrameworkVersion is the synthetic version the golden-consumer
+// proxy serves this checkout as. The content-derived suffix keeps it in
+// lock-step with the packaged source (see frameworkSourceSuffix): the go
+// module index is path-keyed and immutable-by-assumption, so only a new
+// version path gets a fresh index.
+func goldenConsumerFrameworkVersion(t *testing.T) string {
+	return "v1.2.0-golden-" + frameworkSourceSuffix(t)
+}
 
 func goldenConsumerScaffold(t *testing.T) string {
 	t.Helper()
 
 	gobin := t.TempDir()
-	proxy := buildFrameworkProxy(t, goldenConsumerFrameworkVersion)
+	proxy := buildFrameworkProxy(t, goldenConsumerFrameworkVersion(t))
 	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
 	install := exec.Command(
 		"go", "install", "-buildvcs=false",
-		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion,
+		"github.com/qatoolist/wowapi/cmd/wowapi@"+goldenConsumerFrameworkVersion(t),
 	)
 	install.Dir = wowapiCheckoutRoot(t)
 	install.Env = append(os.Environ(), goEnv...)
@@ -36,7 +42,7 @@ func goldenConsumerScaffold(t *testing.T) string {
 	provenance := runPipelineStep(t, "verify installed CLI provenance", install.Dir, goEnv,
 		"go", "version", "-m", cli)
 	if !strings.Contains(provenance, "github.com/qatoolist/wowapi/cmd/wowapi") ||
-		!strings.Contains(provenance, goldenConsumerFrameworkVersion) {
+		!strings.Contains(provenance, goldenConsumerFrameworkVersion(t)) {
 		t.Fatalf("installed CLI provenance does not name versioned wowapi module:\n%s", provenance)
 	}
 	productDir := scaffoldPipeline(t, cli, goldenConsumerModulePath, nil, goEnv)
@@ -69,6 +75,10 @@ func goldenConsumerScaffold(t *testing.T) string {
 		"gen", "notification", "--module", "internal/modules/fulfillment", "--name", "shipment_ready")
 	runPipelineStep(t, "generate fulfillment webhook", productDir, nil, cli,
 		"gen", "webhook", "--module", "internal/modules/fulfillment", "--name", "shipment_update")
+	webhookClosureTest := strings.ReplaceAll(goldenWebhookClosureSource, "MODULE_PATH", goldenConsumerModulePath)
+	if err := os.WriteFile(filepath.Join(productDir, "internal", "boottest", "webhook_route_test.go"), []byte(webhookClosureTest), 0o644); err != nil {
+		t.Fatalf("write generated webhook closure test: %v", err)
+	}
 
 	runPipelineStep(t, "tidy generated two-module consumer", productDir, goEnv,
 		"go", "mod", "tidy")
@@ -78,6 +88,107 @@ func goldenConsumerScaffold(t *testing.T) string {
 		"go", "test", "./internal/boottest/")
 	return productDir
 }
+
+const goldenWebhookClosureSource = `package boottest
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/qatoolist/wowapi/app"
+	"github.com/qatoolist/wowapi/kernel"
+	"github.com/qatoolist/wowapi/kernel/config"
+	"github.com/qatoolist/wowapi/kernel/secrets"
+	"github.com/qatoolist/wowapi/kernel/storage"
+	"github.com/qatoolist/wowapi/testkit"
+	"MODULE_PATH/internal/wire"
+)
+
+const generatedWebhookSecret = "golden-webhook-secret"
+
+type generatedWebhookSecrets struct{}
+
+func (generatedWebhookSecrets) Resolve(context.Context, secrets.Ref) (string, error) {
+	return generatedWebhookSecret, nil
+}
+
+func TestGeneratedInboundWebhookRouteIsBooted(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{Tx: noopTxM{}, Storage: storage.NewMemory()})
+	if err != nil { t.Fatal(err) }
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil { t.Fatal(err) }
+	if !k.Webhooks.HasInboundHandler("fulfillment.shipment_update") {
+		t.Fatal("generated inbound webhook handler was not registered")
+	}
+	for _, route := range booted.RuntimeRouter().Routes() {
+		if route.Method == http.MethodPost && route.Pattern == "/webhooks/fulfillment/shipment_update/{tenant_id}/{endpoint_id}" && route.Meta.Public {
+			return
+		}
+	}
+	t.Fatal("generated inbound webhook POST route was not present after boot")
+}
+
+func TestGeneratedInboundWebhookRoutePersistsVerifiedEvent(t *testing.T) {
+	h := testkit.NewDB(t)
+	tenant := testkit.CreateTenant(t, h)
+	endpointID := uuid.New()
+	if _, err := h.Admin.Exec(context.Background(), ` + "`" + `INSERT INTO webhook_endpoints
+		(id, tenant_id, direction, secret_ref, signature_scheme, status, created_by)
+		VALUES ($1,$2,'inbound','secretref://test/webhook','hmac-sha256','active',$3)` + "`" + `,
+		endpointID, tenant.ID, uuid.Nil); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := kernel.New(config.Defaults(), log, kernel.Deps{
+		Tx: h.TxM, Storage: storage.NewMemory(), Secrets: generatedWebhookSecrets{},
+	})
+	if err != nil { t.Fatal(err) }
+	a := app.New()
+	a.Register(wire.Modules()...)
+	booted, err := a.Boot(context.Background(), k, nil)
+	if err != nil { t.Fatal(err) }
+
+	body := []byte(` + "`" + `{"shipment":"updated"}` + "`" + `)
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(generatedWebhookSecret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(body)
+	req := httptest.NewRequest(http.MethodPost,
+		"/webhooks/fulfillment/shipment_update/"+tenant.ID.String()+"/"+endpointID.String(),
+		bytes.NewReader(body))
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	rec := httptest.NewRecorder()
+	booted.RuntimeRouter().SecureHandler(nil, nil, h.TxM).ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("generated inbound route = %d: %s", rec.Code, rec.Body.String())
+	}
+	var status, eventType string
+	var signatureOK bool
+	if err := h.Admin.QueryRow(context.Background(), ` + "`" + `SELECT delivery_status,event_type,signature_ok
+		FROM webhook_events WHERE tenant_id=$1 AND endpoint_id=$2` + "`" + `,
+		tenant.ID, endpointID).Scan(&status, &eventType, &signatureOK); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || eventType != "fulfillment.shipment_update" || !signatureOK {
+		t.Fatalf("generated inbound event status=%s type=%s signature_ok=%v", status, eventType, signatureOK)
+	}
+}
+`
 
 var goldenConsumerRequiredArtifacts = []string{
 	"internal/modules/catalog/module.go",
@@ -153,143 +264,4 @@ func TestGoldenConsumerInstalledBinaryTwoModules(t *testing.T) {
 	if strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi") {
 		t.Fatal("golden consumer must resolve wowapi as a versioned dependency, not a checkout replace")
 	}
-}
-
-func installGoldenConsumerCLI(t *testing.T, version string) string {
-	t.Helper()
-
-	gobin := t.TempDir()
-	install := exec.Command(
-		"go", "install", "-buildvcs=false",
-		"github.com/qatoolist/wowapi/cmd/wowapi@"+version,
-	)
-	install.Dir = wowapiCheckoutRoot(t)
-	install.Env = append(os.Environ(), "GOBIN="+gobin)
-	if out, err := install.CombinedOutput(); err != nil {
-		t.Fatalf("go install wowapi CLI %s: %v\n%s", version, err, out)
-	}
-
-	cli := filepath.Join(gobin, "wowapi")
-	provenance := runPipelineStep(t, "verify installed CLI provenance "+version, install.Dir, nil,
-		"go", "version", "-m", cli)
-	if !strings.Contains(provenance, "github.com/qatoolist/wowapi/cmd/wowapi") ||
-		!strings.Contains(provenance, version) {
-		t.Fatalf("installed CLI provenance does not name wowapi %s:\n%s", version, provenance)
-	}
-	primeReleasedModuleCacheProxy(t, version)
-	return cli
-}
-
-func installGoldenConsumerCandidateCLI(t *testing.T, version string) (string, []string) {
-	t.Helper()
-	gobin := t.TempDir()
-	proxy := buildFrameworkProxy(t, version)
-	goEnv := hermeticGoEnv(proxy + "," + modCacheProxyURL(t))
-	install := exec.Command("go", "install", "-buildvcs=false",
-		"github.com/qatoolist/wowapi/cmd/wowapi@"+version)
-	install.Dir = wowapiCheckoutRoot(t)
-	install.Env = append(os.Environ(), append(goEnv, "GOBIN="+gobin)...)
-	if out, err := install.CombinedOutput(); err != nil {
-		t.Fatalf("go install candidate CLI %s: %v\n%s", version, err, out)
-	}
-	return filepath.Join(gobin, "wowapi"), goEnv
-}
-
-func generateGoldenConsumerModules(
-	t *testing.T,
-	cli string,
-	productDir string,
-	goEnv []string,
-	force bool,
-) {
-	t.Helper()
-
-	if !force {
-		runPipelineStep(t, "generate catalog module", productDir, nil, cli,
-			"new-module", "--name", "catalog")
-		runPipelineStep(t, "generate fulfillment module", productDir, nil, cli,
-			"new-module", "--name", "fulfillment")
-	}
-
-	forceArg := []string{}
-	if force {
-		forceArg = append(forceArg, "--force")
-	}
-	runPipelineStep(t, "generate catalog CRUD", productDir, nil, cli,
-		append([]string{
-			"gen", "crud",
-			"--module", "internal/modules/catalog",
-			"--resource", "item",
-			"--fields", "name:string,stock:int",
-		}, forceArg...)...)
-	runPipelineStep(t, "generate fulfillment CRUD", productDir, nil, cli,
-		append([]string{
-			"gen", "crud",
-			"--module", "internal/modules/fulfillment",
-			"--resource", "shipment",
-			"--fields", "reference:string,attempts:int",
-		}, forceArg...)...)
-	if force {
-		for _, command := range [][]string{
-			{"rule", "--module", "internal/modules/catalog", "--name", "stock_limit", "--force"},
-			{"workflow", "--module", "internal/modules/catalog", "--name", "item_review", "--force"},
-			{"event-handler", "--module", "internal/modules/catalog", "--name", "item_created", "--force"},
-			{"recurring-job", "--module", "internal/modules/fulfillment", "--name", "shipment_retry", "--force"},
-			{"document-flow", "--module", "internal/modules/catalog", "--name", "item_attachment", "--force"},
-			{"notification", "--module", "internal/modules/fulfillment", "--name", "shipment_ready", "--force"},
-			{"webhook", "--module", "internal/modules/fulfillment", "--name", "shipment_update", "--force"},
-		} {
-			runPipelineStep(t, "regenerate "+command[0], productDir, nil, cli,
-				append([]string{"gen"}, command...)...)
-		}
-	}
-
-	runPipelineStep(t, "tidy generated two-module consumer", productDir, goEnv,
-		"go", "mod", "tidy")
-}
-
-func assertGoldenConsumerContract(t *testing.T, productDir string, goEnv []string, version string) {
-	t.Helper()
-
-	runPipelineStep(t, "build generated two-module consumer at "+version, productDir, goEnv,
-		"go", "build", "./...")
-	runPipelineStep(t, "boot generated two-module consumer at "+version, productDir, goEnv,
-		"go", "test", "./internal/boottest/")
-
-	gomod, err := os.ReadFile(filepath.Join(productDir, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(gomod), "github.com/qatoolist/wowapi "+version) {
-		t.Fatalf("golden consumer go.mod does not pin wowapi %s:\n%s", version, gomod)
-	}
-	if strings.Contains(string(gomod), "replace github.com/qatoolist/wowapi") {
-		t.Fatal("upgrade replay must use tagged dependencies, not a checkout replace")
-	}
-}
-
-// TestGoldenConsumerUpgradeReplay proves the supported v1 N-1/N contract:
-// generate and exercise a consumer with the tagged v1.1.0 CLI and dependency,
-// upgrade both to the locally packaged release candidate, then rerun the same
-// contract checks against the upgraded fixture.
-func TestGoldenConsumerUpgradeReplay(t *testing.T) {
-	const (
-		previous = "v1.1.0"
-		current  = goldenConsumerFrameworkVersion
-	)
-
-	previousCLI := installGoldenConsumerCLI(t, previous)
-	currentCLI, goEnv := installGoldenConsumerCandidateCLI(t, current)
-
-	productDir := scaffoldPipeline(t, previousCLI, goldenConsumerModulePath, nil, goEnv)
-	generateGoldenConsumerModules(t, previousCLI, productDir, goEnv, false)
-	assertGoldenConsumerContract(t, productDir, goEnv, previous)
-
-	runPipelineStep(t, "upgrade framework dependency N-1 to N", productDir, goEnv,
-		"go", "get", "github.com/qatoolist/wowapi@"+current)
-	runPipelineStep(t, "upgrade product scaffold N-1 to N", productDir, goEnv,
-		currentCLI, "init", "--module", goldenConsumerModulePath, "--dir", ".", "--force")
-	generateGoldenConsumerModules(t, currentCLI, productDir, goEnv, true)
-	assertGoldenConsumerContract(t, productDir, goEnv, current)
-	exerciseGoldenConsumerRealInfrastructure(t, productDir, goEnv)
 }

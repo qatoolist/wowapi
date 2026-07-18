@@ -3,6 +3,8 @@ package workflow_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,7 +75,10 @@ func buildRT(t *testing.T, h *testkit.DBHandle, approverCap uuid.UUID, ev authz.
 	if err := reg.Err(); err != nil {
 		t.Fatalf("registry.Err(): %v", err)
 	}
-	return workflow.NewRuntimeWithCompliance(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatalf("SyncDefinitions: %v", err)
+	}
+	return workflow.NewRuntime(h.TxM, reg, ev, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +93,6 @@ func TestIntegrationStartInErrors(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	start := func(defKey string, r resource.Ref, input map[string]any) error {
@@ -125,18 +129,17 @@ func TestIntegrationStartInUnregisteredDefinition(t *testing.T) {
 	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
-	// Runtime knows only linearDef; the DB carries a row for a key that is NOT in
-	// the registry, so definition resolution succeeds but the graph lookup fails.
+	// Runtime knows only linearDef. Start selection is registry-authoritative;
+	// an unregistered key is rejected before any database lookup or insertion.
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.unreg", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
 		_, e := rt.StartIn(ctx, db, "requests.unreg", res, nil)
 		return e
 	})
-	if kerr.KindOf(err) != kerr.KindInternal {
-		t.Fatalf("unregistered definition graph must be an internal error, got %v", err)
+	if kerr.KindOf(err) != kerr.KindNotFound {
+		t.Fatalf("unregistered definition key must be a not-found error, got %v", err)
 	}
 }
 
@@ -149,7 +152,6 @@ func TestIntegrationStartInRecordsActor(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	actorID := uuid.New()
 	ctx := database.WithActorID(testkit.TenantCtx(tn.ID), actorID)
@@ -183,8 +185,6 @@ func TestIntegrationDecideErrors(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef, taskDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.task", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 	a := actor(tn.ID, userID, cap)
 
@@ -206,7 +206,7 @@ func TestIntegrationDecideErrors(t *testing.T) {
 	simAppr := testkit.NewWorkflowSim(t, h, rt)
 	simAppr.Start("requests.approval", res2, nil)
 	apprID := openTaskID(t, h, simAppr.InstanceID(), "manager_review")
-	if err := rt.Decide(ctx, apprID, workflow.Decision{Actor: a, Type: workflow.DecisionAbstain}); kerr.KindOf(err) != kerr.KindValidation {
+	if err := rt.Decide(ctx, apprID, workflow.Decision{Actor: a, Type: workflow.DecisionType("unsupported")}); kerr.KindOf(err) != kerr.KindValidation {
 		t.Fatalf("abstain on an approval must be a validation error, got %v", err)
 	}
 
@@ -241,7 +241,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, commentDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.comment", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 	a := actor(tn.ID, userID, cap)
 
@@ -279,7 +278,6 @@ func TestIntegrationDelegateErrors(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	// Missing task.
@@ -309,7 +307,6 @@ func TestIntegrationInstanceLoad(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -360,7 +357,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, multiDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.multiassign", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.multiassign", res, nil)
@@ -415,7 +411,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, slaDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.sla", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.sla", res, nil)
@@ -449,7 +444,6 @@ func TestIntegrationOverrideAuthzGate(t *testing.T) {
 
 	// Denied evaluator: override is forbidden.
 	denyRT := buildRT(t, h, cap, fakeEvaluator{allow: map[string]bool{}}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	simDeny := testkit.NewWorkflowSim(t, h, denyRT)
 	simDeny.Start("requests.approval", res, nil)
 	if err := denyRT.Override(ctx, act, simDeny.InstanceID(), "end_rejected", "why"); kerr.KindOf(err) != kerr.KindForbidden {
@@ -507,13 +501,12 @@ func TestIntegrationOverrideFailsClosedWithoutPermission(t *testing.T) {
 				t.Fatal("NewRuntime with a nil evaluator must panic (SEC-02 fail-closed guard)")
 			}
 		}()
-		workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+		workflow.NewRuntime(h.TxM, workflow.NewRegistry(), nil, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
 	}()
 
 	// Half 2: a normally-constructed Runtime (real, non-nil evaluator) with an
 	// actor who holds no permissions must fail Override closed, not open.
 	rt := buildRT(t, h, cap, fakeEvaluator{allow: map[string]bool{}}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
 
@@ -561,7 +554,6 @@ steps:
 
 	// Denied secondary gate: the role holder is not permitted → forbidden.
 	denyRT := buildRT(t, h, cap, fakeEvaluator{allow: map[string]bool{}}, roleDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.rolegate", 1, "requests.request", nil)
 	simDeny := testkit.NewWorkflowSim(t, h, denyRT)
 	simDeny.Start("requests.rolegate", res, nil)
 	denyTask := openTaskID(t, h, simDeny.InstanceID(), "review")
@@ -612,7 +604,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, autoErrDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.autoerr", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.autoerr", res, nil)
@@ -647,7 +638,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, autoNoHandlerDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.autohard", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
@@ -684,7 +674,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, gwDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.gwnodefault", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	// tier=silver matches no branch and there is no default → runtime error.
@@ -728,7 +717,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, escDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.escalate", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.escalate", res, nil)
@@ -806,7 +794,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, cancelDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.cancel", 1, "requests.request", nil)
 	ctx := testkit.TenantCtx(tn.ID)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
@@ -830,7 +817,6 @@ func TestIntegrationCompleteTaskBadOutput(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, taskDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.task", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.task", res, nil)
@@ -857,7 +843,6 @@ func TestIntegrationOpenTasksForDefaultLimit(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	testkit.NewWorkflowSim(t, h, rt).Start("requests.approval", res, nil)
 
 	// Limit 0 exercises the default-limit branch (limit <= 0 → 50).
@@ -894,7 +879,6 @@ steps:
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, failDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.failresolve", 1, "requests.request", nil)
 
 	err := h.TxM.WithTenant(testkit.TenantCtx(tn.ID), func(ctx context.Context, db database.TenantDB) error {
 		_, e := rt.StartIn(ctx, db, "requests.failresolve", res, nil)
@@ -918,7 +902,6 @@ func TestIntegrationAuthorizeDelegateOnly(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
@@ -942,146 +925,6 @@ func TestIntegrationAuthorizeDelegateOnly(t *testing.T) {
 	sim.ExpectStep("end_done").ExpectStatus("completed")
 }
 
-// ---------------------------------------------------------------------------
-// defForInstance fallback: an instance whose definition graph is NOT in the
-// runtime's registry is parsed from the persisted JSON. The runtime must also
-// fail safe when that persisted graph is inconsistent with the running
-// instance (a corrupt/rolled-back definition), returning an error rather than
-// corrupting state.
-// ---------------------------------------------------------------------------
-
-// startWithStoredDef registers validDef in a fresh rtA (so StartIn works),
-// persists storedRaw as the definition_id row's JSON, starts an instance, and
-// returns the instance id + the open task at initialStep. The persisted JSON is
-// what a registry-less runtime will parse.
-func startWithStoredDef(t *testing.T, h *testkit.DBHandle, tn testkit.TenantHandle, cap uuid.UUID, res resource.Ref, key, validDef, storedRaw, initialStep string) (uuid.UUID, uuid.UUID) {
-	t.Helper()
-	rtA := buildRT(t, h, cap, fakeEvaluator{}, validDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, key, 1, "requests.request", []byte(storedRaw))
-	sim := testkit.NewWorkflowSim(t, h, rtA)
-	sim.Start(key, res, nil)
-	return sim.InstanceID(), openTaskID(t, h, sim.InstanceID(), initialStep)
-}
-
-func TestIntegrationDefFallbackSuccess(t *testing.T) {
-	// The persisted JSON equals the (valid) task definition. A runtime with an
-	// EMPTY registry parses it from the row and drives the task to completion.
-	h := testkit.NewDB(t)
-	tn := testkit.CreateTenant(t, h)
-	userID := testkit.CreateUser(t, h)
-	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
-
-	// The persisted column is jsonb; ParseDefinition's YAML decoder reads JSON.
-	const storedJSON = `{"key":"requests.task","version":1,"applies_to":"requests.request",` +
-		`"initial_step":"do_work","steps":{` +
-		`"do_work":{"type":"task","next":{"next":"end_done"}},` +
-		`"end_done":{"type":"terminal","outcome":"completed"}}}`
-	instID, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.task", taskDef, storedJSON, "do_work")
-
-	// A registry-less runtime: definitions must come from the persisted JSON.
-	rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
-	if err := rtB.CompleteTask(testkit.TenantCtx(tn.ID), taskID, nil); err != nil {
-		t.Fatalf("CompleteTask via parsed def: %v", err)
-	}
-	var status, step string
-	if err := h.Admin.QueryRow(context.Background(),
-		`SELECT status, current_step FROM workflow_instances WHERE id=$1`, instID).Scan(&status, &step); err != nil {
-		t.Fatal(err)
-	}
-	if status != "completed" || step != "end_done" {
-		t.Fatalf("parsed-def completion: status=%q step=%q", status, step)
-	}
-}
-
-func TestIntegrationDefFallbackCorruptDefenses(t *testing.T) {
-	ctx := func(tn testkit.TenantHandle) context.Context { return testkit.TenantCtx(tn.ID) }
-
-	// Case A: on_approve targets a step that does not exist in the persisted
-	// graph → advanceTo must fail with an internal error.
-	t.Run("dangling on_approve target", func(t *testing.T) {
-		h := testkit.NewDB(t)
-		tn := testkit.CreateTenant(t, h)
-		userID := testkit.CreateUser(t, h)
-		cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-		res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
-		const stored = `{"key":"requests.approval","version":1,"applies_to":"requests.request",` +
-			`"initial_step":"manager_review","steps":{` +
-			`"manager_review":{"type":"approval","on_approve":{"next":"ghost"},"on_reject":{"next":"end_rejected"}},` +
-			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
-		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
-		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
-		if kerr.KindOf(err) != kerr.KindInternal {
-			t.Fatalf("dangling transition target must be an internal error, got %v", err)
-		}
-	})
-
-	// Case B: the approval step has no on_reject → a rejection has no transition
-	// and must fail with a workflow-state error (not a silent dead-end).
-	t.Run("missing on_reject transition", func(t *testing.T) {
-		h := testkit.NewDB(t)
-		tn := testkit.CreateTenant(t, h)
-		userID := testkit.CreateUser(t, h)
-		cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-		res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
-		const stored = `{"key":"requests.approval","version":1,"applies_to":"requests.request",` +
-			`"initial_step":"manager_review","steps":{` +
-			`"manager_review":{"type":"approval","on_approve":{"next":"end_done"}},` +
-			`"end_done":{"type":"terminal","outcome":"completed"}}}`
-		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
-		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionReject})
-		if kerr.KindOf(err) != kerr.KindWorkflowState {
-			t.Fatalf("missing transition must be a workflow-state error, got %v", err)
-		}
-	})
-
-	// Case C: on_approve leads to an auto step whose action is not registered in
-	// the acting runtime → runAuto must fail with an internal error.
-	t.Run("unregistered auto action", func(t *testing.T) {
-		h := testkit.NewDB(t)
-		tn := testkit.CreateTenant(t, h)
-		userID := testkit.CreateUser(t, h)
-		cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-		res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
-		const stored = `{"key":"requests.approval","version":1,"applies_to":"requests.request",` +
-			`"initial_step":"manager_review","steps":{` +
-			`"manager_review":{"type":"approval","on_approve":{"next":"prov"},"on_reject":{"next":"end_rejected"}},` +
-			`"prov":{"type":"auto","action":"never.registered","next":{"next":"end_done"}},` +
-			`"end_done":{"type":"terminal","outcome":"completed"},` +
-			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
-		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
-		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
-		if kerr.KindOf(err) != kerr.KindInternal {
-			t.Fatalf("unregistered auto action must be an internal error, got %v", err)
-		}
-	})
-
-	// Case D: the next step declares an assignee of an unknown kind → task
-	// creation must fail with a validation error rather than a mis-assigned task.
-	t.Run("unknown assignee kind", func(t *testing.T) {
-		h := testkit.NewDB(t)
-		tn := testkit.CreateTenant(t, h)
-		userID := testkit.CreateUser(t, h)
-		cap := testkit.CreateCapacity(t, h, tn.ID, userID)
-		res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
-		const stored = `{"key":"requests.approval","version":1,"applies_to":"requests.request",` +
-			`"initial_step":"manager_review","steps":{` +
-			`"manager_review":{"type":"approval","on_approve":{"next":"work"},"on_reject":{"next":"end_rejected"}},` +
-			`"work":{"type":"task","assignees":[{"kind":"bogus"}],"next":{"next":"end_done"}},` +
-			`"end_done":{"type":"terminal","outcome":"completed"},` +
-			`"end_rejected":{"type":"terminal","outcome":"rejected"}}}`
-		_, taskID := startWithStoredDef(t, h, tn, cap, res, "requests.approval", linearDef, stored, "manager_review")
-		rtB := workflow.NewRuntimeWithCompliance(h.TxM, workflow.NewRegistry(), fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
-		err := rtB.Decide(ctx(tn), taskID, workflow.Decision{Actor: actor(tn.ID, userID, cap), Type: workflow.DecisionApprove})
-		if kerr.KindOf(err) != kerr.KindValidation {
-			t.Fatalf("unknown assignee kind must be a validation error, got %v", err)
-		}
-	})
-}
-
 // TestIntegrationInstanceNullContext exercises the decodeJSONMap defense: a row
 // whose context is JSON null must load as an empty (non-nil) map, not nil.
 func TestIntegrationInstanceNullContext(t *testing.T) {
@@ -1092,7 +935,6 @@ func TestIntegrationInstanceNullContext(t *testing.T) {
 	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
 
 	rt := buildRT(t, h, cap, fakeEvaluator{}, linearDef)
-	testkit.SeedWorkflowDefinition(t, h, &tn.ID, "requests.approval", 1, "requests.request", nil)
 	sim := testkit.NewWorkflowSim(t, h, rt)
 	sim.Start("requests.approval", res, nil)
 
@@ -1109,5 +951,164 @@ func TestIntegrationInstanceNullContext(t *testing.T) {
 	}
 	if len(inst.Context) != 0 {
 		t.Fatalf("expected empty context, got %v", inst.Context)
+	}
+}
+
+// Fifth closure-audit regression (2026-07-17): auto actions and assignee
+// resolvers receive a deep canonical COPY of the instance context — mutating
+// or retaining the input must not steer downstream routing, desynchronize the
+// persisted context, or race framework readers (the -race gate covers the
+// retained-map variant).
+func TestIntegrationCallbacksReceiveIsolatedContext(t *testing.T) {
+	const isoDef = `{"key":"requests.iso","version":1,"applies_to":"requests.request",` +
+		`"initial_step":"mutate","steps":{` +
+		`"mutate":{"type":"auto","action":"requests.mutator","next":{"next":"gate"}},` +
+		`"gate":{"type":"gateway","branches":[{"when":{"key":"tier","equals":"gold"},"next":"end_fast"},{"next":"end_slow"}]},` +
+		`"end_fast":{"type":"terminal","outcome":"completed"},` +
+		`"end_slow":{"type":"terminal","outcome":"rejected"}}}`
+	const resDef = `{"key":"requests.reswork","version":1,"applies_to":"requests.request",` +
+		`"initial_step":"work","steps":{` +
+		`"work":{"type":"task","assignees":[{"kind":"resolver","resolver":"test.mutres"}],"next":{"next":"end_done"}},` +
+		`"end_done":{"type":"terminal","outcome":"completed"}}}`
+
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
+	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+
+	var retained map[string]any
+	reg := workflow.NewRegistry()
+	for _, raw := range []string{isoDef, resDef} {
+		def, err := workflow.ParseDefinition([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := reg.RegisterDefinition(def); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg.RegisterAutoAction("requests.mutator", func(_ context.Context, in workflow.AutoInput) (map[string]any, error) {
+		in.Context["tier"] = "platinum" // sabotage the input map
+		retained = in.Context           // and retain it for later mutation
+		return nil, nil                 // no output: the only supported mutation channel stays empty
+	})
+	reg.RegisterAssigneeResolver("test.mutres", func(_ context.Context, in workflow.ResolveInput) ([]workflow.Assignee, error) {
+		in.Context["tier"] = "sabotaged"
+		return []workflow.Assignee{{Kind: workflow.KindCapacity, Ref: cap.String()}}, nil
+	})
+	if err := reg.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		t.Fatal(err)
+	}
+	rt := workflow.NewRuntime(h.TxM, reg, fakeEvaluator{}, outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil))
+	ctx := testkit.TenantCtx(tn.ID)
+
+	var isoInst uuid.UUID
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		isoInst, e = rt.StartIn(ctx, db, "requests.iso", res, map[string]any{"tier": "gold"})
+		return e
+	}); err != nil {
+		t.Fatalf("StartIn iso: %v", e2s(err))
+	}
+	var status, step string
+	var ctxJSON []byte
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT status, current_step, context FROM workflow_instances WHERE id=$1`, isoInst).Scan(&status, &step, &ctxJSON); err != nil {
+		t.Fatal(err)
+	}
+	// The mutating auto action must NOT have steered the gateway: tier stayed
+	// gold, so routing took end_fast.
+	if status != "completed" || step != "end_fast" {
+		t.Fatalf("auto-action input mutation steered routing: status=%q step=%q", status, step)
+	}
+	if !strings.Contains(string(ctxJSON), `"gold"`) || strings.Contains(string(ctxJSON), "platinum") {
+		t.Fatalf("persisted context altered by callback input mutation: %s", ctxJSON)
+	}
+	// Mutating the RETAINED map after the fact must be inert (and race-free
+	// under the -race gate: it aliases nothing framework-owned).
+	if retained == nil {
+		t.Fatal("mutator action never ran")
+	}
+	retained["tier"] = "post-hoc"
+
+	var resInst uuid.UUID
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		resInst, e = rt.StartIn(ctx, db, "requests.reswork", res, map[string]any{"tier": "gold"})
+		return e
+	}); err != nil {
+		t.Fatalf("StartIn reswork: %v", err)
+	}
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT context FROM workflow_instances WHERE id=$1`, resInst).Scan(&ctxJSON); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ctxJSON), "sabotaged") {
+		t.Fatalf("resolver input mutation reached the persisted context: %s", ctxJSON)
+	}
+}
+
+func e2s(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+// statefulMarshaler serializes DIFFERENTLY on every call — the sharpest probe
+// for double serialization.
+type statefulMarshaler struct{ calls *int }
+
+func (m statefulMarshaler) MarshalJSON() ([]byte, error) {
+	*m.calls++
+	return []byte(fmt.Sprintf("%q", fmt.Sprintf("call-%d", *m.calls))), nil
+}
+
+// Fifth closure-audit regression (2026-07-17): CompleteTask canonicalizes its
+// output EXACTLY ONCE and uses that same value for task persistence and the
+// context merge — a stateful marshaler must not be able to record one output
+// on the task row while gateways route on another.
+func TestIntegrationCompleteTaskSerializesOutputOnce(t *testing.T) {
+	h := testkit.NewDB(t)
+	tn := testkit.CreateTenant(t, h)
+	userID := testkit.CreateUser(t, h)
+	cap := testkit.CreateCapacity(t, h, tn.ID, userID)
+	res := testkit.CreateResourceTypeAndResource(t, h, tn.ID, "requests.request")
+
+	rt := buildRT(t, h, cap, fakeEvaluator{}, taskDef)
+	ctx := testkit.TenantCtx(tn.ID)
+
+	var instID uuid.UUID
+	if err := h.TxM.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+		var e error
+		instID, e = rt.StartIn(ctx, db, "requests.task", res, nil)
+		return e
+	}); err != nil {
+		t.Fatalf("StartIn: %v", err)
+	}
+	taskID := openTaskID(t, h, instID, "do_work")
+
+	calls := 0
+	if err := rt.CompleteTask(ctx, taskID, map[string]any{"v": statefulMarshaler{calls: &calls}}); err != nil {
+		t.Fatalf("CompleteTask: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("output was serialized %d times, want exactly once", calls)
+	}
+	var taskOut, instCtx []byte
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT output FROM workflow_tasks WHERE id=$1`, taskID).Scan(&taskOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Admin.QueryRow(context.Background(),
+		`SELECT context FROM workflow_instances WHERE id=$1`, instID).Scan(&instCtx); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(taskOut), "call-1") || !strings.Contains(string(instCtx), "call-1") {
+		t.Fatalf("task output (%s) and merged context (%s) diverged from the single canonical serialization", taskOut, instCtx)
 	}
 }

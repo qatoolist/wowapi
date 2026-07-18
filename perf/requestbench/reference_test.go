@@ -10,7 +10,7 @@ import (
 
 func TestReferenceV1FullFieldContract(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join("..", "reference-v1.json")
+	path := filepath.Join("..", "reference-schema1.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)

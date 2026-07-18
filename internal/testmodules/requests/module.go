@@ -54,7 +54,10 @@ func (m *Module) Register(mc module.Context) error {
 	r := mc.Routes()
 	// Public first: net/http 1.22 resolves /requests/healthz before /{id}.
 	r.Handle("GET", "/requests/healthz", httpx.RouteMeta{Public: true}, h.Healthz)
-	r.Handle("POST", "/requests", httpx.RouteMeta{Permission: "requests.request.create"}, h.Create)
+	r.Handle("POST", "/requests", httpx.RouteMeta{
+		Permission: "requests.request.create",
+		Request:    CreateRequest{},
+	}, httpx.ValidatedHandler[CreateRequest](h.val, 64*1024, h.Create))
 	r.Handle("GET", "/requests/{id}", httpx.RouteMeta{Permission: "requests.request.read"}, h.Read)
 	r.Handle("GET", "/requests", httpx.RouteMeta{Permission: "requests.request.list"}, h.List)
 

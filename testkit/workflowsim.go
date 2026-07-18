@@ -38,27 +38,6 @@ func NewWorkflowSim(t *testing.T, h *DBHandle, rt *workflow.Runtime) *WorkflowSi
 	return &WorkflowSim{t: t, h: h, rt: rt}
 }
 
-// SeedWorkflowDefinition inserts a workflow_definitions row so an instance's
-// definition_id FK resolves. tenant==nil seeds a module template (tenant_id
-// NULL). The definition graph itself lives in the workflow.Registry; the jsonb
-// here is the persisted mirror. Returns the definition id.
-func SeedWorkflowDefinition(t *testing.T, h *DBHandle, tenant *uuid.UUID, key string, version int, appliesTo string, raw []byte) uuid.UUID {
-	t.Helper()
-	if len(raw) == 0 {
-		raw = []byte(`{}`)
-	}
-	id := uuid.New()
-	var tenantArg any
-	if tenant != nil {
-		tenantArg = *tenant
-	}
-	execAdmin(t, h, `INSERT INTO workflow_definitions
-	    (id, key, version, tenant_id, applies_to, definition, status, created_by)
-	    VALUES ($1,$2,$3,$4,$5,$6,'active',$7)`,
-		id, key, version, tenantArg, appliesTo, raw, uuid.Nil)
-	return id
-}
-
 // Start begins an instance in its own tenant transaction and remembers the id.
 func (s *WorkflowSim) Start(defKey string, res resource.Ref, input map[string]any) *WorkflowSim {
 	s.t.Helper()

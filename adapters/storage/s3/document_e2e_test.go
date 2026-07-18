@@ -93,7 +93,7 @@ func bootDocModuleWithS3(t *testing.T, store storage.Adapter) *docEnv {
 	// testDocModule declares no migrations/seeds of its own — the tenants /
 	// acting_capacities tables used below come from the kernel baseline
 	// migrations testkit.NewDB already applied.
-	if err := seeds.Sync(ctx, h.Platform, booted.Seeds); err != nil {
+	if err := seeds.Sync(ctx, h.Platform, booted.RuntimeSeeds()); err != nil {
 		t.Fatalf("seed sync: %v", err)
 	}
 
@@ -168,7 +168,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
+		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func TestDocument_UploadRoundTrip_S3(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		sess, err := e.k.Documents.InitiateUploadChecksum(ctx, db, docID, hex.EncodeToString(sum[:]))
+		sess, err := e.k.Documents.InitiateUpload(ctx, db, docID, hex.EncodeToString(sum[:]))
 		if err != nil {
 			return err
 		}

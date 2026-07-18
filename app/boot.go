@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"testing/fstest"
 	"time"
+
+	"github.com/qatoolist/wowapi/internal/sealer"
 
 	"github.com/qatoolist/wowapi/kernel"
 	"github.com/qatoolist/wowapi/kernel/authz"
@@ -20,26 +23,215 @@ import (
 	"github.com/qatoolist/wowapi/kernel/resource"
 	"github.com/qatoolist/wowapi/kernel/seeds"
 	"github.com/qatoolist/wowapi/kernel/validation"
+	"github.com/qatoolist/wowapi/kernel/workflow"
 )
 
-// Booted is the result of App.Boot: everything the process layer needs to
-// start serving (or to migrate/seed). Modules have registered; the whole graph
-// and registries are validated; nothing has started yet.
+// Booted is the OPAQUE result of App.Boot (V2): modules have registered, the
+// whole graph and registries are validated and sealed, and every capability
+// is exposed through accessors backed by the unexported boot-validated
+// runtime view — StartWorker, the Readiness builders, and the Runtime*
+// accessors the generated processes consume. There are no informational
+// mirror fields: reading unvalidated or reassignable state is STRUCTURALLY
+// impossible (fifth closure audit 2026-07-17; decision D-0091 — V2 opacity).
+// A Booted can only be produced by App.Boot; zero or hand-constructed values
+// fail loudly on every operation.
 type Booted struct {
-	Kernel     *kernel.Kernel
-	Router     *httpx.Router
-	Events     *outbox.HandlerRegistry // event subscriptions (drives the relay)
-	Jobs       *jobs.Registry          // job kinds (drives the worker pools)
-	OpenAPI    map[string][]byte
-	Health     map[string]func(context.Context) error
-	Migrations map[string]fs.FS
-	Seeds      seeds.Bundle   // merged catalog seeds, ready for SeedSync
-	Recurring  []RecurringJob // module-registered recurring jobs (run by the worker scheduler)
-	// I18n is the merged message catalog (framework English + every module's
-	// localized bundles). Pass it to httpx.Locale so responses negotiate and
-	// localize (GAP-001). Never nil — at minimum it carries the framework's
-	// English catalog.
-	I18n *i18n.Catalog
+	runtime runtimeView
+}
+
+// runtimeView holds the boot-validated state Boot captured before returning.
+// It is the SINGLE authoritative runtime source: the exported Booted fields
+// are informational mirrors only, and there is deliberately NO fallback from
+// the view to the fields — a Booted that was not produced by App.Boot never
+// passed validation, so operating on it must fail loudly rather than convert
+// construction misuse into apparently-valid unvalidated operation (third
+// closure audit 2026-07-17).
+type runtimeView struct {
+	// set marks a view captured by Boot. The nil-ness of individual members
+	// must NOT be the signal: a product with zero recurring jobs would
+	// otherwise be indistinguishable from an unbooted value.
+	set        bool
+	kernel     *kernel.Kernel
+	router     *httpx.Router
+	events     *outbox.HandlerRegistry
+	jobs       *jobs.Registry
+	health     map[string]func(context.Context) error
+	migrations map[string]fs.FS // materialized immutable snapshots, not module FS values
+	recurring  []RecurringJob
+	seeds      seeds.Bundle
+	i18n       *i18n.Catalog
+	openapi    map[string][]byte
+}
+
+// ErrNotBooted reports an operation on a Booted value that was not produced by
+// App.Boot (zero or hand-constructed): such a value never passed boot
+// validation and must not run.
+var ErrNotBooted = errors.New("app: Booted was not produced by App.Boot; boot the application first")
+
+// mustBeBooted fails loudly on a Booted value App.Boot did not produce.
+func (b *Booted) mustBeBooted() {
+	if b == nil || !b.runtime.set {
+		panic(ErrNotBooted.Error())
+	}
+}
+
+// runtimeKernel is the boot-captured kernel dependency view: a struct copy of
+// the *kernel.Kernel taken when Boot validated the application, with the
+// nested Cfg deep-copied — so neither reassigning the informational Kernel
+// field, mutating the caller-owned aggregate's fields, nor mutating its
+// nested config maps/slices (trusted issuers, allowlists, CORS origins,
+// privileged declarations) after boot can change what the framework's
+// consumers run with. The AGGREGATE POINTER IS NEVER EXPOSED (fifth closure
+// audit 2026-07-17): a returned *kernel.Kernel would itself be the
+// authoritative mutable state. External consumers get narrow accessors
+// (RuntimeAuthz, RuntimeTx) instead; the framework's own consumers read this
+// unexported view.
+func (b *Booted) runtimeKernel() *kernel.Kernel {
+	b.mustBeBooted()
+	return b.runtime.kernel
+}
+
+// RuntimeAuthz returns the boot-validated authorization evaluator the
+// generated api process wires into the secure handler. An interface value:
+// there is nothing to reassign or mutate through it.
+func (b *Booted) RuntimeAuthz() authz.Evaluator {
+	return b.runtimeKernel().Authz
+}
+
+// RuntimeTx returns the boot-validated tenant transaction manager the
+// generated api process wires into the secure handler. An interface value:
+// there is nothing to reassign or mutate through it.
+func (b *Booted) RuntimeTx() database.TxManager {
+	return b.runtimeKernel().Tx
+}
+
+// RuntimeRouter returns the boot-validated (sealed) router a serving process
+// must mount. Unlike the informational Router field, it cannot be reassigned;
+// the generated api process uses it.
+func (b *Booted) RuntimeRouter() *httpx.Router {
+	b.mustBeBooted()
+	return b.runtime.router
+}
+
+// RuntimeEvents returns the boot-validated event-subscription registry the
+// relay dispatches from (used by StartWorker).
+func (b *Booted) RuntimeEvents() *outbox.HandlerRegistry {
+	b.mustBeBooted()
+	return b.runtime.events
+}
+
+// RuntimeJobs returns the boot-validated job-kind registry the worker pools
+// dispatch from (used by StartWorker).
+func (b *Booted) RuntimeJobs() *jobs.Registry {
+	b.mustBeBooted()
+	return b.runtime.jobs
+}
+
+// RuntimeWorkflows returns the sealed, boot-validated workflow registry used
+// for execution and definition synchronization. The informational kernel
+// aggregate can be reassigned by its caller after Boot; this runtime view
+// remains pinned to the registry Boot validated.
+func (b *Booted) RuntimeWorkflows() *workflow.Registry {
+	b.mustBeBooted()
+	return b.runtimeKernel().Workflows
+}
+
+// RuntimeMigrations returns a fresh copy of the boot-validated migration sets.
+// The values are immutable byte snapshots MATERIALIZED at boot (third closure
+// audit 2026-07-17): the runtime never calls back into a module-owned fs.FS,
+// so post-boot filesystem mutation cannot alter migration content. The
+// generated migrate process uses it.
+func (b *Booted) RuntimeMigrations() map[string]fs.FS {
+	b.mustBeBooted()
+	out := make(map[string]fs.FS, len(b.runtime.migrations))
+	for k, v := range b.runtime.migrations {
+		out[k] = v
+	}
+	return out
+}
+
+// RuntimeSeeds returns a deep copy of the boot-validated merged seed catalog;
+// the generated migrate process applies it. Neither reassigning the Seeds
+// field nor mutating retained/returned bundle slices can alter what boot
+// validated.
+func (b *Booted) RuntimeSeeds() seeds.Bundle {
+	b.mustBeBooted()
+	return b.runtime.seeds.Clone()
+}
+
+// RuntimeI18n returns the boot-frozen message catalog; the generated api
+// process passes it to httpx.Locale. Unlike the informational I18n field, it
+// cannot be reassigned after boot.
+func (b *Booted) RuntimeI18n() *i18n.Catalog {
+	b.mustBeBooted()
+	return b.runtime.i18n
+}
+
+// RuntimeOpenAPI returns a deep copy of the boot-validated module OpenAPI
+// fragments (module name -> fragment bytes).
+func (b *Booted) RuntimeOpenAPI() map[string][]byte {
+	b.mustBeBooted()
+	out := make(map[string][]byte, len(b.runtime.openapi))
+	for k, v := range b.runtime.openapi {
+		out[k] = append([]byte(nil), v...)
+	}
+	return out
+}
+
+// runtimeHealth returns the boot-validated health-check set the Readiness
+// builders consume.
+func (b *Booted) runtimeHealth() map[string]func(context.Context) error {
+	b.mustBeBooted()
+	return b.runtime.health
+}
+
+// runtimeSeeds returns the boot-validated seed bundle for internal readers.
+func (b *Booted) runtimeSeeds() seeds.Bundle {
+	b.mustBeBooted()
+	return b.runtime.seeds
+}
+
+// runtimeRecurring returns the boot-validated recurring jobs the worker
+// scheduler runs.
+func (b *Booted) runtimeRecurring() []RecurringJob {
+	b.mustBeBooted()
+	return b.runtime.recurring
+}
+
+// snapshotFS is an immutable, boot-materialized filesystem: every declared
+// file's bytes were read and copied at boot. The unexported type prevents the
+// type assertions that would make a raw fstest.MapFS (a map) mutable again.
+type snapshotFS struct{ files fstest.MapFS }
+
+func (s snapshotFS) Open(name string) (fs.File, error) { return s.files.Open(name) }
+
+// materializeFS enumerates and reads every regular file under fsys into an
+// immutable byte snapshot. Copying an fs.FS interface value copies only the
+// reference — a module retaining a mutable implementation (e.g. fstest.MapFS)
+// could otherwise alter migration content after boot validated it.
+func materializeFS(fsys fs.FS) (fs.FS, error) {
+	out := fstest.MapFS{}
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s: not a regular file", path)
+		}
+		data, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		out[path] = &fstest.MapFile{Data: append([]byte(nil), data...)}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return snapshotFS{files: out}, nil
 }
 
 // RecurringJob is a leader-safe per-tenant recurring job a module registered via
@@ -127,13 +319,6 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 
 	boot := newBootState()
 	router := httpx.NewRouter()
-	// FBL-08: boot-time request-contract enforcement is profile-flag gated
-	// (compat-first). The mode must be set BEFORE modules register, since
-	// Router.Handle applies the check at registration time; a rejected route
-	// surfaces through router.Err() below with every other registration error.
-	if k.Cfg.Security.EnforceRouteContracts {
-		router.RequireRequestContracts()
-	}
 	val := validation.New()
 	idgen := model.UUIDv7()
 	events := outbox.NewHandlerRegistry()
@@ -271,6 +456,13 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	if err := k.DocumentClasses.Err(); err != nil {
 		regErrs = append(regErrs, err)
 	}
+	// Nil upload/access hooks are boot errors like every other registration
+	// defect — they would otherwise panic on first invocation (F-10).
+	if k.DocumentHooks != nil {
+		if err := k.DocumentHooks.Err(); err != nil {
+			regErrs = append(regErrs, err)
+		}
+	}
 	// A module that registered a document class needs a document service to use
 	// it; the service is nil when no object-storage adapter was wired. Fail boot
 	// loudly rather than hand modules a nil Documents() at runtime.
@@ -304,6 +496,20 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 		}
 	}
 
+	// Materialize every module migration filesystem into an immutable byte
+	// snapshot (third closure audit 2026-07-17, F-10): the runtime consumes
+	// captured bytes, never a module-owned fs.FS whose content could change
+	// after validation. Unreadable declarations fail boot with the rest.
+	materialized := make(map[string]fs.FS, len(boot.migrations))
+	for name, fsys := range boot.migrations {
+		snap, err := materializeFS(fsys)
+		if err != nil {
+			regErrs = append(regErrs, fmt.Errorf("module %q: materializing migrations: %w", name, err))
+			continue
+		}
+		materialized[name] = snap
+	}
+
 	if len(regErrs) > 0 {
 		return nil, fmt.Errorf("app: boot validation failed: %w", errors.Join(regErrs...))
 	}
@@ -314,16 +520,56 @@ func (a *App) Boot(ctx context.Context, k *kernel.Kernel, namespaces config.Name
 	// write and a post-boot mutation cannot silently change served strings.
 	boot.i18n.Freeze()
 
+	// Seal every extension registry (closure review 2026-07-17, F-10): the
+	// extension model is registration-at-boot only. Booted intentionally hands
+	// out the live Router/Events/Jobs pointers for serving, and retained module
+	// contexts still reference the shared kernel registries — from here on every
+	// registration mutator on them panics, so neither path can add a route, job
+	// kind, subscription, permission, resource type, rule point, workflow,
+	// record class, document class/hook, template, or provider after the boot
+	// gates above have validated the model. (RetentionClasses/DocumentHooks are
+	// nil-guarded: unlike the others they are not required by the Err() gates.)
+	sealAuth := sealer.Grant()
+	router.Seal(sealAuth)
+	events.Seal(sealAuth)
+	jobReg.Seal(sealAuth)
+	k.Perms.Seal(sealAuth)
+	k.Resources.Seal(sealAuth)
+	k.Rules.Seal(sealAuth)
+	k.Workflows.Seal(sealAuth)
+	k.DocumentClasses.Seal(sealAuth)
+	k.NotifyTemplates.Seal(sealAuth)
+	k.Notify.Seal(sealAuth)
+	k.Webhooks.Seal(sealAuth)
+	k.IntegrationProviders.Seal(sealAuth)
+	if k.RetentionClasses != nil {
+		k.RetentionClasses.Seal(sealAuth)
+	}
+	if k.DocumentHooks != nil {
+		k.DocumentHooks.Seal(sealAuth)
+	}
+
+	catalog := boot.i18n.Catalog()
+	// A STRUCT COPY of the kernel aggregate with a DEEP-copied Cfg: the caller
+	// retains *k and could reassign its fields or mutate its nested config
+	// maps/slices after boot; the runtime view must not follow. The aggregate
+	// pointer is never exposed.
+	kernelView := *k
+	kernelView.Cfg = k.Cfg.Clone()
+
 	return &Booted{
-		Kernel:     k,
-		Router:     router,
-		Events:     events,
-		Jobs:       jobReg,
-		OpenAPI:    boot.openapi,
-		Health:     boot.health,
-		Migrations: boot.migrations,
-		Seeds:      bundle,
-		Recurring:  boot.recurring,
-		I18n:       boot.i18n.Catalog(),
+		runtime: runtimeView{
+			set:        true,
+			kernel:     &kernelView,
+			router:     router,
+			events:     events,
+			jobs:       jobReg,
+			health:     boot.health,
+			migrations: materialized,
+			recurring:  boot.recurring,
+			seeds:      bundle,
+			i18n:       catalog,
+			openapi:    boot.openapi,
+		},
 	}, nil
 }

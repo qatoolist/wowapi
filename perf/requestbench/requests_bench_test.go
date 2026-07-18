@@ -358,10 +358,10 @@ func (s *requestSuite) handler(cache string) http.Handler {
 	r := httpx.NewRouter()
 	r.Handle(http.MethodGet, "/perf/public", httpx.RouteMeta{Public: true}, s.publicHandler)
 	r.Handle(http.MethodGet, "/perf/read", httpx.RouteMeta{Permission: readPermission}, s.readHandler)
-	r.Handle(http.MethodPost, "/perf/write", httpx.RouteMeta{Permission: createPermission}, s.writeHandler)
+	r.Handle(http.MethodPost, "/perf/write", httpx.RouteMeta{Permission: createPermission, NoRequestBody: true}, s.writeHandler)
 	r.Handle(http.MethodGet, "/perf/resources/{id}", httpx.RouteMeta{Permission: readPermission}, s.resourceHandler(timed))
-	r.Handle(http.MethodPost, "/perf/idempotent", httpx.RouteMeta{Permission: createPermission}, s.idempotentHandler)
-	r.Handle(http.MethodPost, "/perf/enqueue", httpx.RouteMeta{Permission: createPermission}, s.enqueueHandler)
+	r.Handle(http.MethodPost, "/perf/idempotent", httpx.RouteMeta{Permission: createPermission, NoRequestBody: true}, s.idempotentHandler)
+	r.Handle(http.MethodPost, "/perf/enqueue", httpx.RouteMeta{Permission: createPermission, NoRequestBody: true}, s.enqueueHandler)
 	if err := r.Err(); err != nil {
 		s.tb.Fatalf("request benchmark routes: %v", err)
 	}
@@ -558,11 +558,6 @@ func (s *requestSuite) oneRequest(ctx context.Context, h http.Handler, profile s
 	}
 	body := bytes.NewReader(nil)
 	requestBytes := int64(0)
-	if method == http.MethodPost {
-		payload := bytes.Repeat([]byte("x"), 256)
-		body = bytes.NewReader(payload)
-		requestBytes = int64(len(payload))
-	}
 	req := httptest.NewRequestWithContext(ctx, method, path, body)
 	req.Header.Set("X-Perf-Tenant", strconv.Itoa(tenant))
 	rec := httptest.NewRecorder()
@@ -696,7 +691,7 @@ func BenchmarkRealPostgresRequests(b *testing.B) {
 	}
 	if reportPath := os.Getenv("PERF_REPORT"); reportPath != "" {
 		pub := publication{
-			SchemaVersion: 1, Reference: "perf/reference-v1.json",
+			SchemaVersion: 1, Reference: "perf/reference-schema1.json",
 			ComparisonKind:    "initial-reference-capture",
 			AbsoluteSLOStatus: "conditional-on-DEC-Q9",
 			SourceRevision:    os.Getenv("PERF_SOURCE_SHA"), MeasuredAt: time.Now().UTC(),
@@ -719,7 +714,7 @@ func BenchmarkRealPostgresRequests(b *testing.B) {
 }
 
 func validatePublication(pub publication) error {
-	if pub.SchemaVersion != 1 || pub.Reference != "perf/reference-v1.json" {
+	if pub.SchemaVersion != 1 || pub.Reference != "perf/reference-schema1.json" {
 		return fmt.Errorf("unexpected publication reference contract")
 	}
 	if pub.AbsoluteSLOStatus != "conditional-on-DEC-Q9" {

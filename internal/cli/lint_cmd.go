@@ -1,13 +1,8 @@
-// lint_cmd.go — `wowapi lint boundaries` (Phase 10) and `wowapi lint
-// lifecycle` (backlog B9). boundaries enforces the import law in a product
+// lint_cmd.go — `wowapi lint boundaries` (Phase 10). It enforces the import law in a product
 // repo the same way scripts/lint_boundaries.sh does for the framework:
 // modules are isolated (a module never imports another module's internals —
 // they collaborate through ports), and in the framework repo the
-// kernel/module/app/adapters layering holds. lifecycle checks the static
-// provider/lifecycle manifest (kernel/lifecycle) for wiring mistakes (scope
-// leaks, raw pools, tenant-scope escapes, migrate-only leaks into runtime,
-// missing providers/cycles). Both rule checkers are pure functions so they
-// are unit tested without a live `go list` / real kernel boot.
+// kernel/module/app/adapters layering holds.
 package cli
 
 import (
@@ -22,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/qatoolist/wowapi/internal/buildinfo"
-	"github.com/qatoolist/wowapi/kernel/lifecycle"
 )
 
 func lintUsage(w io.Writer) {
@@ -30,7 +24,6 @@ func lintUsage(w io.Writer) {
 
 Subcommands:
   boundaries   check module isolation + layering (exit 1 on any violation)
-  lifecycle    check the static provider/lifecycle manifest (exit 1 on any violation)
 `)
 }
 
@@ -42,8 +35,6 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "boundaries":
 		return runLintBoundaries(args[1:], stdout, stderr)
-	case "lifecycle":
-		return runLintLifecycle(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		lintUsage(stdout)
 		return 0
@@ -52,43 +43,6 @@ func runLint(args []string, stdout, stderr io.Writer) int {
 		lintUsage(stderr)
 		return 2
 	}
-}
-
-// runLintLifecycle implements `wowapi lint lifecycle` (backlog B9): prints the
-// static provider/lifecycle manifest (kernel/lifecycle.CurrentManifest, built
-// by hand from kernel.New/app.Boot/module.Context) and lints it for the
-// wiring-mistake classes the framework-competitive-architecture-benchmark's
-// "DI / IoC: Static Lifecycle Graph For Go" section calls out: scope leaks,
-// raw pools reaching modules, tenant-scoped values escaping their
-// transaction, migrate-only services reaching API/worker runtime, and
-// missing providers/cycles. Exit 0: manifest printed, no violations. Exit 1:
-// manifest printed, violations printed to stderr — CI gates on this.
-func runLintLifecycle(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("wowapi lint lifecycle", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	return lintLifecycleManifest(lifecycle.CurrentManifest(), stdout, stderr)
-}
-
-// lintLifecycleManifest prints m and lints it, returning the process exit code
-// (0 clean, 1 on any violation). Split out from runLintLifecycle so the
-// exit-code contract can be tested against a deliberately-broken manifest
-// without needing CurrentManifest (which is always clean) to be dirty.
-func lintLifecycleManifest(m lifecycle.Manifest, stdout, stderr io.Writer) int {
-	fmt.Fprint(stdout, m.Print())
-
-	violations := lifecycle.Lint(m)
-	if len(violations) > 0 {
-		fmt.Fprintln(stderr, "LIFECYCLE VIOLATIONS:")
-		for _, v := range violations {
-			fmt.Fprintf(stderr, "  %s\n", v.String())
-		}
-		return 1
-	}
-	fmt.Fprintln(stdout, "lifecycle lint: OK")
-	return 0
 }
 
 func runLintBoundaries(args []string, stdout, stderr io.Writer) int {

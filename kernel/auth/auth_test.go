@@ -470,51 +470,6 @@ func TestActor_GarbageTenantRejected(t *testing.T) {
 	}
 }
 
-// baseOnlyPrincipalStore implements only the base auth.PrincipalStore
-// interface (no AssurancePrincipalStore extension), simulating a legacy or
-// misconfigured store wired into a Verifier.
-type baseOnlyPrincipalStore struct {
-	userID  uuid.UUID
-	subject string
-	okCap   uuid.UUID
-}
-
-func (b baseOnlyPrincipalStore) UserIDBySubject(_ context.Context, subject string) (uuid.UUID, error) {
-	if subject != b.subject {
-		return uuid.Nil, errors.E(errors.KindUnauthenticated, "unauthenticated", "no such subject")
-	}
-	return b.userID, nil
-}
-
-func (b baseOnlyPrincipalStore) ValidateCapacity(_ context.Context, userID, _ uuid.UUID, capacityID uuid.UUID) error {
-	if userID == b.userID && capacityID == b.okCap {
-		return nil
-	}
-	return errors.E(errors.KindForbidden, "permission_denied", "capacity not yours")
-}
-
-// TestActor_BaseOnlyStoreFailsClosedOnTenantClaim proves SEC-01's unconditional
-// membership verification cannot be silently bypassed by wiring a
-// PrincipalStore that lacks the AssurancePrincipalStore extension: a token
-// carrying a TenantID must be rejected, not waved through unverified.
-func TestActor_BaseOnlyStoreFailsClosedOnTenantClaim(t *testing.T) {
-	ti := testkit.NewTokenIssuer()
-	v := newVerifier(ti)
-	userID := uuid.New()
-	tenantID := uuid.New()
-	ps := baseOnlyPrincipalStore{userID: userID, subject: "idp|alice"}
-
-	tok := ti.Issue("idp|alice", tenantID, uuid.Nil)
-	claims, err := v.Verify(context.Background(), tok)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	_, err = v.Actor(context.Background(), claims, ps)
-	if err == nil || errors.KindOf(err) != errors.KindForbidden {
-		t.Fatalf("want KindForbidden (fail closed on missing assurance store), got %v", err)
-	}
-}
-
 // T4 — capacity-selection enforcement.
 
 // TestActor_NoCapacitySingleCapacityAllowed proves that a capacity-less token
@@ -624,36 +579,6 @@ func TestActor_PrivilegedSessionResolvedFromGrant(t *testing.T) {
 	}
 	if !actor.BreakGlass {
 		t.Fatalf("expected break-glass true")
-	}
-}
-
-// TestActor_DirectImpersonationClaimIgnoredWithoutGrantID proves that a token
-// with legacy impersonator/break-glass claims but no grant_id does NOT populate
-// those Actor fields (T5 never trusts the claim directly).
-func TestActor_DirectImpersonationClaimIgnoredWithoutGrantID(t *testing.T) {
-	ti := testkit.NewTokenIssuer()
-	v := newVerifier(ti)
-
-	userID := uuid.New()
-	tenantID := uuid.New()
-	imp := uuid.New()
-	ps := fakePrincipalStore{userID: userID, subject: "idp|bob", okTenant: tenantID}
-
-	tok := ti.Issue("idp|bob", tenantID, uuid.Nil,
-		testkit.WithImpersonator(imp), testkit.WithBreakGlass(true))
-	claims, err := v.Verify(context.Background(), tok)
-	if err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	actor, err := v.Actor(context.Background(), claims, ps)
-	if err != nil {
-		t.Fatalf("Actor: %v", err)
-	}
-	if actor.ImpersonatorUserID != uuid.Nil {
-		t.Fatalf("impersonator must be ignored without grant_id, got %v", actor.ImpersonatorUserID)
-	}
-	if actor.BreakGlass {
-		t.Fatalf("break-glass must be ignored without grant_id")
 	}
 }
 

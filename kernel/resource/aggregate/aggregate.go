@@ -8,16 +8,8 @@
 // The write is attributed to a real actor resolved from context
 // (ResolveActor): a user-initiated write with no resolvable actor fails fast;
 // system-initiated paths (jobs, relays) are attributed to a deterministic
-// system-actor id. The low-level resource.Registrar Upsert API remains
-// available for not-yet-migrated callers; this package is the preferred —
-// and, for new modules, the expected — write path.
-//
-// AR-03 compatibility note (RISK-W02-E04-001): the helper is deliberately a
-// thin transactional composition over the existing registrar, audit, and
-// outbox surfaces — it introduces no new persistent state or projection
-// model, so a future authoritative-declaration/projection design (W05-E03)
-// can replace its internals without changing the module-facing contract
-// (business write in, mirror+audit+outbox guaranteed).
+// system-actor id. The lower-level resource.Registrar port also requires an
+// actor-bound context; this aggregate writer is the canonical all-effects path.
 package aggregate
 
 import (

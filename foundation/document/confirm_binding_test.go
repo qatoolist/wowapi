@@ -50,7 +50,7 @@ func TestIntegrationConfirmUploadCrossDocumentRejected(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docA, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docA, sum(body))
 		if e != nil {
 			return e
 		}
@@ -87,7 +87,7 @@ func TestIntegrationConfirmUploadExpiredSessionRejected(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}
@@ -125,7 +125,7 @@ func TestIntegrationConfirmUploadWrongIdentityDoesNotSettle(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		sess, e := a.svc.InitiateUploadChecksum(ctx, db, docID, sum(body))
+		sess, e := a.svc.InitiateUpload(ctx, db, docID, sum(body))
 		if e != nil {
 			return e
 		}

@@ -48,6 +48,8 @@ type frameworkResolution struct {
 // pseudo-version is Go's own convention for locally replaced modules. It is
 // not the deleted bare-`v0.0.0` fallback — it is never written without the
 // replace directive that satisfies it.
+// localReplaceVersion is the placeholder require version paired with a
+// local replace directive. A /v2 module path demands a v2-family version.
 const localReplaceVersion = "v0.0.0-00010101000000-000000000000"
 
 // Test seams: a test binary carries no VCS stamp, and hermetic tests must not

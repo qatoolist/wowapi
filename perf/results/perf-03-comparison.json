@@ -9,7 +9,7 @@
     "working_tree_measurement": true
   },
   "reference": {
-    "path": "perf/reference-v1.json",
+    "path": "perf/reference-schema1.json",
     "sha256": "ff77a888a9fcd8e0b20e8b51d8709e3c5c4d651651bf14cc9de32379bf17fbe1",
     "policy_status": "provisional-advisory",
     "comparison_mode": "relative/container until DEC-Q9 resolves",

@@ -92,7 +92,7 @@ type Context interface {
     Events() *outbox.HandlerRegistry              // Subscribe(eventType, handlerName, fn)
     Outbox() outbox.Writer                        // emit events in a business transaction
 
-    Jobs() *jobs.Registry                         // RegisterKind(kind, worker, retryPolicy)
+    Jobs() *jobs.Registry                         // RegisterKind(kind, worker, retryPolicy, idempotency)
     RecurringJob(name string, every time.Duration, fn func(ctx context.Context, db database.TenantDB) error)
 
     Rules() *rules.Registry                       // rule-point registry
@@ -140,7 +140,7 @@ func (m Module) Register(mc module.Context) error {
     api.MountRoutes(mc.Routes(), h)
     mc.Seeds(seedsFS); mc.Migrations(migrationsFS); mc.OpenAPI(openapiFragment)
     mc.Events().Subscribe("documents.document.uploaded", "requests.attach-scan", svc.OnDocumentUploaded)
-    mc.Jobs().RegisterKind("requests.sla-sweep", app.NewSLASweeper(svc), jobs.DefaultRetry())
+    mc.Jobs().RegisterKind("requests.sla-sweep", app.NewSLASweeper(svc), jobs.DefaultRetry(), jobs.Idempotency{Kind: jobs.IdempotencyDomainCAS})
     mc.Workflows().RegisterAutoAction("requests.provision", svc.AutoProvision)
     mc.ProvidePort("requests.Lookup", app.NewLookupPort(svc))
     return nil
@@ -257,3 +257,20 @@ func OnJob(phase Phase, h func(ctx, JobInfo) error)
 Dangerous and therefore disallowed: hooks that mutate command payloads (hidden logic), hooks on hot
 read paths beyond request-level, hook-to-hook dependencies. If a "hook" starts making business
 decisions, it must become an event handler or an explicit service step.
+
+## Workflow callback context contract
+
+Auto actions (`workflow.AutoInput.Context`) and assignee resolvers
+(`workflow.ResolveInput.Context`) receive a **deep canonical copy** of the
+instance context — mutating or retaining it never affects the framework, and
+the returned output map is the only supported mutation channel. Values are
+canonical JSON shapes: every **number is a `json.Number`** (never `float64`
+or `int`). Assert numerics accordingly:
+
+```go-illustrative
+n, ok := in.Context["amount"].(json.Number) // NOT .(float64)
+amount, err := n.Float64()
+```
+
+This is what makes gateway routing exact and identical before and after an
+instance reloads from the database (see `docs/reference/invariant-ledger.md`).

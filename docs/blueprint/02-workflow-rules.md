@@ -6,12 +6,13 @@
 
 | Option | Verdict | Why |
 |---|---|---|
-| **Custom Postgres engine (kernel)** | ✅ v1 | Our workflows are approval/state-machine shaped (steps, assignees, decisions, SLAs), tenant-configurable from seed/JSON, and must share the business transaction + RLS + audit + outbox. A few thousand lines, fully testable. |
+| **Custom Postgres engine (kernel)** | ✅ current | Our workflows are approval/state-machine shaped (steps, assignees, decisions, SLAs), module-declared and persisted as verified canonical JSON, and must share the business transaction + RLS + audit + outbox. A few thousand lines, fully testable. |
 | Temporal | later, selectively | Superb for *durable code orchestration* (long sagas, external retries). Wrong shape for declarative, tenant-editable approval graphs; adds a cluster + separate persistence outside RLS. Adopt later behind a `workflow.Engine` port if a use case demands it. |
 | Camunda / Zeebe | ❌ | BPMN authoring + JVM/cluster ops for a Go monolith; per-tenant overrides awkward. |
 | Conductor | ❌ | Microservice-orchestration shaped; infra overhead. |
 
-The kernel owns the runtime; modules own the *definitions* (seeded JSON), tenants own *overrides*.
+The kernel owns the runtime; modules own the registered definitions. The generated migrate process
+atomically synchronizes their canonical JSON and immutable digest into a global platform catalog.
 
 ### 1.2 Definition model (JSON, versioned, seedable)
 
@@ -23,12 +24,11 @@ applies_to: requests.request      # resource_type
 initial_step: manager_review
 steps:
   manager_review:
-    type: approval                # approval | task | auto | gateway | vote
+    type: approval                # approval | task | auto | gateway | terminal
     assignees:
       - kind: role                # role | actor | relationship | resource_owner | expr
         role: requests.org.approver
         scope: org_of_resource
-    policy: { min_approvals: 1, self_approval: false }
     sla: { due: "P2D", remind_after: "P1D", escalate_to: step:escalation }
     on_approve: { next: auto_provision }
     on_reject:  { next: end_rejected, require_comment: true }
@@ -36,22 +36,17 @@ steps:
     type: auto
     action: requests.provision    # registered auto-action (module Go code)
     on_error: { retry: default, then: manual_fixup }
-  vote_example:
-    type: vote                    # generic quorum capability (no AGM semantics in core)
-    electorate: { kind: relationship, rel: core.member_of, of: org_of_resource }
-    quorum: { kind: fraction, value: "1/2" }
-    pass:   { kind: fraction, value: "2/3" }
-    window: "P14D"
   end_rejected: { type: terminal, outcome: rejected }
 ```
 
 - **Step types (closed set in kernel):** `approval`, `task` (do-something + mark done), `auto`
   (invoke registered module action), `gateway` (branch on rule/expression over instance context),
-  `vote` (quorum/threshold), `terminal`.
+  and `terminal`.
 - **Assignee resolution kinds:** explicit actor, role-at-scope, relationship-holder
   (e.g. `core.owner_of` the resource), resource owner, or module-registered resolver func.
-- **Versioning:** definitions are immutable per version; running instances pin their version;
-  tenants override by cloning a template version (`tenant_id` set) — resolution: tenant override → module template.
+- **Versioning:** definitions are immutable per `(key, version)`; running instances pin the catalog row.
+  Persisted canonical JSON, duplicated identity fields, and SHA-256 digest must match the validated registered
+  definition before any execution or side effect. Tenant-specific definition overrides are not supported.
 
 ### 1.3 Runtime behavior (normative)
 
@@ -63,7 +58,9 @@ steps:
   3. writes audit row + outbox event `workflow.<def>.{task_created|approved|rejected|escalated|completed|overridden}` — same tx.
 - **Delegation:** task-level (`Delegate(taskID, toCapacity, until)`) recorded on the task; original assignee retains visibility.
 - **Escalation/SLA:** a scheduled sweeper job (per tenant) finds tasks past `remind_after`/`due`; reminders → notification framework; breaches → escalation step/assignee. Sweep is idempotent (`last_reminded_at` guard).
-- **Emergency override:** privileged transition requiring `workflow.instance.override` + reason; jumps to a step or terminal outcome AND auto-creates a `ratification` task assigned per definition (`ratify_by` role). Ratification refusal fires `workflow.<def>.override_ratification_rejected` — the *domain module* decides consequences (kernel stays neutral).
+- **Emergency override:** privileged transition requiring `workflow.instance.override` plus a non-empty reason;
+  the transition and its actor/impersonator audit record commit atomically. Products that need a later approval
+  use an ordinary explicit workflow step; the kernel does not expose an unimplemented ratification mode.
 - **Comments/attachments:** reuse kernel comment/attachment services against the task's `ResourceRef`.
 - **State validation:** on definition load — graph connectivity, no orphan steps, terminals reachable, unknown auto-actions fail boot.
 - **Test runner:** testkit `WorkflowSim` drives a definition in-memory over a real test DB: `sim.Start(...).Approve("manager_review", asActor).ExpectStep("auto_provision")`.
@@ -74,7 +71,7 @@ steps:
 ```go
 type Runtime interface {
     Start(ctx context.Context, defKey string, res resource.Ref, input map[string]any) (InstanceID, error)
-    Decide(ctx context.Context, taskID uuid.UUID, d Decision) error // approve/reject/abstain + comment
+    Decide(ctx context.Context, taskID uuid.UUID, d Decision) error // approve/reject + comment
     CompleteTask(ctx context.Context, taskID uuid.UUID, output map[string]any) error
     Delegate(ctx context.Context, taskID uuid.UUID, to uuid.UUID, until time.Time) error
     Override(ctx context.Context, instanceID uuid.UUID, to StepKey, reason string) error

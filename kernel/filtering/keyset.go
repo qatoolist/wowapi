@@ -34,11 +34,9 @@ func KeysetClause(s Sort, cur pagination.Cursor, startArg int) (sql string, args
 	}
 	values := cur.Values()
 
-	// If the cursor was minted with a sort-spec signature (NextCursor), reject it
-	// loudly when the current sort differs — this catches a direction flip or
-	// column reorder that the column-set check below cannot see (roadmap R7). A
-	// legacy cursor without a signature falls back to the column-set check only.
-	if sig := cur.Sig(); sig != "" && sig != s.Signature() {
+	// Every non-zero cursor is bound to the sort that minted it. Reject it when
+	// the current sort differs.
+	if sig := cur.Sig(); sig != s.Signature() {
 		return "", nil, startArg, validationErr("cursor was minted for a different sort order")
 	}
 

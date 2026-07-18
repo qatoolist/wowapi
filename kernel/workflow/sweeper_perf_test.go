@@ -92,7 +92,8 @@ func (m *gaugeRecorder) has(key string) bool {
 func newSweepRuntime(tb testing.TB, h *testkit.DBHandle, metrics observability.Metrics) *workflow.Runtime {
 	tb.Helper()
 	reg := workflow.NewRegistry()
-	def, err := workflow.ParseDefinition([]byte(linearDef))
+	sweepDefinition := strings.Replace(linearDef, "    type: approval\n", "    type: approval\n    sla: { due: PT2H, remind_after: PT1H }\n", 1)
+	def, err := workflow.ParseDefinition([]byte(sweepDefinition))
 	if err != nil {
 		tb.Fatalf("parse definition: %v", err)
 	}
@@ -108,7 +109,10 @@ func newSweepRuntime(tb testing.TB, h *testkit.DBHandle, metrics observability.M
 	if err := reg.Err(); err != nil {
 		tb.Fatalf("registry: %v", err)
 	}
-	rt := workflow.NewRuntimeWithCompliance(h.TxM, reg, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}},
+	if err := workflow.SyncDefinitions(context.Background(), h.Platform, reg); err != nil {
+		tb.Fatalf("sync definitions: %v", err)
+	}
+	rt := workflow.NewRuntime(h.TxM, reg, fakeEvaluator{allow: map[string]bool{"workflow.instance.override": true}},
 		outbox.NewWriter(model.UUIDv7()), model.UUIDv7(), audit.New(model.UUIDv7(), nil), workflow.WithRuntimeMetrics(metrics))
 	return rt
 }
@@ -116,14 +120,13 @@ func newSweepRuntime(tb testing.TB, h *testkit.DBHandle, metrics observability.M
 func seedSweepFixture(tb testing.TB, h *testkit.DBHandle, cardinality int) (uuid.UUID, uuid.UUID) {
 	tb.Helper()
 	tenant := testkit.CreateTenantTB(tb, h)
-	definitionID := uuid.New()
+	var definitionID uuid.UUID
 	instanceID := uuid.New()
 	resourceID := uuid.New()
 	ctx := context.Background()
-	if _, err := h.Admin.Exec(ctx, `INSERT INTO workflow_definitions
-		(id,key,version,tenant_id,applies_to,definition,status,created_by)
-		VALUES ($1,'requests.approval',1,$2,'requests.request','{}','active',$3)`, definitionID, tenant.ID, uuid.Nil); err != nil {
-		tb.Fatalf("insert definition: %v", err)
+	if err := h.Admin.QueryRow(ctx, `SELECT id FROM workflow_definitions
+		WHERE key = 'requests.approval' AND version = 1`).Scan(&definitionID); err != nil {
+		tb.Fatalf("load synchronized definition: %v", err)
 	}
 	if _, err := h.Admin.Exec(ctx, `INSERT INTO workflow_instances
 		(id,tenant_id,definition_id,resource_type,resource_id,current_step,status,context,started_by,created_by)
@@ -157,8 +160,8 @@ func TestIntegrationSweepSLABoundedQueriesAtDueCardinalities(t *testing.T) {
 		t.Run(fmt.Sprintf("due_%d", cardinality), func(t *testing.T) {
 			recorder := &queryRecorder{}
 			h := testkit.NewDBWithOptions(t, testkit.DBOptions{RuntimePool: []database.Option{database.WithQueryTracer(recorder)}})
-			tenant, _ := seedSweepFixture(t, h, cardinality)
 			rt := newSweepRuntime(t, h, observability.NoOp)
+			tenant, _ := seedSweepFixture(t, h, cardinality)
 			recorder.reset()
 
 			reminders, escalations := runSweep(t, h, rt, tenant)
@@ -184,8 +187,8 @@ func TestIntegrationSweepSLABoundedQueriesAtDueCardinalities(t *testing.T) {
 
 func TestIntegrationSweepSLASafeReinvocationAndNoDoubleReminder(t *testing.T) {
 	h := testkit.NewDB(t)
-	tenant, _ := seedSweepFixture(t, h, 2*sweepBatchLimit+1)
 	rt := newSweepRuntime(t, h, observability.NoOp)
+	tenant, _ := seedSweepFixture(t, h, 2*sweepBatchLimit+1)
 	for i, want := range []int{sweepBatchLimit, sweepBatchLimit, 1, 0} {
 		got, _ := runSweep(t, h, rt, tenant)
 		if got != want {
@@ -204,8 +207,8 @@ func TestIntegrationSweepSLASafeReinvocationAndNoDoubleReminder(t *testing.T) {
 
 func TestIntegrationSweepSLAConcurrentWorkersDoNotDoubleRemind(t *testing.T) {
 	h := testkit.NewDB(t)
-	tenant, _ := seedSweepFixture(t, h, sweepBatchLimit)
 	rt := newSweepRuntime(t, h, observability.NoOp)
+	tenant, _ := seedSweepFixture(t, h, sweepBatchLimit)
 
 	start := make(chan struct{})
 	results := make(chan int, 2)
@@ -224,6 +227,7 @@ func TestIntegrationSweepSLAConcurrentWorkersDoNotDoubleRemind(t *testing.T) {
 
 func TestIntegrationSweepSLARemindAfterIndexPlan(t *testing.T) {
 	h := testkit.NewDB(t)
+	_ = newSweepRuntime(t, h, observability.NoOp)
 	tenant, _ := seedSweepFixture(t, h, 5_000)
 	if _, err := h.Admin.Exec(context.Background(), "ANALYZE workflow_tasks"); err != nil {
 		t.Fatal(err)
@@ -259,9 +263,9 @@ func TestIntegrationSweepSLARemindAfterIndexPlan(t *testing.T) {
 
 func TestIntegrationSweepSLAMetrics(t *testing.T) {
 	h := testkit.NewDB(t)
-	tenant, _ := seedSweepFixture(t, h, 1)
 	metrics := &gaugeRecorder{values: map[string]float64{}}
 	rt := newSweepRuntime(t, h, metrics)
+	tenant, _ := seedSweepFixture(t, h, 1)
 	runSweep(t, h, rt, tenant)
 	for _, key := range []string{"worker_queue_lag_seconds/workflow_sla", "worker_batch_duration_seconds/workflow_sla"} {
 		if !metrics.has(key) {
@@ -274,8 +278,8 @@ func BenchmarkSweepSLABatch(b *testing.B) {
 	for _, cardinality := range []int{10, 1_000, 100_000} {
 		b.Run(fmt.Sprintf("due_%d", cardinality), func(b *testing.B) {
 			h := testkit.NewDB(b)
-			tenant, _ := seedSweepFixture(b, h, cardinality)
 			rt := newSweepRuntime(b, h, observability.NoOp)
+			tenant, _ := seedSweepFixture(b, h, cardinality)
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				if _, err := h.Admin.Exec(context.Background(), `UPDATE workflow_tasks

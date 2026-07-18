@@ -14,8 +14,8 @@ not any particular society/business concept.
 A provider credential is **never** stored as plaintext. Each row in `integration_providers` holds only a
 **reference** to a secret, in the `credential_ref` column:
 
-- Schema: `integration_providers.credential_ref text` — *"secret-provider key; NEVER plaintext"*
-  (`migrations/00011_notify_webhook_integration.sql:67`).
+- Schema: `integration_providers.credential_ref text` — a secret-provider key, never plaintext
+  (defined in the clean kernel baseline).
 - The reference is a `secretref://<provider>/<path>` string
   (`kernel/secrets/secrets.go:17` `Scheme`, `:29` `ParseRef`).
 - The write path rejects anything that is not a `secretref://` reference, so plaintext cannot enter:
@@ -23,7 +23,7 @@ A provider credential is **never** stored as plaintext. Each row in `integration
   secretref:// reference, never plaintext" }` (`foundation/integration/store.go:54`).
 - The row is a platform+tenant hybrid: `tenant_id` NULL is the platform default; a non-NULL `tenant_id`
   is a tenant override. RLS admits a tenant to its own rows plus platform defaults, and a tenant-bound
-  session cannot forge a platform row (`migrations/00011_notify_webhook_integration.sql:115`–`133`).
+  session cannot forge a platform row (clean-baseline policy `integration_providers_tenant`).
 
 At use time the kernel resolves the reference to a value on demand and wraps it in a structurally
 redacted `config.Secret`:
@@ -59,7 +59,7 @@ The raw value is reachable only via `Secret.Reveal`, whose call sites are restri
 
 Provider config is behavior-changing and is kept **off the module role** (SEC-13): the module role
 (`app_rt`) may only `SELECT` `integration_providers`; only `app_platform` may `INSERT`/`UPDATE` it
-(`migrations/00011_notify_webhook_integration.sql:153`–`154`). Every write path below therefore runs with
+(`app_rt` receives SELECT only in the clean baseline). Every write path below therefore runs with
 platform privilege (`kernel/database/txmanager.go:126` `Manager.Platform` on a pool connected AS
 `app_platform`, e.g. `app/maintenance.go:25`).
 
@@ -103,7 +103,7 @@ _, err := intStore.Upsert(ctx, db, integration.UpsertIn{
 ```
 
 `Upsert` re-validates the reference (`store.go:54`), bumps `version`, sets `status='active'`, and stamps
-`updated_at`/`updated_by` on conflict (`kernel/integration/store.go:70`–`79`). This is the path that
+`updated_at`/`updated_by` on conflict (`foundation/integration/store.go:70`–`79`). This is the path that
 guarantees no plaintext can be written.
 
 **B. Direct SQL** as `app_platform` (when no product admin surface is wired). This bypasses the Go
@@ -128,10 +128,10 @@ that tenant uses the new credential — no redeploy, no restart.
 
 - **Programmatic:** re-run the provider's health probe. `Store.HealthChecks` resolves every configured
   provider visible to the tenant and calls each adapter's `HealthCheck`, returning `key → error`
-  (`kernel/integration/store.go:130`); products surface this in readiness detail. A single provider can
-  be checked via `Store.Resolve` + the adapter's `HealthCheck` (`kernel/integration/integration.go:52`).
+  (`foundation/integration/store.go:130`); products surface this in readiness detail. A single provider can
+  be checked via `Store.Resolve` + the adapter's `HealthCheck` (`foundation/integration/integration.go:52`).
 - **Audit / trail:** confirm the row moved. The `integration_providers` row carries its own change trail
-  — `version` (incremented), `updated_at`, `updated_by` (`migrations/00011_notify_webhook_integration.sql:68`–`71`):
+  — `version` (incremented), `updated_at`, and `updated_by`:
   ```sql
   SELECT key, tenant_id, credential_ref, version, updated_at, updated_by
     FROM integration_providers

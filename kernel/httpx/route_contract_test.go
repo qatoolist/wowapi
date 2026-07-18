@@ -6,11 +6,9 @@ package httpx_test
 // The framework's validation library (kernel/validation + BindAndValidate) is
 // opt-in per handler: a POST handler that never calls BindAndValidate gets
 // ZERO validation and nothing detects it. These tests pin both halves of the
-// fix: (a) the compat guarantee — with enforcement OFF (the default), an
-// undeclared-contract mutating route still boots exactly as today; (b) the
-// enforcement — with the profile flag ON (config.Security.EnforceRouteContracts
-// → Router.RequireRequestContracts), such a route fails registration through
-// the existing Router.Err() accumulation path.
+// fix: an undeclared-contract mutating route always fails registration through
+// the existing Router.Err() accumulation path, while declared and explicitly
+// body-less mutations remain valid.
 
 import (
 	"encoding/json"
@@ -25,19 +23,6 @@ import (
 
 func contractNoop(http.ResponseWriter, *http.Request) {}
 
-// TestRouterMutatingRouteWithoutContractBootsByDefault is AC-W01-E03-S002-01:
-// a POST route with no declared request contract (and no waiver) registers
-// successfully when enforcement is off. Pre-fix this documents the real
-// defect (no framework safety net exists); post-fix it is the RISK-W01-002
-// compat guarantee (profile-flag-first: default behavior unchanged).
-func TestRouterMutatingRouteWithoutContractBootsByDefault(t *testing.T) {
-	r := httpx.NewRouter()
-	r.Handle(http.MethodPost, "/things", httpx.RouteMeta{Permission: "things.create"}, contractNoop)
-	if err := r.Err(); err != nil {
-		t.Fatalf("enforcement is off by default: POST route without a contract must register cleanly, got: %v", err)
-	}
-}
-
 // createWidgetRequest is the fixture request contract for the enforcement
 // and adversarial tests below.
 type createWidgetRequest struct {
@@ -45,18 +30,17 @@ type createWidgetRequest struct {
 }
 
 // TestRouterRequireRequestContractsRejectsUndeclaredMutatingRoute is
-// AC-W01-E03-S002-02: with enforcement on, a POST route that declares
+// AC-W01-E03-S002-02: a POST route that declares
 // neither a Request contract nor the NoRequestBody waiver fails registration
 // with an error naming the route and the missing contract, surfaced through
 // the existing Router.Err() accumulation path.
 func TestRouterRequireRequestContractsRejectsUndeclaredMutatingRoute(t *testing.T) {
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
 		r := httpx.NewRouter()
-		r.RequireRequestContracts()
 		r.Handle(method, "/things", httpx.RouteMeta{Permission: "things.write"}, contractNoop)
 		err := r.Err()
 		if err == nil {
-			t.Fatalf("%s route without a declared contract must fail registration when enforcement is on", method)
+			t.Fatalf("%s route without a declared contract must fail registration", method)
 		}
 		for _, want := range []string{method, "/things", "request contract"} {
 			if !strings.Contains(err.Error(), want) {
@@ -71,7 +55,6 @@ func TestRouterRequireRequestContractsRejectsUndeclaredMutatingRoute(t *testing.
 // undeclared case, not mutating routes as such.
 func TestRouterRequireRequestContractsAllowsDeclaredContract(t *testing.T) {
 	r := httpx.NewRouter()
-	r.RequireRequestContracts()
 	r.Handle(http.MethodPost, "/widgets", httpx.RouteMeta{
 		Permission: "widgets.create",
 		Request:    createWidgetRequest{},
@@ -86,7 +69,6 @@ func TestRouterRequireRequestContractsAllowsDeclaredContract(t *testing.T) {
 // body-less mutation, and the waived route still boots with enforcement on.
 func TestRouterRequireRequestContractsWaiverExemptsBodylessMutation(t *testing.T) {
 	r := httpx.NewRouter()
-	r.RequireRequestContracts()
 	r.Handle(http.MethodPost, "/things/{id}/archive", httpx.RouteMeta{
 		Permission:    "things.archive",
 		NoRequestBody: true,
@@ -116,7 +98,6 @@ func TestRouterRejectsContractWithWaiverContradiction(t *testing.T) {
 // never need a contract even with enforcement on.
 func TestRouterRequireRequestContractsIgnoresNonMutatingMethods(t *testing.T) {
 	r := httpx.NewRouter()
-	r.RequireRequestContracts()
 	r.Handle(http.MethodGet, "/things", httpx.RouteMeta{Permission: "things.list"}, contractNoop)
 	r.Handle(http.MethodDelete, "/things/{id}", httpx.RouteMeta{Permission: "things.delete"}, contractNoop)
 	if err := r.Err(); err != nil {
@@ -132,7 +113,6 @@ func TestRouterRequireRequestContractsIgnoresNonMutatingMethods(t *testing.T) {
 func TestValidatedHandlerRejectsInvalidDTOWith400FieldErrors(t *testing.T) {
 	v := validation.New()
 	r := httpx.NewRouter()
-	r.RequireRequestContracts()
 
 	handlerRan := false
 	r.Handle(http.MethodPost, "/widgets", httpx.RouteMeta{

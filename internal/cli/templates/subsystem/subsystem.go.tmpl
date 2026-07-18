@@ -5,30 +5,36 @@ import (
 {{- if eq .Kind "rule"}}
 	"encoding/json"
 
-	"github.com/qatoolist/wowapi/kernel/rules"
+	"{{.FrameworkModule}}/kernel/rules"
 {{- else if eq .Kind "workflow"}}
-	"github.com/qatoolist/wowapi/kernel/workflow"
+	"{{.FrameworkModule}}/kernel/workflow"
 {{- else if eq .Kind "event-handler"}}
 	"context"
 
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/outbox"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/outbox"
 {{- else if eq .Kind "recurring-job"}}
 	"context"
 	"time"
 
-	"github.com/qatoolist/wowapi/kernel/database"
+	"{{.FrameworkModule}}/kernel/database"
 {{- else if eq .Kind "document-flow"}}
-	"github.com/qatoolist/wowapi/foundation/document"
+	"{{.FrameworkModule}}/foundation/document"
 {{- else if eq .Kind "notification"}}
-	"github.com/qatoolist/wowapi/foundation/notify"
+	"{{.FrameworkModule}}/foundation/notify"
 {{- else if eq .Kind "webhook"}}
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 
-	"github.com/qatoolist/wowapi/foundation/webhook"
-	"github.com/qatoolist/wowapi/kernel/database"
+	"github.com/google/uuid"
+
+	"{{.FrameworkModule}}/foundation/webhook"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/httpx"
 {{- end}}
-	"github.com/qatoolist/wowapi/module"
+	"{{.FrameworkModule}}/module"
 )
 
 func init() {
@@ -75,7 +81,15 @@ func init() {
 		})
 		return nil
 {{- else if eq .Kind "webhook"}}
-		mc.Webhooks().RegisterHandler("{{.ModuleName}}.{{.Name}}", handle{{.Title}}Webhook)
+		const providerKey = "{{.ModuleName}}.{{.Name}}"
+		mc.Webhooks().RegisterVerifier(providerKey, webhook.TimestampedHMACVerifier{})
+		mc.Webhooks().RegisterHandler(providerKey, handle{{.Title}}Webhook)
+		tx, service := mc.Tx(), mc.Webhooks()
+		mc.Routes().Handle(http.MethodPost,
+			"/webhooks/{{.ModuleName}}/{{.Name}}/{tenant_id}/{endpoint_id}",
+			httpx.RouteMeta{Public: true, Request: json.RawMessage{}},
+			inbound{{.Title}}Webhook(tx, service),
+		)
 		return nil
 {{- end}}
 	})
@@ -94,5 +108,41 @@ func run{{.Title}}RecurringJob(context.Context, database.TenantDB) error {
 
 func handle{{.Title}}Webhook(context.Context, database.TenantDB, webhook.Event) error {
 	return nil
+}
+
+func inbound{{.Title}}Webhook(tx database.TxManager, service *webhook.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tenantID, err := uuid.Parse(r.PathValue("tenant_id"))
+		if err != nil || tenantID == uuid.Nil {
+			http.Error(w, "invalid tenant id", http.StatusBadRequest)
+			return
+		}
+		endpointID, err := uuid.Parse(r.PathValue("endpoint_id"))
+		if err != nil || endpointID == uuid.Nil {
+			http.Error(w, "invalid endpoint id", http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			http.Error(w, "invalid webhook body", http.StatusBadRequest)
+			return
+		}
+		headers := make(map[string]string, len(r.Header))
+		for key := range r.Header {
+			headers[key] = r.Header.Get(key)
+		}
+		ctx := database.WithTenantID(r.Context(), tenantID)
+		err = tx.WithTenant(ctx, func(ctx context.Context, db database.TenantDB) error {
+			return service.HandleInbound(ctx, db, webhook.InboundIn{
+				EndpointID: endpointID, ProviderKey: "{{.ModuleName}}.{{.Name}}",
+				RawBody: body, Headers: headers, EventType: "{{.ModuleName}}.{{.Name}}",
+			})
+		})
+		if err != nil {
+			httpx.WriteError(r.Context(), w, err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}
 }
 {{- end}}

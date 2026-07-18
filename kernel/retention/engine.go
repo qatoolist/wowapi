@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	"github.com/google/uuid"
 
 	"github.com/qatoolist/wowapi/kernel/audit"
@@ -50,14 +52,26 @@ type RecordClass struct {
 type Registry struct {
 	classes map[string]RecordClass
 	err     error
+	sealed  bool
 }
 
 // NewRegistry builds an empty registry.
 func NewRegistry() *Registry { return &Registry{classes: map[string]RecordClass{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a record class the boot gates never saw
+// (closure review 2026-07-17, F-10).
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
+
 // Register adds a record class. Keys must be non-empty and unique; the first
 // error is retained and surfaced by Err (checked at boot).
 func (r *Registry) Register(c RecordClass) {
+	if r.sealed {
+		panic("retention: record-class registration after boot: the extension model is sealed")
+	}
 	if r.err != nil {
 		return
 	}
@@ -97,18 +111,11 @@ type Engine struct {
 	audit     *audit.Writer
 }
 
-// NewEngine preserves the v1 constructor. Export fulfilment uses the legacy
-// in-transaction payload path until compliance dependencies are supplied with
-// NewEngineWithCompliance.
-func NewEngine(reg *Registry, dsr *DSR) *Engine {
-	return &Engine{reg: reg, dsr: dsr}
-}
-
-// NewEngineWithCompliance wires the engine over a record-class registry, the DSR ledger, and
+// NewEngine wires the engine over a record-class registry, the DSR ledger, and
 // the compliance wrappers. holds, artifacts, and audit may be nil in unit tests
 // that do not exercise hold-blocking or artifact-writing paths; passing nil for
-// artifacts makes RunExportDetailed fail closed.
-func NewEngineWithCompliance(reg *Registry, dsr *DSR, holds *Holds, artifacts ArtifactWriter, audit *audit.Writer) *Engine {
+// artifacts makes RunExport fail closed.
+func NewEngine(reg *Registry, dsr *DSR, holds *Holds, artifacts ArtifactWriter, audit *audit.Writer) *Engine {
 	return &Engine{reg: reg, dsr: dsr, holds: holds, artifacts: artifacts, audit: audit}
 }
 
@@ -140,12 +147,12 @@ func (e *Engine) SweepDisposition(ctx context.Context, db database.TenantDB, at 
 	return total, nil
 }
 
-// RunExportDetailed fulfils a pending export DSR: it invokes each class's Export for the
+// RunExport fulfils a pending export DSR: it invokes each class's Export for the
 // subject, builds an encrypted artifact manifest with explicit per-class status,
 // and completes the request only after the artifact is written. All work is in
 // the caller's tenant tx, so a failure leaves the request pending and rolls back
 // partial exports.
-func (e *Engine) RunExportDetailed(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ArtifactManifest, error) {
+func (e *Engine) RunExport(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ArtifactManifest, error) {
 	req, err := e.dsr.Get(ctx, db, requestID)
 	if err != nil {
 		return nil, err
@@ -195,59 +202,10 @@ func (e *Engine) RunExportDetailed(ctx context.Context, db database.TenantDB, re
 	return manifest, nil
 }
 
-// RunExport preserves the v1 API while using the fail-closed artifact path. The
-// returned map contains the exported per-class payloads; callers that need the
-// artifact checksum or explicit empty/not-applicable statuses should use
-// RunExportDetailed.
-func (e *Engine) RunExport(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (map[string]any, error) {
-	if e.artifacts == nil {
-		return e.runExportLegacy(ctx, db, requestID)
-	}
-	manifest, err := e.RunExportDetailed(ctx, db, requestID)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]any, len(manifest.PerClassResults))
-	for key, result := range manifest.PerClassResults {
-		if result.Status == ClassStatusExported || result.Status == ClassStatusEmpty {
-			out[key] = result.Data
-		}
-	}
-	return out, nil
-}
-
-func (e *Engine) runExportLegacy(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (map[string]any, error) {
-	req, err := e.dsr.Get(ctx, db, requestID)
-	if err != nil {
-		return nil, err
-	}
-	if req.Kind != KindExport {
-		return nil, kerr.E(kerr.KindConflict, "wrong_kind", "DSR is not an export request")
-	}
-	if req.Status != "pending" {
-		return nil, kerr.E(kerr.KindConflict, "not_pending", "DSR is not pending")
-	}
-	out := map[string]any{}
-	for _, c := range e.reg.ordered() {
-		if c.Export == nil {
-			continue
-		}
-		data, err := c.Export(ctx, db, req.SubjectRef)
-		if err != nil {
-			return nil, kerr.Wrapf(err, "retention.RunExport", "export class %s", c.Key)
-		}
-		out[c.Key] = data
-	}
-	if err := e.dsr.Complete(ctx, db, requestID); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// RunErasureDetailed fulfils a pending erasure DSR: it invokes each class's Erase for
+// RunErasure fulfils a pending erasure DSR: it invokes each class's Erase for
 // the subject through the central legal-hold wrapper, marks the request
 // completed, and returns a per-class status map plus the total records affected.
-func (e *Engine) RunErasureDetailed(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ErasureResult, error) {
+func (e *Engine) RunErasure(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (*ErasureResult, error) {
 	req, err := e.dsr.Get(ctx, db, requestID)
 	if err != nil {
 		return nil, err
@@ -290,14 +248,4 @@ func (e *Engine) RunErasureDetailed(ctx context.Context, db database.TenantDB, r
 		return result, err
 	}
 	return result, nil
-}
-
-// RunErasure preserves the v1 API. Call RunErasureDetailed when per-class
-// statuses are required.
-func (e *Engine) RunErasure(ctx context.Context, db database.TenantDB, requestID uuid.UUID) (int, error) {
-	result, err := e.RunErasureDetailed(ctx, db, requestID)
-	if result == nil {
-		return 0, err
-	}
-	return result.Total, err
 }

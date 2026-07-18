@@ -16,13 +16,14 @@ import (
 	"github.com/qatoolist/wowapi/kernel/outbox"
 	"github.com/qatoolist/wowapi/kernel/safety"
 	"github.com/qatoolist/wowapi/testkit"
+	"github.com/qatoolist/wowapi/testkit/fakes"
 )
 
 // harness bundles everything needed by notify integration tests.
 type harness struct {
 	db     *testkit.DBHandle
 	reg    *notify.Registry
-	fake   *notify.FakeSender
+	fake   *fakes.NotifySender
 	svc    *notify.Service
 	tenant uuid.UUID
 	actor  uuid.UUID
@@ -46,6 +47,32 @@ func TestRegisterSender_RejectsUndeclaredAdapter(t *testing.T) {
 func TestRegisterSender_AcceptsDeclaredAdapter(t *testing.T) {
 	svc := notify.New(notify.NewRegistry(), model.UUIDv7())
 	svc.RegisterSender(notify.ChannelEmail, &declaredChannelSender{mechanism: safety.InboxEffectLedger})
+}
+
+func TestRegisterSenderRejectsDuplicateNilAndTypedNil(t *testing.T) {
+	tests := map[string]func(*notify.Service){
+		"duplicate": func(s *notify.Service) {
+			s.RegisterSender(notify.ChannelEmail, &fakes.NotifySender{})
+			s.RegisterSender(notify.ChannelEmail, &fakes.NotifySender{})
+		},
+		"nil": func(s *notify.Service) { s.RegisterSender(notify.ChannelEmail, nil) },
+		"typed nil": func(s *notify.Service) {
+			var sender *fakes.NotifySender
+			s.RegisterSender(notify.ChannelEmail, sender)
+		},
+		"empty channel": func(s *notify.Service) { s.RegisterSender("", &fakes.NotifySender{}) },
+	}
+	for name, register := range tests {
+		t.Run(name, func(t *testing.T) {
+			svc := notify.New(notify.NewRegistry(), model.UUIDv7())
+			defer func() {
+				if recover() == nil {
+					t.Fatal("invalid sender registration did not panic")
+				}
+			}()
+			register(svc)
+		})
+	}
 }
 
 // undeclaredChannelSender implements notify.ChannelSender but not safety.Declarer.
@@ -99,7 +126,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	svc := notify.New(reg, model.UUIDv7())
 	svc.RegisterSender(notify.ChannelEmail, fake)
 
@@ -692,7 +719,7 @@ func TestSendPendingLegalImportanceWritesAuditEvent(t *testing.T) {
 	if err := reg.Err(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	ob := outbox.NewWriter(model.UUIDv7())
 	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
 	svc.RegisterSender(notify.ChannelEmail, fake)
@@ -776,7 +803,7 @@ func TestSendPendingNonLegalImportanceWritesNoAuditEvent(t *testing.T) {
 	if err := reg.Err(); err != nil {
 		t.Fatal(err)
 	}
-	fake := &notify.FakeSender{}
+	fake := &fakes.NotifySender{}
 	ob := outbox.NewWriter(model.UUIDv7())
 	svc := notify.New(reg, model.UUIDv7(), notify.WithOutbox(ob))
 	svc.RegisterSender(notify.ChannelEmail, fake)

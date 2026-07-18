@@ -10,12 +10,16 @@ package notify
 
 import (
 	"fmt"
-	htmltemplate "html/template"
 	"regexp"
 	"sort"
 	"strings"
-	texttemplate "text/template"
 	"text/template/parse"
+
+	"github.com/qatoolist/wowapi/internal/sealer"
+
+	htmltemplate "html/template"
+
+	texttemplate "text/template"
 
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
@@ -66,16 +70,28 @@ func (s TemplateSpec) allowsVar(v string) bool {
 // Registry holds TemplateSpec declarations made by modules at boot. Keys must
 // be module.area.name and a module may only register keys with its own prefix.
 type Registry struct {
-	specs map[string]TemplateSpec
-	errs  []error
+	specs  map[string]TemplateSpec
+	errs   []error
+	sealed bool
 }
 
 // NewRegistry returns an empty template registry.
 func NewRegistry() *Registry { return &Registry{specs: map[string]TemplateSpec{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a template the boot gates never saw
+// (closure review 2026-07-17, F-10).
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
+
 // Register records a template key's spec. Errors (bad key, prefix mismatch,
 // duplicate) accumulate and are returned by Err().
 func (r *Registry) Register(module string, spec TemplateSpec) {
+	if r.sealed {
+		panic("notify: template registration after boot: the extension model is sealed")
+	}
 	if !keyRE.MatchString(spec.Key) {
 		r.errf("notify template key must be module.area.name: %s", spec.Key)
 		return
@@ -89,11 +105,33 @@ func (r *Registry) Register(module string, spec TemplateSpec) {
 		r.errf("notify template key registered more than once: %s", spec.Key)
 		return
 	}
-	r.specs[spec.Key] = spec
+	r.specs[spec.Key] = spec.clone()
 }
 
-// Get returns the spec for a key.
-func (r *Registry) Get(key string) (TemplateSpec, bool) { s, ok := r.specs[key]; return s, ok }
+// clone returns a deep copy of s: the registry must not share the Vars and
+// Channels slices with callers in either direction — a retained registration
+// value or a mutated Get result must never change a validated template's
+// variable allowlist (second closure audit 2026-07-17, F-10).
+func (s TemplateSpec) clone() TemplateSpec {
+	out := s
+	if s.Vars != nil {
+		out.Vars = append([]string(nil), s.Vars...)
+	}
+	if s.Channels != nil {
+		out.Channels = append([]string(nil), s.Channels...)
+	}
+	return out
+}
+
+// Get returns the spec for a key (a deep copy — mutating its nested fields
+// cannot alter the registry).
+func (r *Registry) Get(key string) (TemplateSpec, bool) {
+	s, ok := r.specs[key]
+	if !ok {
+		return TemplateSpec{}, false
+	}
+	return s.clone(), true
+}
 
 // Keys returns registered keys, sorted.
 func (r *Registry) Keys() []string {

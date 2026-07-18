@@ -1,6 +1,7 @@
 package pagination_test
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"github.com/qatoolist/wowapi/kernel/pagination"
@@ -27,34 +28,15 @@ func TestCursorSigRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCursorSigEmptyFallsBackToFlat(t *testing.T) {
-	// An empty signature must produce the legacy flat encoding (no sig).
-	enc, err := pagination.EncodeCursorWithSig("", map[string]any{"id": int64(1)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cur, err := pagination.DecodeCursor(enc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cur.Sig() != "" {
-		t.Errorf("Sig = %q, want empty for a flat cursor", cur.Sig())
-	}
-	if cur.Values()["id"] != int64(1) {
-		t.Errorf("flat values corrupted: %v", cur.Values())
+func TestCursorSigEmptyRejected(t *testing.T) {
+	if _, err := pagination.EncodeCursorWithSig("", map[string]any{"id": int64(1)}); err == nil {
+		t.Fatal("empty cursor signature must be rejected")
 	}
 }
 
-func TestFlatCursorHasNoSig(t *testing.T) {
-	enc, err := pagination.EncodeCursor(map[string]any{"id": int64(9)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cur, err := pagination.DecodeCursor(enc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cur.Sig() != "" {
-		t.Errorf("legacy flat cursor reported Sig %q, want empty", cur.Sig())
+func TestFlatCursorRejected(t *testing.T) {
+	flat := base64.RawURLEncoding.EncodeToString([]byte(`{"id":9}`))
+	if _, err := pagination.DecodeCursor(flat); err == nil {
+		t.Fatal("flat unsigned cursor must be rejected")
 	}
 }

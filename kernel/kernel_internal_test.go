@@ -16,6 +16,7 @@ import (
 	"github.com/qatoolist/wowapi/kernel/config"
 	"github.com/qatoolist/wowapi/kernel/database"
 	"github.com/qatoolist/wowapi/kernel/model"
+	"github.com/qatoolist/wowapi/kernel/safety"
 	"github.com/qatoolist/wowapi/kernel/secrets"
 	"github.com/qatoolist/wowapi/kernel/storage"
 )
@@ -26,6 +27,17 @@ type stubProvider struct {
 	val string
 	err error
 }
+
+type typedNilKernelWebhookSender struct{}
+
+func (*typedNilKernelWebhookSender) Post(context.Context, string, []byte, map[string]string) (int, error) {
+	return 0, nil
+}
+func (*typedNilKernelWebhookSender) DuplicateSafety() safety.Mechanism { return safety.DomainCAS }
+
+type typedNilKernelSecrets struct{}
+
+func (*typedNilKernelSecrets) Resolve(context.Context, secrets.Ref) (string, error) { return "", nil }
 
 func (s stubProvider) Resolve(_ context.Context, _ secrets.Ref) (string, error) {
 	return s.val, s.err
@@ -195,6 +207,24 @@ func TestNewDurableAuditWithTx(t *testing.T) {
 	}
 	if k.AuthzCache != nil {
 		t.Fatal("AuthzCache must be nil when AuthzCacheTTL is zero")
+	}
+}
+
+func TestNewRejectsTypedNilWebhookSender(t *testing.T) {
+	var sender *typedNilKernelWebhookSender
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := New(config.Defaults(), log, Deps{Tx: failTxM{err: errors.New("x")}, WebhookSender: sender})
+	if err == nil || k != nil || !strings.Contains(err.Error(), "WebhookSender must not be typed nil") {
+		t.Fatalf("New(typed-nil WebhookSender) = (%v, %v), want nil kernel and explicit error", k, err)
+	}
+}
+
+func TestNewRejectsTypedNilSecretsProvider(t *testing.T) {
+	var provider *typedNilKernelSecrets
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	k, err := New(config.Defaults(), log, Deps{Tx: failTxM{err: errors.New("x")}, Secrets: provider})
+	if err == nil || k != nil || !strings.Contains(err.Error(), "Secrets provider must not be typed nil") {
+		t.Fatalf("New(typed-nil Secrets) = (%v, %v), want nil kernel and explicit error", k, err)
 	}
 }
 

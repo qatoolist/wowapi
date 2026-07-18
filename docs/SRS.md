@@ -2,7 +2,7 @@
 
 - **Product:** `wowapi` — a reusable, domain-agnostic enterprise backend framework ("platform kernel") in Go.
 - **Module path:** `github.com/qatoolist/wowapi`
-- **Status:** stable `v1` line (v1.0.0 shipped 2026-07-06; current v1.1.0); public API additive-frozen as of `v1.0.0`.
+- **Status:** clean `v1.2.0` release candidate; this is the first supported baseline. Published `v1.0.0` and `v1.1.0` are abandoned practice identities and are not compatibility baselines.
 - **Document status:** Living. Synthesized from the original prompt/vision files (`Goal.md`, `Goal 1.1.md`, `Goal 1.2.md`, `Goal 2.md`), the authoritative design blueprint (`docs/blueprint/00–12`), the hardening tranche (`ROADMAP-wowapi.md`, `CHANGELOG.md`, `VERIFICATION-wowapi-hardening.md`), and cross-checked against the implemented code (50 commits; 251 Go files; 108 test files; 24 migrations; Go 1.26).
 - **Companion:** [GOALS-TRACKER.md](GOALS-TRACKER.md) — what is done / deferred / pending, with the full backlog.
 
@@ -122,10 +122,10 @@ tests is summarized in [GOALS-TRACKER.md](GOALS-TRACKER.md); package citations p
 - **FR-AUTHZ-4** Actors may be user-in-capacity **or** system/webhook principals; system actors are granted roles —
   there is **no bypass path**.
 - **FR-AUTHZ-5** Special flows: scoped delegation; **break-glass** (≤60 min, reason required, event + notify);
-  audited **impersonation** (may not approve or change security posture); emergency workflow override + ratification.
+  audited **impersonation** (may not approve or change security posture); authorized, reason-bearing emergency workflow override.
 - **FR-AUTHZ-6** Denials of **sensitive** permissions are audited.
 - **FR-AUTHZ-7 [H]** Machine principals: issuable, scoped, rotatable, revocable, expirable **API keys**
-  (`kernel/apikey`, migration `00019`); only `sha256(secret)` stored; composite OIDC+API-key authenticator;
+  (`kernel/apikey`, clean baseline); only `sha256(secret)` stored; composite OIDC+API-key authenticator;
   audited issue/rotate/revoke; `wowapi apikey` CLI.
 - **FR-AUTHZ-8 [H]** **Step-up / MFA**: `Permission.StepUp` + `Actor.AMR`; evaluation returns
   `Decision.StepUpRequired` when no strong factor present; HTTP gate replies `401` +
@@ -186,9 +186,11 @@ tests is summarized in [GOALS-TRACKER.md](GOALS-TRACKER.md); package citations p
   code-default`; **historical `Resolve(at)`**; approval-gated activation; no-overlap exclusion constraint.
 - **FR-RULE-2** Feature flags are `feature.*` rule points with rollout percentage.
 - **FR-WF-1** Custom Postgres declarative workflow engine; versioned JSON definitions; step types
-  `approval | task | auto | gateway | vote | terminal`; assignee resolution; SLA sweeper; delegation; emergency
-  override + ratification; `Start` runs inside the caller's tenant tx.
-- **FR-WF-2** Runtime gating is fail-closed on vote / `min_approvals` / self-approval; override requires an authz gate.
+  `approval | task | auto | gateway | terminal`; assignee resolution; SLA sweeper; delegation; audited emergency
+  override; `Start` runs inside the caller's tenant tx.
+- **FR-WF-2** Registered definitions are the sole canonical source. Atomic synchronization persists canonical
+  JSON plus an immutable digest, and every execution path verifies the exact registered/persisted identity before
+  state mutation. Override requires an authz gate and a reason.
 
 ### 3.7 Data, Migrations, Seeds (`migrations`, `kernel/seeds`)
 - **FR-DATA-1** goose migrations, per-module embedded FS; `app.RunMigrate` runs **kernel migrations first**, then
@@ -200,26 +202,26 @@ tests is summarized in [GOALS-TRACKER.md](GOALS-TRACKER.md); package citations p
 ### 3.8 Compliance & Evidence Primitives **[H]**
 - **FR-AUD-1** Append-only `audit_logs` (monthly partitions); Writer baked into `TenantDB` (same tx); runtime role
   lacks UPDATE/DELETE; every sensitive action + every sensitive-permission denial audited; impersonation/break-glass
-  double-logged; rule-decision provenance (`VersionID`) recorded. Correlation `tx_id` (migration `00023`).
-- **FR-AUD-2 [H]** **Tamper-evident hash chain** (migration `00018`): each row carries a per-tenant sequence +
+  double-logged; rule-decision provenance (`VersionID`) and correlation `tx_id` recorded.
+- **FR-AUD-2 [H]** **Tamper-evident hash chain** (clean baseline): each row carries a per-tenant sequence +
   `row_hash = sha256(prev_hash ‖ row)`; `audit.Verify` recomputes the chain and detects any mutation/deletion; wired
   as the default audit sink. `wowapi audit verify` CLI (tamper detection verified end-to-end).
-- **FR-SEQ-1 [H]** **Gap-free sequence allocator** (`kernel/sequence`, migration `00015`): per-tenant numbered series
+- **FR-SEQ-1 [H]** **Gap-free sequence allocator** (`kernel/sequence`, clean baseline): per-tenant numbered series
   (receipts/vouchers/certificates); counter-row lock inside the business tx (rollback frees the number ⇒ gap-free);
   audited voids; proven under concurrency + rollback. Replaces the `MAX()+1` race.
-- **FR-RET-1 [H]** **Retention / DSR / legal hold** (`kernel/retention`, migration `00020`): generalized legal hold
+- **FR-RET-1 [H]** **Retention / DSR / legal hold** (`kernel/retention`, clean baseline): generalized legal hold
   over any entity (`Place/Release/IsHeld/List`); per-record-class retention/disposition registry
   (Dispose/Export/Erase callbacks) on the leader-safe scheduler; **DSR ledger** (`Open/Complete/Reject`) for
   export/erasure with statutory-override reason; exposed via `Context.RetentionClasses()`. Sweep re-checks holds
   in-tx (no hold-vs-sweep race).
-- **FR-ART-1 [H]** **Artifact pipeline** (`kernel/artifact`, migration `00021`): dataset → immutable per-`(tenant,kind)`
+- **FR-ART-1 [H]** **Artifact pipeline** (`foundation/artifact`, clean baseline): dataset → immutable per-`(tenant,kind)`
   versioned artifact (sha256 content hash + structured sidecar + template-by-effective-date); `Verify` re-hashes;
   immutability grant-enforced. (Deviation: content stored in-row `bytea`, not object storage — decision D-0076.)
 - **FR-BULK-1** Bulk import/export as chunked async jobs + `ProgressTracker`; `POST /…/bulk` ≤100 items sync, else
-  202 → operation (`kernel/bulk`, migration `00016`).
+  202 → operation (`foundation/bulk`, clean baseline).
 
-### 3.9 Documents, Notifications, Webhooks, Integrations (`kernel/{document,attachment,comment,notify,webhook,integration}`)
-- **FR-DOC-1** Document metadata + versions; storage adapter + fake; presigned upload→confirm→download; malware-scan
+### 3.9 Documents, Notifications, Webhooks, Integrations (`foundation/{document,attachment,comment,notify,webhook,integration}`)
+- **FR-DOC-1** Document metadata + versions; checksum-aware storage adapter; presigned upload→confirm→download; malware-scan
   hook; per-document grants; retention/redaction jobs (status lifecycle, not DELETE).
 - **FR-NOT-1** `notify.Send(...)` writes `notifications` + per-channel `notification_deliveries` in the business tx;
   async send via jobs; channels in-app/email/SMS/WhatsApp/push; template resolution tenant → platform + locale
@@ -334,11 +336,11 @@ fixture module; and physically, because product code lives in other repositories
   Kernel imports **no** module/app/adapters/testkit/examples/product code; `app` is the sole composition root;
   adapters implement kernel ports; product code imports only public packages (`internal/*` compiler-blocked);
   production code must not import `testkit`.
-- **C-4 Distribution:** consumed as a versioned dependency; public surface is `kernel/module/app/adapters/testkit/
+- **C-4 Distribution:** consumed as a versioned dependency; public surface is `kernel/foundation/module/app/adapters/testkit/
   migrations/cmd/wowapi`; no consumer contract under `internal/`.
-- **C-5 Versioning:** pre-1.0 `v0.x` (surface may move); `v1.0.0` when `10-delivery.md` acceptance is green and the
-  surface freezes to additive-only; `v2+` via `/v2` module path; deprecations survive ≥ 1 minor.
-  *Status note (2026-07-16): the `v1.0.0` milestone this constraint anticipated shipped 2026-07-06; the surface is
+- **C-5 Versioning:** `v1.2.0` establishes the first supported clean baseline; later v1 releases are additive-compatible,
+  `v2+` uses the `/v2` module path, and deprecations survive ≥ 1 supported minor.
+  *Status note (2026-07-18): the earlier `v1.0.0` and `v1.1.0` tags are abandoned and impose no compatibility obligation; the surface is
   now additive-frozen. Live support window: `SECURITY.md` + `docs/operations/upgrade-and-deprecation-policy.md`.*
 - **C-6 Architecture:** modular monolith; compile-time modules; hexagonal at edges only; manual DI; no reflection
   container / service locator; microservices/event-sourcing/CQRS-everywhere/low-code-runtime rejected for v1.

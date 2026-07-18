@@ -1494,3 +1494,17 @@ Blueprint deviations MUST land here before the code that implements them.
 - **Affected:** scripts/migration_reversibility_drill.sh, scripts/pitr_restore_drill.sh,
   scripts/object_storage_restore_drill.sh, internal/tools/migrate/main.go, Makefile (drill-* targets),
   docs/operations/{migrations,backup-restore}.md.
+
+## D-0091 — Booted is opaque-by-construction (clean-line opacity decision)
+
+**Date:** 2026-07-17 · **Context:** fourth/fifth adversarial closure audits;
+the pre-reset v1.0.0/v1.1.0 releases are abandoned (no compatibility obligation). `app.Booted` is fully
+OPAQUE in V2: no informational mirror fields, no exposed kernel aggregate —
+every capability flows through accessors backed by the boot-validated runtime
+view, and values not produced by `App.Boot` fail loudly (`ErrNotBooted` /
+accessor panics). Rationale: informational mirrors created two sources of
+truth (the F-10 defect class); a hand-constructed `Booted` never passed boot
+validation, so silently operating on one was the vulnerability itself. The V2
+contract fixtures (`internal/compat/contract_test.go`) freeze
+`app.Hook` and `document.UploadEvent` — the V2 positional-literal contract —
+and intentionally exclude `app.Booted`, which is not constructible.

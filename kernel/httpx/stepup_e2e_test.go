@@ -213,7 +213,7 @@ func TestIntegrationStepUpEndToEnd(t *testing.T) {
 	// 4. A real router + a real JWT authenticator (auth.Authenticator satisfies
 	// httpx.Authenticator structurally) — no faked actor.
 	router := httpx.NewRouter()
-	router.Handle(http.MethodPost, "/impersonation/assign", httpx.RouteMeta{Permission: perm},
+	router.Handle(http.MethodPost, "/impersonation/assign", httpx.RouteMeta{Permission: perm, NoRequestBody: true},
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	if err := router.Err(); err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestIntegrationStepUpPolicyEndToEnd(t *testing.T) {
 	eval := authz.New(authz.Options{Store: authz.NewStore(), Registry: reg, Policies: policy.New()})
 
 	router := httpx.NewRouter()
-	router.Handle(http.MethodPost, "/vault/export", httpx.RouteMeta{Permission: perm},
+	router.Handle(http.MethodPost, "/vault/export", httpx.RouteMeta{Permission: perm, NoRequestBody: true},
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	if err := router.Err(); err != nil {
 		t.Fatal(err)

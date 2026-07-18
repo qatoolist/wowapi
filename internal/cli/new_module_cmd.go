@@ -28,8 +28,9 @@ Flags:
 
 // newModuleData is the template data for the module scaffold templates.
 type newModuleData struct {
-	Name    string // module identifier, e.g. "widgets"
-	Package string // Go package name — same as Name
+	FrameworkModule string
+	Name            string // module identifier, e.g. "widgets"
+	Package         string // Go package name — same as Name
 }
 
 // runNewModule implements `wowapi new-module`.
@@ -55,7 +56,7 @@ func runNewModule(args []string, stdout, stderr io.Writer) int {
 	}
 
 	modDir := filepath.Join(*dir, *name)
-	data := newModuleData{Name: *name, Package: *name}
+	data := newModuleData{FrameworkModule: buildinfo.ModulePath, Name: *name, Package: *name}
 
 	type fileSpec struct {
 		dest string
@@ -108,14 +109,7 @@ func wireGeneratedModule(modDir, name string) error {
 	valueMarker := "\t\t// wowapi:module-values"
 	source := string(src)
 	if !strings.Contains(source, importMarker) || !strings.Contains(source, valueMarker) {
-		const legacyImport = `import "github.com/qatoolist/wowapi/module"`
-		const legacyValue = "\t\t// e.g. mymodule.New()"
-		if !strings.Contains(source, legacyImport) || !strings.Contains(source, legacyValue) {
-			return fmt.Errorf("%s is missing wowapi module markers", wirePath)
-		}
-		source = strings.Replace(source, legacyImport,
-			"import (\n\t\"github.com/qatoolist/wowapi/module\"\n"+importMarker+"\n)", 1)
-		source = strings.Replace(source, legacyValue, valueMarker, 1)
+		return fmt.Errorf("%s is missing wowapi module markers", wirePath)
 	}
 	importPath := gomod.ModulePath + "/" + filepath.ToSlash(rel)
 	importLine := fmt.Sprintf("\t%s %q", name, importPath)

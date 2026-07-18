@@ -15,6 +15,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/qatoolist/wowapi/internal/sealer"
+
 	kerr "github.com/qatoolist/wowapi/kernel/errors"
 )
 
@@ -62,14 +64,26 @@ func (c Class) allowsMIME(mime string) bool {
 type Registry struct {
 	classes map[string]Class
 	errs    []error
+	sealed  bool
 }
 
 // NewRegistry returns an empty class registry.
 func NewRegistry() *Registry { return &Registry{classes: map[string]Class{}} }
 
+// Seal freezes the registry once boot validation completes: any later Register
+// panics rather than silently adding a document class the boot gates never saw
+// (closure review 2026-07-17, F-10).
+// The sealer.Authority parameter restricts sealing to the framework's boot
+// path: internal/sealer is unimportable outside the wowapi module, so a
+// product module cannot prematurely seal a shared registry during Register.
+func (r *Registry) Seal(sealer.Authority) { r.sealed = true }
+
 // Register adds a document class. Malformed keys, a module-prefix mismatch, an
 // invalid default sensitivity, or a duplicate are recorded and surfaced by Err().
 func (r *Registry) Register(module string, c Class) {
+	if r.sealed {
+		panic("document: class registration after boot: the extension model is sealed")
+	}
 	if !classKeyRE.MatchString(c.Key) {
 		r.errf("document class key must be module.name: %s", c.Key)
 		return
@@ -94,11 +108,30 @@ func (r *Registry) Register(module string, c Class) {
 		return
 	}
 	c.Module = module
-	r.classes[c.Key] = c
+	r.classes[c.Key] = c.clone()
 }
 
-// Get returns the registered class.
-func (r *Registry) Get(key string) (Class, bool) { c, ok := r.classes[key]; return c, ok }
+// clone returns a deep copy of c: the registry must not share the AllowedMIME
+// slice with callers in either direction — a retained registration value or a
+// mutated Get result must never change which MIME types a validated class
+// accepts (second closure audit 2026-07-17, F-10).
+func (c Class) clone() Class {
+	out := c
+	if c.AllowedMIME != nil {
+		out.AllowedMIME = append([]string(nil), c.AllowedMIME...)
+	}
+	return out
+}
+
+// Get returns the registered class (a deep copy — mutating its nested fields
+// cannot alter the registry).
+func (r *Registry) Get(key string) (Class, bool) {
+	c, ok := r.classes[key]
+	if !ok {
+		return Class{}, false
+	}
+	return c.clone(), true
+}
 
 // Keys returns registered class keys, sorted.
 func (r *Registry) Keys() []string {

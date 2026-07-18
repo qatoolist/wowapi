@@ -95,7 +95,7 @@ permissions:
 		t.Fatalf("Boot: %v", err)
 	}
 
-	report, err := seeds.Apply(context.Background(), h.Platform, booted.Seeds, seeds.ApplyOptions{Actor: "test"})
+	report, err := seeds.Apply(context.Background(), h.Platform, booted.RuntimeSeeds(), seeds.ApplyOptions{Actor: "test"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

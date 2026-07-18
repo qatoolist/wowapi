@@ -141,7 +141,7 @@ func (s *PgIdemStore) Begin(ctx context.Context, db TenantDB, actorScope, key, r
 // ALL tenants, in a single platform transaction (roadmap S5). It runs as
 // app_platform via TxManager.Platform — the tenant-scoped app_rt lifecycle is
 // unchanged; only this cross-tenant maintenance path may purge other tenants'
-// rows (migration 00012). Returns the number of rows removed. Safe alongside
+// rows (clean baseline). Returns the number of rows removed. Safe alongside
 // request traffic: DELETE takes row locks, so a key still held by a live claim
 // blocks until that request commits rather than vanishing under it. It is
 // scheduled on the leader-safe recurring scheduler at boot

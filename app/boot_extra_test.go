@@ -91,23 +91,23 @@ func TestBootHappyPathWiresEverything(t *testing.T) {
 	if !k.Perms.Has("widgets.widget.read") {
 		t.Error("seed-declared permission not registered into the shared authz registry")
 	}
-	if _, ok := booted.Migrations["widgets"]; !ok {
+	if _, ok := booted.RuntimeMigrations()["widgets"]; !ok {
 		t.Error("Booted.Migrations missing widgets FS")
 	}
-	if got := string(booted.OpenAPI["widgets"]); got != "openapi: 3.1.0" {
+	if got := string(booted.RuntimeOpenAPI()["widgets"]); got != "openapi: 3.1.0" {
 		t.Errorf("Booted.OpenAPI[widgets] = %q", got)
 	}
-	if _, ok := booted.Health["widgets.ready"]; !ok {
+	if _, ok := app.CapturedHealth(booted)["widgets.ready"]; !ok {
 		t.Error("Booted.Health missing widgets.ready")
 	}
-	if len(booted.Seeds.Permissions) != 1 || booted.Seeds.Permissions[0].Key != "widgets.widget.read" {
-		t.Errorf("merged Booted.Seeds.Permissions = %+v", booted.Seeds.Permissions)
+	if len(booted.RuntimeSeeds().Permissions) != 1 || booted.RuntimeSeeds().Permissions[0].Key != "widgets.widget.read" {
+		t.Errorf("merged RuntimeSeeds().Permissions = %+v", booted.RuntimeSeeds().Permissions)
 	}
-	if len(booted.Seeds.ResourceTypes) != 1 {
-		t.Errorf("merged Booted.Seeds.ResourceTypes = %+v", booted.Seeds.ResourceTypes)
+	if len(booted.RuntimeSeeds().ResourceTypes) != 1 {
+		t.Errorf("merged RuntimeSeeds().ResourceTypes = %+v", booted.RuntimeSeeds().ResourceTypes)
 	}
-	if len(booted.Router.Routes()) != 1 {
-		t.Errorf("router has %d routes, want 1", len(booted.Router.Routes()))
+	if len(booted.RuntimeRouter().Routes()) != 1 {
+		t.Errorf("router has %d routes, want 1", len(booted.RuntimeRouter().Routes()))
 	}
 }
 
@@ -375,7 +375,7 @@ func TestBootAccumulatesRegistryErrors(t *testing.T) {
 		mc.Resources().Register("widgets", resource.TypeSpec{Key: "not_valid_key"})                              // resources.Err
 		mc.Routes().Handle(http.MethodGet, "/x", httpx.RouteMeta{}, func(http.ResponseWriter, *http.Request) {}) // router.Err (neither Permission nor Public)
 		mc.Events().Subscribe("", "", nil)                                                                       // events.Err
-		mc.Jobs().RegisterKindWithIdempotency("", nil, jobs.Idempotency{}, jobs.DefaultRetry())                  // jobs.Err
+		mc.Jobs().RegisterKind("", nil, jobs.Idempotency{}, jobs.DefaultRetry())                                 // jobs.Err
 		return nil
 	}})
 	_, err := a.Boot(context.Background(), k, nil)

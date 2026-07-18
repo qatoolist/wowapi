@@ -11,22 +11,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/qatoolist/wowapi/adapters/auth/pgprincipal"
-	promadapter "github.com/qatoolist/wowapi/adapters/metrics/prometheus"
-	s3adapter "github.com/qatoolist/wowapi/adapters/storage/s3"
-	oteladapter "github.com/qatoolist/wowapi/adapters/tracing/otel"
-	"github.com/qatoolist/wowapi/app"
-	"github.com/qatoolist/wowapi/kernel/apikey"
-	kaudit "github.com/qatoolist/wowapi/kernel/audit"
-	kauth "github.com/qatoolist/wowapi/kernel/auth"
-	"github.com/qatoolist/wowapi/kernel"
-	"github.com/qatoolist/wowapi/kernel/database"
-	"github.com/qatoolist/wowapi/kernel/httpx"
-	"github.com/qatoolist/wowapi/kernel/logging"
-	"github.com/qatoolist/wowapi/kernel/model"
-	"github.com/qatoolist/wowapi/kernel/observability"
-	"github.com/qatoolist/wowapi/kernel/storage"
-	"github.com/qatoolist/wowapi/migrations"
+	"{{.FrameworkModule}}/adapters/auth/pgprincipal"
+	promadapter "{{.FrameworkModule}}/adapters/metrics/prometheus"
+	s3adapter "{{.FrameworkModule}}/adapters/storage/s3"
+	oteladapter "{{.FrameworkModule}}/adapters/tracing/otel"
+	"{{.FrameworkModule}}/app"
+	"{{.FrameworkModule}}/kernel"
+	"{{.FrameworkModule}}/kernel/apikey"
+	kaudit "{{.FrameworkModule}}/kernel/audit"
+	kauth "{{.FrameworkModule}}/kernel/auth"
+	"{{.FrameworkModule}}/kernel/database"
+	"{{.FrameworkModule}}/kernel/httpx"
+	"{{.FrameworkModule}}/kernel/logging"
+	"{{.FrameworkModule}}/kernel/model"
+	"{{.FrameworkModule}}/kernel/observability"
+	"{{.FrameworkModule}}/kernel/storage"
+	"{{.FrameworkModule}}/migrations"
 
 	"{{.Module}}/internal/appcfg"
 	"{{.Module}}/internal/wire"
@@ -207,7 +207,9 @@ func run(ctx context.Context) error {
 	// (deny-by-default: AuthN -> bind tenant/actor -> AuthZ(permission)): API keys
 	// first, then the user (OIDC) leg above.
 	auth := httpx.Composite(apiKeyAuth, userAuth)
-	mux := booted.Router.SecureHandler(auth, booted.Kernel.Authz, booted.Kernel.Tx)
+	// RuntimeRouter is the boot-validated router; unlike the informational
+	// Router field it cannot have been reassigned after boot.
+	mux := booted.RuntimeRouter().SecureHandler(auth, booted.RuntimeAuthz(), booted.RuntimeTx())
 
 	// Health endpoints are Public infrastructure, mounted directly.
 	// ReadinessWithCatalogs registers the framework-level "seed_catalogs"
@@ -268,10 +270,11 @@ func run(ctx context.Context) error {
 		// Locale negotiation (kernel/i18n): binds the request's negotiated
 		// locale + the merged message catalog (framework English + every
 		// module's bundles) into the context before any handler runs, and
-		// sets Content-Language on the response. booted.I18n is never nil
-		// (the framework catalog is always pre-loaded), so this is a
-		// standard, always-on concern — no product config gate needed.
-		httpx.Locale(booted.I18n),
+		// sets Content-Language on the response. RuntimeI18n is the
+		// boot-frozen catalog (never nil — the framework catalog is always
+		// pre-loaded); the informational I18n field could have been
+		// reassigned after boot.
+		httpx.Locale(booted.RuntimeI18n()),
 		observability.Trace(tracer),     // OTel span per request when tracing is enabled
 		observability.Requests(metrics), // RED metrics per route (exported at /metrics)
 		observability.AccessLog(log),

@@ -18,7 +18,6 @@ type runReport struct {
 
 func main() {
 	root := flag.String("root", ".", "repository root")
-	write := flag.Bool("write-reference", false, "regenerate the ApplicationModel reference table before checking")
 	flag.Parse()
 
 	absRoot, err := filepath.Abs(*root)
@@ -26,18 +25,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if *write {
-		if err := writeReference(absRoot); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-	}
 	report, err := run(context.Background(), absRoot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("docs-check: compiled %d tagged examples; linted %d future-state documents; generated reference byte-match ok\n", report.examples, report.futureDocs)
+	fmt.Printf("docs-check: compiled %d tagged examples; linted %d future-state documents\n", report.examples, report.futureDocs)
 }
 
 func run(ctx context.Context, root string) (runReport, error) {
@@ -73,9 +66,6 @@ func run(ctx context.Context, root string) (runReport, error) {
 		if err := lintFutureState(rel, data); err != nil {
 			return runReport{}, err
 		}
-	}
-	if err := checkReference(root); err != nil {
-		return runReport{}, err
 	}
 	return runReport{examples: len(examples), futureDocs: len(futureDocs)}, nil
 }

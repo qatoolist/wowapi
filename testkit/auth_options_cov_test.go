@@ -12,8 +12,8 @@ import (
 
 // TestTokenOptionsDriveClaims proves each TokenOption is applied to the minted
 // token by verifying observable effects: default claims verify; a wrong issuer
-// or audience is rejected; an expired token is rejected; impersonator and
-// break-glass claims round-trip through the verifier.
+// or audience is rejected; an expired token is rejected; and a grant identity
+// round-trips through the verifier.
 func TestTokenOptionsDriveClaims(t *testing.T) {
 	ti := NewTokenIssuer()
 	v := auth.NewVerifier(ti.KeySource(), auth.Config{Issuer: defaultTestIssuer, Audience: defaultTestAudience})
@@ -21,18 +21,14 @@ func TestTokenOptionsDriveClaims(t *testing.T) {
 	tenantID := uuid.New()
 	capID := uuid.New()
 
-	// WithImpersonator + WithBreakGlass round-trip into verified claims.
-	imp := uuid.New()
-	tok := ti.Issue("idp|sub", tenantID, capID, WithImpersonator(imp), WithBreakGlass(true))
+	grantID := uuid.New()
+	tok := ti.Issue("idp|sub", tenantID, capID, WithGrantID(grantID))
 	claims, err := v.Verify(ctx, tok)
 	if err != nil {
 		t.Fatalf("verify default+options token: %v", err)
 	}
-	if claims.ImpersonatorUserID != imp {
-		t.Fatalf("impersonator = %v, want %v", claims.ImpersonatorUserID, imp)
-	}
-	if !claims.BreakGlass {
-		t.Fatal("break_glass claim = false, want true")
+	if claims.GrantID != grantID {
+		t.Fatalf("grant = %v, want %v", claims.GrantID, grantID)
 	}
 
 	// WithIssuer overrides the iss claim → verifier rejects the mismatch.

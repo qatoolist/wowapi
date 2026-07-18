@@ -57,6 +57,13 @@ func TestKernelMigrationsHaveManifests(t *testing.T) {
 	}
 }
 
+func TestManifestBoundaryStartsAfterCleanBaseline(t *testing.T) {
+	t.Parallel()
+	if migration.ManifestRequiredVersion != 2 {
+		t.Fatalf("manifest boundary = %d, want first future migration 2", migration.ManifestRequiredVersion)
+	}
+}
+
 func isMigrationFile(path string) bool {
 	return len(path) > 4 && path[len(path)-4:] == ".sql"
 }

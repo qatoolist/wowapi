@@ -25,7 +25,7 @@ func TestKeysetClauseLexicographic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cur, err := pagination.DecodeCursor(mustEncode(t, map[string]any{"created_at": "2026-01-01T00:00:00Z", "id": "abc"}))
+	cur, err := pagination.DecodeCursor(mustEncode(t, sort.Signature(), map[string]any{"created_at": "2026-01-01T00:00:00Z", "id": "abc"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestKeysetClauseRejectsMismatchedCursor(t *testing.T) {
 	sort, _ := filtering.ParseSort("id:asc", allow)
 	// Cursor carries a DIFFERENT/extra key than the sort — a forged or stale
 	// cursor. Must be rejected, never silently used (SEC-22).
-	cur, _ := pagination.DecodeCursor(mustEncode(t, map[string]any{"evil_col": "x", "id": "y"}))
+	cur, _ := pagination.DecodeCursor(mustEncode(t, sort.Signature(), map[string]any{"evil_col": "x", "id": "y"}))
 	_, _, _, err := filtering.KeysetClause(sort, cur, 1)
 	if errors.KindOf(err) != errors.KindValidation {
 		t.Fatalf("mismatched cursor should be KindValidation, got %v", err)
@@ -61,7 +61,7 @@ func TestKeysetClauseColumnsAreAllowlisted(t *testing.T) {
 	allow := filtering.SortAllowlist{"id": {Col: "id"}}
 	sort, _ := filtering.ParseSort("id:asc", allow)
 	payload := "x'; DROP TABLE users;--"
-	cur, _ := pagination.DecodeCursor(mustEncode(t, map[string]any{"id": payload}))
+	cur, _ := pagination.DecodeCursor(mustEncode(t, sort.Signature(), map[string]any{"id": payload}))
 	sql, args, _, err := filtering.KeysetClause(sort, cur, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -116,9 +116,9 @@ func TestKeysetClauseRejectsSortSpecChange(t *testing.T) {
 	}
 }
 
-func mustEncode(t *testing.T, m map[string]any) string {
+func mustEncode(t *testing.T, sig string, m map[string]any) string {
 	t.Helper()
-	s, err := pagination.EncodeCursor(m)
+	s, err := pagination.EncodeCursorWithSig(sig, m)
 	if err != nil {
 		t.Fatal(err)
 	}
