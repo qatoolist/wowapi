@@ -146,7 +146,7 @@ jobs:
           outputs: type=oci,dest=dist/wowapi-image.oci.tar
           build-args: VERSION=${{ github.ref_name }}
       - name: install pinned ORAS for candidate smoke
-        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
         with:
           version: ${{ env.ORAS_VERSION }}
       - name: boot every platform from the exact OCI candidate before publish
@@ -295,7 +295,7 @@ jobs:
           fi
           gh release create "$VERSION_TAG" "${options[@]}"
       - name: install pinned ORAS
-        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
         with:
           version: ${{ env.ORAS_VERSION }}
       - name: publish existing OCI layout under immutable version tag
@@ -405,7 +405,7 @@ jobs:
       packages: write
     steps:
       - name: install pinned ORAS
-        uses: oras-project/setup-oras@8d34698a59f5ffe24821f0b48ab62a3de8b64b20 # v1.2.3
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
         with:
           version: ${{ env.ORAS_VERSION }}
       - name: copy the verified immutable digest to semantic aliases
