@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/minio/minio-go/v7 v7.2.1
-	github.com/pb33f/libopenapi v0.38.6
+	github.com/pb33f/libopenapi v0.38.7
 	github.com/pb33f/libopenapi-validator v0.14.0
 	github.com/pressly/goose/v3 v3.27.2
 	github.com/prometheus/client_golang v1.23.2
