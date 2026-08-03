@@ -34,7 +34,7 @@ jobs:
     outputs:
       gates: ${{ steps.manifest.outputs.gates }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -78,7 +78,7 @@ jobs:
       WOWAPI_HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
       WOWAPI_RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -154,7 +154,7 @@ jobs:
       source_sha: ${{ steps.summary.outputs.source_sha }}
       gate_results_sha256: ${{ steps.summary.outputs.gate_results_sha256 }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
