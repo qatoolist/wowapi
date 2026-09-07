@@ -34,7 +34,7 @@ jobs:
     outputs:
       gates: ${{ steps.manifest.outputs.gates }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -78,7 +78,7 @@ jobs:
       WOWAPI_HOSTED_RESULTS_SHA: ${{ inputs.hosted_results_sha }}
       WOWAPI_RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -154,7 +154,7 @@ jobs:
       source_sha: ${{ steps.summary.outputs.source_sha }}
       gate_results_sha256: ${{ steps.summary.outputs.gate_results_sha256 }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
@@ -182,7 +182,7 @@ jobs:
           path: gate-bundle
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: gate-bundle/gate-results.json
       - name: fail closed after preserving the complete result set
